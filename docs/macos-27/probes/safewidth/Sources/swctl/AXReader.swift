@@ -35,12 +35,18 @@ enum AXReader {
     /// item sitting left of every third-party item. With nothing of ours in the
     /// bar and the user's own bar not overflowing, only the pill does that.
     static func pillLike(_ snapshot: AXSnapshot, ignoring pids: Set<pid_t> = []) -> AXItem? {
+        leadingAgentItems(snapshot, ignoring: pids).first
+    }
+
+    /// Every MenuBarAgent item left of the first third-party item: where both the
+    /// pill and the overflow chevron stand. Where AX puts a pill that has been
+    /// pushed out of the bar has never been observed.
+    static func leadingAgentItems(_ snapshot: AXSnapshot, ignoring pids: Set<pid_t> = []) -> [AXItem] {
         let onBar = snapshot.items.filter { $0.y < 40 && !pids.contains($0.pid) }.sorted { $0.x < $1.x }
-        guard let first = onBar.first, first.bundle == "com.apple.MenuBarAgent",
-              onBar.dropFirst().contains(where: { $0.bundle != "com.apple.MenuBarAgent" }) else {
-            return nil
+        guard onBar.contains(where: { $0.bundle != "com.apple.MenuBarAgent" }) else {
+            return []
         }
-        return first
+        return Array(onBar.prefix { $0.bundle == "com.apple.MenuBarAgent" })
     }
 
     /// Asking every running app costs one AX round trip each, and an unresponsive

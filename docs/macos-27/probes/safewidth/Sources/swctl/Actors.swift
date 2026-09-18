@@ -118,10 +118,29 @@ final class Actors {
         let sample: LegSample?
     }
 
+    /// False once the guard has stopped or fired: from then on nothing expands.
+    var canExpand: Bool {
+        !stopped && harmAt == nil
+    }
+
+    /// The only way any stage expands the spacer. It refuses once `canExpand` is
+    /// false and latches whatever the guard says about this expansion, so a stop
+    /// or a harm cannot be lost by a caller that forgets to look.
+    func expand(_ length: Double, holds: [Double]) -> ProbeRecord? {
+        guard canExpand else {
+            return nil
+        }
+        let outcome = runner.probe(length: length, holds: holds, pillAtStart: false)
+        let record = ProbeRecord(outcome: outcome, sample: settledSample(outcome))
+        note(record, length: length)
+        return record
+    }
+
     /// One probe from a verified rest state. Returns nil if the rest state could
-    /// not be established (the trial is void, not a measurement).
+    /// not be established (the trial is void, not a measurement) or if the guard
+    /// stopped or fired on the way back to rest.
     func jump(_ length: Double, reset kind: ResetKind, holds: [Double], label: [String: Any]) -> ProbeRecord? {
-        guard !stopped else {
+        guard canExpand else {
             return nil
         }
         var restCheck = reset(kind)
@@ -132,23 +151,28 @@ final class Actors {
         if !restCheck.ok {
             restCheck = reset(.full)
         }
-        guard restCheck.ok else {
-            experiment.evidence.record("probe.void", label.merging(["length": length, "reasons": restCheck.reasons]) { $1 })
+        // A light reset rests through the guard, which may have stopped or fired
+        // there; a rest check that passes afterwards does not undo that.
+        guard restCheck.ok, canExpand else {
+            let reasons = canExpand ? restCheck.reasons : ["guard stopped or fired during the reset"]
+            experiment.evidence.record("probe.void", label.merging(["length": length, "reasons": reasons]) { $1 })
             return nil
         }
         world.context = label.merging(["config": config.name, "reset": kind.rawValue]) { $1 }
-        let outcome = runner.probe(length: length, holds: holds, pillAtStart: false)
-        let record = ProbeRecord(outcome: outcome, sample: settledSample(outcome))
-        note(record, length: length)
-        if case .settled = outcome {
+        let record = expand(length, holds: holds)
+        if case .settled = record?.outcome {
             restNow()
         }
         return record
     }
 
+    /// The state a probe is characterised by: the latest observation, which is
+    /// the longest hold's when that came after settling — the hold protocol exists
+    /// because a layout that looks settled early may still change — and the
+    /// settled capture when a short hold expired mid-transition.
     func settledSample(_ outcome: ProbeOutcome) -> LegSample? {
-        if case .settled(let sample, _) = outcome {
-            return sample
+        if case .settled(_, _, let latest) = outcome {
+            return latest
         }
         return nil
     }

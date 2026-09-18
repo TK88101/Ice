@@ -143,7 +143,13 @@ enum StageO0 {
                 guard outcome.hasPrefix("settled") else {
                     return
                 }
-                _ = runner.rest(pillAtStart: false)  // O0 has no Actors latch: its probes are the measurement
+                // O0 has no Actors latch, so the rest is checked here: anything but a
+                // settled rest (a guard stop or harm included) ends the stage.
+                let rest = runner.rest(pillAtStart: false)
+                guard case .settled = rest else {
+                    print("O0 \(path.name) rep \(rep): return to rest ended as \(rest) — stopping")
+                    return
+                }
             }
         }
     }

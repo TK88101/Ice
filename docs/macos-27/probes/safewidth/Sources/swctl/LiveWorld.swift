@@ -27,8 +27,6 @@ final class LiveWorld: World {
     var syntheticProtected: MarkerResult?
     /// Orange pixels right of the notch above this mean the microphone pill.
     var pillThreshold = 40
-    /// Ink drawn inside the pill's own AX span counts as "still on screen".
-    static let pillInk = 12
     static let maxGuardCaptures = 200
     private var lastVerdict = "clean"
     private var keptGuardCaptures = 0
@@ -76,17 +74,10 @@ final class LiveWorld: World {
         }
         last = observation
         let protected = syntheticProtected ?? observation.markers["P"] ?? .absent
-        // The pill's own rule: AX says it is there, pixels say whether it is still
-        // drawn. Without this the guard's .pillHidden branch can never fire.
-        // `pillAX` is already colour-confirmed, so "in AX but not in pixels" means
-        // the pill's own span went dark: something pushed it out from under itself.
-        let pill = observation.pillAX.map { item in
-            PillReading(
-                axPresent: true,
-                pixelPresent: instrument.inkCount(observation, span: Span(lo: item.x, hi: item.x + item.w)) >= Self.pillInk
-            )
-        }
-        let reading = CaptureReading(time: observation.time, items: observation.items, protected: protected, pill: pill)
+        // The pill's own rule: AX says it is there, its orange says whether it is
+        // drawn. A pill AX knows about and the screen does not show is harm for
+        // the guard to decide; only a drawn pill coming or going voids a probe.
+        let reading = CaptureReading(time: observation.time, items: observation.items, protected: protected, pill: observation.pill)
         let decision = guardState.assess(reading, presence: instrument.presence(observation))
         if case .clean = decision {
             deadman.noteClean(at: observation.time)
@@ -99,7 +90,7 @@ final class LiveWorld: World {
             sample: sample,
             frontmostOK: observation.ax.frontmostBundle == expectedFrontmost,
             helpersAlive: helperPids.allSatisfy { kill($0, 0) == 0 },
-            pillAXPresent: observation.pillAX != nil
+            pillDrawn: observation.pill?.pixelPresent == true
         )
         record(observation, assessment: assessment, length: length)
         return assessment

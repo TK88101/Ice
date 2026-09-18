@@ -15,8 +15,8 @@ struct Observation {
     let spacerAppKit: CGRect?
     let spacerAXLeft: Double?
     let orangePixels: Int
-    /// The microphone pill as AX sees it, when it is there at all.
-    let pillAX: AXItem?
+    /// The microphone pill: nil when AX shows none, otherwise whether it is drawn.
+    let pill: PillReading?
 }
 
 final class Instrument {
@@ -75,12 +75,10 @@ final class Instrument {
         }
         let spacerAX = ax.items.first { $0.identifier == Spacer.identifier }
         let ours = Set(ax.items.filter { $0.identifier.hasPrefix("IceSpike4") }.map(\.pid))
-        // The overflow chevron is also a MenuBarAgent item left of every
-        // third-party item, so position alone cannot tell the two apart: require
-        // the pill's own colour inside its own span.
-        let pillAX = AXReader.pillLike(ax, ignoring: ours).flatMap { candidate -> AXItem? in
-            let span = Span(lo: candidate.x, hi: candidate.x + candidate.w)
-            return Pixels.count(Self.orange, in: bitmap, span: span) >= Self.pillOrange ? candidate : nil
+        // The overflow chevron stands where the pill does; PillIdentity tells them
+        // apart by width, so a pill drawing nothing is still recognised as one.
+        let pillCandidates = AXReader.leadingAgentItems(ax, ignoring: ours).map { item in
+            PillCandidate(width: item.w, orange: Pixels.count(Self.orange, in: bitmap, span: Span(lo: item.x, hi: item.x + item.w)))
         }
         return Observation(
             time: frame.finished,
@@ -92,7 +90,7 @@ final class Instrument {
             spacerAppKit: spacer?.appKitFrame,
             spacerAXLeft: spacerAX?.x,
             orangePixels: Pixels.count(Self.orange, in: bitmap, span: Self.rightOfNotch),
-            pillAX: pillAX
+            pill: PillIdentity.reading(pillCandidates, orangeMinimum: Self.pillOrange)
         )
     }
 

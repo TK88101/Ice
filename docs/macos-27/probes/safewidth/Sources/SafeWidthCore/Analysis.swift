@@ -106,16 +106,22 @@ public enum Analysis {
 
         let boundLoMin = observed.map { atLo($0) ?? -Double.infinity }.min() ?? -Double.infinity
         let boundHiMin = observed.compactMap(atHi).min() ?? Double.infinity
+        // A repeat that ended before reaching the bound only shows the bound lies
+        // above where it stopped, so its limit caps the margin as well.
+        let censoredMin = bound.compactMap(notObservedMaxTested).min() ?? Double.infinity
 
         if boundHiMin <= hideLoMin {
             return .fails(
                 reason: "the bound was reached at \(boundHiMin) but the target was not yet overflowed there"
             )
         }
-        if hideMax + tolerance <= boundLoMin {
-            return .holds(margin: boundLoMin - hideMax, gridScoped: observed.count < bound.count)
+        guard hideMax + tolerance <= boundLoMin else {
+            return .insufficient(reason: "the hide and bound brackets overlap")
         }
-        return .insufficient(reason: "the hide and bound brackets overlap")
+        guard hideMax + tolerance <= censoredMin else {
+            return .insufficient(reason: "a repeat's tested range ends too close to W_hide")
+        }
+        return .holds(margin: min(boundLoMin, censoredMin) - hideMax, gridScoped: observed.count < bound.count)
     }
 
     /// Combines one verdict per bound into a single headline: the first

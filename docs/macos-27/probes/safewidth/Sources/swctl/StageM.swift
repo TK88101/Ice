@@ -65,14 +65,14 @@ enum StageM {
         actors.world.overflowAttributed = true
         let holds = parameters.hold > 0 ? [parameters.hold] : []
         var jumpLegs: [[LegSample]] = []
-        for rep in 0..<parameters.repeats where actors.harmAt == nil && !actors.stopped {
+        for rep in 0..<parameters.repeats where actors.canExpand {
             jumpLegs.append(bisectAll(actors, parameters: parameters, holds: holds, rep: rep))
         }
         var upLegs: [[LegSample]] = []
         var downLegs: [[LegSample]] = []
         var incomplete: [String: Int] = [:]
-        for rep in 0..<parameters.repeats where actors.harmAt == nil && !actors.stopped {
-            let (up, down) = staircaseLoop(actors, parameters: parameters, rep: rep)
+        for rep in 0..<parameters.repeats where actors.canExpand {
+            let (up, down) = staircaseLoop(actors, parameters: parameters, holds: holds, rep: rep)
             upLegs.append(up)
             if let down {
                 downLegs.append(down)
@@ -81,7 +81,7 @@ enum StageM {
                 incomplete["down", default: 0] += 1
             }
         }
-        let toggleOK = (actors.harmAt == nil && !actors.stopped) ? parameters.candidate.map { toggle(actors, at: $0) } : nil
+        let toggleOK = actors.canExpand ? parameters.candidate.map { toggle(actors, at: $0, holds: holds) } : nil
         report(experiment, config: config, legs: ["jump": jumpLegs, "up": upLegs, "down": downLegs],
                toggleOK: toggleOK, incomplete: incomplete)
     }
@@ -92,7 +92,7 @@ enum StageM {
         var leg: [LegSample] = []
         for var transition in parameters.transitions {
             var inconclusive = false
-            while actors.harmAt == nil, !actors.stopped, let next = Planner.nextBisection(lo: transition.lo, hi: transition.hi, resolution: resolution) {
+            while actors.canExpand, let next = Planner.nextBisection(lo: transition.lo, hi: transition.hi, resolution: resolution) {
                 let label: [String: Any] = ["stage": "m", "path": "jump", "rep": rep, "transition": transition.name]
                 guard let record = actors.jump(next, reset: parameters.reset, holds: holds, label: label) else {
                     inconclusive = true
@@ -119,7 +119,7 @@ enum StageM {
                     break
                 }
             }
-            let converged = !inconclusive && !actors.stopped && actors.harmAt == nil
+            let converged = !inconclusive && actors.canExpand
             actors.experiment.evidence.record("bisect.result", [
                 "rep": rep, "transition": transition.name, "lo": transition.lo, "hi": transition.hi,
                 "converged": converged,
@@ -130,38 +130,35 @@ enum StageM {
     }
 
     /// Up from rest to past W_top, then back down to rest, one length at a time.
-    private static func staircaseLoop(_ actors: Actors, parameters: Parameters, rep: Int) -> ([LegSample], [LegSample]?) {
+    private static func staircaseLoop(_ actors: Actors, parameters: Parameters, holds: [Double], rep: Int) -> ([LegSample], [LegSample]?) {
         guard actors.reset(.full).ok else {
             return ([], nil)
         }
         let centres = parameters.transitions.map { ($0.lo + $0.hi) / 2 }
         let topHi = parameters.transitions.first { $0.name == "top" }?.hi ?? 1200
         let upLengths = Planner.staircase(from: 0, to: topHi + 48, coarse: 16, fine: 4, fineAround: centres, radius: 32)
-        let up = walk(actors, lengths: upLengths, label: ["stage": "m", "path": "up", "rep": rep])
+        let up = walk(actors, lengths: upLengths, holds: holds, label: ["stage": "m", "path": "up", "rep": rep])
         guard up.completed, let last = upLengths.last else {
             return (up.samples, nil)
         }
         let downLengths = Planner.staircase(from: last, to: 8, coarse: 16, fine: 4, fineAround: centres, radius: 32)
-        let down = walk(actors, lengths: downLengths, label: ["stage": "m", "path": "down", "rep": rep])
+        let down = walk(actors, lengths: downLengths, holds: holds, label: ["stage": "m", "path": "down", "rep": rep])
         actors.restNow()
         return (up.samples, down.samples)
     }
 
-    private static func walk(_ actors: Actors, lengths: [Double], label: [String: Any]) -> (samples: [LegSample], completed: Bool) {
+    private static func walk(_ actors: Actors, lengths: [Double], holds: [Double], label: [String: Any]) -> (samples: [LegSample], completed: Bool) {
         var samples: [LegSample] = []
         for length in lengths where length > 0 {
-            guard !actors.stopped, actors.harmAt == nil else {
+            actors.world.context = label.merging(["config": actors.config.name]) { $1 }
+            guard let record = actors.expand(length, holds: holds) else {
                 return (samples, false)
             }
-            actors.world.context = label.merging(["config": actors.config.name]) { $1 }
-            let outcome = actors.runner.probe(length: length, holds: [], pillAtStart: false)
-            let record = Actors.ProbeRecord(outcome: outcome, sample: actors.settledSample(outcome))
-            actors.note(record, length: length)
-            if case .harm = outcome {
+            if case .harm = record.outcome {
                 samples.append(LegSample(length: length, target: .ambiguous, harm: true))
                 return (samples, false)
             }
-            if case .stop = outcome {
+            if case .stop = record.outcome {
                 return (samples, false)
             }
             guard let sample = record.sample else {
@@ -173,15 +170,16 @@ enum StageM {
     }
 
     /// Ice's own pattern: the same items toggled between rest and one length.
-    private static func toggle(_ actors: Actors, at length: Double) -> Bool {
-        guard !actors.stopped, actors.reset(.full).ok else {
+    private static func toggle(_ actors: Actors, at length: Double, holds: [Double]) -> Bool {
+        guard actors.canExpand, actors.reset(.full).ok else {
             return false
         }
-        for cycle in 0..<toggleCycles where !actors.stopped {
+        for cycle in 0..<toggleCycles {
             actors.world.context = ["stage": "m", "path": "toggle", "cycle": cycle, "config": actors.config.name]
-            let expanded = actors.runner.probe(length: length, holds: [], pillAtStart: false)
-            actors.note(Actors.ProbeRecord(outcome: expanded, sample: actors.settledSample(expanded)), length: length)
-            let hidden = actors.settledSample(expanded)?.target == .overflowed
+            guard let expanded = actors.expand(length, holds: holds) else {
+                return false
+            }
+            let hidden = expanded.sample?.target == .overflowed
             let rest = actors.restNow()
             var visibleAtRest = false
             if case .visible = actors.settledSample(rest)?.target { visibleAtRest = true }
@@ -238,7 +236,7 @@ enum StageM {
         defer { actors.teardown() }
         actors.world.overflowAttributed = true
         for rep in 0..<repeats {
-            for width in widths where actors.harmAt == nil && !actors.stopped {
+            for width in widths where actors.canExpand {
                 for reset in [ResetKind.full, .light] {
                     let label: [String: Any] = ["stage": "o1", "path": "jump-\(reset.rawValue)", "rep": rep, "width": width]
                     let record = actors.jump(width, reset: reset, holds: Stages.holds, label: label)
@@ -249,13 +247,11 @@ enum StageM {
                 }
                 let steps = Planner.staircase(from: 0, to: width, coarse: 64, fine: 64, fineAround: [], radius: 0)
                 let label: [String: Any] = ["stage": "o1", "path": "step", "rep": rep, "width": width]
-                let walked = walk(actors, lengths: Array(steps.dropLast()), label: label)
+                let walked = walk(actors, lengths: Array(steps.dropLast()), holds: [], label: label)
                 if walked.completed {
                     actors.world.context = label.merging(["config": "mid"]) { $1 }
-                    let outcome = actors.runner.probe(length: width, holds: Stages.holds, pillAtStart: false)
-                    let record = Actors.ProbeRecord(outcome: outcome, sample: actors.settledSample(outcome))
-                    actors.note(record, length: width)
-                    print("O1 step \(Int(width)) rep \(rep): \(String(describing: record.sample?.target))")
+                    let record = actors.expand(width, holds: Stages.holds)
+                    print("O1 step \(Int(width)) rep \(rep): \(String(describing: record?.sample?.target))")
                 }
                 actors.restNow()
             }

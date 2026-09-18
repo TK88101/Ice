@@ -18,7 +18,7 @@ private func assessment(
     length: Double = 100,
     frontmostOK: Bool = true,
     helpersAlive: Bool = true,
-    pillAXPresent: Bool? = nil,
+    pillDrawn: Bool? = nil,
     sampleTag: Double? = nil
 ) -> Assessment {
     Assessment(
@@ -28,7 +28,7 @@ private func assessment(
         sample: sample(length, tag: sampleTag ?? time),
         frontmostOK: frontmostOK,
         helpersAlive: helpersAlive,
-        pillAXPresent: pillAXPresent
+        pillDrawn: pillDrawn
     )
 }
 
@@ -103,7 +103,7 @@ struct RunnerSettlingTests {
         let runner = Runner(world: world, config: config())
         let outcome = runner.probe(length: 100, pillAtStart: nil)
 
-        #expect(outcome == .settled(sample: sample(100, tag: 1), holds: []))
+        #expect(outcome == .settled(sample: sample(100, tag: 1), holds: [], latest: sample(100, tag: 1)))
         #expect(world.setSpacerLog == [100])
     }
 
@@ -119,7 +119,7 @@ struct RunnerSettlingTests {
         let runner = Runner(world: world, config: config(settleTimeout: 100))
         let outcome = runner.probe(length: 100, pillAtStart: nil)
 
-        #expect(outcome == .settled(sample: sample(100, tag: 2), holds: []))
+        #expect(outcome == .settled(sample: sample(100, tag: 2), holds: [], latest: sample(100, tag: 2)))
     }
 
     @Test("never settling by the settle timeout ends the probe unsettled with the spacer rested")
@@ -231,7 +231,7 @@ struct RunnerVoidTests {
 
     @Test("the pill toggling relative to pillAtStart voids the probe")
     func voidPillToggled() {
-        let world = FakeWorld(script: [assessment(time: 0, pillAXPresent: false)])
+        let world = FakeWorld(script: [assessment(time: 0, pillDrawn: false)])
         let runner = Runner(world: world, config: config())
         #expect(runner.probe(length: 100, pillAtStart: true) == .void(.pillToggled))
         #expect(world.setSpacerLog == [100, nil])
@@ -247,7 +247,7 @@ struct RunnerVoidTests {
 
     @Test("helperDied takes precedence over pillToggled when both are true")
     func voidPrecedenceHelpersBeforePill() {
-        let world = FakeWorld(script: [assessment(time: 0, helpersAlive: false, pillAXPresent: false)])
+        let world = FakeWorld(script: [assessment(time: 0, helpersAlive: false, pillDrawn: false)])
         let runner = Runner(world: world, config: config())
         #expect(runner.probe(length: 100, pillAtStart: true) == .void(.helperDied))
         #expect(world.setSpacerLog == [100, nil])
@@ -257,7 +257,7 @@ struct RunnerVoidTests {
     func pillCheckSkippedWhenNil() {
         // settleTimeout: 0 forces a deterministic .unsettled outcome on the very first
         // capture, proving the mismatched pill reading never voided the probe.
-        let world = FakeWorld(script: [assessment(time: 0, pillAXPresent: false)])
+        let world = FakeWorld(script: [assessment(time: 0, pillDrawn: false)])
         let runner = Runner(world: world, config: config(settleTimeout: 0))
         #expect(runner.probe(length: 100, pillAtStart: nil) == .unsettled(sample: sample(100, tag: 0)))
     }
@@ -265,19 +265,35 @@ struct RunnerVoidTests {
     @Test("a non-matching pill reading proceeds normally to settle when pillAtStart matches")
     func pillCheckPassesWhenReadingMatchesStart() {
         let world = FakeWorld(script: [
-            assessment(time: 0, pillAXPresent: true),
-            assessment(time: 1, pillAXPresent: true),
+            assessment(time: 0, pillDrawn: true),
+            assessment(time: 1, pillDrawn: true),
         ])
         let runner = Runner(world: world, config: config())
         #expect(
             runner.probe(length: 100, pillAtStart: true)
-                == .settled(sample: sample(100, tag: 1), holds: [])
+                == .settled(sample: sample(100, tag: 1), holds: [], latest: sample(100, tag: 1))
         )
     }
 
-    @Test("a nil AX pill reading voids the probe when pillAtStart expects a non-nil value")
+    @Test("a pill the guard sees hidden, never drawn, is reported as harm, not voided")
+    func hiddenPillReachesTheGuardsVerdict() {
+        let world = FakeWorld(script: [
+            assessment(time: 0, decision: .suspect(reasons: [.pillHidden]), pillDrawn: false),
+            assessment(time: 1, decision: .restore(reasons: [.pillHidden]), pillDrawn: false),
+            assessment(time: 2, pillDrawn: false),
+        ])
+        let runner = Runner(world: world, config: config())
+        guard case .harm(let length, let reasons, _) = runner.probe(length: 100, pillAtStart: false) else {
+            Issue.record("expected harm")
+            return
+        }
+        #expect(length == 100)
+        #expect(reasons == [.pillHidden])
+    }
+
+    @Test("a nil pill reading voids the probe when pillAtStart expects a non-nil value")
     func pillCheckVoidsOnNilReadingAgainstNonNilStart() {
-        let world = FakeWorld(script: [assessment(time: 0, pillAXPresent: nil)])
+        let world = FakeWorld(script: [assessment(time: 0, pillDrawn: nil)])
         let runner = Runner(world: world, config: config())
         #expect(runner.probe(length: 100, pillAtStart: false) == .void(.pillToggled))
     }
@@ -325,7 +341,7 @@ struct RunnerCaptureFailureTests {
         let runner = Runner(world: world, config: config(settleTimeout: 100, maxCaptureFailures: 3))
         let outcome = runner.probe(length: 100, pillAtStart: nil)
 
-        #expect(outcome == .settled(sample: sample(100, tag: 5), holds: []))
+        #expect(outcome == .settled(sample: sample(100, tag: 5), holds: [], latest: sample(100, tag: 5)))
     }
 
     @Test("capture failures reaching the limit rest the spacer and report captureFailure")
@@ -367,7 +383,8 @@ struct RunnerHoldTests {
         #expect(
             outcome == .settled(
                 sample: sample(100, tag: 1),
-                holds: [sample(100, tag: 1), sample(100, tag: 2), sample(100, tag: 2)]
+                holds: [sample(100, tag: 1), sample(100, tag: 2), sample(100, tag: 2)],
+                latest: sample(100, tag: 2)
             )
         )
     }
@@ -400,7 +417,8 @@ struct RunnerHoldTests {
         #expect(
             outcome == .settled(
                 sample: sample(100, tag: 1),
-                holds: [sample(100, tag: 1), sample(100, tag: 3)]
+                holds: [sample(100, tag: 1), sample(100, tag: 3)],
+                latest: sample(100, tag: 3)
             )
         )
     }
@@ -420,7 +438,8 @@ struct RunnerHoldTests {
         #expect(
             outcome == .settled(
                 sample: sample(100, tag: 1),
-                holds: [sample(100, tag: 0), sample(100, tag: 1)]
+                holds: [sample(100, tag: 0), sample(100, tag: 1)],
+                latest: sample(100, tag: 1)
             )
         )
     }
@@ -442,9 +461,26 @@ struct RunnerHoldTests {
         let outcome = runner.probe(length: 100, holds: [4], pillAtStart: nil)
 
         #expect(
-            outcome == .settled(sample: sample(100, tag: 1), holds: [sample(100, tag: 4)])
+            outcome == .settled(sample: sample(100, tag: 1), holds: [sample(100, tag: 4)], latest: sample(100, tag: 4))
         )
         #expect(world.setSpacerLog == [100])
+    }
+
+    @Test("a hold that expires before settling leaves the settled capture as the latest observation")
+    func holdBeforeSettlingKeepsSettledAsLatest() {
+        let world = FakeWorld(script: [
+            assessment(time: 0),
+            assessment(time: 0.5),
+            assessment(time: 1),
+        ])
+        let runner = Runner(world: world, config: config())
+        let outcome = runner.probe(length: 100, holds: [0.25], pillAtStart: nil)
+
+        // The hold is taken mid-transition at t=0.5; the probe settles at t=1.
+        // Characterising it by the hold would read a transient state.
+        #expect(
+            outcome == .settled(sample: sample(100, tag: 1), holds: [sample(100, tag: 0.5)], latest: sample(100, tag: 1))
+        )
     }
 
     @Test("a suspect capture is still fed to the settle detector and can restart the run")
@@ -464,7 +500,7 @@ struct RunnerHoldTests {
         let runner = Runner(world: world, config: config())
         let outcome = runner.probe(length: 100, pillAtStart: nil)
 
-        #expect(outcome == .settled(sample: sample(100, tag: 3), holds: []))
+        #expect(outcome == .settled(sample: sample(100, tag: 3), holds: [], latest: sample(100, tag: 3)))
     }
 }
 
@@ -481,7 +517,7 @@ struct RunnerRestTests {
         let runner = Runner(world: world, config: config())
         let outcome = runner.rest(pillAtStart: nil)
 
-        #expect(outcome == .settled(sample: sample(0, tag: 1), holds: []))
+        #expect(outcome == .settled(sample: sample(0, tag: 1), holds: [], latest: sample(0, tag: 1)))
         #expect(world.setSpacerLog == [nil])
         #expect(world.assessLengthLog == [nil, nil])
     }

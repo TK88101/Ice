@@ -126,6 +126,30 @@ struct VerdictTests {
         #expect(verdict == .holds(margin: 20, gridScoped: true))
     }
 
+    // MARK: A repeat that ended before reaching the bound still limits the margin.
+    // Review round 4: the observed repeats alone used to decide it, so a leg cut
+    // short just above W_hide could not pull the margin down.
+
+    @Test("a repeat cut short just above W_hide makes a mixed verdict insufficient")
+    func censoredRepeatTooCloseIsInsufficient() {
+        let verdict = Analysis.verdict(
+            hide: [.at(lo: 16, hi: 20), .at(lo: 16, hi: 20)],
+            bound: [.at(lo: 640, hi: 864), .notObserved(maxTested: 20)],
+            tolerance: 4
+        )
+        #expect(verdict == .insufficient(reason: "a repeat's tested range ends too close to W_hide"))
+    }
+
+    @Test("a censored repeat below every observed bound sets the margin")
+    func censoredRepeatBelowObservedSetsMargin() {
+        let verdict = Analysis.verdict(
+            hide: [.at(lo: 16, hi: 20), .at(lo: 16, hi: 20)],
+            bound: [.at(lo: 640, hi: 864), .notObserved(maxTested: 300)],
+            tolerance: 4
+        )
+        #expect(verdict == .holds(margin: 280, gridScoped: true))
+    }
+
     // MARK: Finding 3 (P1) — repeat aggregations (min vs max) were untested.
     // Each case below is built so swapping the named aggregation's min/max
     // flips the verdict, catching the corresponding mutant.

@@ -17,7 +17,7 @@ enum StageScan {
         var samples: [LegSample] = []
         var attributed: Bool?
         var voids = 0
-        for length in grid where !actors.stopped {
+        for length in grid where actors.canExpand {
             let label: [String: Any] = ["stage": "scan", "path": "jump"]
             guard let record = actors.jump(length, reset: .full, holds: [], label: label) else {
                 voids += 1
@@ -65,9 +65,15 @@ enum StageScan {
     private static func attribute(_ actors: Actors, at length: Double) -> Bool {
         let world = actors.world
         let evidence = actors.experiment.evidence
-        guard actors.reset(.full).ok, case .settled = actors.runner.probe(length: length, holds: [], pillAtStart: false),
+        guard actors.reset(.full).ok else {
+            evidence.record("attribution", ["length": length, "result": "no verified rest to start from"])
+            return false
+        }
+        world.context = ["stage": "scan", "path": "attribution", "config": actors.config.name]
+        guard let first = actors.expand(length, holds: []), case .settled = first.outcome,
               let observation = world.last, let chevronItem = world.newAgentItems(observation).first else {
             evidence.record("attribution", ["length": length, "result": "could not reproduce the overflow"])
+            actors.restNow()
             return false
         }
         let template = Calibrate.template(id: "chevron", x: chevronItem.x, w: chevronItem.w, from: observation.frame.bitmap)
@@ -76,7 +82,11 @@ enum StageScan {
         if validated {
             actors.instrument.setChevronTemplate(template)
         }
-        _ = actors.runner.probe(length: length, holds: [], pillAtStart: false)
+        guard let again = actors.expand(length, holds: []), case .settled = again.outcome else {
+            evidence.record("attribution", ["length": length, "result": "the guard ended the attribution"])
+            actors.restNow()
+            return false
+        }
         actors.quitTargetOnly()
         Session.spin(1.0)
         let after = actors.instrument.observe(spacer: actors.spacer, extraPids: world.helperPids)
@@ -101,9 +111,13 @@ enum StageScan {
         let probe = actors.experiment.instrument(markers: [:])
         probe.setChevronTemplate(template)
         for cycle in 0..<validationCycles {
-            _ = actors.runner.rest(pillAtStart: false)
+            guard case .settled = actors.restNow() else {
+                return false
+            }
             let atRest = probe.observe(spacer: actors.spacer, extraPids: [])?.chevron
-            _ = actors.runner.probe(length: length, holds: [], pillAtStart: false)
+            guard let expanded = actors.expand(length, holds: []), case .settled = expanded.outcome else {
+                return false
+            }
             let hidden = probe.observe(spacer: actors.spacer, extraPids: [])?.chevron
             actors.experiment.evidence.record("chevron.validate", [
                 "cycle": cycle, "atRest": atRest.map(LiveWorld.describe) ?? "?", "hidden": hidden.map(LiveWorld.describe) ?? "?",

@@ -13,7 +13,9 @@ public struct Assessment: Equatable, Sendable {
     public var sample: LegSample
     public var frontmostOK: Bool
     public var helpersAlive: Bool
-    public var pillAXPresent: Bool?
+    /// Whether the microphone pill is drawn on screen: its toggling voids a probe.
+    /// Whether the microphone pill is drawn on screen: its toggling voids a probe.
+    public var pillDrawn: Bool?
 
     public init(
         time: Double,
@@ -22,7 +24,7 @@ public struct Assessment: Equatable, Sendable {
         sample: LegSample,
         frontmostOK: Bool,
         helpersAlive: Bool,
-        pillAXPresent: Bool?
+        pillDrawn: Bool?
     ) {
         self.time = time
         self.decision = decision
@@ -30,7 +32,7 @@ public struct Assessment: Equatable, Sendable {
         self.sample = sample
         self.frontmostOK = frontmostOK
         self.helpersAlive = helpersAlive
-        self.pillAXPresent = pillAXPresent
+        self.pillDrawn = pillDrawn
     }
 }
 
@@ -91,8 +93,10 @@ public enum VoidReason: Equatable, Sendable {
 public enum ProbeOutcome: Equatable, Sendable {
     /// The layout settled. `sample` is the first settled capture's sample;
     /// `holds` has one entry per requested hold time, in ascending time order
-    /// (not necessarily the order `holds` was passed to `probe` in).
-    case settled(sample: LegSample, holds: [LegSample])
+    /// (not necessarily the order `holds` was passed to `probe` in). `latest` is
+    /// the capture the probe ended on: whichever of `sample` and the last hold
+    /// was taken later — a hold can expire before the layout settles.
+    case settled(sample: LegSample, holds: [LegSample], latest: LegSample)
     /// The guard saw harm and the spacer was put back to rest. `restored` says
     /// whether a clean capture confirmed the rest within `restoreTimeout`.
     case harm(length: Double?, reasons: [GuardFinding], restored: Bool)
@@ -184,7 +188,7 @@ public final class Runner {
                 restIfNeeded()
                 return .void(.helperDied)
             }
-            if let pillAtStart, a.pillAXPresent != pillAtStart {
+            if let pillAtStart, a.pillDrawn != pillAtStart {
                 restIfNeeded()
                 return .void(.pillToggled)
             }
@@ -200,7 +204,9 @@ public final class Runner {
             }
 
             if let settledSample, nextHoldIndex >= sortedHolds.count {
-                return .settled(sample: settledSample, holds: holdSamples)
+                // This is the first capture on which both have happened, so it is
+                // the settle capture or the last hold's, whichever came later.
+                return .settled(sample: settledSample, holds: holdSamples, latest: a.sample)
             }
 
             if settledSample == nil, state == .timedOut {
