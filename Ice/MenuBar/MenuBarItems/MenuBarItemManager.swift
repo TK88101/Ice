@@ -5,6 +5,7 @@
 
 import Cocoa
 import Combine
+import IceCore
 import OSLog
 import Semaphore
 
@@ -98,9 +99,10 @@ extension MenuBarItemManager {
         /// Stored task for the current cache operation.
         private var cacheTask: Task<Void, Never>?
 
-        /// A list of the menu bar item window identifiers at the time
-        /// of the previous cache.
-        private(set) var cachedItemWindowIDs = [CGWindowID]()
+        /// Decides when a cache pass is needed and when a change of fortune is
+        /// worth logging. Lives in `IceCore` so it can be tested without a menu
+        /// bar; see `MenuBarItemCacheStateTests` for the rules it enforces.
+        private var cacheState = MenuBarItemCacheState()
 
         /// Runs the given async closure as a task and waits for it to
         /// complete before returning.
@@ -114,14 +116,34 @@ extension MenuBarItemManager {
             await task.value
         }
 
-        /// Updates the list of cached menu bar item window identifiers.
-        func updateCachedItemWindowIDs(_ itemWindowIDs: [CGWindowID]) {
-            cachedItemWindowIDs = itemWindowIDs
+        /// Records the window identifiers of a cache that succeeded.
+        ///
+        /// - Returns: Whether this call recovered from a previously failed
+        ///   attempt, so that the recovery can be reported.
+        @discardableResult
+        func commitCachedItemWindowIDs(_ itemWindowIDs: [CGWindowID]) -> Bool {
+            cacheState.commit(for: itemWindowIDs) == .recovered
         }
 
-        /// Clears the list of cached menu bar item window identifiers.
-        func clearCachedItemWindowIDs() {
-            cachedItemWindowIDs.removeAll()
+        /// Discards the cached window identifiers so that the next attempt
+        /// runs even if the menu bar hasn't changed.
+        func invalidateCache() {
+            cacheState.invalidate()
+        }
+
+        /// Records that a cache attempt failed, discarding its window
+        /// identifiers so that the next attempt isn't skipped.
+        ///
+        /// - Returns: Whether this is the first report of the current failure.
+        @discardableResult
+        func recordCacheFailure() -> Bool {
+            cacheState.recordFailure() == .report
+        }
+
+        /// Returns a Boolean value that indicates whether a cache pass should
+        /// run for the given window identifiers.
+        func shouldCacheItems(for itemWindowIDs: [CGWindowID]) -> Bool {
+            cacheState.shouldCacheItems(for: itemWindowIDs)
         }
     }
 
@@ -321,7 +343,7 @@ extension MenuBarItemManager {
 
         if context.shouldClearCachedItemWindowIDs {
             logger.info("Clearing cached menu bar item windowIDs")
-            await cacheActor.clearCachedItemWindowIDs() // Ensure next cache isn't skipped.
+            await cacheActor.invalidateCache() // Ensure next cache isn't skipped.
         }
 
         guard itemCache != context.cache else {
@@ -353,16 +375,48 @@ extension MenuBarItemManager {
             let displayID = Bridging.getActiveMenuBarDisplayID()
             var items = await MenuBarItem.getMenuBarItems(option: .activeSpace)
 
-            let itemWindowIDs = currentItemWindowIDs ?? items.reversed().map { $0.windowID }
-            await cacheActor.updateCachedItemWindowIDs(itemWindowIDs)
-
-            guard let controlItems = ControlItemPair(items: &items) else {
-                // ???: Is clearing the cache the best thing to do here?
-                logger.warning("Missing control item for hidden section, clearing menu bar item cache")
-                itemCache = ItemCache(displayID: nil)
+            // `runCacheTask` cancels the previous pass, but nothing below checks for
+            // cancellation, so a superseded pass used to run to completion and write
+            // its stale observations over the newer pass's. Gathering the items is by
+            // far the longest suspension -- on macOS 26 it is one synchronous XPC round
+            // trip per window -- so this is where a pass learns it has been replaced,
+            // and it must bail out before touching any shared state.
+            guard !Task.isCancelled else {
+                logger.debug("Discarding superseded menu bar item cache pass")
                 return
             }
 
+            let itemWindowIDs = currentItemWindowIDs ?? items.reversed().map { $0.windowID }
+
+            guard let controlItems = ControlItemPair(items: &items) else {
+                // ???: Is clearing the cache the best thing to do here?
+                let emptyCache = ItemCache(displayID: nil)
+                if itemCache != emptyCache {
+                    // `itemCache` is `@Published`, which notifies unconditionally. Once
+                    // retries are no longer suppressed this path runs on every pass, so
+                    // assigning an already-empty cache would churn every SwiftUI view
+                    // that observes this manager, several times a minute, forever.
+                    itemCache = emptyCache
+                }
+                // Do not record the window identifiers of a failed pass. Doing so
+                // convinces `cacheItemsIfNeeded()` that this window list has already
+                // been cached, which disables every retry until the menu bar itself
+                // changes -- and silences the log along with it.
+                if await cacheActor.recordCacheFailure() {
+                    logger.warning("Missing control item for hidden section, clearing menu bar item cache")
+                } else {
+                    // Not `debug`: the default log configuration drops debug messages, so
+                    // a persistent failure would produce exactly the same log as the old
+                    // latched behavior and there would be no way to tell retries apart
+                    // from no retries at all.
+                    logger.info("Still missing control item for hidden section, will retry")
+                }
+                return
+            }
+
+            if await cacheActor.commitCachedItemWindowIDs(itemWindowIDs) {
+                logger.info("Found control item for hidden section again, resuming menu bar item cache")
+            }
             await enforceControlItemOrder(controlItems: controlItems)
             await uncheckedCacheItems(items: items, controlItems: controlItems, displayID: displayID)
         }
@@ -376,7 +430,7 @@ extension MenuBarItemManager {
     /// arranging them into valid positions if needed.
     func cacheItemsIfNeeded() async {
         let itemWindowIDs = Bridging.getMenuBarWindowList(option: [.itemsOnly, .activeSpace])
-        if await cacheActor.cachedItemWindowIDs != itemWindowIDs {
+        if await cacheActor.shouldCacheItems(for: itemWindowIDs) {
             await cacheItemsRegardless(itemWindowIDs)
         }
     }
