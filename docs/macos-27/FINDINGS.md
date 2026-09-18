@@ -142,7 +142,54 @@ divided by two", which was a numeric coincidence that briefly passed for an
 explanation.
 
 So squeeze-out hiding is alive on macOS 27 and Ice's magic constant is the wrong
-value for it. That is as far as the evidence goes; see Open below.
+value for it. **How wrong, measured:** see "The safe width" below.
+
+### The safe width
+
+**MEASURED** (`docs/macos-27/probes/safewidth`, runs of 2026-09-18; raw evidence
+in `~/IceReverse-evidence/`). Sacrificial helpers only: a 12 pt target left of the
+spacer, a 12 pt protected proxy right of it, and our own frontmost app supplying
+the menus. Pixels decide; AX only explains.
+
+With the spacer resting as Ice rests its own control item, on this display, with
+these 15 user items:
+
+| quantity | bracket |
+|---|---|
+| smallest length that overflows the target | (16, 20] |
+| smallest length at which the spacer stops taking room from the bar | (652, 656] |
+| smallest length above that at which the target is visible again | (640, 864] |
+| smallest length at which the spacer's AppKit width stops growing (≈5016) | (2000, 5000] |
+| smallest length that costs any item right of the spacer its visibility | **not observed up to 10 000** |
+
+So `20 < 640`: the interval exists, about **[20, 640] pt**, with ≈ 620 pt of
+margin. It is the same for a frontmost app whose menus end at 72, 440 or 758 pt,
+and the same on a jump, an upward sweep and a downward sweep; 300 pt hid the
+target on five consecutive toggles of the same items in every config. Hiding
+never cost a user item its place: the guard never had to restore anything and
+the watchdog never fired. It did stop twice, both times while macOS was sliding
+the menu bar through a Space switch, which is the guard refusing to certify a bar
+it cannot read rather than anything the spacer did.
+
+Three things bound that interval and they are **not** the same event: the
+spacer's left edge never plateaus (it returns to its rest x while its window
+grows off-screen right), the AppKit width saturates at 5016, and the room is
+given back somewhere in (640, 864]. Between ≈ 672 and ≈ 832 the target is
+invisible with **no** chevron — neither overflowed nor visible; that region is
+not hiding and is not safe to use.
+
+**At 10 000 — Ice's `Lengths.expanded` — the target is visible.** The constant is
+above the point where the spacer gives the room back, so on macOS 27 it hides
+nothing. A value inside [20, 640] does.
+
+These numbers are for a spacer resting the way Ice rests its own control item
+(`variableLength` plus the chevron image), with a 12 pt target and a 12 pt
+protected item beside it. That is as much as the ≈ 115 pt free right of the notch
+holds: with 16 pt items, or whenever the microphone pill is in the bar (≈ 37 pt),
+the target is already overflowed at rest and the spacer has to rest narrower.
+
+Scope, stated plainly: one display, one set of 15 user items, one afternoon, and
+the lengths on the tested grid.
 
 ### The move primitive
 
@@ -171,13 +218,17 @@ error, not a missing capability.
 
 ## Open
 
-- **No characterized safe width for hiding.** Delivery needs
-  `min width that overflows the target < width that harms a protected item, and < width at which the spacer overflows itself`,
-  and that interval must exist across frontmost-app menu widths, displays, notch,
-  multiple monitors, and both sweep directions. Until then hiding is not
-  shippable. The sweep also showed order dependence — 600pt hid everything when
-  approached from 1pt and nothing when started at 600 — so the measurement
-  protocol needs fixing before the number is trusted.
+- **The safe width is characterized on this machine only.** The interval above
+  holds for three frontmost menu widths and both sweep directions on one display
+  with one set of user items. Untested: other displays and notch geometries,
+  multiple monitors, a different number of user items (which is what sets the
+  room), the no-divider control-item style, two spacers expanded at once, and app
+  switching while the spacer is expanded — the last is the likeliest way a shipped
+  version would meet a room it did not measure.
+- **AX frames cannot carry this.** They lag a jump by ≈ 0.1 s and, once items are
+  overflowed, describe the same visual state differently depending on the path
+  taken to it (see Refuted). Anything Ice decides from geometry has to come from
+  somewhere else, or be confirmed against pixels.
 - **No atomic target binding.** Between reading a frame and pressing the mouse,
   a relayout, a frontmost-menu change, an overflow change or a display switch can
   put a different real icon under that coordinate. Production needs: re-read
@@ -209,6 +260,8 @@ and each cost a round of work.
 | A real third-party item must be moved to test the mover | Two helpers with separate bundles and PIDs answer it without touching the user's menu bar. |
 | `persistenceID` / `accessibilityToken` / drag handlers solve identity and movement | They belong to Control Center's own implementation, behind entitlements. |
 | Enumeration is closed forever | Closed *today*, for *this* interface. Not a permanence proof. |
+| Expanding the spacer is order-dependent: 600pt hid everything from 1pt and nothing when set directly | The run that "hid nothing" saved a screenshot of itself: `«` and no probes — it *had* hidden everything. The claim came from AX and AppKit frames that had not caught up. A replication of that exact topology (`o0`, N=3 per path) finds the pixels identical on both paths at every hold from 0.25 s to 8 s, while AX still describes the two paths differently. |
+| An item's AX frame says where it is | For overflowed items it does not. Same pixels, two AX stories; one capture caught the spacer reported at its old x with its new width. |
 
 ---
 
@@ -224,5 +277,17 @@ overflow detector exists. Persistence, if it happens at all, stores *desired*
 section against a stable item identity and never overwrites what the user just
 dragged — and only after identity across restarts has been demonstrated.
 
-Next step is the safe-width characterization, with a measurement protocol that
-survives its own order dependence.
+The safe width now exists as a measured interval rather than a hope, and the
+overflow detector has a working shape: **the target is absent from the strip and
+a new `MenuBarAgent` item is drawing a glyph**. Both came out of
+`probes/safewidth`; both are pixel-based, because AX cannot describe an
+overflowed item's position.
+
+Next steps, in the order the evidence argues for:
+
+1. Replace `Lengths.expanded` with a width inside the measured interval, not
+   10 000 — at 10 000 nothing hides.
+2. Decide what Ice does when the room is smaller than its own rest width, which
+   is the case on this machine.
+3. Measure what happens when the frontmost app changes while the spacer is
+   expanded: the room changes under a fixed width, and nothing here covers it.

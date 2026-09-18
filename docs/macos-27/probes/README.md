@@ -40,3 +40,35 @@ To rebuild the helper apps, see the `build()` shell function reconstructed from
 `helper.swift`: compile into `<Name>.app/Contents/MacOS/<Name>`, add an
 `Info.plist` with a unique `CFBundleIdentifier` ending in `.target` or `.anchor`
 and `LSUIElement` true, then `codesign --force --sign -`.
+
+## safewidth/
+
+A SwiftPM package rather than a one-shot file, because this measurement needs a
+guard that protects the user's items while it runs. `SafeWidthCore` is pure logic
+with its own tests (IceCore's rule: no AppKit, AX, CoreGraphics or ImageIO);
+`swctl` is the only part that touches the screen; `swhelper` and `swfront` are the
+sacrificial menu bar items and the frontmost app whose menu width is the
+experiment's variable.
+
+```sh
+./safewidth/build.sh /tmp/safewidth        # builds outside ~/Documents, signs the apps
+/tmp/safewidth/apps/swctl b0 --git <rev>   # baseline with nothing of ours in the bar
+/tmp/safewidth/apps/swctl calibrate --b0 ~/IceReverse-evidence/<run>
+/tmp/safewidth/apps/swctl c    --config mid  --apps … --calibration …   # instrument + null control
+/tmp/safewidth/apps/swctl o0   --apps … --calibration …                 # order-dependence replication
+/tmp/safewidth/apps/swctl scan --config mid  --apps … --calibration …   # coarse jump scan -> brackets
+/tmp/safewidth/apps/swctl o1   --widths … --apps … --calibration …      # protocol check at the transitions
+/tmp/safewidth/apps/swctl m    --config mid --brackets hide:16:24,… --apps … --calibration …
+```
+
+Results and their run ids: `safewidth/RESULTS.md`. Raw evidence stays in
+`~/IceReverse-evidence/<run id>/` — the strips show which apps are installed, so
+they are deliberately not committed.
+
+Two things this package learned the hard way, both in `RESULTS.md`:
+
+- The menu bar is translucent over **the window under it**, not just the
+  wallpaper, and the wallpaper changes during the day. A reference capture is
+  only valid for the run that took it, with the same app in front.
+- An app with no windows cannot hold the front once anything else launches, so
+  `swfront` keeps a small window in a corner.
