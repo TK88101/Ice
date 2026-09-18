@@ -421,6 +421,41 @@ accepted by Codex. Two P1 items introduced by v3, both **adopted**:
 
 No item left in dispute. Plan final.
 
+### Round 4 — Codex after the runs (code review of the four commits + claims against the raw evidence)
+
+Run after Codex's quota reset: `codex review --base safewidth-review-base`
+(58afb9c..f6d1f02) and a `codex exec` pass reading `~/IceReverse-evidence/`.
+Every item was checked against the code or the JSONL before a ruling.
+
+| source | item | ruling |
+|---|---|---|
+| code P1 | attribution and template validation expand and rest outside the latch | **adopt, extended** → every expansion goes through `Actors.expand` (refuses once stopped or fired, latches what the guard says); also O0's discarded rest outcome, and the attribution failure path that left `S` expanded |
+| code P1 | a light reset can latch a stop, then `jump` expands anyway | **adopt** → `jump` re-checks `canExpand` after its resets |
+| code P1 | the pill rule needs the pill's orange to identify it, so a pushed-out pill is never seen | **adopt the finding, reject the remedy** → Codex proposed carrying a colour-confirmed identity across captures; that cannot see a pill that arrives already squeezed out, which is the case the rule exists for. Instead the chevron is identified by its AX width (17.5 pt, every reading) and anything else leading is the pill; a hidden pill no longer voids as `pillToggled` (`pillAXPresent` → `pillDrawn`), so the guard's persistence decides |
+| code P2 | a censored repeat's `maxTested` is ignored once any repeat observed the bound | **adopt** → it caps the margin; two tests, one Codex's own example |
+| code P2 | hold samples are discarded; the staircase never holds | **adopt** → a probe with holds is characterised by the state after the longest; M passes `--hold` to staircase and toggle. Latent: no reported run used `--hold` |
+| claims | "the second stop latched" | **adopt** → neither latched; 54 expansions between, 6 after (to 10 000), all guard-clean |
+| claims | `W_edge` and `W_selfov` "the same event" | **modify** → the two AX readings differ by path (staircase edge stays at 368; jump x back at 1012), so "same event" is INFERRED — but the pixels add a path-independent transition at (652, 656] that Codex did not raise, now in the tables |
+| claims | O1 "N = 3" | **adopt** → N = 2 at 632–872, 872 step N = 1 (a failed reset), one 32 pt step void |
+| claims | "guard restore 1.27 s" | **adopt** → a return to rest from 8 pt; the guard did not fire |
+| claims | FINDINGS lists `W_selfov` without its AX qualifier | **adopt** → a "read from" column |
+| claims | "`W_top` cannot be bisected; ≈ 672–832" | **adopt** → the staircases bracket it at (836, 852] up / (848, 864] down; the state between starts at 656 |
+| claims | "every reported run rests at Ice's rest" | **adopt** → scoped to O1, scan and M |
+| claims | "Ice's constant hides nothing" | **modify** → MEASURED for our spacer, INFERRED for Ice; kept as the headline |
+
+The rejected remedy goes back to Codex with the fix diff.
+
+### Round 5 — Codex on the round-4 fixes
+
+`codex review --uncommitted` plus a `codex exec` re-review of the rejected remedy.
+
+| item | ruling |
+|---|---|
+| debate: the pill remedy | **Codex concedes**: a sticky colour-confirmed identity cannot cover a pill that is squeezed out on arrival; no counterexample where the width rule fails and its remedy succeeds. No other round-4 ruling disputed |
+| review P2: `holds.last` is not always the latest observation — a short hold can expire mid-transition, before settling | **adopt** → `ProbeOutcome.settled` carries `latest`, the capture the probe ended on (the later of the settled capture and the last hold); `Actors` characterises by it; a test for a hold that expires before settling |
+
+No item left in dispute.
+
 ---
 
 ## Deviations (ledger, written as they happen)
@@ -483,6 +518,20 @@ Format: trigger → conservative option taken → reason.
     verdict table that hid narrow's partial up leg → both corrected against the
     raw JSONL, and `W_selfov` is now labelled AX-derived → this is the same
     failure mode the whole Refuted table is made of.
+13. Codex's post-run review (appendix, round 4) found entry 10 was not true:
+    the latch had gaps — attribution and validation bypassed it, and a light
+    reset could latch a stop that the jump then ignored — and the pill wiring of
+    entry 9 was inert a second time, because identifying the pill by its orange
+    excludes exactly a pill that has been pushed out → one latched `expand` for
+    every stage, and the chevron identified by width instead of the pill by
+    colour → two rounds of "fixed" each needed another review; a safety claim is
+    only as good as the last reviewer's read of the code.
+14. The same review's claims pass found RESULTS still stronger than the JSONL in
+    eight places, and entry 12 itself misplaced the two `stop` decisions: they
+    were in the **reported** mid scan (`20260918-202525-scan-mid`), not a
+    superseded one → every claim re-checked against the JSONL before being
+    rewritten; the staircases turned out to bracket `W_top` and to show a
+    path-independent pixel transition at (652, 656] the tables had left out.
 
 ## Open thread for the next session
 
@@ -490,11 +539,12 @@ Format: trigger → conservative option taken → reason.
   exceed the room right of the notch, expanding back across the notch. The
   attribution check says Ice's squeeze-out hiding *is* that fold, so a fixed Ice
   raises the chevron every time it hides. Written into FINDINGS.
-- The one measured exception is the 672–832 pt region (no chevron, target drawn
-  nowhere, AX still claims an on-bar x). Mechanism unknown. Next experiment, if
-  it is wanted: is that state clickable, does it survive an app switch, does it
-  come back reliably, and does it move with the number of user items?
-- A Codex review was deferred to 23:40 (its 5-hour quota) and runs in the
-  background; note that `codex review --uncommitted` will find nothing now that
-  the work is committed — the second, targeted `codex exec` pass is the one that
-  matters.
+- The one measured exception is the 656–836 pt region (848 coming down: no
+  chevron, target drawn nowhere, AX still claims an on-bar x). Mechanism
+  unknown. Next experiment, if it is wanted: is that state clickable, does it
+  survive an app switch, does it come back reliably, and does it move with the
+  number of user items?
+- Codex's post-run review is done and ruled (appendix, round 4). The latch and
+  pill fixes are unit-tested in `SafeWidthCore` but have not run live; the
+  first live run should confirm the pill rule on a real pill (its AX width and
+  where AX puts it when pushed out are unrecorded).

@@ -15,10 +15,12 @@ cites its run.
 left to right, all ours; then the user's items, which are only ever read.
 `F` is our frontmost app, whose menu width is the config.
 
-**Every run reported below rests `S` at Ice's own chevron rest**
-(`variableLength` plus the chevron image; AppKit reports 24–32 pt): their
-`rest.mode` records say `ice`, with no fallback. That is only true because `T`
-and `P` are 12 pt wide. With 16 pt helpers — and again whenever the microphone
+**Every run that contributes a number to the O1, scan and M tables rests `S` at
+Ice's own chevron rest** (`variableLength` plus the chevron image; AppKit
+reports 24–32 pt): their `rest.mode` records say `ice`, with no fallback. (The
+instrument run below did not — it rested at a fixed 12 pt — and O0 rebuilt the
+original topology, which has no rest mode at all.) Ice's rest fits only because
+`T` and `P` are 12 pt wide. With 16 pt helpers — and again whenever the microphone
 pill was in the bar, which costs ≈ 37 pt — Ice's rest did **not** fit: `T` came up
 already overflowed and the runs of 19:43–19:51 fell back to a fixed 12 pt rest
 (`rest.mode` `fixed`, e.g. `20260918-194747-c-mid`). None of those runs
@@ -30,7 +32,7 @@ own rest plus two 12 pt items and no more.
 | measurement | value |
 |---|---|
 | one sample (capture + AX + all detections) | median 78 ms, max 124 ms ≈ 12 Hz |
-| guard restore from an expansion | 1.27 s to a clean, settled rest |
+| return to rest from an 8 pt expansion | 1.27 s to a clean, settled rest (the guard did not fire: a guard-triggered restore has never been timed) |
 | null control, 15 s at rest | 47 clean, 0 suspect, 0 harm |
 | frontmost during the run | `com.icespike4.front` in 73 / 73 samples |
 | teardown | every static user item back at its baseline position |
@@ -58,7 +60,12 @@ reproduced.** Protocol from here: pixels decide, AX explains.
 
 ## O1 — paths agree at the transitions (`20260918-203137-o1`)
 
-F-mid, widths on both sides of each transition, three paths, N = 3.
+F-mid, widths on both sides of each transition, three paths, N = 3 planned. The
+microphone pill arrived during the third repeat and voided it from 632 pt up, so
+632–872 have N = 2 per path, and one 32 pt step was voided the same way. 872's
+step path has N = 1: in the first repeat the full reset before it failed its
+rest check (`T` marker absent) and the step was skipped. Every valid repeat
+agrees with the others.
 
 | length | jump (full reset) | jump (light reset) | step (Δ=64) |
 |---|---|---|---|
@@ -80,34 +87,46 @@ Configs by measured menu right edge: **narrow** 72 pt (2 menus), **mid** 440 pt
 | quantity | narrow | mid | wide |
 |---|---|---|---|
 | `W_hide` (target overflows) | (16, 20] | (16, 20] | (16, 20] |
-| `W_selfov` (S stops taking room) — **AX-derived** | (652, 656] | (652, 656] | (652, 656] |
-| `W_top` (target visible again) | (640, 864] | (640, 864] | (640, 864] |
+| target leaves the fold: not drawn, no chevron — pixels, every path | (652, 656] | (652, 656] | (652, 656] |
+| `W_selfov` (S stops taking room) — **AX-derived, jump path only** | (652, 656] | (652, 656] | (652, 656] |
+| `W_edge` (S's AX left edge stops moving) — staircases | (648, 652] | (648, 652] | (648, 652] |
+| `W_top` (target visible again) — staircases, up / down | (836, 852] / (848, 864] | same | same |
 | `W_sat` (AppKit width stops growing at 5016) | (2000, 5000] | (2000, 5000] | (2000, 5000] |
-| `W_edge` (left edge plateaus) | (648, 652] | (648, 652] | (648, 652] |
 | `W_harm` (anything right of S stops being visible) | **not observed at any tested length up to 10 000** | same | same |
 
-`W_hide` and `W_selfov` are bisected to ±4 pt and identical in all three repeats
-of every config (runs `20260918-204150-m-mid`, `…-m-narrow`, `…-m-wide`); the
-others are the scan grid's brackets (`…-scan-<config>`).
+`W_hide` and `W_selfov` are bisected on the jump path to ±4 pt and identical in
+all three repeats of every config (runs `20260918-204150-m-mid`, `…-m-narrow`,
+`…-m-wide`). The staircase rows come from the same runs' up and down legs (4 pt
+steps near a transition, 16 pt elsewhere): 17 legs, 16 of them complete, and
+every one agrees on each transition it reached. `W_sat` and `W_harm` are the scan
+grid's brackets (`…-scan-<config>`), whose view of `W_top` is the coarser
+(640, 864].
 
-`W_top` cannot be bisected: between ≈ 672 and ≈ 832 the target is invisible while
-the chevron is **gone**, so it is neither overflowed nor visible — the state the
-protocol calls "invisible, overflow unconfirmed". The bracket stays as the grid
-gives it.
+`W_top` has no jump bisection. The bisection's rule needs an overflowed sample
+below the transition, and the length it tried, 752, was in the state between:
+the target not drawn and the chevron gone, neither overflowed nor visible — the
+state the protocol calls "invisible, overflow unconfirmed". The staircases
+bracket it directly instead. Up and down agree with one threshold in (848, 852];
+the 16 pt steps there cannot say whether it has any hysteresis. The state between
+runs from 656 to 836 going up (848 coming down) — not "≈ 672 to ≈ 832", which was
+the scan grid's view of it.
 
-`W_selfov` is the one quantity here with no pixel signal behind it: an expanded
-spacer draws nothing (Ice's does the same), so "is S still taking room" reads S's
-AX x against the x it rests at. AX is the signal O0 showed lying during
-transitions; these readings are taken after the pixels settled, and the bracket
-repeated identically in every config and repeat, but it is AX-derived and the
-headline margin does not depend on it — `W_top`, which is pixel-based, bounds the
-interval at 640 too.
+`W_selfov` has no pixel signal of its own: an expanded spacer draws nothing
+(Ice's does the same), so "is S still taking room" reads S's AX x against the x
+it rests at. On the jump path S's AX x is back at its rest x (1012) from 656 on.
+On the staircases it never is: S's AX left edge moves left with the length, reaches
+368 at 652, and stays at 368 above it — so the staircases report `W_edge`, and
+`W_selfov` as not observed. That is the O0 finding again, the same pixels with two
+AX stories, one per path. What does not depend on the path is the pixel
+transition in the same place: at 652 the target is overflowed, at 656 it is not
+drawn and the chevron is gone, on every path, in every config and repeat.
+**INFERRED:** the three readings are one event — the spacer running out of room
+to take — seen three ways. No AX reading carries the headline: the pixel-based
+bounds (`W_top`, and the fold transition at 652) put the interval's top at 640 on
+the scan grid and at 652 on the staircases.
 
-`W_edge` is not visible on the scan grid at all — S's left edge does not plateau
-there, it simply stops moving left and the item returns to its rest x while its
-window keeps growing to the right. The M staircases, whose steps are fine enough,
-bracket it at (648, 652] in every config and both directions: the same event as
-`W_selfov`, seen through `spacerLeft` instead of through S's rest x.
+`W_edge` does not show on the scan grid at all: every scan length is a jump, and
+on a jump S's AX x is back at rest above 652, so no plateau can appear.
 
 ### Verdict
 
@@ -124,7 +143,9 @@ below `W_top` — so it contributes a hide bracket and no top bracket; its verdi
 rests on the other two repeats for `W_top`.
 
 **MEASURED:** `max W_hide upper end (20) < min bound lower end (640)` in every
-config and on every path, a margin of ≈ 620 pt. The safe interval on this
+config and on every path, a margin of ≈ 620 pt against the scan grid (the M
+runs' own headlines: 632 on the jump path, 628 on each staircase, in every
+config). The safe interval on this
 machine is therefore about **[20, 640] pt**, identical in all three configs, so a
 single constant serves all of them — 300 pt was toggled five times per config
 with the same items and hid the target every time.
@@ -153,8 +174,15 @@ MenuBarAgent item in AX **and** ink drawn in its span".
 
 At 10 000 pt — Ice's `Lengths.expanded` — the target is **visible** in every
 config: 10 000 is far above `W_top`, so the spacer gives the room back instead of
-hiding anything (MEASURED, all three scans). Ice's constant does not hide on this
-machine; a value inside [20, 640] does.
+hiding anything (MEASURED, all three scans, for our spacer with a 12 pt target).
+In the mid scan that sample came after the run should already have stopped (see
+Safety); it settled with the guard clean and matches the other two configs.
+
+**INFERRED** for Ice itself: its control item is the same kind of object — an
+`NSStatusItem` resting the same way and expanded to the same length, with the
+hidden items to its left — but Ice was not run, and the items it hides are the
+user's, not 12 pt helpers. So: on this machine a spacer at Ice's constant hides
+nothing, and one inside [20, 640] does.
 
 ## Safety
 
@@ -170,11 +198,19 @@ plus the clock unverifiable, with the whole strip displaced. The guard's job
 there is to refuse to say the bar is fine, and it did. Not harm, and not caused
 by the spacer; caused by macOS switching Spaces under the run.
 
-**The first of those two stops was swallowed.** It happened on a return-to-rest
-whose outcome the stage discarded, so nothing latched, and the run went on to 60
-more expansions, up to 10 000 pt, before the second stop landed inside a probe
-that did latch. Fixed after the fact: every return to rest now goes through the
-same latch as a probe, and no stage expands after a stop.
+**Neither stop latched.** The first happened on a return to rest whose outcome
+the stage discarded. The second happened inside the 1088 pt probe, and the build
+that ran did not stop the scan on it either. Between the two the run expanded
+54 times; after the second, 6 more times — 1120, 1152, 1184, 2000, 5000 and
+10 000 pt. Every one of those later expansions started from a rest check that
+passed and settled with the guard clean, which is why nothing came of it, but
+the protocol said to stop. Fixed after the fact, twice over: first every return
+to rest went through the probe latch; then review found the latch still had
+gaps — the scan's attribution and template validation expanded without it, a
+light reset could latch a stop and the jump would expand anyway, and O0 ignored
+how its rests ended. Now every expansion goes through one call that refuses once
+the guard has stopped or fired and latches whatever the guard says, the jump
+re-checks after its reset, and O0 ends on any rest that does not settle.
 
 **Teardown was clean in 15 of 18 runs.** Three flagged displaced items:
 `20260918-194520-c-mid` (two `MenuBarAgent` items — the microphone pill arrived
@@ -182,14 +218,21 @@ mid-run), `…-195745-o0` (the clock, whose text changed), `…-200903-scan-mid`
 (the Teams badge). All three are appearance or arrival events in place, none is
 an item pushed out of the bar.
 
-**The guard's own pill rule was inert during these runs.** "The pill is in AX but
-not in pixels, therefore something pushed it out" could not fire, because the
-live code passed no pill reading into the guard; the pill was instead handled by
-waiting for it to go and voiding trials where it appeared. It is wired in now —
-and, on review, the first wiring would have confused the overflow chevron for the
-pill, so the pill is now identified by its own orange in its own span. What
-protected the bar during the runs above was the user-item templates, not this
-rule.
+**The guard's own pill rule was inert during these runs, and stayed inert
+through two attempts to wire it.** "The pill is in AX but not in pixels,
+therefore something pushed it out" could not fire, because the live code passed
+no pill reading into the guard; the pill was instead handled by waiting for it
+to go and voiding trials where it appeared. The first wiring would have mistaken
+the overflow chevron for the pill. The second told them apart by requiring the
+pill's own orange in its own span — which a pill pushed out of the bar never
+shows, so the rule still could not fire. Now the chevron is recognised by its AX
+width (17.5 pt in every one of ≈ 8 900 readings) and any other MenuBarAgent item
+standing where the pill does is the pill, drawn if its orange is there and
+hidden if not; a hidden pill no longer voids the trial, it goes to the guard.
+**Not exercised live:** no run has used this code, and neither the pill's AX
+width nor where AX puts a pill that has been pushed out has ever been recorded.
+What protected the bar during the runs above was the user-item templates, not
+this rule.
 
 ## Not measured here
 
@@ -198,6 +241,9 @@ rule.
   not the app menus, bounds the room on this machine). Whether the room formula
   depends on the number of user items was not tested — the user's items were
   never changed.
+- The instrument as it stands after review round 4: the latch and pill fixes
+  are unit-tested in `SafeWidthCore` and built, but `swctl` has no tests and no
+  run has been made since.
 - Ice's own rest width (no room for it here), the no-divider control-item style,
   two spacers at once, app switching while the spacer is expanded, external
   displays, and lengths between grid points.

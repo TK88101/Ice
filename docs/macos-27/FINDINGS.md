@@ -154,29 +154,34 @@ the menus. Pixels decide; AX only explains.
 With the spacer resting as Ice rests its own control item, on this display, with
 these 15 user items:
 
-| quantity | bracket |
-|---|---|
-| smallest length that overflows the target | (16, 20] |
-| smallest length at which the spacer stops taking room from the bar | (652, 656] |
-| smallest length above that at which the target is visible again | (640, 864] |
-| smallest length at which the spacer's AppKit width stops growing (≈5016) | (2000, 5000] |
-| smallest length that costs any item right of the spacer its visibility | **not observed up to 10 000** |
+| quantity | bracket | read from |
+|---|---|---|
+| smallest length that overflows the target | (16, 20] | pixels, every path |
+| smallest length at which the target leaves the fold (not drawn, no chevron) | (652, 656] | pixels, every path |
+| smallest length at which the spacer stops taking room from the bar | (652, 656] | **AX, jump path only** |
+| smallest length above that at which the target is visible again | (836, 852] up, (848, 864] down | pixels, staircases |
+| smallest length at which the spacer's AppKit width stops growing (≈5016) | (2000, 5000] | AppKit |
+| smallest length that costs any item right of the spacer its visibility | **not observed up to 10 000** | pixels |
 
 So `20 < 640`: the interval exists, about **[20, 640] pt**, with ≈ 620 pt of
-margin. It is the same for a frontmost app whose menus end at 72, 440 or 758 pt,
+margin on the scan grid (the finer staircases keep the target overflowed up to
+652). It is the same for a frontmost app whose menus end at 72, 440 or 758 pt,
 and the same on a jump, an upward sweep and a downward sweep; 300 pt hid the
 target on five consecutive toggles of the same items in every config. Hiding
 never cost a user item its place: the guard never had to restore anything and
 the watchdog never fired. It did stop twice, both times while macOS was sliding
 the menu bar through a Space switch, which is the guard refusing to certify a bar
-it cannot read rather than anything the spacer did.
+it cannot read rather than anything the spacer did — but the build that ran then
+honoured neither stop and kept expanding, up to 10 000 pt, with the guard clean
+throughout. Every expansion now goes through one latch.
 
-Three things bound that interval and they are **not** the same event: the
-spacer's left edge never plateaus (it returns to its rest x while its window
-grows off-screen right), the AppKit width saturates at 5016, and the room is
-given back somewhere in (640, 864]. Between ≈ 672 and ≈ 832 the target is
-invisible with **no** chevron — neither overflowed nor visible; that region is
-not hiding and is not safe to use.
+What bounds that interval from above is one transition at 652–656, seen three
+ways: in pixels the target leaves the fold (overflowed at 652; at 656 not drawn
+and no chevron), on every path; in AX, on a jump, the spacer is back at its rest
+x; in AX, on a staircase, its left edge stops at 368 and stays there. The two AX
+readings disagree with each other by path, as AX did in `o0`; that they are one
+event is INFERRED from the shared length. The AppKit width saturating at 5016 is
+a separate thing, much higher up.
 
 ### Squeezing an item out *is* macOS 27's own fold
 
@@ -194,10 +199,12 @@ boundary is exactly what the fold is — so **a working Ice, hiding this way, sh
 away; it summons it.
 
 **MEASURED, mechanism INFERRED:** there is a third state where the target is
-hidden with no fold. Between ≈ 672 and ≈ 832 pt of spacer length — above the
-point where the spacer stops taking room — the target is drawn nowhere on the
-strip, no `MenuBarAgent` item appears, and AX still reports the target at a
-normal on-bar x (984) that renders empty. At 864 it comes back. Why the item is
+hidden with no fold. From 656 pt of spacer length — the step after the last
+overflowed length — up to 836 (848 coming down), the target is drawn nowhere on
+the strip, no `MenuBarAgent` item appears, and AX still reports the target at a
+normal on-bar x (984) that renders empty. It is drawn again at 852 going up and
+864 coming down; the staircases' 16 pt steps there put the switch in (848, 852]
+both ways. Why the item is
 laid out and not drawn is not established: candidates are the spacer's oversized
 window covering that span in the composite, or the layout assigning a slot it
 never paints.
@@ -209,8 +216,11 @@ it comes back reliably, and whether the region moves with the number of user
 items. Nothing here says it is safe — only that it exists.
 
 **At 10 000 — Ice's `Lengths.expanded` — the target is visible.** The constant is
-above the point where the spacer gives the room back, so on macOS 27 it hides
-nothing. A value inside [20, 640] does.
+above the point where the spacer gives the room back, so our spacer at that
+length hides nothing, and one inside [20, 640] does. That this holds for Ice
+itself is INFERRED: its control item is the same kind of `NSStatusItem`, rested
+and expanded the same way, but Ice was not run and its hidden items are the
+user's, not a 12 pt helper.
 
 These numbers are for a spacer resting the way Ice rests its own control item
 (`variableLength` plus the chevron image), with a 12 pt target and a 12 pt
@@ -310,13 +320,13 @@ dragged — and only after identity across restarts has been demonstrated.
 The safe width now exists as a measured interval rather than a hope, and the
 overflow detector has a working shape: **the target is absent from the strip and
 a new `MenuBarAgent` item is drawing a glyph**. Both came out of
-`probes/safewidth`; both are pixel-based, because AX cannot describe an
-overflowed item's position.
+`probes/safewidth`; both are decided by pixels — the detector uses AX only to
+say where to look — because AX cannot describe an overflowed item's position.
 
 Next steps, in the order the evidence argues for:
 
 1. Replace `Lengths.expanded` with a width inside the measured interval, not
-   10 000 — at 10 000 nothing hides.
+   10 000 — at 10 000 our spacer hid nothing.
 2. Decide what Ice does when the room is smaller than its own rest width, which
    is the case on this machine.
 3. Measure what happens when the frontmost app changes while the spacer is
