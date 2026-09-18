@@ -178,6 +178,36 @@ given back somewhere in (640, 864]. Between ≈ 672 and ≈ 832 the target is
 invisible with **no** chevron — neither overflowed nor visible; that region is
 not hiding and is not safe to use.
 
+### Squeezing an item out *is* macOS 27's own fold
+
+The user's account of `«`, which matches what the probes measured: it is the
+system's fold. When the items exceed the room to the right of the notch they
+collapse behind it; expanding restores the bar's full length, running past the
+notch to the left.
+
+**MEASURED** (attribution check, every scan run): at the first length where the
+target went invisible, quitting the target alone made `«` disappear while the
+spacer stayed drawn. The chevron was *our hidden item*. Squeeze-out hiding works
+by pushing an item past the boundary right of the notch, and crossing that
+boundary is exactly what the fold is — so **a working Ice, hiding this way, shows
+`«` whenever it hides anything.** Fixing Ice does not make the new affordance go
+away; it summons it.
+
+**MEASURED, mechanism INFERRED:** there is a third state where the target is
+hidden with no fold. Between ≈ 672 and ≈ 832 pt of spacer length — above the
+point where the spacer stops taking room — the target is drawn nowhere on the
+strip, no `MenuBarAgent` item appears, and AX still reports the target at a
+normal on-bar x (984) that renders empty. At 864 it comes back. Why the item is
+laid out and not drawn is not established: candidates are the spacer's oversized
+window covering that span in the composite, or the layout assigning a slot it
+never paints.
+
+That region is the only measured way to hide an item on macOS 27 without raising
+the system's fold, so it is worth understanding before any of it is built on:
+whether the item is still clickable, whether it survives an app switch, whether
+it comes back reliably, and whether the region moves with the number of user
+items. Nothing here says it is safe — only that it exists.
+
 **At 10 000 — Ice's `Lengths.expanded` — the target is visible.** The constant is
 above the point where the spacer gives the room back, so on macOS 27 it hides
 nothing. A value inside [20, 640] does.

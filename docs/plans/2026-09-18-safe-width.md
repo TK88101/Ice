@@ -483,3 +483,18 @@ Format: trigger → conservative option taken → reason.
     verdict table that hid narrow's partial up leg → both corrected against the
     raw JSONL, and `W_selfov` is now labelled AX-derived → this is the same
     failure mode the whole Refuted table is made of.
+
+## Open thread for the next session
+
+- The user explained what `«` is: macOS 27's own fold, triggered when the items
+  exceed the room right of the notch, expanding back across the notch. The
+  attribution check says Ice's squeeze-out hiding *is* that fold, so a fixed Ice
+  raises the chevron every time it hides. Written into FINDINGS.
+- The one measured exception is the 672–832 pt region (no chevron, target drawn
+  nowhere, AX still claims an on-bar x). Mechanism unknown. Next experiment, if
+  it is wanted: is that state clickable, does it survive an app switch, does it
+  come back reliably, and does it move with the number of user items?
+- A Codex review was deferred to 23:40 (its 5-hour quota) and runs in the
+  background; note that `codex review --uncommitted` will find nothing now that
+  the work is committed — the second, targeted `codex exec` pass is the one that
+  matters.
