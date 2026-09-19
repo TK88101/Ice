@@ -1,0 +1,189 @@
+{
+  "entries" : [
+    {
+      "captures" : [
+        "00001-baseline.png",
+        "00002-baseline.png",
+        "00003-baseline.png",
+        "00004-baseline.png",
+        "00005-baseline.png",
+        "00006-baseline.png",
+        "00007-baseline.png",
+        "00008-baseline.png"
+      ],
+      "expected" : "absent",
+      "id" : "20260918-194520-c-mid.foldAtBaseline",
+      "kind" : "foldAtBaselineAbsent",
+      "note" : "The pill is 16 pt wide, not the 17.5 pt chevron width; it must not be read as the fold. Every rest.check in this run failed with 'microphone pill present' among its reasons, and the run aborted before the trial loop (0 assess records), so this checks the baseline alone, with com.google.Chrome#0, com.openai.codex#0 supplying real glyphs for ink calibration.",
+      "oracleField" : "baseline.items[com.apple.MenuBarAgent#0]",
+      "oracleValue" : "x=1035.0 w=16.0",
+      "run" : "20260918-194520-c-mid"
+    },
+    {
+      "captures" : [
+        "00003-baseline.png",
+        "00143-teardown.png"
+      ],
+      "expected" : "notAbsent",
+      "id" : "20260918-200903-scan-mid.teamsBadge",
+      "kind" : "notAbsent",
+      "note" : "swctl's own strict (2% mismatch, offset-0-only) static check flags Teams as changed at teardown, out of all 15 static items — a badge\/icon redraw, not a slide (nothing else in the list). IceCore must not read this as .notDrawn.",
+      "oracleField" : "teardown.staticItemsNotAtBaseline",
+      "oracleValue" : "com.microsoft.teams2#0",
+      "run" : "20260918-200903-scan-mid"
+    },
+    {
+      "captures" : [
+        "00001-baseline.png",
+        "00002-baseline.png",
+        "00003-baseline.png",
+        "00004-baseline.png",
+        "00005-baseline.png",
+        "00006-baseline.png",
+        "00007-baseline.png",
+        "00008-baseline.png"
+      ],
+      "expected" : "absent",
+      "id" : "20260918-202302-o1.foldAtBaseline",
+      "kind" : "foldAtBaselineAbsent",
+      "note" : "The pill is 16 pt wide, not the 17.5 pt chevron width; it must not be read as the fold. Every rest.check in this run failed with 'microphone pill present' among its reasons, and the run aborted before the trial loop (0 assess records), so this checks the baseline alone, with com.google.Chrome#0, com.openai.codex#0 supplying real glyphs for ink calibration.",
+      "oracleField" : "baseline.items[com.apple.MenuBarAgent#0]",
+      "oracleValue" : "x=1035.0 w=16.0",
+      "run" : "20260918-202302-o1"
+    },
+    {
+      "captures" : [
+        "00022-guard.png",
+        "00023-guard.png"
+      ],
+      "expected" : "unstable",
+      "id" : "20260918-202525-scan-mid.spaceSlide.00022-guard.png",
+      "kind" : "unstable",
+      "note" : "swctl's own guard flags protectedLost + itemLost for every tracked static item in the same pair, independent of anything this tool does.",
+      "oracleField" : "assess.target, assess.decision",
+      "oracleValue" : "visible(x: 1587.5) -> visible(x: 718.5); stop(reasons: [SafeWidthCore.GuardFinding.protectedLost, SafeWidthCore.GuardFinding.itemLost(id: \"com.google.Chrome#0\"),",
+      "run" : "20260918-202525-scan-mid"
+    },
+    {
+      "captures" : [
+        "00131-guard.png",
+        "00132-guard.png"
+      ],
+      "expected" : "unstable",
+      "id" : "20260918-202525-scan-mid.spaceSlide.00131-guard.png",
+      "kind" : "unstable",
+      "note" : "swctl's own guard flags protectedLost + itemLost for every tracked static item in the same pair, independent of anything this tool does.",
+      "oracleField" : "assess.target, assess.decision",
+      "oracleValue" : "visible(x: 103.0) -> invisibleUnconfirmed; stop(reasons: [SafeWidthCore.GuardFinding.protectedLost, SafeWidthCore.GuardFinding.itemLost(id: \"com.google.Chrome#0\"),",
+      "run" : "20260918-202525-scan-mid"
+    },
+    {
+      "captures" : [
+        "00011-probe-mid-20.png"
+      ],
+      "expected" : "present",
+      "id" : "20260918-204150-m-mid.foldPresent.00011-probe-mid-20.png",
+      "kind" : "foldPresent",
+      "note" : "A MenuBarAgent item 17.5 pt wide (plan 3.5's chevron width) appears in AX that was not in the baseline set.",
+      "oracleField" : "assess.newAgentItems",
+      "oracleValue" : "x=976.5 w=17.5",
+      "run" : "20260918-204150-m-mid"
+    },
+    {
+      "captures" : [
+        "00015-probe-mid-648.png"
+      ],
+      "expected" : "present",
+      "id" : "20260918-204150-m-mid.foldPresent.00015-probe-mid-648.png",
+      "kind" : "foldPresent",
+      "note" : "A MenuBarAgent item 17.5 pt wide (plan 3.5's chevron width) appears in AX that was not in the baseline set.",
+      "oracleField" : "assess.newAgentItems",
+      "oracleValue" : "x=1012.5 w=17.5",
+      "run" : "20260918-204150-m-mid"
+    },
+    {
+      "captures" : [
+        "00017-probe-mid-652.png"
+      ],
+      "expected" : "present",
+      "id" : "20260918-204150-m-mid.foldPresent.00017-probe-mid-652.png",
+      "kind" : "foldPresent",
+      "note" : "A MenuBarAgent item 17.5 pt wide (plan 3.5's chevron width) appears in AX that was not in the baseline set.",
+      "oracleField" : "assess.newAgentItems",
+      "oracleValue" : "x=1012.5 w=17.5",
+      "run" : "20260918-204150-m-mid"
+    },
+    {
+      "captures" : [
+        "00011-probe-mid-20.png"
+      ],
+      "expected" : "notDrawn",
+      "id" : "20260918-204150-m-mid.overflow.00011-probe-mid-20.png",
+      "kind" : "targetNotDrawn",
+      "note" : "nearest assess 0.001s away; also grounds the fold-present case below.",
+      "oracleField" : "probe.target (hide)",
+      "oracleValue" : "overflowed",
+      "run" : "20260918-204150-m-mid"
+    },
+    {
+      "captures" : [
+        "00015-probe-mid-648.png"
+      ],
+      "expected" : "notDrawn",
+      "id" : "20260918-204150-m-mid.overflow.00015-probe-mid-648.png",
+      "kind" : "targetNotDrawn",
+      "note" : "nearest assess 0.001s away; also grounds the fold-present case below.",
+      "oracleField" : "probe.target (selfov)",
+      "oracleValue" : "overflowed",
+      "run" : "20260918-204150-m-mid"
+    },
+    {
+      "captures" : [
+        "00017-probe-mid-652.png"
+      ],
+      "expected" : "notDrawn",
+      "id" : "20260918-204150-m-mid.overflow.00017-probe-mid-652.png",
+      "kind" : "targetNotDrawn",
+      "note" : "nearest assess 0.001s away; also grounds the fold-present case below.",
+      "oracleField" : "probe.target (selfov)",
+      "oracleValue" : "overflowed",
+      "run" : "20260918-204150-m-mid"
+    },
+    {
+      "captures" : [
+        "00041-probe-mid-4.png"
+      ],
+      "expected" : "drawn~1003.5",
+      "id" : "20260918-204150-m-mid.visible.00041-probe-mid-4.png",
+      "kind" : "targetDrawn",
+      "note" : "swctl's own T marker found unique; nearest assess 0.000s away.",
+      "oracleField" : "probe.target",
+      "oracleValue" : "visible(x: 1003.5)",
+      "run" : "20260918-204150-m-mid"
+    },
+    {
+      "captures" : [
+        "00042-probe-mid-8.png"
+      ],
+      "expected" : "drawn~999.5",
+      "id" : "20260918-204150-m-mid.visible.00042-probe-mid-8.png",
+      "kind" : "targetDrawn",
+      "note" : "swctl's own T marker found unique; nearest assess 0.001s away.",
+      "oracleField" : "probe.target",
+      "oracleValue" : "visible(x: 999.5)",
+      "run" : "20260918-204150-m-mid"
+    },
+    {
+      "captures" : [
+        "00043-probe-mid-12.png"
+      ],
+      "expected" : "drawn~995.5",
+      "id" : "20260918-204150-m-mid.visible.00043-probe-mid-12.png",
+      "kind" : "targetDrawn",
+      "note" : "swctl's own T marker found unique; nearest assess 0.000s away.",
+      "oracleField" : "probe.target",
+      "oracleValue" : "visible(x: 995.5)",
+      "run" : "20260918-204150-m-mid"
+    }
+  ]
+}
