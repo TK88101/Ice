@@ -16,8 +16,9 @@ left to right, all ours; then the user's items, which are only ever read.
 `F` is our frontmost app, whose menu width is the config.
 
 **Every run that contributes a number to the O1, scan and M tables rests `S` at
-Ice's own chevron rest** (`variableLength` plus the chevron image; AppKit
-reports 24–32 pt): their `rest.mode` records say `ice`, with no fallback. (The
+Ice's own chevron rest** (`variableLength` plus the chevron image; AppKit reports
+a 32 pt window, in all 2 942 rest samples of the eight `ice` runs): their
+`rest.mode` records say `ice`, with no fallback. (The
 instrument run below did not — it rested at a fixed 12 pt — and O0 rebuilt the
 original topology, which has no rest mode at all.) Ice's rest fits only because
 `T` and `P` are 12 pt wide. With 16 pt helpers — and again whenever the microphone
@@ -86,7 +87,7 @@ Configs by measured menu right edge: **narrow** 72 pt (2 menus), **mid** 440 pt
 
 | quantity | narrow | mid | wide |
 |---|---|---|---|
-| `W_hide` (target overflows) | (16, 20] | (16, 20] | (16, 20] |
+| `W_hide` (target overflows) — **for a 32 pt rest**; a 28 pt rest gives (8, 16] | (16, 20] | (16, 20] | (16, 20] |
 | target leaves the fold: not drawn, no chevron — pixels, every path | (652, 656] | (652, 656] | (652, 656] |
 | `W_selfov` (S stops taking room) — **AX-derived, jump path only** | (652, 656] | (652, 656] | (652, 656] |
 | `W_edge` (S's AX left edge stops moving) — staircases | (648, 652] | (648, 652] | (648, 652] |
@@ -113,7 +114,8 @@ the scan grid's view of it.
 
 `W_selfov` has no pixel signal of its own: an expanded spacer draws nothing
 (Ice's does the same), so "is S still taking room" reads S's AX x against the x
-it rests at. On the jump path S's AX x is back at its rest x (1012) from 656 on.
+it rests at. On the jump path S's AX x reads 1012 from 656 on — 8 pt right of the
+1004 it rests at, and 16 pt right of the 996 it holds while overflowed.
 On the staircases it never is: S's AX left edge moves left with the length, reaches
 368 at 652, and stays at 368 above it — so the staircases report `W_edge`, and
 `W_selfov` as not observed. That is the O0 finding again, the same pixels with two
@@ -149,6 +151,12 @@ config). The safe interval on this
 machine is therefore about **[20, 640] pt**, identical in all three configs, so a
 single constant serves all of them — 300 pt was toggled five times per config
 with the same items and hid the target every time.
+
+The interval's lower end is **not** a machine constant: it tracks the spacer's
+own rest width. The 28 pt rest of the earlier runs hides at (8, 16] instead of
+(16, 20]. Since Ice rests its control item at 32 pt everywhere (2 942 samples),
+the lower end for Ice is ≈ 16 and no plausible constant falls below it; but the
+number 20 belongs to this topology, not to the machine.
 
 Scope: grid-scoped. Lengths between grid points were not observed, and `W_harm`
 "not observed" means exactly that — no harm was seen at the lengths tested, and

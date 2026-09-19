@@ -201,13 +201,22 @@ away; it summons it.
 **MEASURED, mechanism INFERRED:** there is a third state where the target is
 hidden with no fold. From 656 pt of spacer length — the step after the last
 overflowed length — up to 836 (848 coming down), the target is drawn nowhere on
-the strip, no `MenuBarAgent` item appears, and AX still reports the target at a
-normal on-bar x (984) that renders empty. It is drawn again at 852 going up and
-864 coming down; the staircases' 16 pt steps there put the switch in (848, 852]
-both ways. Why the item is
-laid out and not drawn is not established: candidates are the spacer's oversized
-window covering that span in the composite, or the layout assigning a slot it
-never paints.
+the strip, no `MenuBarAgent` item appears, and AX still carries the target as a
+laid-out item, right of the notch, at an x that renders empty. It is drawn again
+at 852 going up and 864 coming down; the staircases' 16 pt steps there put the
+switch in (848, 852] both ways.
+
+That AX x is **path-dependent and carries no information about the band**:
+jumped to, 984; stepped up to, 1008; stepped down to, 1016 — every reading
+settled, zero exceptions across 3 150 band captures in four runs. Coming down,
+1016 is what AX reports in the overflowed band, in this band and in the visible
+band alike. No path's AX marks the boundary the pixels mark.
+
+Why the item is laid out and not drawn is not established. The candidate that
+the spacer's oversized window covers that span in the composite is **refuted**:
+going up, the window is (361, 852) at 836 where the target is not drawn and
+(361, 868) at 852 where it is — both cover the target's slot, so covering cannot
+explain the switch.
 
 That region is the only measured way to hide an item on macOS 27 without raising
 the system's fold, so it is worth understanding before any of it is built on:
@@ -302,15 +311,45 @@ and each cost a round of work.
 | Enumeration is closed forever | Closed *today*, for *this* interface. Not a permanence proof. |
 | Expanding the spacer is order-dependent: 600pt hid everything from 1pt and nothing when set directly | The run that "hid nothing" saved a screenshot of itself: `«` and no probes — it *had* hidden everything. The claim came from AX and AppKit frames that had not caught up. A replication of that exact topology (`o0`, N=3 per path) finds the pixels identical on both paths at every hold from 0.25 s to 8 s, while AX still describes the two paths differently. |
 | An item's AX frame says where it is | For overflowed items it does not. Same pixels, two AX stories; one capture caught the spacer reported at its old x with its new width. |
+| The spacer's own window frame tells it whether an expansion hid anything | Only when it was jumped there from rest. Stepped up in place, its x stops moving at the fold and stays there while the target comes *back*: at 852, 868 and 912 the AX x is the same 368 it had at 652, and the target is visible. A length-picking loop that adjusts in place and reads its own frame would call that success. Proposed as the fix for `Lengths.expanded`, refuted before any code was written. |
+| A thread of ours can release a system assertion if we crash | It cannot: a thread dies with its process. The spacer survives a crash only because the status item dies with the process too. An assertion held against another process has no such property, and nothing here has tested what happens to one. |
 
 ---
 
 ## Where this leaves the plan
 
-Discovery through Accessibility, hiding through Ice's existing spacer once a safe
-width exists, ordering through coordinate-only `CGEvent` drags with atomic target
-binding. The private visibility-restriction assertion stays a bundle-level
-experimental fallback, never the core.
+**The user has stopped the squeeze-out path** (2026-09-19), on the finding above:
+hiding this way *is* the system fold, so a working Ice would show `«` for as long
+as anything is hidden, and it costs 17.5 pt of the scarce room right of the notch.
+That is the opposite of what the feature is for.
+
+Where that leaves the two remaining candidates, stated at the strength the
+evidence supports:
+
+- **The no-fold band (656–836 here)** is real but positional, and its boundaries
+  were measured at one spacer position. Picking a length inside it on Ice's
+  control item needs the same transfer proof that killed the squeeze-out path —
+  or a runtime signal that reads, from pixels, whether the item is actually
+  drawn. It also cannot be probed for usability without injecting the first
+  mouse event this instrument has ever sent.
+- **The private visibility-restriction assertion** can be activated from an
+  unentitled binary, and that is *all* that has been shown. Its selection
+  semantics (the allowlist reads as "only the listed items may appear", so an
+  allowlist naming our helper alone would hide the user's items, not ours),
+  its behaviour towards items that appear while it is held (the microphone pill,
+  a meeting indicator), whether invalidating it restores the bar visually, and
+  what happens to it if the holding process dies — none of these is measured.
+
+So the honest statement is **not** "macOS 27 offers no way to hide without the
+fold". It is: the public spacer path necessarily raises the fold, and the private
+path is callable but unverified on every property that would make it safe for a
+bar with the user's own items in it. Establishing those properties belongs in an
+isolated account with nothing important in the menu bar, not here.
+
+Common to both candidates, and the reason neither can move yet: **a detector that
+decides from pixels whether a given item is drawn**. Discovery through
+Accessibility and ordering through coordinate-only `CGEvent` drags with atomic
+target binding are unaffected by any of this.
 
 Geometry remains the source of truth for an item's *current* section once an
 overflow detector exists. Persistence, if it happens at all, stores *desired*
@@ -325,8 +364,18 @@ say where to look — because AX cannot describe an overflowed item's position.
 
 Next steps, in the order the evidence argues for:
 
-1. Replace `Lengths.expanded` with a width inside the measured interval, not
-   10 000 — at 10 000 our spacer hid nothing.
+1. **Build the overflow detector first.** Replacing `Lengths.expanded` with a
+   number is not enough, and three ways of choosing that number have now been
+   refuted in review before any of them was written: a fixed constant (the
+   interval was measured at one spacer position and one 12 pt target, and no
+   experiment that fits in this machine's ≈ 88 pt of status-item room can show
+   it transfers), a formula from the control item's own geometry (fitted to a
+   single rest frame; the runs with a different rest frame contradict it), and a
+   back-off loop reading the control item's own window frame (refuted by the
+   in-place path, see Refuted). Every one of them needs the same missing piece:
+   a way for Ice to verify, after expanding, that the items it meant to hide are
+   actually not drawn. That detector is item four of this list's older form and
+   it is now the prerequisite, not a follow-up.
 2. Decide what Ice does when the room is smaller than its own rest width, which
    is the case on this machine.
 3. Measure what happens when the frontmost app changes while the spacer is
