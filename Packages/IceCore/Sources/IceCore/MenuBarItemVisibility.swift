@@ -33,7 +33,13 @@ public struct MenuBarItemVisibility: Equatable, Sendable {
         case .unique(let x, let mismatch):
             // A match is a match whatever the item has done to its own look;
             // only its *absence* depends on the template still being current.
-            return mismatch <= maxMismatch ? .drawn(x: x) : .unverifiable(.weakMatch)
+            guard mismatch <= maxMismatch else {
+                return .unverifiable(.weakMatch)
+            }
+            // Pixels cannot say who drew a pattern, so the item's own frame gets
+            // a veto — never a vote: it can refuse a match, and it is not
+            // consulted when nothing matched.
+            return sighting.placement == .consistent ? .drawn(x: x) : .unverifiable(.contradictsAccessibility)
         case .ambiguous:
             return .unverifiable(.ambiguousMatch)
         case .absent:
@@ -63,6 +69,13 @@ public struct MenuBarItemVisibility: Equatable, Sendable {
         case .unverifiable(let reason):
             return .unverifiable(reason)
         case .notDrawn:
+            // "The fold went up with it" cannot be told when it was already up,
+            // and templates are not cut from such a baseline in the first place.
+            switch reading.foldAtBaseline {
+            case .present: return .unverifiable(.foldAlreadyUp)
+            case .unreadable: return .unverifiable(.foldUnreadable)
+            case .absent: break
+            }
             switch reading.fold {
             case .present: return .hidden(folded: true)
             case .absent: return .hidden(folded: false)
@@ -107,11 +120,15 @@ public struct ItemSighting: Equatable, Sendable {
     public let id: String
     public let appearance: Appearance
     public let match: Match
+    /// What the item's own Accessibility frame says about the match. Required:
+    /// a default would be a fact nobody observed.
+    public let placement: Placement
 
-    public init(id: String, appearance: Appearance, match: Match) {
+    public init(id: String, appearance: Appearance, match: Match, placement: Placement) {
         self.id = id
         self.appearance = appearance
         self.match = match
+        self.placement = placement
     }
 }
 
@@ -151,6 +168,11 @@ public enum Unverifiable: Equatable, Sendable {
     case captureUnstable
     /// The item redrew itself, so its template no longer describes it.
     case appearanceChanged
+    /// The pixels matched, but the item's own Accessibility frame is not there.
+    case contradictsAccessibility
+    /// The fold was already up before the action, so nothing here can say
+    /// whether it went up *with* the item.
+    case foldAlreadyUp
     /// The template matched in several places.
     case ambiguousMatch
     /// The best match is too poor to mean either presence or absence.
@@ -165,13 +187,17 @@ public enum Unverifiable: Equatable, Sendable {
 public struct StripReading: Equatable, Sendable {
     public let sightings: [ItemSighting]
     public let fold: Fold
+    /// The fold before the action. Required, with no default: `.absent` would
+    /// claim an observation nobody made.
+    public let foldAtBaseline: Fold
     /// Whether this capture and the one before it agree about everything the
     /// experiment did not touch. A bar caught mid-animation agrees about nothing.
     public let captureStable: Bool
 
-    public init(sightings: [ItemSighting], fold: Fold, captureStable: Bool) {
+    public init(sightings: [ItemSighting], fold: Fold, foldAtBaseline: Fold, captureStable: Bool) {
         self.sightings = sightings
         self.fold = fold
+        self.foldAtBaseline = foldAtBaseline
         self.captureStable = captureStable
     }
 }
