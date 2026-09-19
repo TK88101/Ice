@@ -240,6 +240,99 @@ the target is already overflowed at rest and the spacer has to rest narrower.
 Scope, stated plainly: one display, one set of 15 user items, one afternoon, and
 the lengths on the tested grid.
 
+### What the screen can be read with (2026-09-19)
+
+All read-only, with nothing of ours in the bar. Raw output, probe sources and
+captures: `~/IceReverse-evidence/20260919-winlist-probes/`.
+
+**MEASURED — there are no per-item windows left at all.**
+`CGWindowListCopyWindowInfo(.optionAll)` listed 182 and 199 windows at two
+instants, and at no layer was there a third-party window shaped like a status
+item (height 20–40 pt, width ≤ 200 pt). At level 24 it listed three full-width
+`MenuBarAgent` windows and three full-width Window Server windows. So Ice's
+image cache is not merely filtered out on macOS 27: the windows it captured are
+gone, and `MenuBarItemImageCache` can supply no template here.
+
+**MEASURED — `MenuBarAgent`'s own window captures without a backdrop.** Each of
+the three, captured alone with `CGWindowListCreateImageFromArray`, is the bar's
+glyphs on a transparent background; the status areas of the three are identical
+and their app-menu areas differ; laid over an on-screen capture, every status
+item sits at the same x. Whether it tracks the display when an item is folded
+behind `«`, or in the 656–836 pt band, is **unmeasured**, and so is which of the
+three is live.
+
+**MEASURED — the two capture APIs are not interchangeable in cost.**
+`CGWindowListCreateImage` of the bar rect: 5–9 ms warm. ScreenCaptureKit's
+`SCScreenshotManager`: 267–412 ms warm, 2.1–2.6 s cold. Both return 3456 × 64 at
+scale 2 here. Whether their **pixels** agree is **not established**: the two
+captures were ≈ 2 s apart and the backdrop changed between them.
+`CGWindowListCreateImage` is deprecated at deployment target 14 and obsoleted at
+15, so raising Ice's target means moving to ScreenCaptureKit and re-measuring.
+
+**MEASURED — the bar's backdrop moves under the glyphs.** Two captures ≈ 2 s
+apart, with a terminal window under the translucent bar, differed beyond a
+24-per-channel tolerance in **17–23 %** of the status area's pixels. A template
+that compares backdrop colour is therefore unusable for deciding presence; only
+the glyph's own ink and its clear surroundings can carry that.
+
+**MEASURED — capturing the bar changes it.** The first capture of a session moved
+the clock's Accessibility x from 1592 to 1589 pt, where it stayed for at least
+3 s after the last capture. A violet dot right of the clock appears in the
+`screencapture` strips of 2026-09-18 from the second capture onward. The cause is
+**INFERRED** to be the screen-capture indicator. The clock is therefore not a
+reference for any comparison.
+
+**MEASURED — the microphone pill is 16 pt wide in Accessibility, `«` is 17.5.**
+In the baselines of `20260918-194520-c-mid` and `20260918-202302-o1` the pill's
+frame is x = 1035, w = 16, while the capture shows it drawn as an orange capsule
+≈ 37 pt wide; every chevron reading on record is 17.5 pt. So the two do not
+collide by width **on this machine, for this indicator**. A pushed-out pill, the
+camera indicator and the screen-recording indicator are unmeasured.
+
+### The detector, run against the real bar (2026-09-19)
+
+**MEASURED**, run `~/IceReverse-evidence/20260919-132726-vzlive`: with two
+sacrificial helpers of our own on the bar, the chain — capture, Accessibility,
+template, decision — read the target `drawn(x: 1081.5)`, then `notDrawn` with the
+fold absent when the helper hid itself, then `drawn` again, five times over, every
+reading stable. A third helper drawing the same glyph made the target read
+`ambiguous`, an unknown id read `notObserved`, a baseline taken while the target
+was hidden cut no template from it, and the five of the user's own items the
+monitor watched never moved. Teardown left the bar as it was found.
+
+Three things the bar did to the run, each of which had aborted an earlier attempt:
+
+- **Capturing the bar summons an indicator.** A ≈ 20 pt `MenuBarAgent` item
+  appears left of the third-party items while captures are being taken (x ≈ 1143
+  here), draws a glyph, and goes again seconds after the capturing stops. Any
+  rule of the form "a `MenuBarAgent` item left of the items means `«` or a pill"
+  therefore fires on our own instrument. It also flickers: about half of
+  consecutive fold readings came back unreadable because it was drawn before
+  Accessibility listed it.
+- **`NSStatusItem.isVisible = false` removes the item from Accessibility
+  entirely.** It is not parked at x ≈ 7, y ≈ 1104, which is what the earlier
+  "parked" row of this document describes; there is simply no frame for it.
+- **A toggle needs about a second.** An observation started 0.47 s after the
+  toggle caught one capture before the change and one after, and was correctly
+  refused as unstable.
+
+### What a pixel detector can and cannot template
+
+**MEASURED 2026-09-19** (replay of the 2026-09-18 runs through IceCore's rules,
+`docs/macos-27/probes/visibility`): an item whose glyph **fills its own bounding
+box** cannot be templated. The rule that decides presence compares where the
+glyph's ink is *and* where it clearly is not, and it refuses a cut with too
+little clear background, because such a cut matches any patch of ink — including
+the item's own vacated slot once the backdrop happens to be ink-coloured. The
+sacrificial helpers of 2026-09-18 draw exactly that: a solid two-colour square
+(`probes/safewidth/Sources/swhelper/main.swift:36-46`). They are therefore
+reported `notObserved`, never hidden and never restored, and the recorded runs
+can only exercise the fold, the stability rule and real app icons.
+
+Consequence for Ice: an item drawn as a solid block is outside what this detector
+can decide. That is a refusal, not a wrong answer — but it is a real gap, and a
+shipped version has to say so rather than report such an item as hidden.
+
 ### The move primitive
 
 **Positive control:** a human Command-drag swaps two helper items and the swap
@@ -312,6 +405,12 @@ and each cost a round of work.
 | Expanding the spacer is order-dependent: 600pt hid everything from 1pt and nothing when set directly | The run that "hid nothing" saved a screenshot of itself: `«` and no probes — it *had* hidden everything. The claim came from AX and AppKit frames that had not caught up. A replication of that exact topology (`o0`, N=3 per path) finds the pixels identical on both paths at every hold from 0.25 s to 8 s, while AX still describes the two paths differently. |
 | An item's AX frame says where it is | For overflowed items it does not. Same pixels, two AX stories; one capture caught the spacer reported at its old x with its new width. |
 | The spacer's own window frame tells it whether an expansion hid anything | Only when it was jumped there from rest. Stepped up in place, its x stops moving at the fold and stays there while the target comes *back*: at 852, 868 and 912 the AX x is the same 368 it had at 652, and the target is visible. A length-picking loop that adjusts in place and reads its own frame would call that success. Proposed as the fix for `Lengths.expanded`, refuted before any code was written. |
+| `MenuBarItemImageCache` can supply the visual detector's templates | It is always empty on macOS 27, and the per-item windows it captured do not exist at any layer. Stated as the plan for a whole round before the window list was read. |
+| Two captures of the same bar differ only where something moved | With a terminal under the translucent bar, two captures 2 s apart differed in 17–23 % of the status area's pixels. A matcher that compares backdrop colour was designed on that assumption and had to be replaced before it ran. |
+| Two capture APIs that return the same size return the same pixels | Claimed after one comparison whose two captures were 2 s apart; the difference was the backdrop, not the API. Withdrawn; equivalence remains unmeasured. |
+| `MenuBarItemImageCache` can supply the visual detector's templates | It is always empty on macOS 27, and the per-item windows it captured do not exist at any layer. It was the plan for a whole round before the window list was read. |
+| Two captures of the same bar differ only where something moved | With a terminal under the translucent bar, two captures 2 s apart differed in 17–23 % of the status area's pixels. A matcher that compared backdrop colour was designed on that assumption and had to be replaced before it ran. |
+| Two capture APIs returning the same size return the same pixels | Claimed after one comparison whose captures were 2 s apart; what differed was the backdrop, not the API. Withdrawn — equivalence is unmeasured. |
 | A thread of ours can release a system assertion if we crash | It cannot: a thread dies with its process. The spacer survives a crash only because the status item dies with the process too. An assertion held against another process has no such property, and nothing here has tested what happens to one. |
 
 ---
