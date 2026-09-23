@@ -1,0 +1,7 @@
++    /// The macOS 27 check of whether hiding a section took effect (plan D7).
++    private(set) var hidingVerifier: HidingVerifier?
++    /// The latest result of that check, shown in the menu bar layout pane.
++    @Published var hidingCheckStatus: HidingCheckStatus?
++        if #available(macOS 27, *) {
++            hidingVerifier = makeHidingVerifier()
++        }
