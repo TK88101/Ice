@@ -10,7 +10,7 @@ struct MenuBarLayoutSettingsPane: View {
     @ObservedObject var itemManager: MenuBarItemManager
 
     private var hasItems: Bool {
-        !itemManager.itemCache.managedItems.isEmpty
+        itemManager.itemCache.isLoaded || !itemManager.itemCache.managedItems.isEmpty
     }
 
     var body: some View {
@@ -21,6 +21,7 @@ struct MenuBarLayoutSettingsPane: View {
         } else {
             IceForm(spacing: 20) {
                 header
+                hidingCheckStatusLine
                 layoutBars
             }
         }
@@ -53,6 +54,8 @@ struct MenuBarLayoutSettingsPane: View {
         .overlay {
             if !hasItems {
                 loadingMenuBarItems
+            } else if itemManager.itemCache.managedItems.isEmpty {
+                noMenuBarItems
             }
         }
     }
@@ -86,6 +89,26 @@ struct MenuBarLayoutSettingsPane: View {
             ProgressView()
         }
         .font(.title)
+    }
+
+    @ViewBuilder
+    private var noMenuBarItems: some View {
+        Text("No menu bar items")
+            .font(.title)
+    }
+
+    /// On macOS 27: whether hiding a section took effect, as Ice last
+    /// checked it (plan D7). Never set on earlier systems.
+    @ViewBuilder
+    private var hidingCheckStatusLine: some View {
+        if let status = appState.hidingCheckStatus {
+            IceSection {
+                Text(status.message)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(10)
+            }
+        }
     }
 
     @ViewBuilder

@@ -12,6 +12,8 @@
 		1787C4272B16890B002F50DF /* AXSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 1787C4262B16890B002F50DF /* AXSwift */; };
 		17F71BB52B880B4500905CBA /* CompactSlider in Frameworks */ = {isa = PBXBuildFile; productRef = 17F71BB42B880B4500905CBA /* CompactSlider */; };
 		1CE0000000000000000000A3 /* IceCore in Frameworks */ = {isa = PBXBuildFile; productRef = 1CE0000000000000000000A2 /* IceCore */; };
+		1CE0000000000000000000B3 /* MenuBarDiscovery in Frameworks */ = {isa = PBXBuildFile; productRef = 1CE0000000000000000000B2 /* MenuBarDiscovery */; };
+		1CE0000000000000000000B5 /* MenuBarDetectorFeed in Frameworks */ = {isa = PBXBuildFile; productRef = 1CE0000000000000000000B4 /* MenuBarDetectorFeed */; };
 		7127A9FF2C4886D100D99DEF /* IfritStatic in Frameworks */ = {isa = PBXBuildFile; productRef = 7127A9FE2C4886D100D99DEF /* IfritStatic */; };
 		7168EE532E281CBC00FF9830 /* AXSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 7168EE522E281CBC00FF9830 /* AXSwift */; };
 		7188A68C2E27F9ED008F131D /* MenuBarItemService.xpc in Embed XPC Services */ = {isa = PBXBuildFile; fileRef = 7188A6832E27F9ED008F131D /* MenuBarItemService.xpc */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -82,6 +84,8 @@
 				1787C4272B16890B002F50DF /* AXSwift in Frameworks */,
 				17F71BB52B880B4500905CBA /* CompactSlider in Frameworks */,
 				1CE0000000000000000000A3 /* IceCore in Frameworks */,
+				1CE0000000000000000000B3 /* MenuBarDiscovery in Frameworks */,
+				1CE0000000000000000000B5 /* MenuBarDetectorFeed in Frameworks */,
 				71A065092E680C620087DB38 /* Semaphore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -145,6 +149,8 @@
 				170423D82B56DE78004A2549 /* Sparkle */,
 				17F71BB42B880B4500905CBA /* CompactSlider */,
 				1CE0000000000000000000A2 /* IceCore */,
+				1CE0000000000000000000B2 /* MenuBarDiscovery */,
+				1CE0000000000000000000B4 /* MenuBarDetectorFeed */,
 				7127A9FE2C4886D100D99DEF /* IfritStatic */,
 				71A065082E680C620087DB38 /* Semaphore */,
 			);
@@ -209,6 +215,7 @@
 				170423D72B56DE78004A2549 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				17F71BB32B880B4500905CBA /* XCLocalSwiftPackageReference "Packages/CompactSlider" */,
 				1CE0000000000000000000A1 /* XCLocalSwiftPackageReference "Packages/IceCore" */,
+				1CE0000000000000000000B1 /* XCLocalSwiftPackageReference "Packages/MenuBarDiscovery" */,
 				7127A9FB2C4881BC00D99DEF /* XCRemoteSwiftPackageReference "Ifrit" */,
 				71A065072E680C620087DB38 /* XCRemoteSwiftPackageReference "Semaphore" */,
 			);
@@ -570,6 +577,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/IceCore;
 		};
+		1CE0000000000000000000B1 /* XCLocalSwiftPackageReference "Packages/MenuBarDiscovery" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/MenuBarDiscovery;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -638,6 +649,14 @@
 		1CE0000000000000000000A2 /* IceCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = IceCore;
+		};
+		1CE0000000000000000000B2 /* MenuBarDiscovery */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MenuBarDiscovery;
+		};
+		1CE0000000000000000000B4 /* MenuBarDetectorFeed */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MenuBarDetectorFeed;
 		};
 		7127A9FE2C4886D100D99DEF /* IfritStatic */ = {
 			isa = XCSwiftPackageProductDependency;

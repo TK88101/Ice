@@ -195,7 +195,7 @@ private struct MenuBarSearchContentView: View {
     let closePanel: () -> Void
 
     private var hasItems: Bool {
-        !itemManager.itemCache.managedItems.isEmpty
+        itemManager.itemCache.isLoaded || !itemManager.itemCache.managedItems.isEmpty
     }
 
     private var bottomBarPadding: CGFloat {
@@ -250,7 +250,11 @@ private struct MenuBarSearchContentView: View {
 
     @ViewBuilder
     private var mainContent: some View {
-        if hasItems {
+        if hasItems && itemManager.itemCache.managedItems.isEmpty {
+            Text("No menu bar items")
+                .font(.title2)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if hasItems {
             SectionedList(selection: $model.selection, items: $model.displayedItems)
                 .contentPadding(8)
                 .scrollContentBackground(.hidden)
@@ -377,7 +381,7 @@ private struct MenuBarSearchContentView: View {
         closePanel()
         Task {
             try await Task.sleep(for: .milliseconds(25))
-            if Bridging.isWindowOnScreen(item.windowID) {
+            if item.source.windowID.map(Bridging.isWindowOnScreen) ?? false {
                 try await itemManager.click(item: item, with: .left)
             } else {
                 await itemManager.temporarilyShow(item: item, clickingWith: .left)
@@ -415,7 +419,7 @@ private struct ShowItemButton: View {
     var body: some View {
         Button(action: action) {
             HStack {
-                Text("\(Bridging.isWindowOnScreen(item.windowID) ? "Click" : "Show") Item")
+                Text("\(item.source.windowID.map(Bridging.isWindowOnScreen) ?? false ? "Click" : "Show") Item")
                     .padding(.leading, 5)
 
                 Image(systemName: "return")

@@ -6,6 +6,7 @@
 import Cocoa
 import Combine
 import IceCore
+import MenuBarDiscovery
 import OSLog
 import Semaphore
 
@@ -14,6 +15,35 @@ import Semaphore
 final class MenuBarItemManager: ObservableObject {
     /// The current cache of menu bar items.
     @Published private(set) var itemCache = ItemCache(displayID: nil)
+
+    /// The tag-to-section map of the last macOS 27 discovery pass (D10,
+    /// plan 4.4), published read-only for the hiding-check verifier.
+    @Published private(set) var discoveredSectionMap = [TagKey: ItemSection]()
+
+    /// The key of Ice's own visible control item, as the last macOS 27
+    /// discovery pass read it, published read-only for the verifier.
+    @Published private(set) var iceIconKey: ItemKey?
+
+    /// The last macOS 27 discovery pass's set, kept so `MenuBarDiscoverer`'s
+    /// rotating cursor and `ItemCatalog.carryOver` both continue across
+    /// passes (D11).
+    private var lastDiscoveredSet: DiscoveredItemSet?
+
+    /// One divider's state changes as Ice's own model reports them (D10,
+    /// macOS 27 only): whether its control item is collapsed
+    /// (`.showSection`), when that last changed, and a generation bumped on
+    /// every emission (redundant ones included) so a pass can tell whether
+    /// the divider moved while it ran.
+    private struct DividerSnapshot {
+        let isCollapsed: Bool
+        let changedAt: Double
+        let generation: Int
+    }
+
+    /// Kept live by `configureDividerTracking` (macOS 27 only). Empty until
+    /// the first emission: `performSetup` runs the first cache pass before
+    /// `configureCancellables`, and that pass reads the dividers directly.
+    private var dividerSnapshots = [MenuBarSection.Name: DividerSnapshot]()
 
     /// Logger for the menu bar item manager.
     private nonisolated let logger = Logger.menuBarItemManager
@@ -78,7 +108,36 @@ final class MenuBarItemManager: ObservableObject {
             }
             .store(in: &c)
 
+        if #available(macOS 27, *) {
+            configureDividerTracking(with: appState, storingIn: &c)
+        }
+
         cancellables = c
+    }
+
+    /// Keeps `dividerSnapshots` live from Ice's own control-item state (D10,
+    /// macOS 27 only).
+    @available(macOS 27, *)
+    private func configureDividerTracking(with appState: AppState, storingIn c: inout Set<AnyCancellable>) {
+        for name: MenuBarSection.Name in [.hidden, .alwaysHidden] {
+            appState.menuBarManager.section(withName: name)?.controlItem.$state
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] state in
+                    self?.recordDividerState(state, for: name)
+                }
+                .store(in: &c)
+        }
+    }
+
+    @available(macOS 27, *)
+    private func recordDividerState(_ state: ControlItem.HidingState, for name: MenuBarSection.Name) {
+        let previous = dividerSnapshots[name]
+        let isCollapsed = state == .showSection
+        // A redundant assignment (hiding assigns all three items) bumps the
+        // generation but does not restart the settle.
+        let changedAt = previous.flatMap { $0.isCollapsed == isCollapsed ? $0.changedAt : nil }
+            ?? ProcessInfo.processInfo.systemUptime
+        dividerSnapshots[name] = DividerSnapshot(isCollapsed: isCollapsed, changedAt: changedAt, generation: (previous?.generation ?? 0) + 1)
     }
 
     /// Returns a Boolean value that indicates whether the most recent
@@ -155,6 +214,12 @@ extension MenuBarItemManager {
         /// The identifier of the display with the active menu bar at
         /// the time this cache was created.
         let displayID: CGDirectDisplayID?
+
+        /// Whether a macOS 27 discovery pass has completed at least once
+        /// (D11). Set only by the macOS 27 branch; the views' loading gates
+        /// read `isLoaded || !managedItems.isEmpty`, since a completed pass
+        /// can legitimately find no items at all.
+        var isLoaded = false
 
         /// The cached menu bar items as an array.
         var managedItems: [MenuBarItem] {
@@ -265,7 +330,7 @@ extension MenuBarItemManager {
         }
 
         func bestBounds(for item: MenuBarItem) -> CGRect {
-            Bridging.getWindowBounds(for: item.windowID) ?? item.bounds
+            item.source.windowID.flatMap { Bridging.getWindowBounds(for: $0) } ?? item.bounds
         }
 
         func isValidForCaching(_ item: MenuBarItem) -> Bool {
@@ -367,6 +432,11 @@ extension MenuBarItemManager {
                 return
             }
 
+            if #available(macOS 27, *) {
+                await cacheDiscoveredItems()
+                return
+            }
+
             guard !lastMoveOperationOccurred(within: .seconds(1)) else {
                 logger.debug("Skipping menu bar item cache due to recent item movement")
                 return
@@ -386,7 +456,7 @@ extension MenuBarItemManager {
                 return
             }
 
-            let itemWindowIDs = currentItemWindowIDs ?? items.reversed().map { $0.windowID }
+            let itemWindowIDs = currentItemWindowIDs ?? items.reversed().compactMap { $0.source.windowID }
 
             guard let controlItems = ControlItemPair(items: &items) else {
                 // ???: Is clearing the cache the best thing to do here?
@@ -429,10 +499,114 @@ extension MenuBarItemManager {
     /// the hidden and always-hidden sections are correctly ordered,
     /// arranging them into valid positions if needed.
     func cacheItemsIfNeeded() async {
+        if #available(macOS 27, *) {
+            await cacheItemsRegardless()
+            return
+        }
+
         let itemWindowIDs = Bridging.getMenuBarWindowList(option: [.itemsOnly, .activeSpace])
         if await cacheActor.shouldCacheItems(for: itemWindowIDs) {
             await cacheItemsRegardless(itemWindowIDs)
         }
+    }
+
+    /// One macOS 27 cache pass (D11, D12, D10): runs `MenuBarItem.discoverItems`
+    /// instead of the window-list path, computes each item's section from
+    /// Ice's own dividers, and publishes the result. Called on every tick
+    /// (D12: a signature costs the same walk as the pass itself), so only a
+    /// changed cache is actually assigned.
+    @available(macOS 27, *)
+    private func cacheDiscoveredItems() async {
+        guard !lastMoveOperationOccurred(within: .seconds(1)) else {
+            logger.debug("Skipping menu bar item cache due to recent item movement")
+            return
+        }
+
+        let before = (hidden: dividerSnapshot(.hidden), alwaysHidden: dividerSnapshot(.alwaysHidden))
+        let passStart = ProcessInfo.processInfo.systemUptime
+
+        guard let discovery = await MenuBarItem.discoverItems(previous: lastDiscoveredSet) else {
+            return
+        }
+        guard !Task.isCancelled else {
+            logger.debug("Discarding superseded menu bar item cache pass")
+            return
+        }
+
+        let states = DividerStates(
+            hidden: dividerState(.hidden, before: before.hidden, passStart: passStart),
+            alwaysHidden: dividerState(.alwaysHidden, before: before.alwaysHidden, passStart: passStart)
+        )
+
+        let plan = DiscoveredCachePlan.make(set: discovery.set, dividerStates: states, previous: discoveredSectionMap)
+        lastDiscoveredSet = discovery.set
+
+        switch plan {
+        case .publish(let publication):
+            var cache = ItemCache(displayID: Bridging.getActiveMenuBarDisplayID())
+            cache[.visible] = publication.visible.map { MenuBarItem(discovered: $0, origin: discovery.origin) }
+            cache[.hidden] = publication.hidden.map { MenuBarItem(discovered: $0, origin: discovery.origin) }
+            cache[.alwaysHidden] = publication.alwaysHidden.map { MenuBarItem(discovered: $0, origin: discovery.origin) }
+            cache.isLoaded = true
+
+            if discoveredSectionMap != publication.sectionMap {
+                discoveredSectionMap = publication.sectionMap
+            }
+            let newIceIconKey = discovery.set.visibleControlItem?.key
+            if iceIconKey != newIceIconKey {
+                iceIconKey = newIceIconKey
+            }
+            if itemCache != cache {
+                itemCache = cache
+            }
+
+            if await cacheActor.commitCachedItemWindowIDs([]) {
+                logger.info("Accessibility permission is back, resuming menu bar item cache")
+            }
+            for note in publication.notes {
+                logger.debug("Menu bar item cache boundary note: \(String(describing: note), privacy: .public)")
+            }
+        case .keepPrevious(.permissionDenied):
+            if await cacheActor.recordCacheFailure() {
+                logger.warning("Accessibility permission denied, keeping the previous menu bar item cache")
+            } else {
+                logger.info("Still missing accessibility permission, will retry")
+            }
+        }
+    }
+
+    /// A divider's latest snapshot, or -- before the first emission -- its
+    /// control item's state read directly, not yet settled (D10).
+    @available(macOS 27, *)
+    private func dividerSnapshot(_ name: MenuBarSection.Name) -> DividerSnapshot {
+        if let stored = dividerSnapshots[name] {
+            return stored
+        }
+        let isCollapsed = appState?.menuBarManager.section(withName: name)?.controlItem.state == .showSection
+        return DividerSnapshot(isCollapsed: isCollapsed, changedAt: ProcessInfo.processInfo.systemUptime, generation: 0)
+    }
+
+    /// Whether a divider's section is enabled, read when the pass ends:
+    /// turning the always-hidden section on or off does not change any
+    /// control item's `state`, so it cannot be tracked from there.
+    @available(macOS 27, *)
+    private func isDividerEnabled(_ name: MenuBarSection.Name) -> Bool {
+        guard let appState else {
+            return false
+        }
+        return name == .hidden
+            ? appState.menuBarManager.section(withName: .hidden)?.isEnabled ?? false
+            : appState.settings.advanced.enableAlwaysHiddenSection
+    }
+
+    @available(macOS 27, *)
+    private func dividerState(_ name: MenuBarSection.Name, before: DividerSnapshot, passStart: Double) -> DividerState {
+        DividerState(
+            isEnabled: isDividerEnabled(name),
+            isCollapsed: before.isCollapsed,
+            collapsedFor: before.isCollapsed ? passStart - before.changedAt : 0,
+            changedDuringPass: before.generation != (dividerSnapshots[name]?.generation ?? 0)
+        )
     }
 }
 
@@ -457,6 +631,8 @@ extension MenuBarItemManager {
         case itemResponseTimeout(MenuBarItem)
         /// A menu bar item's bounds cannot be found.
         case missingItemBounds(MenuBarItem)
+        /// A menu bar item has no window on this version of macOS (D6).
+        case unsupportedSource(MenuBarItem)
 
         var description: String {
             switch self {
@@ -476,6 +652,8 @@ extension MenuBarItemManager {
                 "\(Self.self).itemResponseTimeout(item: \(item.tag))"
             case .missingItemBounds(let item):
                 "\(Self.self).missingItemBounds(item: \(item.tag))"
+            case .unsupportedSource(let item):
+                "\(Self.self).unsupportedSource(item: \(item.tag))"
             }
         }
 
@@ -497,12 +675,18 @@ extension MenuBarItemManager {
                 "\"\(item.displayName)\" took too long to respond"
             case .missingItemBounds(let item):
                 "Missing bounds rectangle for \"\(item.displayName)\""
+            case .unsupportedSource(let item):
+                "\"\(item.displayName)\" cannot be moved or clicked on this version of macOS"
             }
         }
 
         var recoverySuggestion: String? {
-            if case .itemNotMovable = self { return nil }
-            return "Please try again. If the error persists, please file a bug report."
+            switch self {
+            case .itemNotMovable, .unsupportedSource:
+                return nil
+            default:
+                return "Please try again. If the error persists, please file a bug report."
+            }
         }
     }
 
@@ -563,8 +747,11 @@ extension MenuBarItemManager {
 
     /// Returns the current bounds for the given item.
     private nonisolated func getCurrentBounds(for item: MenuBarItem) async throws -> CGRect {
+        guard case .window(let windowID) = item.source else {
+            throw EventError.unsupportedSource(item)
+        }
         let task = Task.detached(priority: .userInitiated) {
-            guard let bounds = Bridging.getWindowBounds(for: item.windowID) else {
+            guard let bounds = Bridging.getWindowBounds(for: windowID) else {
                 throw EventError.missingItemBounds(item)
             }
             return bounds
@@ -1044,6 +1231,13 @@ extension MenuBarItemManager {
             eventSemaphore.signal()
         }
 
+        guard let windowID = item.source.windowID else {
+            throw EventError.unsupportedSource(item)
+        }
+        guard let targetWindowID = destination.targetItem.source.windowID else {
+            throw EventError.unsupportedSource(destination.targetItem)
+        }
+
         var itemOrigin = try await getCurrentBounds(for: item).origin
         let targetPoints = try await getTargetPoints(forMoving: item, to: destination)
         let mouseLocation = try getMouseLocation()
@@ -1053,13 +1247,13 @@ extension MenuBarItemManager {
 
         guard
             let mouseDown = CGEvent.menuBarItemEvent(
-                item: item,
+                windowID: windowID,
                 source: source,
                 type: .move(.mouseDown),
                 location: targetPoints.start
             ),
             let mouseUp = CGEvent.menuBarItemEvent(
-                item: destination.targetItem,
+                windowID: targetWindowID,
                 source: source,
                 type: .move(.mouseUp),
                 location: targetPoints.end
@@ -1128,6 +1322,12 @@ extension MenuBarItemManager {
     ///   - item: The menu bar item to move.
     ///   - destination: The destination to move the item to.
     func move(item: MenuBarItem, to destination: MoveDestination) async throws {
+        guard case .window = item.source else {
+            throw EventError.unsupportedSource(item)
+        }
+        guard case .window = destination.targetItem.source else {
+            throw EventError.unsupportedSource(destination.targetItem)
+        }
         guard item.isMovable else {
             throw EventError.itemNotMovable(item)
         }
@@ -1215,6 +1415,10 @@ extension MenuBarItemManager {
             eventSemaphore.signal()
         }
 
+        guard let windowID = item.source.windowID else {
+            throw EventError.unsupportedSource(item)
+        }
+
         let clickPoint = try await getCurrentBounds(for: item).center
         let mouseLocation = try getMouseLocation()
         let source = try getEventSource()
@@ -1226,13 +1430,13 @@ extension MenuBarItemManager {
 
         guard
             let mouseDown = CGEvent.menuBarItemEvent(
-                item: item,
+                windowID: windowID,
                 source: source,
                 type: .click(clickTypes.down),
                 location: clickPoint
             ),
             let mouseUp = CGEvent.menuBarItemEvent(
-                item: item,
+                windowID: windowID,
                 source: source,
                 type: .click(clickTypes.up),
                 location: clickPoint
@@ -1283,6 +1487,9 @@ extension MenuBarItemManager {
     ///   - item: The menu bar item to click.
     ///   - mouseButton: The mouse button to click the item with.
     func click(item: MenuBarItem, with mouseButton: CGMouseButton) async throws {
+        guard case .window = item.source else {
+            throw EventError.unsupportedSource(item)
+        }
         guard let appState else {
             throw EventError.cannotComplete
         }
@@ -1415,6 +1622,10 @@ extension MenuBarItemManager {
     ///   - item: The item to temporarily show.
     ///   - mouseButton: The mouse button to click the item with.
     func temporarilyShow(item: MenuBarItem, clickingWith mouseButton: CGMouseButton) async {
+        guard case .window = item.source else {
+            logger.info("Item has no window on this version of macOS, so not showing \(item.logString, privacy: .public)")
+            return
+        }
         guard let appState else {
             logger.error("Missing AppState, so not showing \(item.logString, privacy: .public)")
             return
@@ -1786,13 +1997,12 @@ private extension CGEvent {
     /// Returns an event that can be sent to a menu bar item.
     ///
     /// - Parameters:
-    ///   - item: The event's target item.
     ///   - source: The event's source.
     ///   - type: The event's specialized type.
     ///   - location: The event's location. Does not need to be
     ///     within the bounds of the item.
     static func menuBarItemEvent(
-        item: MenuBarItem,
+        windowID: CGWindowID,
         source: CGEventSource,
         type: MenuBarItemEventType,
         location: CGPoint
@@ -1807,7 +2017,7 @@ private extension CGEvent {
         }
         event.setFlags(for: type)
         event.setUserData(ObjectIdentifier(event))
-        event.setWindowID(item.windowID, for: type)
+        event.setWindowID(windowID, for: type)
         event.setClickState(for: type)
         return event
     }

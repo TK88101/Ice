@@ -70,6 +70,12 @@ final class ControlItem {
             self.statusItem.autosaveName = controlItem.identifier.rawValue
 
             if let button = statusItem.button {
+                if #available(macOS 27, *) {
+                    // macOS 27 lists no menu bar item windows, so Ice finds its own
+                    // dividers over Accessibility by this identifier (plan D9).
+                    button.setAccessibilityIdentifier(controlItem.identifier.rawValue)
+                }
+
                 // This could break in a new macOS release, but we need this constraint in order to
                 // be able to hide the status item when the `ShowSectionDividers` setting is disabled.
                 // A previous implementation used `statusItem.isVisible`, which was more robust, but

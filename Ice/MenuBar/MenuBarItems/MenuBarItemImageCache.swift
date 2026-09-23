@@ -117,7 +117,10 @@ final class MenuBarItemImageCache: ObservableObject {
         var boundsUnion = CGRect.null
 
         for item in items {
-            let windowID = item.windowID
+            guard let windowID = item.source.windowID else {
+                result.excluded.append(item)
+                continue
+            }
 
             // Don't use `item.bounds`, it could be out of date.
             guard let bounds = Bridging.getWindowBounds(for: windowID) else {
@@ -173,7 +176,8 @@ final class MenuBarItemImageCache: ObservableObject {
 
         for item in items {
             guard
-                let image = ScreenCapture.captureWindow(with: item.windowID, option: captureOption),
+                let windowID = item.source.windowID,
+                let image = ScreenCapture.captureWindow(with: windowID, option: captureOption),
                 !image.isTransparent()
             else {
                 result.excluded.append(item)
@@ -187,6 +191,11 @@ final class MenuBarItemImageCache: ObservableObject {
 
     /// Captures the images of the given menu bar items and returns the result.
     private nonisolated func captureImages(of items: [MenuBarItem], scale: CGFloat, appState: AppState) async -> CaptureResult {
+        let items = items.filter { $0.source.windowID != nil }
+        guard !items.isEmpty else {
+            return CaptureResult()
+        }
+
         // Use individual capture after a move operation, since composite capture
         // doesn't account for overlapping items.
         if await appState.itemManager.lastMoveOperationOccurred(within: .seconds(2)) {
@@ -257,7 +266,12 @@ final class MenuBarItemImageCache: ObservableObject {
             let sectionImages = await captureImages(for: section, scale: scale, appState: appState)
 
             guard !sectionImages.isEmpty else {
-                logger.warning("Failed item image cache for \(section.logString, privacy: .public)")
+                let isAccessibilityOnly = await appState.itemManager.itemCache[section].allSatisfy { $0.source.windowID == nil }
+                if isAccessibilityOnly {
+                    logger.debug("Failed item image cache for \(section.logString, privacy: .public)")
+                } else {
+                    logger.warning("Failed item image cache for \(section.logString, privacy: .public)")
+                }
                 continue
             }
 

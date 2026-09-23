@@ -49,6 +49,12 @@ final class AppState: ObservableObject {
     /// Manager for user notifications.
     let userNotificationManager = UserNotificationManager()
 
+    /// The macOS 27 check of whether hiding a section took effect (plan D7).
+    private(set) var hidingVerifier: HidingVerifier?
+
+    /// The latest result of that check, shown in the menu bar layout pane.
+    @Published var hidingCheckStatus: HidingCheckStatus?
+
     /// Storage for internal observers.
     private var cancellables = Set<AnyCancellable>()
 
@@ -69,6 +75,9 @@ final class AppState: ObservableObject {
         appearanceManager.performSetup(with: self)
         hidEventManager.performSetup(with: self)
         await itemManager.performSetup(with: self)
+        if #available(macOS 27, *) {
+            hidingVerifier = makeHidingVerifier()
+        }
         imageCache.performSetup(with: self)
         updatesManager.performSetup(with: self)
         userNotificationManager.performSetup(with: self)

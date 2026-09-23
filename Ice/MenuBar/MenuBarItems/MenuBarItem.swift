@@ -3,15 +3,23 @@
 //  Ice
 //
 
+import ApplicationServices
 import Cocoa
+import IceCore
+import MenuBarDiscovery
 
 /// A structural representation of a menu bar item.
 struct MenuBarItem: CustomStringConvertible {
     /// The tag associated with this item.
     let tag: MenuBarItemTag
 
-    /// The item's window identifier.
-    let windowID: CGWindowID
+    /// How Ice reaches the item (plan D1). A handle, not an identity: the
+    /// identity Ice compares across passes is `tag`.
+    let source: Source
+
+    /// The item's identifier for views and caches: its window number on
+    /// macOS 26 and earlier, as before, and its discovery key on macOS 27.
+    let id: ID
 
     /// The identifier of the process that owns the item.
     let ownerPID: pid_t
@@ -27,6 +35,34 @@ struct MenuBarItem: CustomStringConvertible {
 
     /// A Boolean value that indicates whether the item is on screen.
     let isOnScreen: Bool
+
+    /// How Ice reaches an item's underlying interface (plan D1).
+    enum Source: Hashable, CustomStringConvertible {
+        /// The item's window, on macOS 26 and earlier.
+        case window(CGWindowID)
+        /// The item's process, over Accessibility, on macOS 27, where the
+        /// window list is empty. No window-only operation accepts it (D6).
+        case accessibility(pid: pid_t)
+
+        /// The window, if the item has one.
+        var windowID: CGWindowID? {
+            guard case .window(let id) = self else { return nil }
+            return id
+        }
+
+        var description: String {
+            switch self {
+            case .window(let id): "window \(id)"
+            case .accessibility(let pid): "accessibility, pid \(pid)"
+            }
+        }
+    }
+
+    /// The item's identifier for views and caches (plan D1).
+    enum ID: Hashable {
+        case window(CGWindowID)
+        case accessibility(String)
+    }
 
     /// A Boolean value that indicates whether this item can be moved.
     var isMovable: Bool {
@@ -156,7 +192,7 @@ struct MenuBarItem: CustomStringConvertible {
 
     /// A string to use for logging purposes.
     var logString: String {
-        "<\(tag) (windowID: \(windowID))>"
+        "<\(tag) (\(source))>"
     }
 
     /// Creates a menu bar item without checks.
@@ -165,7 +201,8 @@ struct MenuBarItem: CustomStringConvertible {
     /// Only call it if you are certain the window is a valid menu bar item.
     private init(uncheckedItemWindow itemWindow: WindowInfo) {
         self.tag = MenuBarItemTag(uncheckedItemWindow: itemWindow)
-        self.windowID = itemWindow.windowID
+        self.source = .window(itemWindow.windowID)
+        self.id = .window(itemWindow.windowID)
         self.ownerPID = itemWindow.ownerPID
         self.sourcePID = itemWindow.ownerPID
         self.bounds = itemWindow.bounds
@@ -181,12 +218,33 @@ struct MenuBarItem: CustomStringConvertible {
     @available(macOS 26.0, *)
     private init(uncheckedItemWindow itemWindow: WindowInfo, sourcePID: pid_t?) {
         self.tag = MenuBarItemTag(uncheckedItemWindow: itemWindow, sourcePID: sourcePID)
-        self.windowID = itemWindow.windowID
+        self.source = .window(itemWindow.windowID)
+        self.id = .window(itemWindow.windowID)
         self.ownerPID = itemWindow.ownerPID
         self.sourcePID = sourcePID
         self.bounds = itemWindow.bounds
         self.title = itemWindow.title
         self.isOnScreen = itemWindow.isOnScreen
+    }
+
+    /// An item found over Accessibility on macOS 27 (plan 4.4): its tag from
+    /// its discovery key (4.1.3), its frame in global coordinates as
+    /// the equivalent window bounds lookup gave it on earlier systems, and never "on screen" --
+    /// Accessibility does not say whether an item is drawn.
+    @available(macOS 27, *)
+    init(discovered item: DiscoveredItem, origin: DiscoveryOrigin) {
+        self.tag = MenuBarItemTag(namespace: .string(item.tagKey.namespace), title: item.tagKey.title)
+        self.source = .accessibility(pid: item.key.pid)
+        self.id = .accessibility(item.key.encoded)
+        self.ownerPID = item.key.pid
+        self.sourcePID = item.key.pid
+        if let frame = item.frame {
+            self.bounds = CGRect(x: frame.minX + origin.x, y: frame.minY + origin.y, width: frame.width, height: frame.height)
+        } else {
+            self.bounds = .zero
+        }
+        self.title = item.displayTitle
+        self.isOnScreen = false
     }
 }
 
@@ -281,7 +339,8 @@ extension MenuBarItem {
 extension MenuBarItem: Equatable {
     static func == (lhs: MenuBarItem, rhs: MenuBarItem) -> Bool {
         lhs.tag == rhs.tag &&
-        lhs.windowID == rhs.windowID &&
+        lhs.source == rhs.source &&
+        lhs.id == rhs.id &&
         lhs.ownerPID == rhs.ownerPID &&
         lhs.sourcePID == rhs.sourcePID &&
         NSStringFromRect(lhs.bounds) == NSStringFromRect(rhs.bounds) &&
@@ -294,13 +353,50 @@ extension MenuBarItem: Equatable {
 extension MenuBarItem: Hashable {
     func hash(into hasher: inout Hasher) {
         hasher.combine(tag)
-        hasher.combine(windowID)
+        hasher.combine(source)
+        hasher.combine(id)
         hasher.combine(ownerPID)
         hasher.combine(sourcePID)
         hasher.combine(NSStringFromRect(bounds))
         hasher.combine(title)
         hasher.combine(isOnScreen)
     }
+}
+
+// MARK: - Discovery (macOS 27)
+
+extension MenuBarItem {
+    /// One macOS 27 discovery pass (plan 4.2, 4.4); `nil` when cancelled.
+    ///
+    /// Backed by one shared `MenuBarDiscoverer` so its rotating cursor (D19,
+    /// plan 4.2) carries across passes. Called only by the cache pass (D11);
+    /// `getMenuBarItems` and its six callers are unchanged.
+    @available(macOS 27, *)
+    static func discoverItems(previous: DiscoveredItemSet?) async -> DiscoveryResult? {
+        await discoverer.discover(previous: previous)
+    }
+
+    @available(macOS 27, *)
+    private static let discoverer = MenuBarDiscoverer(
+        apps: LiveRunningApps(),
+        reader: LiveExtrasReader(),
+        display: LiveDisplay(screen: { NSScreen.screenWithActiveMenuBar ?? NSScreen.main }),
+        isTrusted: { AXIsProcessTrusted() },
+        ownIdentifiers: .ice,
+        now: { ProcessInfo.processInfo.systemUptime }
+    )
+}
+
+extension OwnIdentifiers {
+    /// Ice's own control-item identifiers (D9), taken from
+    /// `ControlItem.Identifier` rather than hard-coded, so discovery can
+    /// never drift out of sync with what Ice actually sets as an
+    /// accessibility identifier (`ControlItem.swift`).
+    static let ice = OwnIdentifiers(
+        visible: ControlItem.Identifier.visible.rawValue,
+        hidden: ControlItem.Identifier.hidden.rawValue,
+        alwaysHidden: ControlItem.Identifier.alwaysHidden.rawValue
+    )
 }
 
 // MARK: - MenuBarItemTag Helper

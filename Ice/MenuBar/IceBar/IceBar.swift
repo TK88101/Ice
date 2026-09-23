@@ -144,7 +144,7 @@ final class IceBarPanel: NSPanel {
                     let controlItem = appState.itemManager.itemCache.managedItems.first(matching: .visibleControlItem),
                     // Bridging API is more reliable than controlItem.frame in some
                     // cases (like if the item is offscreen).
-                    let itemBounds = Bridging.getWindowBounds(for: controlItem.windowID)
+                    let itemBounds = iceIconBounds(controlItem)
                 else {
                     return originForRightOfScreen
                 }
@@ -154,6 +154,16 @@ final class IceBarPanel: NSPanel {
         }
 
         setFrameOrigin(getOrigin(for: appState.settings.general.iceBarLocation))
+    }
+
+    /// The Ice icon's bounds: its window's on macOS 26 and earlier, its
+    /// Accessibility frame on macOS 27 -- `nil` without one, so the bar
+    /// falls back as it does today.
+    private func iceIconBounds(_ item: MenuBarItem) -> CGRect? {
+        switch item.source {
+        case .window(let windowID): Bridging.getWindowBounds(for: windowID)
+        case .accessibility: item.bounds == .zero ? nil : item.bounds
+        }
     }
 
     /// Shows the panel on the given screen, displaying the given
@@ -361,7 +371,7 @@ private struct IceBarContentView: View {
         } else if menuBarManager.isMenuBarHiddenBySystemUserDefaults {
             Text("Ice cannot display menu bar items for automatically hidden menu bars")
                 .padding(.horizontal, 10)
-        } else if itemManager.itemCache.managedItems.isEmpty {
+        } else if !itemManager.itemCache.isLoaded && itemManager.itemCache.managedItems.isEmpty {
             HStack {
                 Text("Loading menu bar items…")
                 ProgressView()
@@ -374,7 +384,7 @@ private struct IceBarContentView: View {
         } else {
             ScrollView(.horizontal) {
                 HStack(spacing: 0) {
-                    ForEach(items, id: \.windowID) { item in
+                    ForEach(items, id: \.id) { item in
                         IceBarItemView(
                             imageCache: imageCache,
                             itemManager: itemManager,
@@ -413,7 +423,7 @@ private struct IceBarItemView: View {
             menuBarManager.section(withName: section)?.hide()
             Task {
                 try await Task.sleep(for: .milliseconds(25))
-                if Bridging.isWindowOnScreen(item.windowID) {
+                if item.source.windowID.map(Bridging.isWindowOnScreen) ?? false {
                     try await itemManager.click(item: item, with: .left)
                 } else {
                     await itemManager.temporarilyShow(item: item, clickingWith: .left)
@@ -430,7 +440,7 @@ private struct IceBarItemView: View {
             menuBarManager.section(withName: section)?.hide()
             Task {
                 try await Task.sleep(for: .milliseconds(25))
-                if Bridging.isWindowOnScreen(item.windowID) {
+                if item.source.windowID.map(Bridging.isWindowOnScreen) ?? false {
                     try await itemManager.click(item: item, with: .right)
                 } else {
                     await itemManager.temporarilyShow(item: item, clickingWith: .right)
