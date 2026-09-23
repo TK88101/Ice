@@ -27,10 +27,16 @@ after Ice's .itemsOnly filter (level != 24): 0 window(s)
 ```
 
 Consequences reach further than discovery. `MenuBarItem.windowID` is the item's
-identity, and nine places depend on it: `Equatable`, SwiftUI `ForEach(id:)`,
-`Bridging.isWindowOnScreen`, `Bridging.getWindowBounds` (three call sites),
-`ScreenCapture.captureWindow`, the `uuidCache` keyed by window ID, and the three
-`CGEvent` fields the mover writes. On macOS 27 none of them can be satisfied.
+**handle**, not its identity (corrected 2026-09-23, READ from the code): the
+identity Ice compares across passes is `MenuBarItemTag` (namespace + title --
+`firstIndex(matching:)`, `address(for:)`, the move timeouts, the temporarily
+shown contexts), and nothing third-party is persisted. The window ID is what Ice
+*does things with*, and nine places depend on it: `Equatable`, SwiftUI
+`ForEach(id:)`, `Bridging.isWindowOnScreen`, `Bridging.getWindowBounds` (three
+call sites), `ScreenCapture.captureWindow`, the `uuidCache` keyed by window ID,
+and the three `CGEvent` fields the mover writes. On macOS 27 none of them can be
+satisfied, and six more callers of `getMenuBarItems` receive `[]` without ever
+touching a window ID (plan `2026-09-23-ax-discovery.md`, section 0).
 
 ---
 
@@ -100,6 +106,83 @@ AX-native mover and a window-directed event mover.
 
 The menu bar does **not** reorder itself. Sampled once per second for 30 s with no
 user input: zero order changes, zero position shifts.
+
+### Discovery through Accessibility, in detail (2026-09-23)
+
+**MEASURED** (read-only census of every running process, several passes 26 min
+apart; raw evidence outside the repo, `~/IceReverse-evidence/20260923-105102-axcensus`):
+
+| fact | value |
+|---|---|
+| extras | 15, from 12 processes; unchanged over three passes |
+| `MenuBarAgent`'s children | 4, role `AXGroup`/`AXHostingView`, no identifier, title, description or help -- a frame only |
+| app children | 11, all `AXMenuBarItem`/`AXMenuExtra`, one per process |
+| identity strings among the 11 | `AXIdentifier` 1, `AXTitle` 1, `AXDescription` 4 (localized), `AXHelp` 2 |
+| parked (x 7, y 1105) | 2 of 11 |
+| adjacent drawn items at rest | AX frames overlap by **2.0 pt** (every one of 118 pairs in an earlier 59-read run too) |
+| element identity | `CFEqual` 15/15 across passes, equal `CFHash` |
+| cost | 1 555 ms cold, 20-23 ms warm for the extras reads; a full pass 24-26 ms warm once background-only processes are skipped |
+| `AXExtrasMenuBar` errors | `success` 12, `noValue` 87, `cannotComplete` 49 (every one under 50 ms -- an immediate refusal, not a timeout), `attributeUnsupported` 3, `apiDisabled` 1 |
+
+A suspended background-only process (activation policy `.prohibited`) held
+every Accessibility request for the full 0.25 s timeout and made every pass
+incomplete; none of them owned an item, so discovery skips them (plan
+Deviations 2). Checked against per-item labels frozen from a fresh census:
+11/11 agree, the negative control fails, the order matches x (plan T6).
+
+**MEASURED on sacrificial helpers** (plan section 6, runs
+`20260923-195750-vzdiscover`, `20260923-200220-vzverify`,
+`20260923-200409-vzdiscover`, and after the Phase 3 changes
+`20260923-210134-vzdiscover`, `20260923-210220-vzverify`, which reproduced
+every result below; nothing of the user's was moved, clicked, resized or
+written):
+
+- **An `AXIdentifier` set on a status item's button survives an
+  `autosaveName`** (plan D9): read back by another process and by the item's
+  own process from a background queue while its main thread runs the app, for
+  a plain item and for one in Ice's `.noDivider` shown state; two runs.
+  About two seconds after launch the autosave name had written no key to
+  the helper's own defaults domain.
+- **A divider in Ice's `.noDivider` shown state is still in Accessibility**:
+  listed, AX frame 2 pt wide on the bar (x 1162.5, y 4.5, 24 pt high), its
+  AppKit window 1 pt wide; reached the way Ice reaches it (length 0 from the
+  standard length, the width constraint deactivated), one matching
+  constraint; two runs. So D10's sections can be computed from the default
+  style's collapsed divider; the carry path is not the normal case.
+- Hiding an item with `isVisible = false` makes its process answer `noValue`
+  for `AXExtrasMenuBar`; shown again, it comes back under the same key, and
+  its element is `CFEqual` to the one read before hiding.
+- **A new item does not reliably appear at the left end of the bar**: helpers
+  launched into a bar whose leftmost item sat at 1094 pt landed at 1143 and
+  1171 pt; one process's two items landed at 1066 and 1191 pt, the second
+  created left of the first. When a neighbour hides, the items beside it move
+  (a user item's glyph was matched 28 pt further right while the target was
+  hidden). A detector baseline that reads only the helpers therefore leaves
+  the user's items' ink unexplained and the fold unreadable; observing every
+  listed item left of them, as the app's check does (plan D15), makes it
+  readable (plan Deviation 8).
+- Two items of one process with no identifier become two positional keys;
+  the detector feed gives them no frame and the check plan skips both.
+- Through discovery and `DiscoveredFrameReader`, the 2026-09-19 protocol gave
+  its verdicts again: five cycles drawn → `hidden(folded: false)` → restored,
+  control (a) `notObserved`, control (b) the hidden target refused; an item
+  with an empty identifier was observed drawn.
+- **The app's check composes** (`HidingVerification` on a helper, with a
+  stand-in for the divider -- a wiring check, not a proof about Ice's
+  divider): prepare → hide → verify gave `hidden(folded: false)`; show → the
+  baseline was reused → verify gave `stillDrawn`. The two-item section of
+  step 6 was not run: there was not enough room on this bar (see below).
+- The capture indicator did not appear left of the items in these runs, so
+  every room check carried its 41 pt reserve (plan section 6); this is why
+  steps 6 and 7 were skipped once each for room.
+
+**What macOS 27 costs Ice, with the plan's changes** -- INFERRED from the code,
+Ice not run: moving, clicking and temporarily showing an item are refused on 27
+(typed, logged; a click in the search panel does nothing); the layout pane's
+rows cannot show item images; `MenuBarAgent`'s elements (the clock, Control
+Centre) are not listed; items of apps that refuse Accessibility are not listed;
+before the first time a divider has been collapsed for a second after launch,
+every item is filed under the visible section.
 
 ### Two different kinds of "not visible"
 
@@ -378,6 +461,11 @@ error, not a missing capability.
   unique, verify the layout version is unchanged, cancel on any mismatch, and
   keep a `mouseUp` watchdog and a verifiable inverse.
 - **No overflow detector.** See the two-kinds-of-invisible table.
+- **Stale comment, deliberately left:** `Packages/MenuBarCapture/Package.swift`
+  says the package is "not referenced by Ice.xcodeproj". Since the 2026-09-23
+  plan, Ice links it through `MenuBarDetectorFeed`; the package is frozen
+  byte for byte (its acceptance check A3), so the comment is corrected here
+  instead.
 - **Identity across restarts is untested** — app relaunch and `MenuBarAgent`
   relaunch were not exercised. If no identity survives a restart *and*
   distinguishes two items of one app, persistence is unsafe rather than helpful:

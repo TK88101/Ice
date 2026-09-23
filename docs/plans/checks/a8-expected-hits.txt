@@ -1,0 +1,77 @@
+# A8 expected hits (plan 7, A8), written before T9 on 2026-09-23.
+# Each line: <path><TAB><trimmed line>. Compared as a multiset against
+# grep -rnE 'getWindowBounds|isWindowOnScreen|captureWindow|setWindowID|windowID' Ice/ by check-a8.sh.
+# Unchanged files keep every hit; MenuBarItem, the manager, the image cache, IceBar and the search panel follow plan 4.4.
+# Corrected during T9 (plan Deviation 9): postMoveEvents' mouseUp carries the destination item's window, as at af4baf1;
+# the first version of this table had lost that, and matching it would have changed a move on macOS 26 and earlier.
+Ice/MenuBar/MenuBarManager.swift	let image = ScreenCapture.captureWindows(
+Ice/MenuBar/MenuBarManager.swift	with: [menuBarWindow.windowID, wallpaperWindow.windowID],
+Ice/MenuBar/IceBar/IceBarColorManager.swift	guard let image = ScreenCapture.captureWindows(
+Ice/MenuBar/IceBar/IceBarColorManager.swift	with: [menuBarWindow.windowID, wallpaperWindow.windowID],
+Ice/MenuBar/Appearance/MenuBarOverlayPanel.swift	let wallpaper = ScreenCapture.captureWindow(with: wallpaperWindow.windowID, screenBounds: menuBarWindow.bounds)
+Ice/Events/HIDEventManager.swift	let windowIDs = Bridging.getMenuBarWindowList(option: [.onScreen, .activeSpace, .itemsOnly])
+Ice/Events/HIDEventManager.swift	return windowIDs.contains { windowID in
+Ice/Events/HIDEventManager.swift	guard let bounds = Bridging.getWindowBounds(for: windowID) else {
+Ice/Utilities/ScreenCapture.swift	for windowID in Bridging.getMenuBarWindowList(option: [.itemsOnly, .activeSpace]) {
+Ice/Utilities/ScreenCapture.swift	let window = WindowInfo(windowID: windowID),
+Ice/Utilities/ScreenCapture.swift	/// of the `windowIDs` parameter.
+Ice/Utilities/ScreenCapture.swift	///   - windowIDs: The identifiers of the windows to capture.
+Ice/Utilities/ScreenCapture.swift	static func captureWindows(with windowIDs: [CGWindowID], screenBounds: CGRect? = nil, option: CGWindowImageOption = []) -> CGImage? {
+Ice/Utilities/ScreenCapture.swift	guard let array = Bridging.createCGWindowArray(with: windowIDs) else {
+Ice/Utilities/ScreenCapture.swift	///   - windowID: The identifier of the window to capture.
+Ice/Utilities/ScreenCapture.swift	static func captureWindow(with windowID: CGWindowID, screenBounds: CGRect? = nil, option: CGWindowImageOption = []) -> CGImage? {
+Ice/Utilities/ScreenCapture.swift	captureWindows(with: [windowID], screenBounds: screenBounds, option: option)
+Ice/MenuBar/Search/MenuBarSearchModel.swift	let image = ScreenCapture.captureWindows(
+Ice/MenuBar/Search/MenuBarSearchModel.swift	with: [menuBarWindow.windowID, wallpaperWindow.windowID],
+Ice/MenuBar/MenuBarItems/MenuBarItem.swift	var windowID: CGWindowID? {
+Ice/MenuBar/MenuBarItems/MenuBarItem.swift	self.source = .window(itemWindow.windowID)
+Ice/MenuBar/MenuBarItems/MenuBarItem.swift	self.source = .window(itemWindow.windowID)
+Ice/MenuBar/MenuBarItems/MenuBarItem.swift	self.id = .window(itemWindow.windowID)
+Ice/MenuBar/MenuBarItems/MenuBarItem.swift	self.id = .window(itemWindow.windowID)
+Ice/MenuBar/MenuBarItems/MenuBarItem.swift	displayBoundsPredicate = { windowID in
+Ice/MenuBar/MenuBarItems/MenuBarItem.swift	Bridging.windowIntersectsDisplayBounds(windowID, displayBounds)
+Ice/MenuBar/MenuBarItems/MenuBarItem.swift	.reversed().compactMap { windowID in
+Ice/MenuBar/MenuBarItems/MenuBarItem.swift	displayBoundsPredicate(windowID),
+Ice/MenuBar/MenuBarItems/MenuBarItem.swift	let window = WindowInfo(windowID: windowID)
+Ice/MenuBar/MenuBarItems/MenuBarItem.swift	} else if let uuid = Self.uuidCache[itemWindow.windowID] {
+Ice/MenuBar/MenuBarItems/MenuBarItem.swift	Self.uuidCache[itemWindow.windowID] = uuid
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	item.source.windowID.flatMap { Bridging.getWindowBounds(for: $0) } ?? item.bounds
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	logger.info("Clearing cached menu bar item windowIDs")
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	let itemWindowIDs = currentItemWindowIDs ?? items.reversed().compactMap { $0.source.windowID }
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	guard case .window(let windowID) = item.source else {
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	guard let bounds = Bridging.getWindowBounds(for: windowID) else {
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	guard let windowID = item.source.windowID else {
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	guard let windowID = item.source.windowID else {
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	guard let targetWindowID = destination.targetItem.source.windowID else {
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	windowID: windowID,
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	windowID: targetWindowID,
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	windowID: windowID,
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	windowID: windowID,
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	let current = WindowInfo(windowID: window.windowID)
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	window.ownerPID == item.sourcePID && !idsBeforeClick.contains(window.windowID)
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	static let windowID = CGEventField(rawValue: 0x33)! // swiftlint:disable:this force_unwrapping
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	.windowID,
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	windowID: CGWindowID,
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	event.setWindowID(windowID, for: type)
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	private func setWindowID(_ windowID: CGWindowID, for type: MenuBarItemEventType) {
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	let windowID = Int64(windowID)
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	setIntegerValueField(.mouseEventWindowUnderMousePointer, value: windowID)
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: windowID)
+Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift	setIntegerValueField(.windowID, value: windowID)
+Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift	var windowIDs = [CGWindowID]()
+Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift	guard let windowID = item.source.windowID else {
+Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift	guard let bounds = Bridging.getWindowBounds(for: windowID) else {
+Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift	windowIDs.append(windowID)
+Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift	storage[windowID] = (item, bounds)
+Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift	let compositeImage = ScreenCapture.captureWindows(with: windowIDs, option: captureOption),
+Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift	for windowID in windowIDs {
+Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift	guard let (item, bounds) = storage[windowID] else {
+Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift	let windowID = item.source.windowID,
+Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift	let image = ScreenCapture.captureWindow(with: windowID, option: captureOption),
+Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift	let items = items.filter { $0.source.windowID != nil }
+Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift	let isAccessibilityOnly = await appState.itemManager.itemCache[section].allSatisfy { $0.source.windowID == nil }
+Ice/MenuBar/IceBar/IceBar.swift	case .window(let windowID): Bridging.getWindowBounds(for: windowID)
+Ice/MenuBar/IceBar/IceBar.swift	if item.source.windowID.map(Bridging.isWindowOnScreen) ?? false {
+Ice/MenuBar/IceBar/IceBar.swift	if item.source.windowID.map(Bridging.isWindowOnScreen) ?? false {
+Ice/MenuBar/Search/MenuBarSearchPanel.swift	if item.source.windowID.map(Bridging.isWindowOnScreen) ?? false {
+Ice/MenuBar/Search/MenuBarSearchPanel.swift	Text("\(item.source.windowID.map(Bridging.isWindowOnScreen) ?? false ? "Click" : "Show") Item")
