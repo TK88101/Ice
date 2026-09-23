@@ -42,6 +42,23 @@ final class LiveRun {
     var target: HelperControl?
     var twin: HelperControl?
 
+    /// The ids the detector sees for the two helpers. `live` keeps the
+    /// 2026-09-19 names; `vizprobe verify` (2026-09-23 plan, step 3) sets
+    /// them to the discovered keys' encodings, read through
+    /// `DiscoveredFrameReader`.
+    var targetID = "target"
+    var referenceID = "reference"
+    /// Control (c), the twin, is left out by the 2026-09-23 plan's step 3.
+    var includeControlC = true
+    /// Other items observed alongside the helpers so their ink is explained
+    /// (2026-09-23 plan, D15 and Deviation 8); empty in the `live` mode.
+    var alsoObservedIDs = [String: pid_t]()
+
+    /// The helpers' ids plus `alsoObservedIDs`.
+    func observedItems(_ helpers: [String: pid_t]) -> [String: pid_t] {
+        helpers.merging(alsoObservedIDs) { first, _ in first }
+    }
+
     init(apps: HelperApps) {
         self.apps = apps
         self.decision = MenuBarItemVisibility(maxMismatch: parameters.maxMismatch)
@@ -116,7 +133,7 @@ final class LiveRun {
     /// `observe()`, recorded, then a safety check -- the shape every step
     /// from step 4 onward repeats.
     func observeChecked(items: [String: pid_t], label: String) -> ObserveOutcome {
-        guard let result = observer.observe(baseline: itemBaseline, targets: ["target"], references: ["reference"], items: items) else {
+        guard let result = observer.observe(baseline: itemBaseline, targets: [targetID] + Array(alsoObservedIDs.keys), references: [referenceID], items: observedItems(items)) else {
             return .failure("\(label): observe failed (a capture or an Accessibility read did not complete)")
         }
         evidence.record("observe", [

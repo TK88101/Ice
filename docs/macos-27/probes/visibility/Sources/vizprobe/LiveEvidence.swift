@@ -19,9 +19,9 @@ final class LiveEvidence {
     private let samples: FileHandle
     private var kept = 0
 
-    init(binaryURLs: [String: URL], arguments: [String], geometry: BarGeometry?, parameters: DetectorParameters) throws {
+    init(binaryURLs: [String: URL], arguments: [String], geometry: BarGeometry?, parameters: DetectorParameters, suffix: String = "vzlive") throws {
         let stamp = Self.timestamp(Date(), format: "yyyyMMdd-HHmmss")
-        runId = "\(stamp)-vzlive"
+        runId = "\(stamp)-\(suffix)"
         directory = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("IceReverse-evidence")
             .appendingPathComponent(runId)

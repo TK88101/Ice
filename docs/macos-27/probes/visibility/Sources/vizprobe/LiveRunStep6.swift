@@ -9,11 +9,11 @@ import MenuBarCapture
 extension LiveRun {
     func step6Controls() -> StepResult {
         guard let target, let reference else { return .abort("helpers not launched") }
-        let items: [String: pid_t] = ["target": target.pid, "reference": reference.pid]
+        let items: [String: pid_t] = [targetID: target.pid, referenceID: reference.pid]
 
         if case .abort(let reason) = controlA(items: items) { return .abort(reason) }
         if case .abort(let reason) = controlB(target: target, items: items) { return .abort(reason) }
-        if case .abort(let reason) = controlC(items: items) { return .abort(reason) }
+        if includeControlC, case .abort(let reason) = controlC(items: items) { return .abort(reason) }
         return .ok
     }
 
@@ -40,20 +40,21 @@ extension LiveRun {
     private func controlB(target: HelperControl, items: [String: pid_t]) -> StepResult {
         target.hide()
         Thread.sleep(forTimeInterval: 1.0)
-        guard let freshBaseline = observer.baseline(items: items, geometry: geometry) else {
+        guard let freshBaseline = observer.baseline(items: observedItems(items), geometry: geometry) else {
             return .abort("control (b): a fresh baseline failed while the target was hidden")
         }
-        evidence.record("control.b.baseline", ["accepted": freshBaseline.acceptedIDs, "rejections": freshBaseline.rejections.mapValues { "\($0)" }])
+        let own = Set(items.keys)
+        evidence.record("control.b.baseline", ["accepted": freshBaseline.acceptedIDs.filter(own.contains), "rejections": freshBaseline.rejections.filter { own.contains($0.key) }.mapValues { "\($0)" }])
         // MEASURED 2026-09-19: an item hidden by its own app with
         // `isVisible = false` leaves `AXExtrasMenuBar` altogether on macOS 27 —
         // it is not parked at x 7, y 1104 the way FINDINGS records for other
         // ways of hiding. So the control passes either way: what matters is
         // that no template is cut from a hidden item.
-        guard !freshBaseline.acceptedIDs.contains("target") else {
+        guard !freshBaseline.acceptedIDs.contains(targetID) else {
             return .abort("control (b): a hidden target was accepted -- accepted=\(freshBaseline.acceptedIDs)")
         }
         evidence.record("control.b.outcome", [
-            "rejected": freshBaseline.rejections["target"].map { "\($0)" } ?? "absent from Accessibility entirely",
+            "rejected": freshBaseline.rejections[targetID].map { "\($0)" } ?? "absent from Accessibility entirely",
         ])
 
         target.show()
@@ -85,7 +86,7 @@ extension LiveRun {
         case .failure(let reason):
             return .abort(reason)
         case .success(let result):
-            let match = result.reading.sightings.first(where: { $0.id == "target" })?.match
+            let match = result.reading.sightings.first(where: { $0.id == targetID })?.match
             guard case .ambiguous? = match else {
                 return .abort("control (c): expected the target's match to read ambiguous with the twin present -- got \(String(describing: match))")
             }

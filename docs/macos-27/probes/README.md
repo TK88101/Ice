@@ -72,3 +72,34 @@ Two things this package learned the hard way, both in `RESULTS.md`:
   only valid for the run that took it, with the same app in front.
 - An app with no windows cannot hold the front once anything else launches, so
   `swfront` keeps a small window in a corner.
+
+## visibility/
+
+The pixel detector's probes (plans `2026-09-19-visibility-adapter.md` and
+`2026-09-23-ax-discovery.md`), a SwiftPM package like `safewidth/`. It links
+IceCore, MenuBarCapture and MenuBarDiscovery; the detector's rules live in
+IceCore and are never changed from here.
+
+| target | what it is | side effects |
+|---|---|---|
+| `vzreplay` | offline replay of recorded strips (2026-09-19 T9) | none |
+| `vzhelper` | the sacrificial status items: `--role` (2026-09-19), or `--items 1\|2 --identifiers none\|a,b --glyphs target\|reference\|alt`, `--mimic-nodivider` (Ice's `.noDivider` shown state, reached as Ice reaches it, never expanded), `--autosave` (step 10 only); stdin commands `hide`, `show`, `frames`, `selfread`, `quit` | one or two status items under `com.icespike4.target` / `.protected` |
+| `VZGlyphs` | the helpers' stroked glyphs, shared so the dry run can check them | none |
+| `vizprobe` | the live harness: `--dry-run` and `live` (2026-09-19); `discover` and `verify` (2026-09-23 section 6), each with its own `--dry-run` | launches helpers, captures the bar; never moves, clicks or resizes anything of the user's |
+
+```sh
+./visibility/build.sh                         # -> /private/tmp/claude-501/visibility-live/apps
+cd /private/tmp/claude-501/visibility-live/apps
+./vizprobe discover --dry-run --apps .        # read-only: bundles, glyphs (+ a twin control), preflight, one discovery pass, step-2 room
+./vizprobe discover --apps .                  # steps 1, 2, 4, 9, 10a, 10b, 7, 8, 11 (D9 and D10 first)
+./vizprobe verify --apps .                    # steps 1, 2, 3, 5, 6, 11
+```
+
+Both live stages check the bundle ids and that no helper is already running
+before anything else, delete and verify-empty a helper's defaults domain before
+every launch, check for `«` or a privacy pill before and after every launch and
+at every safety check, and stop on any unexpected verdict, quitting every
+helper (also on the watchdog, SIGINT, SIGTERM and SIGHUP). Evidence goes to
+`~/IceReverse-evidence/<run id>/`, outside the repo: captures show the user's
+bar. Results: `../FINDINGS.md`, "Discovery through Accessibility, in detail".
+

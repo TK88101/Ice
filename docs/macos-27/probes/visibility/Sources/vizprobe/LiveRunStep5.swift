@@ -7,13 +7,13 @@ import MenuBarCapture
 extension LiveRun {
     func step5Cycles() -> StepResult {
         guard let target, let reference else { return .abort("helpers not launched") }
-        let items: [String: pid_t] = ["target": target.pid, "reference": reference.pid]
+        let items: [String: pid_t] = [targetID: target.pid, referenceID: reference.pid]
 
         for cycle in 1...5 {
             switch observeChecked(items: items, label: "cycle\(cycle).drawn") {
             case .failure(let reason): return .abort(reason)
             case .success(let result):
-                guard case .drawn = result.visibility["target"], result.reading.captureStable, result.reading.fold == .absent else {
+                guard case .drawn = result.visibility[targetID], result.reading.captureStable, result.reading.fold == .absent else {
                     return .abort("cycle \(cycle): expected target drawn, stable, fold absent -- got \(describe(result))")
                 }
             }
@@ -23,7 +23,7 @@ extension LiveRun {
             switch observeChecked(items: items, label: "cycle\(cycle).hidden") {
             case .failure(let reason): return .abort(reason)
             case .success(let result):
-                let hiding = decision.hiding(of: "target", in: result.reading)
+                let hiding = decision.hiding(of: targetID, in: result.reading)
                 guard hiding == .hidden(folded: false) else {
                     return .abort("cycle \(cycle): expected hidden(folded: false) -- got \(hiding)")
                 }
@@ -34,7 +34,7 @@ extension LiveRun {
             switch observeChecked(items: items, label: "cycle\(cycle).restored") {
             case .failure(let reason): return .abort(reason)
             case .success(let result):
-                let restoration = decision.restoration(of: "target", in: result.reading)
+                let restoration = decision.restoration(of: targetID, in: result.reading)
                 guard case .restored = restoration else {
                     return .abort("cycle \(cycle): expected restored -- got \(restoration)")
                 }
@@ -52,7 +52,7 @@ extension LiveRun {
     }
 
     func describe(_ result: ObservationResult) -> String {
-        let visibility = result.visibility["target"].map { "\($0)" } ?? "nil"
+        let visibility = result.visibility[targetID].map { "\($0)" } ?? "nil"
         return "visibility=\(visibility) stable=\(result.reading.captureStable) fold=\(result.reading.fold)"
     }
 }

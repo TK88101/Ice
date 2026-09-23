@@ -56,12 +56,13 @@ extension LiveRun {
 
     func step4Baseline() -> StepResult {
         guard let target, let reference else { return .abort("helpers not launched") }
-        guard let baseline = observer.baseline(items: ["target": target.pid, "reference": reference.pid], geometry: geometry) else {
+        guard let baseline = observer.baseline(items: observedItems([targetID: target.pid, referenceID: reference.pid]), geometry: geometry) else {
             return .abort("baseline: a capture or an Accessibility read failed")
         }
         itemBaseline = baseline
-        evidence.record("baseline", ["accepted": baseline.acceptedIDs, "rejections": baseline.rejections.mapValues { "\($0)" }])
-        guard baseline.acceptedIDs.contains("target"), baseline.acceptedIDs.contains("reference") else {
+        let own = Set([targetID, referenceID])
+        evidence.record("baseline", ["accepted": baseline.acceptedIDs.filter(own.contains), "rejections": baseline.rejections.filter { own.contains($0.key) }.mapValues { "\($0)" }, "fold": "\(baseline.foldAtBaseline)", "alsoObserved": alsoObservedIDs.count])
+        guard baseline.acceptedIDs.contains(targetID), baseline.acceptedIDs.contains(referenceID) else {
             return .abort("baseline did not accept both helpers: accepted=\(baseline.acceptedIDs) rejections=\(baseline.rejections)")
         }
         if let reason = safetyCapture(label: "baseline") {
