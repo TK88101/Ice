@@ -1,7 +1,10 @@
 // I5 step 3: section 2's "Baseline, taken once with the spacer at rest,"
 // the `HidingVerification`/`C1Discoverer` composition that produces
-// Target's `Hiding` verdicts, and the roster snapshot / latch this
-// baseline seeds for section 3 and section 4.
+// Target's `Hiding` verdicts, and the roster snapshot / latch baselines
+// section 3 and section 4 read afterward. P0-2: every capture here goes
+// through `latchingCapturer` (built in `step2Launch`), never the raw
+// capturer. G-b: untemplated owner items get their own AX-keyed baseline
+// alongside the pixel one.
 import AppKit
 import C1Core
 import C1Live
@@ -32,8 +35,12 @@ extension StageC1 {
         }
         ownerItemIDs = ids
 
+        // P0-2: the owner observer's sampler reads through the latch, not
+        // the raw capturer -- the very baseline this step takes is itself
+        // watched (its own `assess` closure is a no-op until this
+        // baseline exists, which is exactly this call).
         let reader = LiveMenuBarAXReader(origin: CGPoint(x: origin.x, y: origin.y))
-        let sampler = Sampler(capturer: capturer, axReader: reader)
+        let sampler = Sampler(capturer: latchingCapturer, axReader: reader)
         ownerObserver = VisibilityObserver(sampler: sampler, parameters: parameters)
 
         var lastBaseline: BaselineResult?
@@ -49,13 +56,14 @@ extension StageC1 {
         self.ownerBaseline = ownerBaseline
         evidence.record("step3.baseline", ["accepted": ownerBaseline.acceptedIDs.count, "rejected": ownerBaseline.rejections.count])
 
-        // The C1Discoverer-backed verification: Target the only section
-        // item, Protected the explicit reference, the divider at the
-        // spacer's own minX (I4).
+        // The C1Discoverer-backed verification (I4): Target the only
+        // section item, Protected the explicit reference, the divider at
+        // the spacer's own minX. P0-2: `latchingCapturer`, not the raw
+        // capturer.
         let liveOrigin = origin
         verification = HidingVerification(
             discoverer: C1Discoverer(base: discoverer, targetKey: targetKey, spacerKey: spacerKey, protectedKey: protectedKey),
-            capturer: capturer,
+            capturer: latchingCapturer,
             readerFactory: { readerOrigin in DiscoveredFrameReader(extras: LiveExtrasReader(), apps: LiveRunningApps(), origin: readerOrigin) },
             geometry: { NSScreen.main.flatMap { BarGeometry(screen: $0) } },
             preflight: { [weak self] in
@@ -63,7 +71,7 @@ extension StageC1 {
                     return .unavailable(.captureUnavailable)
                 }
                 let reader = DiscoveredFrameReader(extras: LiveExtrasReader(), apps: LiveRunningApps(), origin: liveOrigin)
-                return Preflight.run(capturer: self.capturer, axReader: reader, geometry: geometry)
+                return Preflight.run(capturer: self.latchingCapturer, axReader: reader, geometry: geometry)
             }
         )
         let sectionMap: [TagKey: ItemSection] = [targetKey.tagKey(isSelf: false): .hidden]
@@ -74,32 +82,24 @@ extension StageC1 {
         }
         prepared = firstPrepared
 
-        // Section 4's latch: assessed from `ownerBaseline`'s templates,
-        // Target and the spacer excluded (owner items and Protected only).
-        let ownerOnlyTemplateIDs = Set(ids.keys).subtracting([targetKey.encoded, spacerKey.encoded])
-        latchingCapturer = LatchingCapturer(base: capturer, channel: channel) { [weak self] image in
-            self?.assessLatch(image: image, ownerOnlyIDs: ownerOnlyTemplateIDs, protectedID: protectedKey.encoded) ?? .init(captureFailed: true)
-        }
-
-        // Section 3's roster snapshot and section 5's baseline-equivalence
-        // readings, both seeded "at the end of the baseline" (first
-        // preflight has none to compare against otherwise).
-        seedBaselineReadings(baseline: ownerBaseline, targetID: targetKey.encoded, spacerID: spacerKey.encoded, protectedID: protectedKey.encoded)
+        seedBaselines(baseline: ownerBaseline, discovery: pass, targetID: targetKey.encoded, spacerID: spacerKey.encoded, protectedID: protectedKey.encoded)
         preflightEverPassed = false
         return .ok
     }
 
     /// I3's `assess`: which owner ids (Target/spacer excluded) and which
     /// Protected id are missing from this capture, by the same
-    /// unique-match-within-tolerance rule `SafetyMonitor.feed` uses.
-    /// Residual-strip ink change and the fold are not decided here -- they
-    /// need a paired AX read this decorator's `StripCapturing` seam does
-    /// not carry, so the stage feeds them separately through
-    /// `latchingCapturer.feed(_:)` at the points it already takes one
-    /// (`Latch.Observation.residualInkChanged` is therefore never set from
-    /// this path; see the worker report's "not implemented as specified").
-    func assessLatch(image: StripImage, ownerOnlyIDs: Set<String>, protectedID: String) -> Latch.Observation {
-        guard let ink = ownerBaseline.ink else { return .init(captureFailed: true) }
+    /// unique-match-within-tolerance rule `SafetyMonitor.feed` uses. A
+    /// no-op (`.init()`, never trips) before `ownerBaseline` exists -- the
+    /// very first captures this decorator ever sees, during `step3Baseline`
+    /// itself, have nothing to compare against yet (P0-2's note in
+    /// `step2Launch`). The fold and untemplated owner items are not
+    /// decided here -- they need a full bracketed AX+pixel read this
+    /// decorator's bare `StripCapturing` seam does not carry (G-a, G-b);
+    /// the stage feeds those separately through `latchingCapturer.feed(_:)`
+    /// at the checkpoints in `StageC1Cycle.swift`.
+    func assessLatch(image: StripImage) -> Latch.Observation {
+        guard let ownerBaseline, let ink = ownerBaseline.ink, let protectedKey else { return .init() }
         let map = ink.map(image)
         func missing(_ id: String) -> Bool {
             guard let template = ownerBaseline.templates[id] else { return false }
@@ -109,24 +109,38 @@ extension StageC1 {
             else { return true }
             return false
         }
+        let ownerOnlyIDs = Set(ownerItemIDs.keys).subtracting([targetKey?.encoded, spacerKey?.encoded].compactMap { $0 })
         let missingOwners = ownerOnlyIDs.filter(missing).sorted()
-        return Latch.Observation(missingOwnerItems: missingOwners, protectedMissing: missing(protectedID))
+        return Latch.Observation(missingOwnerItems: missingOwners, protectedMissing: missing(protectedKey.encoded))
     }
 
-    /// Section 3's roster snapshot and section 5's baseline-equivalence
-    /// readings, taken from a baseline-equivalent reading (here, the rest
-    /// baseline itself).
-    func seedBaselineReadings(baseline: BaselineResult, targetID: String, spacerID: String, protectedID: String) {
-        let sortedIDs = baseline.acceptedIDs
+    /// Section 3's roster snapshot (Amendment v4: "the fresh full AX
+    /// roster, taken only after a passing reset" -- here, the baseline
+    /// stands in for the first "passing reset"), section 5's
+    /// baseline-equivalence readings for templated items, and G-b's AX
+    /// baseline for untemplated ones.
+    func seedBaselines(baseline: BaselineResult, discovery: DiscoveryResult, targetID: String, spacerID: String, protectedID: String) {
         let indicator = detectIndicatorFrame()
-        rosterSnapshot = RosterSnapshot(items: sortedIDs, indicatorFrame: indicator)
+        let fullRoster = discovery.set.listedItems
+            .filter { $0.frame != nil }
+            .sorted { $0.frame!.minX < $1.frame!.minX }
+            .map(\.key.encoded)
+        rosterSnapshot = RosterSnapshot(items: fullRoster, indicatorFrame: indicator)
         baselineIndicatorFrame = indicator
-        ownerBaselineReadings = sortedIDs
+
+        ownerBaselineReadings = baseline.acceptedIDs
             .filter { $0 != targetID && $0 != spacerID && $0 != protectedID }
             .compactMap { id in baseline.templates[id].map { .init(id: id, x: $0.originXPt) } }
         helperBaselineReadings = [targetID, spacerID, protectedID].compactMap { id in
             baseline.templates[id].map { .init(id: id, x: $0.originXPt) }
         }
+
+        // G-b: every owner item discovery lists but the pixel baseline did
+        // not accept as a template -- watched by AX minX instead.
+        let templatedIDs = Set(baseline.templates.keys)
+        untemplatedOwnerBaseline = discovery.set.listedItems
+            .filter { ![targetKey, spacerKey, protectedKey].contains($0.key) && !templatedIDs.contains($0.key.encoded) }
+            .compactMap { item in item.frame.map { UntemplatedOwnerWatch.Reading(id: item.key.encoded, minX: $0.minX) } }
     }
 
     /// The capture indicator: a `MenuBarAgent` frame in
@@ -141,5 +155,32 @@ extension StageC1 {
                 && !FoldWitness.isPill(asFrame($0), parameters: parameters)
         }
         return indicator.map { BarFrame(minX: $0.minX, minY: $0.minY, width: $0.width, height: $0.height) }
+    }
+
+    /// G-b: every `untemplatedOwnerBaseline` id's current AX reading, from
+    /// one fresh discovery pass -- `nil` for an id the pass could not read
+    /// conclusively (failed, quarantined) or did not list at all, which
+    /// `UntemplatedOwnerWatch.check` then fails closed on.
+    func currentUntemplatedReadings() -> [String: UntemplatedOwnerWatch.Reading?] {
+        guard !untemplatedOwnerBaseline.isEmpty else { return [:] }
+        guard let discovery = Pump.blocking({ await self.discoverer.discover(previous: nil) }) else {
+            latchingCapturer.feed(.init(captureFailed: true))
+            return Dictionary(uniqueKeysWithValues: untemplatedOwnerBaseline.map { ($0.id, Optional<UntemplatedOwnerWatch.Reading>.none) })
+        }
+        let byID = Dictionary(uniqueKeysWithValues: discovery.set.listedItems.map { ($0.key.encoded, $0) })
+        var result = [String: UntemplatedOwnerWatch.Reading?]()
+        for base in untemplatedOwnerBaseline {
+            guard let item = byID[base.id], let frame = item.frame else {
+                result[base.id] = nil
+                continue
+            }
+            let status = discovery.status(of: item.key.pid)
+            guard !status.failed, !status.quarantined, !status.permissionDenied else {
+                result[base.id] = nil
+                continue
+            }
+            result[base.id] = UntemplatedOwnerWatch.Reading(id: base.id, minX: frame.minX)
+        }
+        return result
     }
 }

@@ -13,19 +13,27 @@ import MenuBarCapture
 public final class LatchingCapturer: StripCapturing, @unchecked Sendable {
     private let base: any StripCapturing
     private let channel: any C1HelperChannel
+    private let onTrip: (@Sendable (LatchTrip) -> Void)?
     private let assess: @Sendable (StripImage) -> Latch.Observation
     private let lock = NSLock()
     private var latch: Latch
 
+    /// `onTrip`, when supplied, fires synchronously the first time this
+    /// capturer trips -- ahead of `channel.sendRest()`/`quitAll()` (P0-3:
+    /// the stage's own terminal state must be set at least as early as the
+    /// helper commands, so nothing downstream can start new cycle work in
+    /// the gap between the two).
     public init(
         base: any StripCapturing,
         channel: any C1HelperChannel,
         latch: Latch = Latch(),
+        onTrip: (@Sendable (LatchTrip) -> Void)? = nil,
         assess: @escaping @Sendable (StripImage) -> Latch.Observation
     ) {
         self.base = base
         self.channel = channel
         self.latch = latch
+        self.onTrip = onTrip
         self.assess = assess
     }
 
@@ -59,7 +67,8 @@ public final class LatchingCapturer: StripCapturing, @unchecked Sendable {
 
     private func trip(_ observation: Latch.Observation) {
         let tripped: LatchTrip? = lock.withLock { latch.observe(observation) }
-        guard tripped != nil else { return }
+        guard let tripped else { return }
+        onTrip?(tripped)
         channel.sendRest()
         channel.quitAll()
     }

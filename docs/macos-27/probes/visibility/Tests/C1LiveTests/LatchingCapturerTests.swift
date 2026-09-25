@@ -79,4 +79,30 @@ struct LatchingCapturerTests {
         _ = capturer.capture()
         #expect(channel.commands == [.rest, .quitAll])
     }
+
+    @Test("onTrip fires with the trip reason, before the channel sees rest/quit (P0-3: the stage's own terminal state must be set at least as early)")
+    func onTripFiresBeforeChannelCommands() {
+        let base = FakeStripCapturer(results: [image()])
+        let channel = FakeC1HelperChannel()
+        let seenTrip = Box<LatchTrip?>(nil)
+        let channelCommandsAtTripTime = Box<[FakeC1HelperChannel.Command]?>(nil)
+        let capturer = LatchingCapturer(base: base, channel: channel, onTrip: { trip in
+            seenTrip.set(trip)
+            channelCommandsAtTripTime.set(channel.commands)
+        }) { _ in .init(protectedMissing: true) }
+        _ = capturer.capture()
+        #expect(seenTrip.get() == .protectedMissing)
+        #expect(channelCommandsAtTripTime.get() == [])
+        #expect(channel.commands == [.rest, .quitAll])
+    }
+
+    @Test("onTrip never fires for a quiet capture")
+    func onTripNeverFiresWhenQuiet() {
+        let base = FakeStripCapturer(results: [image()])
+        let channel = FakeC1HelperChannel()
+        let onTripCalls = CallCounter()
+        let capturer = LatchingCapturer(base: base, channel: channel, onTrip: { _ in onTripCalls.increment() }) { _ in .init() }
+        _ = capturer.capture()
+        #expect(onTripCalls.count == 0)
+    }
 }

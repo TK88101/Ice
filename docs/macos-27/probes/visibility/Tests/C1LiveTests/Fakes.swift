@@ -83,6 +83,17 @@ final class CallCounter: @unchecked Sendable {
     var count: Int { lock.withLock { value } }
 }
 
+/// A thread-safe mutable box, for a `@Sendable` closure that needs to
+/// record a value a captured `var` cannot (Swift 6 concurrency checking).
+final class Box<Value>: @unchecked Sendable {
+    private var value: Value
+    private let lock = NSLock()
+
+    init(_ value: Value) { self.value = value }
+    func get() -> Value { lock.withLock { value } }
+    func set(_ newValue: Value) { lock.withLock { value = newValue } }
+}
+
 let fixtureBounds = BarBounds(minX: 0, maxX: 300, minY: 0, barHeight: 12)
 
 func fixtureItem(identifier: String, pid: Int32, minX: Double, width: Double = 9, basis: IdentityBasis = .declared, position: ItemPosition = .onBar) -> DiscoveredItem {

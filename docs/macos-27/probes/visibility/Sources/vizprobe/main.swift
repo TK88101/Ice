@@ -79,17 +79,19 @@ if arguments.contains("--dry-run") {
     exit(DryRun.run())
 }
 
-// I5: `vizprobe c1` (docs/plans/2026-09-26-c1-protocol.md). `--dry` never
-// sends `length` (C1ExpansionDriver, C1Live) -- the one part of this stage
-// that is safe to run before the owner names a time.
+// I5: `vizprobe c1` (docs/plans/2026-09-26-c1-protocol.md, Amendment v4).
+// `--dry` never sends `length` (C1ExpansionDriver, C1Live) -- the one part
+// of this stage that is safe to run before the owner names a time.
 if arguments.first == "c1" {
     guard let appsPath = option("--apps", in: arguments) else {
         fail("c1: missing --apps <dir> (build.sh's output apps directory)")
     }
-    guard let spacerPath = option("--spacer-app", in: arguments) else {
-        fail("c1: missing --spacer-app <path> (a bundle with a vzhelper binary under com.icespike4.spacer -- build.sh does not produce one yet)")
-    }
     let appsURL = URL(fileURLWithPath: appsPath)
+    // build.sh assembles Spacer.app under the *same* bundle id as
+    // Protected.app (P0-1 -- the Twin precedent: a new id would leave a
+    // permanent entry in the system's menu bar settings); `--spacer-app`
+    // only overrides the path, never the id, for a bundle built elsewhere.
+    let spacerPath = option("--spacer-app", in: arguments) ?? appsURL.appendingPathComponent("Spacer.app").path
     let c1Apps = C1Apps(
         target: appsURL.appendingPathComponent("Target.app"),
         protected: appsURL.appendingPathComponent("Protected.app"),
@@ -118,7 +120,7 @@ if arguments.first == "c1" {
 }
 
 guard arguments.first == "live" else {
-    fail("usage: vizprobe --dry-run | vizprobe live --apps <dir> | vizprobe c1 --apps <dir> --spacer-app <path> [--dry]")
+    fail("usage: vizprobe --dry-run | vizprobe live --apps <dir> | vizprobe c1 --apps <dir> [--spacer-app <path>] [--dry]")
 }
 guard let appsPath = option("--apps", in: arguments) else {
     fail("live: missing --apps <dir> (build.sh's output apps directory)")
