@@ -55,6 +55,9 @@ make_app Protected com.icespike4.protected
 # id would add a permanent entry to the system's menu bar settings, which is a
 # side effect this run is not allowed to leave behind.
 make_app Twin com.icespike4.protected
+# C1's spacer (docs/plans/2026-09-26-c1-protocol.md) reuses the same id for the
+# same reason; `--role spacer`, not the bundle id, makes it the spacer.
+make_app Spacer com.icespike4.protected
 
 cp "$bin/vizprobe" "$apps/vizprobe"
 codesign --force --sign - "$apps/vizprobe" >/dev/null
