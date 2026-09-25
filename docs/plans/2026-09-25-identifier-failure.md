@@ -589,6 +589,30 @@ Format: trigger → what changed → reason.
    mitigation for exactly this case never sees them. Out of scope here, and the
    obvious widening is wrong (`.accessory` is what real menu bar apps are).
 
+15. **R14, step 6: PASS, and the gate predicate held to the decimal.** After the
+   operator freed room (four icon-owning apps quit), the read-only predicate
+   `predictedFree = leftmost - notch.hi - 76` read **251.5 pt** over five samples
+   against the 138.5 pt it required; the live gates inside the run read 279.5 at
+   step 2 and **251.5 at both step-6 gates** (the pair launch and the relaunch) --
+   the predicate matched the measurement exactly, at both. All pre-registered
+   expectations met: (a) the pair's second child `drawn(x: 1161.5)` against
+   `axMinX: 1160`; (b) "gone" both `hidden(folded: false)`, "stayed" both
+   `stillDrawn`; `userItemsDisplaced: 0`, helper domains empty, MenuBarAgent
+   defaults unchanged. Evidence `~/IceReverse-evidence/20260925-145221-vzverify3` (`result.md`),
+   probe data `20260925-145233-vzverify`. **P4 is not needed and §4's fallback goes unused.**
+16. **The attempt before it aborted at step 3, for the same root cause as the room
+   gate.** `agentSetMatchesPreflight` went false at `step3.start`, two user items
+   left their baseline x, and the safety monitor stopped the run -- correctly, and
+   with room never in question (279.5 against 118.5). The cause is M5's capture
+   indicator arriving mid-run among the items; it had been costing the room gate
+   89 pt, and here it displaced user items instead. It also moved macOS's own
+   `MenuBarAnalytics.lastReportedTrailingItemCount` 10 -> 11, which counts items on
+   the bar rather than being a setting the probe wrote. Teardown verified clean:
+   no helper process, helper domains empty, and the bar back to on-bar 9 /
+   leftmost 1284.0 over three samples. So the thing between a run and step 6 is
+   the indicator's timing, not room -- which is also the independent
+   characterisation a future P2 revision was said to need.
+
 ## Appendix A -- review record
 
 ### Round 1 (Codex, gpt-5.6-terra, reasoning=medium, on v1: 7 P1, 6 P2)
