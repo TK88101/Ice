@@ -1,7 +1,7 @@
 # Can Ice hide menu bar items on macOS 27? -- the feasibility gate
 
 2026-09-25 · branch `wip/hiding-feasibility` (from `main` d21e1e6) · **v1, desk
-research only; no experiment has been run.** v5 after Codex rounds 1-4 (Appendix).
+research only; no experiment has been run.** v5, converged with Codex over five rounds (Appendix).
 The owner approves this plan before anything that changes the menu bar's state,
 and each stage in section 6 needs its own go.
 
@@ -304,6 +304,11 @@ which is what makes any GO here a feasibility GO.
 The round-3 blocker resolved. One new P1, adopted: stage 2 scheduled G3a only, so E
 could have reached a GO without G3p being run. Stage 2 now runs the mode's recovery
 criterion -- G3p's three paths in Mode P -- and 6.2 counts N >= 3 per G3a or G3p path.
+
+### Round 5 -- Codex
+
+**CONVERGED.** The round-4 blocker resolved; no remaining P0-P2 blocker. V1, V2 and V4
+are the owner's decisions before testing, not defects of the plan.
 
 ## Appendix B -- Jev (TypeSafe System One), per-requirement nouls
 
