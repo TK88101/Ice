@@ -190,7 +190,12 @@ extension StageC1 {
         guard !helperPIDs.isEmpty else { return true }
         let deadline = Date().addingTimeInterval(seconds)
         repeat {
-            let listed: Set<pid_t>? = Pump.blocking({ await self.discoverer.discover(previous: nil) }).map { Set($0.set.items.map(\.key.pid)) }
+            // Round 4 item 3: through `timedDiscoverer`, not the raw
+            // `discoverer` -- each attempt in this retry loop is bounded,
+            // so a single hung pass cannot swallow the whole `seconds`
+            // budget (or, called from `emergencyStop()`, block the
+            // watchdog's own synchronous cleanup indefinitely).
+            let listed: Set<pid_t>? = Pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }).map { Set($0.set.items.map(\.key.pid)) }
             if C1ReapCheck.confirmed(listedPIDs: listed, helperPIDs: helperPIDs) {
                 evidence?.record("reap.confirmed", [:])
                 return true

@@ -158,20 +158,53 @@ struct C1StageMachineTests {
         #expect(machine.canReset == false)
     }
 
-    @Test("beginExpansion opens the window; endExpansion closes it")
+    @Test("beginExpansion opens the window; endExpansion(restConfirmed: true) closes it")
     func expansionWindowOpensAndCloses() {
         var machine = C1StageMachine()
         machine.beginExpansion()
         #expect(machine.expansionWindowOpen)
-        machine.endExpansion()
+        let actions = machine.endExpansion(restConfirmed: true)
+        #expect(machine.expansionWindowOpen == false)
+        #expect(actions == [])
+        #expect(machine.isTerminal == false)
+    }
+
+    @Test("endExpansion(restConfirmed: true) is safe to call when the window was never opened")
+    func endExpansionWithoutBeginIsSafe() {
+        var machine = C1StageMachine()
+        _ = machine.endExpansion(restConfirmed: true)
         #expect(machine.expansionWindowOpen == false)
     }
 
-    @Test("endExpansion is safe to call when the window was never opened")
-    func endExpansionWithoutBeginIsSafe() {
+    // MARK: - Round 4 item 1: rest confirmation fails closed
+
+    @Test("endExpansion(restConfirmed: false) does NOT close the window, and goes terminal instead")
+    func endExpansionRestNotConfirmedStaysOpenAndGoesTerminal() {
         var machine = C1StageMachine()
-        machine.endExpansion()
-        #expect(machine.expansionWindowOpen == false)
+        machine.beginExpansion()
+        let actions = machine.endExpansion(restConfirmed: false)
+        #expect(machine.expansionWindowOpen) // never closed -- "never close the window and continue"
+        #expect(machine.isTerminal)
+        #expect(machine.terminalReason == .restNotConfirmed)
+        #expect(machine.safetyStop == .stop)
+        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers, .stopCaffeinate])
+    }
+
+    @Test("endExpansion(restConfirmed: false) after the window was never opened still goes terminal")
+    func endExpansionRestNotConfirmedWithoutBeginStillGoesTerminal() {
+        var machine = C1StageMachine()
+        _ = machine.endExpansion(restConfirmed: false)
+        #expect(machine.isTerminal)
+        #expect(machine.terminalReason == .restNotConfirmed)
+    }
+
+    @Test("endExpansion(restConfirmed: false) is a no-op if the machine is already terminal from something else")
+    func endExpansionRestNotConfirmedAfterAlreadyTerminalIsANoOp() {
+        var machine = C1StageMachine()
+        _ = machine.trip(.protectedMissing)
+        let actions = machine.endExpansion(restConfirmed: false)
+        #expect(actions == [])
+        #expect(machine.terminalReason == .latchTrip(.protectedMissing)) // the first reason stands
     }
 
     @Test("withExpansion sends length, runs body, and always collapses on exit -- a normal return")

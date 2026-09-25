@@ -27,6 +27,12 @@ public enum C1TerminalReason: Equatable, Sendable {
     /// baseline-equivalent within teardown's 30 s window -- also go
     /// through the machine rather than a separate stage-level flag.
     case teardownMismatch
+    /// Round 4 item 1: the post-collapse settled read did not confirm
+    /// the spacer back at rest (an unstable/unreadable pair, or the
+    /// spacer not read back as drawn at its own baseline) -- fails
+    /// closed, immediately, rather than closing the window and letting
+    /// the next cycle continue on an unconfirmed premise.
+    case restNotConfirmed
 }
 
 /// The stage's own control-flow state (Amendment v4 / Codex review round
@@ -99,12 +105,25 @@ public struct C1StageMachine: Sendable {
         expansionWindowOpen = true
     }
 
-    /// Closes the expansion window -- idempotent, safe whether or not it
-    /// was ever opened, and safe to call again after a trip already closed
-    /// it in spirit (G-a: the fold is only watched for while this is
-    /// closed).
-    public mutating func endExpansion() {
+    /// Round 4 item 1: closes the expansion window only when
+    /// `restConfirmed` is true (a settled, bracketed read genuinely
+    /// showed the spacer back at rest) -- idempotent, safe whether or not
+    /// the window was ever opened, and safe to call again after a trip
+    /// already closed it in spirit (G-a: the fold is only watched for
+    /// while this is closed).
+    ///
+    /// `restConfirmed == false` fails closed: the window is left exactly
+    /// as it was (still open, if it was) and the run goes terminal --
+    /// there is no "close and continue" from an unconfirmed rest. This is
+    /// itself a terminal event like `trip`/`resetCheckFailed`, so it also
+    /// runs cleanup and publishes `safetyStop` atomically.
+    @discardableResult
+    public mutating func endExpansion(restConfirmed: Bool) -> [C1StageAction] {
+        guard restConfirmed else {
+            return enterTerminal(.restNotConfirmed)
+        }
         expansionWindowOpen = false
+        return []
     }
 
     /// P0-4: runs `body` with the expansion window open, `length` already
@@ -131,7 +150,12 @@ public struct C1StageMachine: Sendable {
         driver.expand(to: lengthPt)
         defer {
             driver.collapse()
-            endExpansion()
+            // This generic, single-threaded convenience has no rest-read
+            // of its own to confirm against, so it always reports
+            // confirmed -- a real stage instead calls
+            // `endExpansion(restConfirmed:)` directly with its own
+            // settled read's result (see `StageC1.withExpansionWindow`).
+            endExpansion(restConfirmed: true)
         }
         return body()
     }
@@ -161,7 +185,7 @@ public struct C1StageMachine: Sendable {
 
     private static func safetyStop(for reason: C1TerminalReason) -> RunAccounting.SafetyStop {
         switch reason {
-        case .latchTrip, .resetCheckFailed:
+        case .latchTrip, .resetCheckFailed, .restNotConfirmed:
             return .stop
         case .watchdog, .teardownReapFailed, .teardownMismatch:
             return .needingAttention

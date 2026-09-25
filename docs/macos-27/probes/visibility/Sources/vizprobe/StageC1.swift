@@ -263,11 +263,16 @@ final class StageC1 {
     /// `body` would deadlock that callback against this thread's own wait
     /// on the same lock.
     ///
-    /// Item 3 (G-a, Codex round 2): the window stays open through
-    /// `confirmRestSettledFold()` -- a settled, bracketed read confirming
-    /// the spacer is actually back at rest, not merely that `rest` was
-    /// sent -- and only that read's own fold, found once the window is
-    /// finally closed, is fed to the latch (`watchFold` itself checks
+    /// Item 3 (G-a, Codex round 2) / round 4 item 1: the window stays open
+    /// through `confirmRestSettled()` -- a settled, bracketed read
+    /// confirming the spacer is actually back at rest (drawn at its own
+    /// baseline template), not merely that `rest` was sent. Round 4 item
+    /// 1: an unconfirmed rest (the read was unstable/unreadable, or did
+    /// not show the spacer drawn) fails closed -- `endExpansion(
+    /// restConfirmed:)` then goes terminal instead of closing the window,
+    /// and this method performs whatever cleanup actions that returns.
+    /// Only a *confirmed* read's own fold, found once the window is
+    /// actually closed, is fed to the latch (`watchFold` itself checks
     /// `!expansionWindowOpen`, so feeding it before closing would always
     /// be silently ignored as "still mid-expansion").
     func withExpansionWindow<T>(to lengthPt: Double, _ body: () -> T) -> T {
@@ -275,19 +280,30 @@ final class StageC1 {
         expansionDriver.expand(to: lengthPt)
         defer {
             expansionDriver.collapse()
-            let fold = confirmRestSettledFold()
-            lock.withLock { machine.endExpansion() }
-            if let fold { watchFold(fold, label: "collapse.rest") }
+            let (restConfirmed, fold) = confirmRestSettled()
+            let actions = lock.withLock { machine.endExpansion(restConfirmed: restConfirmed) }
+            perform(actions)
+            if restConfirmed, let fold { watchFold(fold, label: "collapse.rest") }
         }
         return body()
     }
 
-    /// G-a: the spacer's own settled, bracketed read after `rest` was
-    /// sent. `nil` on a capture/AX failure (`settledPairedRead` already
-    /// fed `.captureFailed`) or if the spacer's own key is not yet known.
-    private func confirmRestSettledFold() -> Fold? {
-        guard let spacerKey else { return nil }
-        return settledPairedRead(targets: [spacerKey.encoded], references: [])?.reading.fold
+    /// G-a / round 4 item 1: the spacer's own settled, bracketed read
+    /// after `rest` was sent. "Confirmed" means the read itself succeeded
+    /// and settled (`settledPairedRead`, which already fed
+    /// `.captureFailed` to the latch on any capture/AX failure) *and* the
+    /// spacer reads back `.drawn` -- matched against its own rest-baseline
+    /// template, so an expanded or otherwise misplaced spacer would not
+    /// match and correctly reads as unconfirmed.
+    private func confirmRestSettled() -> (restConfirmed: Bool, fold: Fold?) {
+        guard let spacerKey else { return (false, nil) }
+        guard let settled = settledPairedRead(targets: [spacerKey.encoded], references: []) else {
+            return (false, nil)
+        }
+        guard case .drawn? = settled.visibility[spacerKey.encoded] else {
+            return (false, settled.reading.fold)
+        }
+        return (true, settled.reading.fold)
     }
 
     var expansionWindowOpen: Bool { lock.withLock { machine.expansionWindowOpen } }

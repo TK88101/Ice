@@ -108,11 +108,21 @@ extension StageC1 {
     /// no-op (`.init()`, never trips) before `ownerBaseline` exists -- the
     /// very first captures this decorator ever sees, during `step3Baseline`
     /// itself, have nothing to compare against yet (P0-2's note in
-    /// `step2Launch`). The fold and untemplated owner items are not
-    /// decided here -- they need a full bracketed AX+pixel read this
-    /// decorator's bare `StripCapturing` seam does not carry (G-a, G-b);
-    /// the stage feeds those separately through `latchingCapturer.feed(_:)`
-    /// at the checkpoints in `StageC1Cycle.swift`.
+    /// `step2Launch`). The fold is not decided here -- it needs a full
+    /// bracketed AX+pixel read this decorator's bare `StripCapturing` seam
+    /// does not carry (G-a); the stage feeds it separately through
+    /// `latchingCapturer.feed(_:)` at the checkpoints in
+    /// `StageC1Cycle.swift`.
+    ///
+    /// Round 4 item 2: every untemplated owner item is *also* checked
+    /// here, on this same capture, via a keyed discovery read (through
+    /// `TimedDiscoverer`, so a late read is itself an abort) --
+    /// `LatchObservationMerge` folds that into the templated result --
+    /// not only at the stage's own checkpoints
+    /// (`currentUntemplatedReadings()`, called separately by
+    /// preflight/reset/teardown for their own bookkeeping). This makes
+    /// every single capture the run takes watch the full owner
+    /// population, matching Amendment v4's "used in every latch read."
     func assessLatch(image: StripImage) -> Latch.Observation {
         guard let ownerBaseline, let ink = ownerBaseline.ink, let protectedKey else { return .init() }
         let map = ink.map(image)
@@ -126,7 +136,11 @@ extension StageC1 {
         }
         let ownerOnlyIDs = Set(ownerItemIDs.keys).subtracting([targetKey?.encoded, spacerKey?.encoded].compactMap { $0 })
         let missingOwners = ownerOnlyIDs.filter(missing).sorted()
-        return Latch.Observation(missingOwnerItems: missingOwners, protectedMissing: missing(protectedKey.encoded))
+        let templated = Latch.Observation(missingOwnerItems: missingOwners, protectedMissing: missing(protectedKey.encoded))
+
+        guard !untemplatedOwnerBaseline.isEmpty else { return templated }
+        let untemplatedFailures = assessUntemplatedFailures()
+        return LatchObservationMerge.merge(templated: templated, untemplated: untemplatedFailures)
     }
 
     /// Section 3's roster snapshot (Amendment v4: "the fresh full AX
@@ -199,6 +213,37 @@ extension StageC1 {
             latchingCapturer.feed(.init(captureFailed: true))
             return Dictionary(uniqueKeysWithValues: untemplatedOwnerBaseline.map { ($0.id, Optional<UntemplatedOwnerWatch.Reading>.none) })
         }
+        return untemplatedReadings(from: discovery)
+    }
+
+    /// Round 4 item 2: the same keyed check as `currentUntemplatedReadings()`,
+    /// but safe to call from `assessLatch` -- which `LatchingCapturer.
+    /// capture()` may run from any thread, including `HidingVerification`'s
+    /// own internal serial queue, where `Pump.blocking`'s `RunLoop.main`
+    /// spin would be unsafe. `nil` means the keyed read itself failed or
+    /// came back late (through `timedDiscoverer`, whose own `onLate`
+    /// already fed `.captureFailed` too); `LatchObservationMerge` treats
+    /// that the same as a failed pixel capture.
+    private func assessUntemplatedFailures() -> [UntemplatedOwnerWatch.Failure]? {
+        guard let discovery = blockingDiscover(timedDiscoverer) else { return nil }
+        return UntemplatedOwnerWatch.check(current: untemplatedReadings(from: discovery), baseline: untemplatedOwnerBaseline)
+    }
+
+    /// One thread-safe (no `RunLoop.main`) blocking bridge for the one
+    /// discovery call `assessLatch` needs -- `Task.detached` plus a
+    /// semaphore, not `Pump.blocking`.
+    private func blockingDiscover(_ discoverer: any Discovering) -> DiscoveryResult? {
+        let box = DiscoveryResultBox()
+        let semaphore = DispatchSemaphore(value: 0)
+        Task.detached {
+            box.value = await discoverer.discover(previous: nil)
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return box.value
+    }
+
+    private func untemplatedReadings(from discovery: DiscoveryResult) -> [String: UntemplatedOwnerWatch.Reading?] {
         let byID = Dictionary(uniqueKeysWithValues: discovery.set.listedItems.map { ($0.key.encoded, $0) })
         var result = [String: UntemplatedOwnerWatch.Reading?]()
         for base in untemplatedOwnerBaseline {
@@ -215,4 +260,10 @@ extension StageC1 {
         }
         return result
     }
+}
+
+/// A thread-safe mutable box for `blockingDiscover`'s `Task.detached` to
+/// hand its result back across.
+private final class DiscoveryResultBox: @unchecked Sendable {
+    var value: DiscoveryResult?
 }

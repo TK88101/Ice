@@ -25,7 +25,7 @@ public struct Latch: Sendable {
     /// Target and the spacer from `missingOwnerItems` -- their own changes
     /// are never credible disappearances (section 4), so the latch has no
     /// way to see them at all.
-    public struct Observation: Sendable {
+    public struct Observation: Equatable, Sendable {
         public let missingOwnerItems: [String]
         public let protectedMissing: Bool
         public let residualInkChanged: Bool

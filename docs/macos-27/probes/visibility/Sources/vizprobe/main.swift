@@ -125,12 +125,12 @@ if arguments.first == "c1" {
     let watchdogMinutes = option("--watchdog", in: arguments).flatMap(Double.init) ?? StageC1.watchdogMinutes
     DispatchQueue.global().asyncAfter(deadline: .now() + watchdogMinutes * 60) {
         FileHandle.standardError.write(Data("vizprobe c1: WATCHDOG after \(watchdogMinutes) min -- entering the terminal safety teardown\n".utf8))
-        stage.emergencyStop()
-        // A last-resort backstop only: `run()` should reach `finish(...)`
-        // and this process should already have exited via `exit(stage.
-        // run())` below well before this fires. If it somehow has not --
-        // every bounded read stuck at once -- do not leave the process
-        // running forever.
+        // Round 4 item 3: the 120 s backstop is armed *before*
+        // `emergencyStop()` is even called, not after it returns --
+        // `emergencyStop()` itself calls `confirmReap()` synchronously
+        // (as part of its cleanup actions), whose discovery could hang;
+        // arming the backstop first means that hang is still covered,
+        // instead of the backstop never being scheduled at all.
         DispatchQueue.global().asyncAfter(deadline: .now() + 120) {
             FileHandle.standardError.write(Data("vizprobe c1: WATCHDOG teardown did not finish within 2 min of firing -- forcing exit\n".utf8))
             // Round 3 item 4: synchronously write the recorded terminal
@@ -140,6 +140,7 @@ if arguments.first == "c1" {
             stage.recordWatchdogBackstopVerdict()
             exit(2)
         }
+        stage.emergencyStop()
     }
     exit(stage.run())
 }
