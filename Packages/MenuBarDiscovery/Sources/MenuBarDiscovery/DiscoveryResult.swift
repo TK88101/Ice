@@ -26,12 +26,21 @@ public struct DiscoveryResult: Sendable {
     public let origin: DiscoveryOrigin
     public let bounds: BarBounds
     public let nextCursor: Int
+    /// Every enumerated process under the discoverer's responsiveness
+    /// quarantine once this pass settled, by pid -- the processes `set`'s
+    /// `.complete` does not speak for (`Completeness`; 2026-09-25
+    /// responsiveness-quarantine plan, 3.6). Includes any that entered in this
+    /// very pass, whose stall `set` also reports as a failure.
+    public let quarantined: [ProcessInfoRecord]
 
-    public init(set: DiscoveredItemSet, duration: Double, origin: DiscoveryOrigin, bounds: BarBounds, nextCursor: Int) {
+    /// No default for `quarantined`: a site that rebuilds a result must say what
+    /// it carries over, or it would silently drop the list.
+    public init(set: DiscoveredItemSet, duration: Double, origin: DiscoveryOrigin, bounds: BarBounds, nextCursor: Int, quarantined: [ProcessInfoRecord]) {
         self.set = set
         self.duration = duration
         self.origin = origin
         self.bounds = bounds
         self.nextCursor = nextCursor
+        self.quarantined = quarantined
     }
 }

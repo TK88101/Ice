@@ -198,7 +198,7 @@ func fixtureSet(items: [DiscoveredItem], hiddenDivider: DividerReading? = fixtur
 }
 
 func fixtureDiscovery(set: DiscoveredItemSet, origin: DiscoveryOrigin = DiscoveryOrigin(x: 0, y: 0)) -> DiscoveryResult {
-    DiscoveryResult(set: set, duration: 0, origin: origin, bounds: fixtureBounds, nextCursor: 0)
+    DiscoveryResult(set: set, duration: 0, origin: origin, bounds: fixtureBounds, nextCursor: 0, quarantined: [])
 }
 
 // MARK: - Fakes for `DiscoveredFrameReader` (its own seams: `ExtrasReading`,
