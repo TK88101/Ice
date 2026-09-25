@@ -158,7 +158,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         cursor.set(rotation.nextCursor)
         quarantine.set(settlement.quarantine)
 
-        return DiscoveryResult(set: carried, duration: now() - passStart, origin: origin, bounds: displaySnapshot.bounds, nextCursor: rotation.nextCursor, quarantined: settlement.quarantined)
+        return DiscoveryResult(set: carried, duration: now() - passStart, origin: origin, bounds: displaySnapshot.bounds, nextCursor: rotation.nextCursor, quarantined: settlement.quarantined, enumeratedPIDs: Set(processes.map(\.pid)))
     }
 
     /// One pass's rotation, from `startIndex`: every process not skipped by the
