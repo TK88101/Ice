@@ -133,6 +133,11 @@ if arguments.first == "c1" {
         // running forever.
         DispatchQueue.global().asyncAfter(deadline: .now() + 120) {
             FileHandle.standardError.write(Data("vizprobe c1: WATCHDOG teardown did not finish within 2 min of firing -- forcing exit\n".utf8))
+            // Round 3 item 4: synchronously write the recorded terminal
+            // verdict to evidence before any raw exit -- the run must
+            // never disappear from the record silently just because
+            // `run()` itself never reached its own `finish(...)`.
+            stage.recordWatchdogBackstopVerdict()
             exit(2)
         }
     }

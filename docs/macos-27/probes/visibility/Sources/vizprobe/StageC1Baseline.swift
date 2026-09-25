@@ -38,9 +38,10 @@ extension StageC1 {
         // P0-2: the owner observer's sampler reads through the latch, not
         // the raw capturer -- the very baseline this step takes is itself
         // watched (its own `assess` closure is a no-op until this
-        // baseline exists, which is exactly this call). Item 8: the AX
-        // half of the sampler's bracket is bounded too.
-        let reader = TimedAXReader(wrapping: LiveMenuBarAXReader(origin: CGPoint(x: origin.x, y: origin.y)))
+        // baseline exists, which is exactly this call). Round 3 item 2:
+        // the AX half of the sampler's bracket reads through the one
+        // stage-wide `axExecutor`, not a private timed queue of its own.
+        let reader = C1ExecutedAXReader(executor: axExecutor, wrapping: LiveMenuBarAXReader(origin: CGPoint(x: origin.x, y: origin.y)))
         let sampler = Sampler(capturer: latchingCapturer, axReader: reader)
         ownerObserver = VisibilityObserver(sampler: sampler, parameters: parameters)
 
@@ -65,16 +66,25 @@ extension StageC1 {
         verification = HidingVerification(
             discoverer: C1Discoverer(base: discoverer, targetKey: targetKey, spacerKey: spacerKey, protectedKey: protectedKey),
             capturer: latchingCapturer,
-            // Item 8: the reader backing `HidingVerification`'s own
-            // internal Sampler is bounded too -- this is the one seam of
-            // that frozen type this stage controls.
-            readerFactory: { readerOrigin in TimedAXReader(wrapping: DiscoveredFrameReader(extras: LiveExtrasReader(), apps: LiveRunningApps(), origin: readerOrigin)) },
+            // Round 3 item 2: the reader backing `HidingVerification`'s
+            // own internal Sampler shares the one stage-wide
+            // `axExecutor` -- this is the one seam of that frozen type
+            // this stage controls, and it must not run its own private
+            // timed queue independent of every other AX read the stage
+            // makes (that was exactly how a timed-out read here used to
+            // become a quiet `.skipped(.captureFailed)`/`.refused`
+            // instead of aborting the whole run).
+            readerFactory: { [weak self] readerOrigin in
+                let real = DiscoveredFrameReader(extras: LiveExtrasReader(), apps: LiveRunningApps(), origin: readerOrigin)
+                guard let executor = self?.axExecutor else { return real }
+                return C1ExecutedAXReader(executor: executor, wrapping: real)
+            },
             geometry: { NSScreen.main.flatMap { BarGeometry(screen: $0) } },
             preflight: { [weak self] in
                 guard let self, let screen = NSScreen.main, let geometry = BarGeometry(screen: screen) else {
                     return .unavailable(.captureUnavailable)
                 }
-                let reader = TimedAXReader(wrapping: DiscoveredFrameReader(extras: LiveExtrasReader(), apps: LiveRunningApps(), origin: liveOrigin))
+                let reader = C1ExecutedAXReader(executor: self.axExecutor, wrapping: DiscoveredFrameReader(extras: LiveExtrasReader(), apps: LiveRunningApps(), origin: liveOrigin))
                 return Preflight.run(capturer: self.latchingCapturer, axReader: reader, geometry: geometry)
             }
         )

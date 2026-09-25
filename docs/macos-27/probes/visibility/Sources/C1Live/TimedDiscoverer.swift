@@ -1,34 +1,46 @@
+import Foundation
 import IceCore
 import MenuBarDetectorFeed
 import MenuBarDiscovery
 
-/// Item 8: "same bound for the keyed discovery reads used by the
-/// untemplated watch and preflight." Races the wrapped discovery pass
-/// against a timer; whichever finishes first wins. A caller that already
-/// treats a `nil` result as a failure (every call site in this probe
-/// does) cannot tell a genuine failure from a timeout, and does not need
-/// to -- both mean "this read cannot be trusted."
+/// Round 3 item 3: item 8's original `TimedDiscoverer` raced a task group
+/// against a timer, but a `TaskGroup` cannot return until every child
+/// task finishes -- if the wrapped discovery ignored cancellation while
+/// blocked in AX, the timer "winning" `group.next()` never actually let
+/// this function return early, so it was never a real bound at all.
+///
+/// This version never races anything: it always awaits the real
+/// `discover(previous:)` call through to completion, then measures how
+/// long that took. A pass slower than `lateSeconds` is treated as late --
+/// its result is discarded and `onLate` fires -- exactly like a stuck AX
+/// read (`C1AXExecutor`), just detected after the fact instead of by a
+/// timeout racing the call itself.
 public final class TimedDiscoverer: Discovering, @unchecked Sendable {
-    /// Same bound as `TimedAXReader.boundSeconds`, for the same reason.
-    public static let boundSeconds = 1.0
+    /// `MenuBarDiscoverer` (T5) bounds one pass to its own ~2 s deadline
+    /// internally, plus room for one AX call already in flight when that
+    /// deadline lands (plan section 4.1, "a deadline truncation"; D19).
+    /// 3.0 s is comfortably past both, so anything slower means the pass
+    /// itself -- or something it called -- did not honor that contract.
+    public static let lateSeconds = 3.0
 
     private let wrapped: any Discovering
-    private let bound: Double
+    private let lateBound: Double
+    private let onLate: (@Sendable () -> Void)?
 
-    public init(wrapping discoverer: any Discovering, bound: Double = TimedDiscoverer.boundSeconds) {
+    public init(wrapping discoverer: any Discovering, lateBound: Double = TimedDiscoverer.lateSeconds, onLate: (@Sendable () -> Void)? = nil) {
         self.wrapped = discoverer
-        self.bound = bound
+        self.lateBound = lateBound
+        self.onLate = onLate
     }
 
     public func discover(previous: DiscoveredItemSet?) async -> DiscoveryResult? {
-        await withTaskGroup(of: DiscoveryResult?.self) { group in
-            group.addTask { await self.wrapped.discover(previous: previous) }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(self.bound * 1_000_000_000))
-                return nil
-            }
-            defer { group.cancelAll() }
-            return await group.next() ?? nil
+        let start = DispatchTime.now()
+        let result = await wrapped.discover(previous: previous)
+        let elapsedSeconds = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000
+        guard elapsedSeconds <= lateBound else {
+            onLate?()
+            return nil
         }
+        return result
     }
 }

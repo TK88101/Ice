@@ -22,6 +22,9 @@ public enum Verdict: Equatable, Sendable {
 
 /// Section 1: turns what the run observed into one of the four verdicts.
 public enum RunAccounting {
+    /// Section 1 step 3: "5 cycles ... at that length."
+    public static let smokeCycleCount = 5
+
     public enum SafetyStop: Equatable, Sendable {
         case stop
         case needingAttention
@@ -85,6 +88,15 @@ public enum RunAccounting {
 
         guard input.scanReadings.contains(.hidden(folded: false)) else {
             return .provisionalFail("no scanned length gave hidden(folded: false)")
+        }
+
+        // Round 3 item 1: a smoke preflight that keeps failing after its 3
+        // attempts (section 3) must not let the run reach PASS from a
+        // shortened or empty smoke -- exactly `smokeCycleCount` completed
+        // cycles or the run is INCONCLUSIVE, the same way an incomplete
+        // scan already is.
+        guard input.smokeReadings.count == Self.smokeCycleCount, input.smokeChecksPassed.count == Self.smokeCycleCount else {
+            return .inconclusive("the smoke did not complete all \(Self.smokeCycleCount) cycles")
         }
 
         let refusals = input.smokeReadings.filter { $0 == .refused }.count

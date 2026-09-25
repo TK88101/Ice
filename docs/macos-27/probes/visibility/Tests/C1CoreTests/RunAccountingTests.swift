@@ -76,6 +76,46 @@ struct RunAccountingTests {
         #expect(RunAccounting.decide(input) == .safetyStop)
     }
 
+    @Test("round 3 item 1: zero completed smoke cycles (the first smoke preflight failed) -> INCONCLUSIVE, never PASS")
+    func zeroSmokeCyclesIsInconclusive() {
+        var input = passingInput()
+        input.smokeReadings = []
+        input.smokeChecksPassed = []
+        #expect(RunAccounting.decide(input) == .inconclusive("the smoke did not complete all \(RunAccounting.smokeCycleCount) cycles"))
+    }
+
+    @Test("round 3 item 1: one completed smoke cycle (preflight failed on the second) -> INCONCLUSIVE, never PASS")
+    func oneSmokeCycleIsInconclusive() {
+        var input = passingInput()
+        input.smokeReadings = [.hidden(folded: false)]
+        input.smokeChecksPassed = [true]
+        #expect(RunAccounting.decide(input) == .inconclusive("the smoke did not complete all \(RunAccounting.smokeCycleCount) cycles"))
+    }
+
+    @Test("round 3 item 1: mismatched smokeReadings/smokeChecksPassed counts (either short) -> INCONCLUSIVE")
+    func mismatchedSmokeCountsIsInconclusive() {
+        var input = passingInput()
+        input.smokeChecksPassed = [true, true, true, true]
+        #expect(RunAccounting.decide(input) == .inconclusive("the smoke did not complete all \(RunAccounting.smokeCycleCount) cycles"))
+    }
+
+    @Test("round 3 item 1: an incomplete smoke is checked before its own refusal/midpoint/checks content")
+    func incompleteSmokeCheckedBeforeContentChecks() {
+        var input = passingInput()
+        input.smokeReadings = [.refused, .refused]
+        input.smokeChecksPassed = [true, true]
+        #expect(RunAccounting.decide(input) == .inconclusive("the smoke did not complete all \(RunAccounting.smokeCycleCount) cycles"))
+    }
+
+    @Test("round 3 item 1: a safety stop still overrides an incomplete smoke")
+    func safetyStopOverridesIncompleteSmoke() {
+        var input = passingInput()
+        input.smokeReadings = []
+        input.smokeChecksPassed = []
+        input.safetyStop = .stop
+        #expect(RunAccounting.decide(input) == .safetyStop)
+    }
+
     @Test("more than one smoke refusal -> provisional FAIL, named as such")
     func multipleSmokeRefusals() {
         var input = passingInput()

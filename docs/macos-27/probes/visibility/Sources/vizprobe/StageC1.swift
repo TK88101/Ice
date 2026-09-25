@@ -112,7 +112,26 @@ final class StageC1 {
     /// and `passesPreflightOnce()`'s AX order fetch use this, never
     /// `discoverer` directly. Launch-time and reap discovery keep using
     /// `discoverer` unbounded -- item 8 names only these two reads.
-    lazy var timedDiscoverer: any Discovering = TimedDiscoverer(wrapping: discoverer)
+    /// Round 3 item 3: bounded by elapsed time after `discover` returns,
+    /// not a task-group race.
+    lazy var timedDiscoverer: any Discovering = TimedDiscoverer(wrapping: discoverer, onLate: { [weak self] in
+        self?.latchingCapturer?.feed(.init(captureFailed: true))
+    })
+
+    /// Round 3 item 2: the one stage-wide serial AX executor. Every AX
+    /// read the stage or its verifiers make (the owner observer's
+    /// sampler, `HidingVerification`'s own internal one, its preflight
+    /// closure's reader) is wrapped with `C1ExecutedAXReader` around this
+    /// single instance, so a stuck read anywhere synchronously trips the
+    /// latch -- feeding `captureFailed` is an immediate abort (`Latch`,
+    /// C1Core) -- and every later AX read, through any of those readers,
+    /// fails at once rather than becoming a quiet `.refused` that could
+    /// still average out to PASS. `rest`/`quit` go over the helpers'
+    /// stdin (`HelperControl.send`), never AX, so cleanup still works
+    /// with this executor stuck.
+    lazy var axExecutor = C1AXExecutor(onStuck: { [weak self] in
+        self?.latchingCapturer?.feed(.init(captureFailed: true))
+    })
 
     var geometry: BarGeometry!
     var evidence: LiveEvidence!
@@ -196,7 +215,12 @@ final class StageC1 {
 
         var smokeReadings = [TargetReading]()
         var smokeChecks = [Bool]()
-        for cycle in 0..<5 {
+        // Round 3 item 1: a smoke preflight that keeps failing leaves this
+        // loop short (or empty) -- `RunAccounting.decide` requires exactly
+        // `smokeCycleCount` completed cycles for anything but INCONCLUSIVE,
+        // so a partial `smokeReadings`/`smokeChecks` here is reported
+        // correctly without this loop needing its own extra bookkeeping.
+        for cycle in 0..<RunAccounting.smokeCycleCount {
             guard !isTerminal, let result = runCycle(length: midpoint, label: "smoke.\(cycle)") else { break }
             smokeReadings.append(result.reading)
             smokeChecks.append(result.otherChecksPassed)
@@ -306,6 +330,22 @@ final class StageC1 {
     /// terminal event, still runs the one idempotent cleanup.
     func runCleanup() {
         perform(lock.withLock { machine.cleanup() })
+    }
+
+    /// Round 3 item 4: the watchdog's last-resort backstop, called
+    /// synchronously right before it forces a raw `exit` -- writes a
+    /// recorded terminal verdict to evidence (when evidence exists at
+    /// all; a backstop this early in setup has none to write to) so the
+    /// run never disappears from the record silently. Distinct from
+    /// `finish(_:)`: that reads `machine.terminalReason`/`safetyStop` for
+    /// a verdict this method cannot safely wait on `run()`'s own thread
+    /// to produce, which is exactly the situation that put the backstop
+    /// on the table.
+    func recordWatchdogBackstopVerdict() {
+        guard let evidence else { return }
+        evidence.record("terminal", ["reason": "watchdog backstop"])
+        evidence.record("run.verdict", ["verdict": "\(Verdict.safetyStopNeedingAttention)"])
+        evidence.close()
     }
 
     /// `machine.trip`/`watchdogFired`/`teardownReapFailed`/
