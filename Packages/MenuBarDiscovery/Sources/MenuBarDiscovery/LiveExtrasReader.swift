@@ -54,7 +54,14 @@ public struct LiveExtrasReader: ExtrasReading {
     /// classifies the labels.
     private static let notAttempted = "notAttempted"
 
-    public func read(_ process: ProcessInfoRecord, timeout: Double) -> RawRead {
+    /// The most children one process's snapshot may hold before the read is
+    /// refused rather than walked (2026-09-25 responsiveness-quarantine plan,
+    /// 3.7). MEASURED the same day: the largest snapshot on the bar was 6.
+    /// Refused, not truncated: an over-cap read comes back `walkInterrupted`, a
+    /// failure, never a shorter list. Every caller of this reader gets it.
+    public static let maxChildren = 64
+
+    public func read(_ process: ProcessInfoRecord, timeout: Double, interrupt: () -> Bool) -> RawRead {
         let clock = ContinuousClock()
         let slowThreshold = Duration.seconds(timeout * ReadClassifier.slowFraction)
 
@@ -88,49 +95,71 @@ public struct LiveExtrasReader: ExtrasReading {
             return RawRead(process: process, extrasError: "success", extrasElapsed: barElapsed, childrenError: error, childrenElapsed: childrenElapsed, records: [], walkInterrupted: false, childCount: 0)
         }
 
-        // `childCount` has to describe what Accessibility returned, not what
-        // Swift could cast. `as? [AXUIElement]` fails *wholesale* when any one
-        // element is not an `AXUIElement`, and the `[]` fallback would then read
-        // as "this process has no extras" on an otherwise clean pass -- exactly
-        // the case the count exists to catch. Taking the count from the array
-        // itself makes such a read come back `.failed(.partialWalk)` instead.
-        // A value that is not an array at all, or none, is left as it was: no
-        // array means no evidence of any child, and "no extras" is the honest
-        // reading of that.
-        let snapshot = Self.snapshotCount(childrenValue)
-        let children = Self.childElements(childrenValue)
-        var records = [ExtrasRecord]()
-        records.reserveCapacity(children.count)
-        var interrupted = false
-        for (index, child) in children.enumerated() {
-            AXUIElementSetMessagingTimeout(child, Float(timeout))
-            let (record, shouldStop) = Self.readChild(
-                index: index,
-                readsLabels: readsLabels,
-                timeout: timeout,
-                readString: { _, axAttribute in Self.timedString(child, axAttribute, clock: clock) },
-                readFrame: { _ in Self.timedFrame(child, clock: clock) }
-            )
-            records.append(record)
-            if shouldStop {
-                interrupted = true
-                break
+        return Self.walkChildren(
+            process: process,
+            extrasElapsed: barElapsed,
+            childrenElapsed: childrenElapsed,
+            childrenValue: childrenValue,
+            cap: Self.maxChildren,
+            interrupt: interrupt,
+            readChild: { index, child in
+                AXUIElementSetMessagingTimeout(child, Float(timeout))
+                return Self.readChild(
+                    index: index,
+                    readsLabels: readsLabels,
+                    timeout: timeout,
+                    readString: { _, axAttribute in Self.timedString(child, axAttribute, clock: clock) },
+                    readFrame: { _ in Self.timedFrame(child, clock: clock) }
+                )
             }
-        }
-
-        return RawRead(process: process, extrasError: "success", extrasElapsed: barElapsed, childrenError: "success", childrenElapsed: childrenElapsed, records: records, walkInterrupted: interrupted, childCount: snapshot)
+        )
     }
 
-    /// How many children Accessibility handed back, counted from the array
-    /// itself. A value that is not an array, or none at all, counts `0`: no
-    /// array is no evidence of any child.
+    /// The walk over a successful children read, and the `RawRead` it amounts
+    /// to (the identifier-failure plan's section 9, item 3; this plan's 3.7-3.8).
     ///
-    /// Separate from `childElements` because the two answers must be allowed to
-    /// disagree -- that disagreement is what `RawRead.childCount` exists to
-    /// report.
-    static func snapshotCount(_ value: CFTypeRef?) -> Int {
-        guard let value, CFGetTypeID(value) == CFArrayGetTypeID() else { return 0 }
-        return CFArrayGetCount(unsafeDowncast(value, to: CFArray.self))
+    /// It takes the raw value Accessibility returned and derives both answers
+    /// from it itself: the count from the array (`CFArrayGetCount` -- a value
+    /// that is not an array, or none, counts `0`: no array is no evidence of a
+    /// child), and the elements from `childElements`, one type check at a time.
+    /// The two must be allowed to disagree -- that disagreement is what
+    /// `RawRead.childCount` exists to report -- and because the `RawRead` is built
+    /// here, no call site handles a count at all. A helper that *accepted* a count
+    /// would only move the mistake it guards against one level up.
+    ///
+    /// Before every child, the first included, `interrupt` is polled; a snapshot
+    /// larger than `cap` is refused without walking it. Either one, like a
+    /// policy stop inside `readChild`, sets `walkInterrupted`.
+    static func walkChildren(
+        process: ProcessInfoRecord,
+        extrasElapsed: Double,
+        childrenElapsed: Double,
+        childrenValue: CFTypeRef?,
+        cap: Int,
+        interrupt: () -> Bool,
+        readChild: (Int, AXUIElement) -> (record: ExtrasRecord, stop: Bool)
+    ) -> RawRead {
+        let childCount: Int = {
+            guard let childrenValue, CFGetTypeID(childrenValue) == CFArrayGetTypeID() else { return 0 }
+            return CFArrayGetCount(unsafeDowncast(childrenValue, to: CFArray.self))
+        }()
+
+        func result(_ records: [ExtrasRecord], interrupted: Bool) -> RawRead {
+            RawRead(process: process, extrasError: "success", extrasElapsed: extrasElapsed, childrenError: "success", childrenElapsed: childrenElapsed, records: records, walkInterrupted: interrupted, childCount: childCount)
+        }
+
+        guard childCount <= cap else { return result([], interrupted: true) }
+
+        let children = childElements(childrenValue)
+        var records = [ExtrasRecord]()
+        records.reserveCapacity(children.count)
+        for (index, child) in children.enumerated() {
+            if interrupt() { return result(records, interrupted: true) }
+            let (record, stop) = readChild(index, child)
+            records.append(record)
+            if stop { return result(records, interrupted: true) }
+        }
+        return result(records, interrupted: false)
     }
 
     /// The children that really are `AXUIElement`s, checked one by one.

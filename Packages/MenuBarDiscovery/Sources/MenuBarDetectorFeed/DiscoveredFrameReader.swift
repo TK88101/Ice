@@ -43,7 +43,9 @@ public struct DiscoveredFrameReader: MenuBarAXReading {
         var itemFrames = [String: ItemFrame]()
         for (pid, entries) in keysByPID {
             let process = processesByPID[pid] ?? minimalProcess(pid: pid)
-            let raw = extras.read(process, timeout: timeout)
+            // Never cut short: a sample reads a handful of known pids, with no
+            // pass deadline of its own to answer to.
+            let raw = extras.read(process, timeout: timeout, interrupt: { false })
             guard case .items(let records) = ReadClassifier.outcome(raw, timeout: timeout) else { continue }
 
             // Only the records `ItemCatalog.build` keys (role `AXMenuBarItem`),
@@ -66,7 +68,7 @@ public struct DiscoveredFrameReader: MenuBarAXReading {
     /// failure of the *whole* read, so it produces an empty array instead.
     private func agentFrames(pid: pid_t, processesByPID: [pid_t: ProcessInfoRecord]) -> [AgentFrame]? {
         let process = processesByPID[pid] ?? minimalProcess(pid: pid)
-        let raw = extras.read(process, timeout: timeout)
+        let raw = extras.read(process, timeout: timeout, interrupt: { false })
         switch ReadClassifier.outcome(raw, timeout: timeout) {
         case .items(let records):
             return records.compactMap { record -> AgentFrame? in

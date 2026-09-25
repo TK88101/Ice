@@ -256,7 +256,8 @@ func printCensusJSON() {
     let apps = OtherProcesses(base: LiveRunningApps())
     let reader = LiveExtrasReader()
     let processes = apps.processes()
-    let reads = processes.map { reader.read($0, timeout: ReadClassifier.defaultTimeout) }
+    // A census reads every process whole: no deadline, nothing to cancel.
+    let reads = processes.map { reader.read($0, timeout: ReadClassifier.defaultTimeout, interrupt: { false }) }
     let census = reads.map(censusRead(from:))
 
     let encoder = JSONEncoder()

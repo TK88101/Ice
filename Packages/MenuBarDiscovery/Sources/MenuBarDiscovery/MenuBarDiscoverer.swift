@@ -117,7 +117,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
                 truncationIndex = index
                 break
             }
-            reads.append(reader.read(processes[index], timeout: timeout))
+            reads.append(reader.read(processes[index], timeout: timeout, interrupt: { false }))
         }
 
         if let truncationIndex {
