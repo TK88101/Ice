@@ -14,6 +14,9 @@ Ice is a powerful menu bar management tool. While its primary function is hiding
 [![Website](https://img.shields.io/badge/Website-015FBA?style=flat-square)](https://icemenubar.app)
 [![License](https://img.shields.io/github/license/jordanbaird/Ice?style=flat-square)](LICENSE)
 
+> [!IMPORTANT]
+> macOS 27: this fork lists menu bar items but cannot hide them there -- see [docs/macos-27/STATUS.md](docs/macos-27/STATUS.md).
+
 > [!NOTE]
 > Ice is currently in active development. Some features have not yet been implemented. Download the latest release [here](https://github.com/jordanbaird/Ice/releases/latest) and see the roadmap below for upcoming features.
 
