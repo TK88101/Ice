@@ -222,6 +222,41 @@ mandatory, and no result may be read as supporting an attached second display.
 **Next**: nothing runs until the owner has created the isolated user account and
 lifted the no-spacer rule inside it; C1 is the first run, and the likeliest to fail.
 
+### Deviation HF-1 (2026-09-26): C1 on the owner's bar, by the owner's consent
+
+The owner found an isolated account impractical during the working day (fast user
+switching keeps their apps running but takes the screen; Claude's cloud sessions are
+Linux and cannot run a macOS 27 menu bar). Debated with Codex in two rounds (no
+objection, with conditions) and approved by the owner: **C1 runs once on the owner's
+own account, while the owner is away and the Mac stays unlocked and untouched**; the
+rule "no spacer on my bar" is lifted for that one run only. Everything after C1 (C2,
+stage 2) still needs the isolated account.
+
+- **What it decides**: a confirmed C1 failure on the owner's real bar drops C for this
+  configuration -- G4 is about the user's own bar, so this is the strongest negative
+  evidence -- and macOS 27 is declared read-only. A pass counts for nothing toward GO;
+  it only makes the isolated account worth creating.
+- **Bounded risk, not zero**: the checks below bound the risk of displacing an owner
+  item; they cannot prevent a first displacement if something appears between the
+  last check and an expansion. The latch then restores at once.
+- **Conditions (Codex round 2)**:
+  - before every expansion, a fresh, settled, capture-active preflight: the spacer and
+    the target are the leftmost of every rendered item (user and system; AX order and
+    pixels agree on the order), the target is the only item on the displaced side,
+    `.protected` is drawn, and the capture indicator is already present and stable;
+    otherwise abort without expanding;
+  - the expansion is issued synchronously right after that preflight; nothing queued
+    survives a failed preflight;
+  - the guard is armed before the preflight and stays armed through reset and
+    expansion; any unreadable or late observation aborts before the next expansion;
+  - the first credible disappearance of anything but the target stops the run:
+    collapse, re-read, recorded as a C1 failure; no further scan point or repeat;
+  - AX and pixels must agree only on the pre-expansion order; the hidden-state
+    verdict in the band is decided by pixels (AX is path-dependent there);
+  - the scan: jumps from rest to 600-900 pt in 16 pt steps, collapsing to rest between
+    jumps; then N = 5 at the midpoint of the band found, capture active.
+- A failure is replicated once before it drops C, unless it was a safety stop.
+
 ## 8. If GO -- what an implementation would touch (for scale, not now)
 
 - `ControlItem.updateStatusItemVisibility` is the only place hiding state becomes a
