@@ -97,13 +97,8 @@ public struct LiveExtrasReader: ExtrasReading {
         // A value that is not an array at all, or none, is left as it was: no
         // array means no evidence of any child, and "no extras" is the honest
         // reading of that.
-        let snapshotCount: Int
-        if let childrenValue, CFGetTypeID(childrenValue) == CFArrayGetTypeID() {
-            snapshotCount = CFArrayGetCount(unsafeDowncast(childrenValue, to: CFArray.self))
-        } else {
-            snapshotCount = 0
-        }
-        let children = (childrenValue as? [AXUIElement]) ?? []
+        let snapshot = Self.snapshotCount(childrenValue)
+        let children = Self.childElements(childrenValue)
         var records = [ExtrasRecord]()
         records.reserveCapacity(children.count)
         var interrupted = false
@@ -123,7 +118,45 @@ public struct LiveExtrasReader: ExtrasReading {
             }
         }
 
-        return RawRead(process: process, extrasError: "success", extrasElapsed: barElapsed, childrenError: "success", childrenElapsed: childrenElapsed, records: records, walkInterrupted: interrupted, childCount: snapshotCount)
+        return RawRead(process: process, extrasError: "success", extrasElapsed: barElapsed, childrenError: "success", childrenElapsed: childrenElapsed, records: records, walkInterrupted: interrupted, childCount: snapshot)
+    }
+
+    /// How many children Accessibility handed back, counted from the array
+    /// itself. A value that is not an array, or none at all, counts `0`: no
+    /// array is no evidence of any child.
+    ///
+    /// Separate from `childElements` because the two answers must be allowed to
+    /// disagree -- that disagreement is what `RawRead.childCount` exists to
+    /// report.
+    static func snapshotCount(_ value: CFTypeRef?) -> Int {
+        guard let value, CFGetTypeID(value) == CFArrayGetTypeID() else { return 0 }
+        return CFArrayGetCount(unsafeDowncast(value, to: CFArray.self))
+    }
+
+    /// The children that really are `AXUIElement`s, checked one by one.
+    ///
+    /// MEASURED 2026-09-25: `as? [AXUIElement]` does **not** check its elements.
+    /// `AXUIElement` is a Core Foundation type, so the conditional cast succeeds
+    /// on any `CFArray` whatever it holds -- an array of `[AXUIElement, NSNumber]`
+    /// casts to "an array of 2" rather than to `nil`. Walking that array means
+    /// `AXUIElementSetMessagingTimeout` and `AXUIElementCopyAttributeValue`
+    /// against something that is not an element at all, on a value another
+    /// process chose.
+    ///
+    /// So the elements are filtered by type id instead. For a well-behaved
+    /// process nothing changes -- every child is an element, and the count
+    /// matches. For a malformed answer the records no longer account for the
+    /// snapshot, and `ReadClassifier` fails the read as `.partialWalk` instead of
+    /// the walk reaching into it.
+    static func childElements(_ value: CFTypeRef?) -> [AXUIElement] {
+        guard let value, CFGetTypeID(value) == CFArrayGetTypeID() else { return [] }
+        let array = unsafeDowncast(value, to: CFArray.self)
+        return (0..<CFArrayGetCount(array)).compactMap { index in
+            guard let raw = CFArrayGetValueAtIndex(array, index) else { return nil }
+            let element = unsafeBitCast(raw, to: CFTypeRef.self)
+            guard CFGetTypeID(element) == AXUIElementGetTypeID() else { return nil }
+            return unsafeDowncast(element, to: AXUIElement.self)
+        }
     }
 
     /// One attribute read exactly as the adapter performed it: what came

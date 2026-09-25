@@ -530,18 +530,41 @@ Format: trigger → what changed → reason.
    moment a tolerance reaches `role` or `frame`, or the order changes, or a second
    adapter produces a `RawRead`, they are what keeps R-e true instead of silently
    regressing it. Said plainly in the code rather than implied to be load-bearing.
-11. **One real hole in the invariant, found by the security review and fixed**
-   (MEDIUM-2). `childCount` was taken *after* `(childrenValue as? [AXUIElement])
-   ?? []`, and that cast fails **wholesale** if any one element is not an
-   `AXUIElement`. A process could therefore return an array of N, have the
-   adapter produce zero records, and the pass would read `childrenError:
-   "success"`, `walkInterrupted: false`, `childCount: 0` -> `.items([])`: "this
-   process has no extras, read complete". Exactly the case the count was added to
-   catch, slipping past beside it. Now the count comes from the array
-   Accessibility returned (`CFArrayGetCount`), so such a read fails as
-   `.partialWalk`; a value that is not an array at all, or none, is unchanged,
-   because no array means no evidence of a child. Pinned by a new classifier test
-   with that exact shape (records empty, `childCount` 3).
+11. **The security review's MEDIUM-2 was refuted by measurement, and a
+   different, real hazard took its place.** As reported: `childCount` was taken
+   after `(childrenValue as? [AXUIElement]) ?? []`, and since that cast "fails
+   wholesale when any one element is not an `AXUIElement`", a process could
+   return N children, yield zero records, and have the pass read
+   `.items([])` -- "no extras, read complete". I changed the count to come from
+   `CFArrayGetCount` and wrote a test for the shape.
+
+   **Then the round-2 mutation check said the change was pinned by nothing**: put
+   `children.count` back and every suite stayed green. MEASURED directly
+   afterwards, which is what settles it: `as? [AXUIElement]` **does not check its
+   elements**. `AXUIElement` is a Core Foundation type, so the conditional cast
+   succeeds on any `CFArray` whatever it holds -- `[NSString, NSNumber]` casts to
+   "an array of 2", and so does `[AXUIElement, NSNumber]`; only
+   `as? [NSString]` returns `nil`, which is the cast the review's own probe used.
+   So `children.count` always equalled `CFArrayGetCount`, the described hole
+   cannot occur, and my fix was a no-op.
+
+   What the measurement did expose is worse than the reported hole and was there
+   all along: the unchecked cast hands the walk **garbage elements**, and the walk
+   then calls `AXUIElementSetMessagingTimeout` and
+   `AXUIElementCopyAttributeValue` on a value another process chose and that is
+   not an element at all. The fix is therefore a filter, not a count:
+   `childElements` checks each member's type id, `snapshotCount` still counts what
+   Accessibility claimed, and a malformed answer now leaves
+   `records.count != childCount` -- which `ReadClassifier` fails as
+   `.partialWalk` instead of the walk reaching into it. Nothing changes for a
+   well-behaved process: every child is an element and the two agree. Pinned by
+   four tests over real `AXUIElement`s made for our own pid, and mutation-checked
+   (revert the filter -> two red).
+
+   This is the "silent half of a fix" pattern from the learned skill, caught by
+   the one thing that catches it: the reported symptom was imaginary, the
+   underlying hazard was real, and the first fix addressed neither.
+
 12. **`.discard` on the tolerated error** (security review LOW-1): the tolerated
    verdict kept whatever the failed call returned, so "tolerated failure implies
    no identifier" was true by trust, not by construction -- if Accessibility ever

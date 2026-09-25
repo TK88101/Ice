@@ -90,7 +90,7 @@ struct AttributeWalkPolicyTests {
         }
     }
 
-    @Test("a hard error keeps whatever the call returned -- only the slow-success case discards")
+    @Test("an untolerated hard error keeps whatever the call returned")
     func hardErrorsKeepTheirValue() {
         let verdict = AttributeWalkPolicy.classify(attribute: "role", rawError: "invalidUIElement", elapsed: 0.001, timeout: timeout)
         #expect(verdict.value == .keep)

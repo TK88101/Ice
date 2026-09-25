@@ -199,6 +199,11 @@ struct ReadClassifierTests {
     @Test("a failed child role, other than noValue or attributeUnsupported, fails the whole read")
     func childRoleFailureFails() {
         let bad = ExtrasRecord(childIndex: 0, role: attr(error: "cannotComplete"), identifier: ok("x"), title: ok(), description: ok(), help: ok(), frame: okFrame())
+        // `failure` too: it is tolerated on `identifier` and nowhere else, and
+        // the tolerance is a defaulted flag, so widening it to every attribute
+        // would be a one-token edit that nothing else would catch.
+        let failed = ExtrasRecord(childIndex: 0, role: attr(error: "failure"), identifier: ok("x"), title: ok(), description: ok(), help: ok(), frame: okFrame())
+        #expect(ReadClassifier.outcome(rawRead(records: [failed])) == .failed(.unexpectedError(call: "role", error: "failure")))
         #expect(ReadClassifier.outcome(rawRead(records: [bad])) == .failed(.unexpectedError(call: "role", error: "cannotComplete")))
     }
 
@@ -211,6 +216,9 @@ struct ReadClassifierTests {
     @Test("a failed child frame, other than noValue or attributeUnsupported, fails the whole read")
     func childFrameFailureFails() {
         let bad = ExtrasRecord(childIndex: 0, role: ok("AXMenuBarItem"), identifier: ok("x"), title: ok(), description: ok(), help: ok(), frame: frameErr("apiDisabled"))
+        // As with the role: the identifier's tolerance must not reach the frame.
+        let failed = ExtrasRecord(childIndex: 0, role: ok("AXMenuBarItem"), identifier: ok("x"), title: ok(), description: ok(), help: ok(), frame: frameErr("failure"))
+        #expect(ReadClassifier.outcome(rawRead(records: [failed])) == .failed(.unexpectedError(call: "frame", error: "failure")))
         #expect(ReadClassifier.outcome(rawRead(records: [bad])) == .failed(.unexpectedError(call: "frame", error: "apiDisabled")))
     }
 
