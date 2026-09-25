@@ -1,5 +1,6 @@
 import AppKit
 import IceCore
+import Security
 
 /// The running-process half of one discovery pass (plan section 4.2): every
 /// process `MenuBarDiscoverer` should ask Accessibility about, and the pid of
@@ -87,7 +88,43 @@ public struct LiveRunningApps: RunningAppsProviding {
     }
 
     public func agentPID() -> Int32? {
-        NSWorkspace.shared.runningApplications.first { Self.isMenuBarAgent(bundleID: $0.bundleIdentifier, bundleURL: $0.bundleURL) }?.processIdentifier
+        let candidates = NSWorkspace.shared.runningApplications.map {
+            Candidate(pid: $0.processIdentifier, bundleID: $0.bundleIdentifier, bundleURL: $0.bundleURL)
+        }
+        return Self.agentPID(among: candidates, isAppleSignedAgent: Self.isAppleSignedAgent(pid:))
+    }
+
+    /// One running application as `agentPID` judges it.
+    struct Candidate {
+        let pid: Int32
+        let bundleID: String?
+        let bundleURL: URL?
+    }
+
+    /// The first candidate with the agent's bundle id, a bundle under `/System`
+    /// and Apple's signature for that id. The signature is what cannot be
+    /// borrowed (security review of H3): the path check alone accepts
+    /// `/System/Volumes/Data/...`, which the user can write to, so a bundle
+    /// there claiming the id -- listed first once the real agent relaunches --
+    /// would pass it. The signature is asked only of a candidate that passed the
+    /// cheap checks, so normally once (about 0.8 ms, MEASURED 2026-09-25).
+    static func agentPID(among candidates: [Candidate], isAppleSignedAgent: (Int32) -> Bool) -> Int32? {
+        candidates.first { candidate in
+            isMenuBarAgent(bundleID: candidate.bundleID, bundleURL: candidate.bundleURL) && isAppleSignedAgent(candidate.pid)
+        }?.pid
+    }
+
+    /// Whether the running process `pid` satisfies `anchor apple and identifier
+    /// "com.apple.MenuBarAgent"`; `false` for a process that is gone or cannot
+    /// be checked.
+    static func isAppleSignedAgent(pid: Int32) -> Bool {
+        var requirement: SecRequirement?
+        let text = "anchor apple and identifier \"\(LiveExtrasReader.menuBarAgentBundleID)\"" as CFString
+        guard SecRequirementCreateWithString(text, [], &requirement) == errSecSuccess, let requirement else { return false }
+        var code: SecCode?
+        let attributes = [kSecGuestAttributePid: NSNumber(value: pid)] as CFDictionary
+        guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess, let code else { return false }
+        return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
     }
 
     /// The agent's bundle id **and** a bundle under `/System` (hardening plan
