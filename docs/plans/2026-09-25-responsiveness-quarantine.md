@@ -399,6 +399,11 @@ which carry no names.
   SafeWidthCore 277, IceWatchCore 44 -- all green. Line coverage: IceCore 97.53 %
   (`ResponsivenessQuarantine.swift` 100 %); Discovery+Feed 97.70 % excluding the
   live adapters, the CLI and generated sources (regex archived with the report).
+- **Ice run** (after the merge, on `wip/ice-quarantine-run` with one debug log
+  line per cache pass; evidence `20260925-191841-ice-quarantine-run`): 41
+  passes, 1 `incomplete` (the cold launch pass), 40 `complete` at a median of
+  36.5 ms; four launch-time stalls entered and were lifted one pass later; the
+  layout pane rendered; icewatch clean, no trip; prefs and the bar unchanged.
 - **X2/X3/X4**: Ice builds; `build.sh` builds; A3/A4 byte-identical to af4baf1;
   A8 71 hits as expected; A8b empty; A10 as expected; IceCore imports nothing.
 - **X8**: `/simcodex`, three rounds -- simplify fixes (fixtureItem reuse, one
