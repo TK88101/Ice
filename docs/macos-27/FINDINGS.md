@@ -224,8 +224,41 @@ read `.failed` (`ReadClassifier` treats any non-harmless attribute error so),
 so every pass is `incomplete` and T6 cannot pass while that app runs; an
 accessory process that never finished launching held every
 `AXExtrasMenuBar` read for the full 0.25 s timeout, which alone took warm
-passes from ~25 ms to ~290 ms. Whether an identifier read error should
-instead make the item `unnamed` is open.
+passes from ~25 ms to ~290 ms.
+
+**MEASURED 2026-09-25, later** (`docs/plans/2026-09-25-identifier-failure.md`):
+that identifier error is **deterministic and singular** -- eight consecutive
+direct reads of the child gave `kAXErrorFailure` every time while `AXFrame`
+succeeded every time, and a sweep of all 13 on-bar items found
+`attributeUnsupported` (harmless) everywhere else but one item answering
+`success`. The frame the walk never asked for was readable all along: the live
+reader stopped the child **and the process's whole child walk** on the
+identifier error, which is why the census showed `frame: notAttempted`.
+
+**The open question is answered: the item is made `unnamed`, not failed.** Ruled
+by four Codex rounds and a Jev per-requirement ruling, as vector K1: the walk
+goes on past a *fast* `AXIdentifier` `failure` and nothing else, so the record
+keeps its frame and later children are still enumerated; `RawRead` now carries
+`walkInterrupted` and `childCount`, and the classifier fails an interrupted walk
+or a record count that does not account for the children snapshot, so no partial
+read can be reported as complete. `ItemKeying` already maps a missing identifier
+to `""`, so the item keys as `.unnamed` (or `.positional` if a sibling is also
+unreadable) with no new identity case.
+
+Three consequences, recorded rather than fixed:
+- **carry-over** never applies to that item at all now -- it is read fresh every
+  pass. Before, it was not merely stale but absent forever: carry-over needs a
+  previous successful read, and there had never been one.
+- **D10** decides nothing differently (sectioning never reads completeness); it
+  simply has one more item to section, and that item now has a frame, so it is
+  placed by its `midX` rather than falling back to a previous section.
+- **the check (D7)** can now target it, because `.unnamed` items are eligible and
+  it has a frame. A `.positional` one would not be (D14/D15).
+- **accepted, not fixed**: if that process ever starts answering `AXIdentifier`,
+  the item's key changes and its remembered section reverts to the default once.
+  A persistent alias keyed by `(pid, launchTime, childIndex)` was rejected -- a
+  process that reorders its children would migrate a remembered section onto the
+  **wrong** item, which is worse than one reset.
 
 ### Two different kinds of "not visible"
 

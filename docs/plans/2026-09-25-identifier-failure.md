@@ -385,8 +385,8 @@ family; a ruling for K0 deletes T-1..T-5 and keeps T-6..T-8.
 | T-5 | an `ItemCatalog`-level test, which the suite has none of today: one record's tolerated identifier error no longer flips the pass's completeness, and the item reaches `items` with its frame | the test | red first, then green |
 | T-6 | thread the two fields through every construction site: `LiveExtrasReader.swift:74` and `:88` (process-level early exits: `false`, `childCount` 0), `:101` (from the walk's own result), `MenuBarDiscoverer.swift:127` (the synthetic deadline read: not attempted, so `false`), and **`MenuBarDiscoverer.swift:164` `subtractOrigin`, which reconstructs `RawRead` and would silently drop both facts** (Codex round 2); plus 41 test construction sites across 9 files, each updated deliberately | the existing suites, which must still pass unchanged in meaning | every site updated with a stated intent; no site takes a default |
 | T-7 | the ledger: FINDINGS' open question answered; M1-M7 recorded; the Refuted table's three duplicate rows left alone | n/a | FINDINGS and this plan agree |
-| T-8 | T6-a: residuals §4 as written, with the app quit and **before** the code change | n/a | PASS, or VOID three times reported |
-| T-9 | T6-b, the change's own evidence: with the app **running** and the code changed, `--check` against T6-a's labels plus exactly one added label for the previously-absent item; the one-label patch kept as its own artifact; T6-a's labels and evidence preserved, not overwritten | n/a | agree on every label, exit 0; **no delta other than that one label**; the addition justified in writing; the limit stated -- this is a discovery-label regression check, not evidence about frame coordinates or anything labels do not encode (Codex round 2) |
+| T-8 | T6-a: residuals §4 as written, with the app quit, run by an `mbdiscover` built from **9afd236** (the pre-change commit, via `git archive` into `/private/tmp` -- the working tree already carries the change, and a build artifact is the honest way to hold the old behaviour still) | n/a | PASS, or VOID three times reported. The labels it freezes are `L` |
+| T-9 | three checks, not one, so that "the app was quit" and "the code changed" are never the same variable: **(a)** app quit, changed code, `--check L` → must PASS, which is the regression check proper (the change is behaviour-preserving when the error is absent); **(b)** app running, **pre-change** binary, `--check L` → must fail with `incomplete pass`, which pins the starting point as a measurement rather than a memory; **(c)** app running, changed code, `--check` against `L` plus **exactly one** added label for the previously-absent item → must PASS. `L` and T6-a's evidence preserved, never overwritten; the one-label patch kept as its own artifact | n/a | (a) PASS, (b) fails for that reason and no other, (c) PASS with no delta beyond the one label, justified in writing. Limit stated: a discovery-label regression check, not evidence about frame coordinates or anything labels do not encode (Codex round 2) |
 | T-10 | step 6 once §4's ruling holds: **both** gates re-measured read-only with margin first | n/a | both halves run ("gone" two `hidden(folded: false)`, "stayed" two `stillDrawn`), or P4 with its cause |
 
 T-8 before the code change and T-9 after it exist because re-freezing labels
@@ -440,6 +440,84 @@ T-8 before the code change and T-9 after it exist because re-freezing labels
 | changing a pre-registered gate mid-protocol | P2 rejected for this run; P1 conditional on re-measuring both gates; P4 as the fallback |
 | iCloud duplicates after a rewrite | check for `X 2.swift` before every build, per project memory |
 | rollback | checkpoints on `wip/identifier-failure` only; never pushed, never merged; `git revert` per checkpoint |
+
+## Deviations (ledger)
+
+Format: trigger → what changed → reason.
+
+1. **Enforcement last (sequencing).** `RawRead`'s two new fields were added and
+   threaded through all 5 source and 41 test construction sites **before** any
+   behavioural test was written, and the suites were run green at that point
+   (IceCore 333, MenuBarDiscovery 19, Feed 36 -- unchanged counts, unchanged
+   meanings). Only then were the behavioural tests written. Reason: a test that
+   fails because a signature changed is not evidence (residuals Deviation 7), so
+   the signature change had to land first for the red to mean anything.
+2. **TDD record, and it is behavioural throughout.**
+   - `AttributeWalkPolicy` was first written with **K0 semantics** (today's rule,
+     no tolerated error) so its 10 tests could fail for a behavioural reason.
+     Exactly one failed -- the tolerated case -- and the other nine passed, which
+     is what proves the suite was pinning today's behaviour and not the new code.
+     Adding the exception turned it green.
+   - The five new `ReadClassifier` tests were run before the classifier changed:
+     **four red** (`.items` expected and `.failed` returned, and the reverse for
+     the two invariants), one green -- the one that pins existing behaviour
+     (a fast `cannotComplete` on the children read is still "no items", not a
+     partial walk).
+   - The 10 walk-trace tests were written after the seam, so their red is by
+     **mutation** instead, each reverted and the file verified identical
+     afterwards: removing the K1 exception → the two tolerated-case traces fail
+     (the frame is never asked for); tolerating the error however slow → the slow
+     case fails; keeping the value on a slow success → both discard tests fail.
+   - The five `ItemCatalog` tests, which are the first at that layer at all, were
+     mutation-checked the same way: with the classifier's tolerance removed, four
+     of the five fail.
+3. **`FailureReason` gained two cases** (`walkInterrupted`, `partialWalk`) rather
+   than reusing `unexpectedError`: the record that triggered a stop can now look
+   clean, so the stop is the fact to report, and a count mismatch is a different
+   fault from an attribute error. Cheap because nothing in production switches
+   over `FailureReason` -- only tests pattern-match it.
+4. **The attribute order is unchanged**, deliberately. `LiveExtrasReader`'s old
+   comment justified the frame's lastness as what made a stopped walk fail;
+   `walkInterrupted` carries that now, so the order is no longer load-bearing --
+   but reordering would change which failure a process reports first, which is
+   exactly the R-a regression that lost K5 the ruling.
+5. **Coverage.** IceCore 97.86 % lines (353 tests); MenuBarDiscovery + Feed
+   97.56 % lines over the plan's exclusions (live adapters, the CLI, the live
+   verification factory), 29 + 36 tests. `LiveExtrasReader` itself went from
+   wholly uncovered to 37 of 125 lines, since the walk it now delegates is
+   scripted in tests -- it stays an excluded file regardless.
+6. **A regex bug of mine, and its repair.** The script that threaded the two
+   fields through the test sites matched `RawRead(` inside the identifiers
+   `readerRawRead(` and `readerFailedRawRead(`, so it appended arguments to a
+   helper's signature and to ten of its call sites. Caught by the editor's
+   diagnostics before any test ran, repaired in place (the helper already sets
+   both fields itself), and the whole suite re-run green. No revert was needed
+   and nothing but my own edit was touched.
+
+7. **T6 needed no user action in the end, and became a stronger measurement.**
+   T-8/T-9 were written assuming the app had to be quit for the census to read
+   `complete`. The change itself makes it read `complete` **with that app
+   running**, so T6 ran as residuals §4 writes it and **PASSED**: `agree: 11
+   labels`, exit 0; the negative control detected; no drift in any labelled
+   field; warm passes 16-30 ms, every one `complete`. Evidence
+   `~/IceReverse-evidence/20260925-140256-t6` (`result.md` there).
+   The control is better than T-9's planned label diff, because it holds the bar
+   still instead of the code: at the same minute, on the same bar, with the same
+   app running, the binary built from `9afd236` reported 10 items and
+   `incomplete(1 failed)` while the changed one reported 11 and `complete`. One
+   item's difference, and it is the item at x=1321 whose identifier read fails.
+8. **T-9(a) is retired as written, and why.** It asked for "app quit, changed
+   code, `--check L` -> PASS". With `L` frozen while the app runs, quitting the
+   app must make the check fail on a missing item -- correctly -- so that
+   comparison cannot be run against this `L` and would need a second frozen set
+   to mean anything. Its purpose (the change is behaviour-preserving where the
+   error is absent) is met by evidence already in hand: every pre-existing test
+   in all six suites is green with no expectation altered (IceCore 333 -> 353 by
+   addition only), and A3, A4, A8 (71 hits), A8b and A10 all pass.
+9. **Still owed to the user, and only this**: the step-6 room gate. It does not
+   turn on the identifier error but on the leftmost item's x, so it still needs
+   that app (or any one menu bar icon) quit -- `predictedFree` is 113.5 pt against
+   the 138.5 pt the predicate requires.
 
 ## Appendix A -- review record
 
