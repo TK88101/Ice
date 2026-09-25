@@ -47,7 +47,7 @@ struct ItemCatalogBuildTrustAndOrderingTests {
         let recordB = ExtrasRecord(childIndex: 0, role: ok("AXMenuBarItem"), identifier: ok("shared"), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 300, minY: 4.5, width: 14, height: 24)))
         // Both records share minX 300 and pid 7; only childIndex (0 before
         // 1) differs, so it alone must decide the order.
-        let read = RawRead(process: process(pid: 7), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [recordA, recordB])
+        let read = RawRead(process: process(pid: 7), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [recordA, recordB], walkInterrupted: false, childCount: 2)
         let set = ItemCatalog.build(reads: [read], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
         #expect(set.items.count == 2)
         #expect(set.items.map(\.key.childIndex) == [0, 1])
@@ -59,7 +59,7 @@ struct ItemCatalogBuildTrustAndOrderingTests {
             ExtrasRecord(childIndex: 0, role: ok("AXGroup"), identifier: ok(), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 1438, minY: 0, width: 26, height: 33))),
             ExtrasRecord(childIndex: 1, role: ok("AXHostingView"), identifier: ok(), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 1480, minY: 0, width: 22, height: 33))),
         ]
-        let agentRead = RawRead(process: process(pid: 999), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: agentRecords)
+        let agentRead = RawRead(process: process(pid: 999), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: agentRecords, walkInterrupted: false, childCount: agentRecords.count)
         let set = ItemCatalog.build(reads: [agentRead], agentPID: 999, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
         #expect(set.items.isEmpty)
         #expect(Set(set.systemElements) == Set([BarRect(minX: 1438, minY: 0, width: 26, height: 33), BarRect(minX: 1480, minY: 0, width: 22, height: 33)]))
@@ -68,7 +68,7 @@ struct ItemCatalogBuildTrustAndOrderingTests {
     @Test("any failed read (own or third-party) makes the pass incomplete, naming every failed pid")
     func anyFailedReadIsIncomplete() {
         let ok1 = thirdParty(pid: 1, identifier: "a", minX: 100)
-        let failing = RawRead(process: process(pid: 2), extrasError: "cannotComplete", extrasElapsed: 0.24, childrenError: nil, childrenElapsed: nil, records: [])
+        let failing = RawRead(process: process(pid: 2), extrasError: "cannotComplete", extrasElapsed: 0.24, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
         let set = ItemCatalog.build(reads: [ok1, failing], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
         #expect(set.completeness == .incomplete(failedPIDs: [2]))
         #expect(set.items.map(\.key.pid) == [1])
@@ -96,7 +96,7 @@ struct ItemCatalogBuildOwnProcessTests {
             ExtrasRecord(childIndex: 1, role: ok("AXMenuBarItem"), identifier: ok("Ice.ControlItem.hidden"), title: ok(), description: ok(), help: ok(), frame: okFrame(hiddenFrame)),
             ExtrasRecord(childIndex: 2, role: ok("AXMenuBarItem"), identifier: ok("Ice.ControlItem.alwaysHidden"), title: ok(), description: ok(), help: ok(), frame: okFrame(alwaysHiddenFrame)),
         ]
-        let own = RawRead(process: process(pid: 900, isSelf: true), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records)
+        let own = RawRead(process: process(pid: 900, isSelf: true), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records, walkInterrupted: false, childCount: records.count)
         let set = ItemCatalog.build(reads: [own], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
 
         #expect(set.ownRead == .ok)
@@ -114,14 +114,14 @@ struct ItemCatalogBuildOwnProcessTests {
             ExtrasRecord(childIndex: 0, role: ok("AXMenuBarItem"), identifier: ok("Ice.ControlItem.hidden"), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 1100, minY: 0, width: 16, height: 33))),
             ExtrasRecord(childIndex: 1, role: ok("AXMenuBarItem"), identifier: ok("something-else"), title: ok(), description: ok(), help: ok(), frame: okFrame()),
         ]
-        let own = RawRead(process: process(pid: 900, isSelf: true), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records)
+        let own = RawRead(process: process(pid: 900, isSelf: true), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records, walkInterrupted: false, childCount: records.count)
         let set = ItemCatalog.build(reads: [own], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
         #expect(set.dropped.contains(DroppedItem(key: nil, pid: 900, reason: .ownUnrecognized)))
     }
 
     @Test("own read outcome .failed -> ownRead .failed, and the pid is in failedPIDs")
     func ownReadFailed() {
-        let own = RawRead(process: process(pid: 900, isSelf: true), extrasError: "cannotComplete", extrasElapsed: 0.24, childrenError: nil, childrenElapsed: nil, records: [])
+        let own = RawRead(process: process(pid: 900, isSelf: true), extrasError: "cannotComplete", extrasElapsed: 0.24, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
         let set = ItemCatalog.build(reads: [own], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
         #expect(set.ownRead == .failed)
         #expect(set.completeness == .incomplete(failedPIDs: [900]))
@@ -132,7 +132,7 @@ struct ItemCatalogBuildOwnProcessTests {
         let records = [
             ExtrasRecord(childIndex: 0, role: ok("AXMenuBarItem"), identifier: ok("Ice.ControlItem.visible"), title: ok(), description: ok(), help: ok(), frame: okFrame()),
         ]
-        let own = RawRead(process: process(pid: 900, isSelf: true), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records)
+        let own = RawRead(process: process(pid: 900, isSelf: true), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records, walkInterrupted: false, childCount: records.count)
         let set = ItemCatalog.build(reads: [own], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
         #expect(set.ownRead == .identifiersMissing)
         #expect(set.hiddenDivider == nil)
@@ -157,7 +157,7 @@ struct ItemCatalogBuildThirdPartyTests {
         let records = [
             ExtrasRecord(childIndex: 0, role: ok("AXStaticText"), identifier: ok(), title: ok(), description: ok(), help: ok(), frame: okFrame()),
         ]
-        let read = RawRead(process: process(pid: 5), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records)
+        let read = RawRead(process: process(pid: 5), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records, walkInterrupted: false, childCount: records.count)
         let set = ItemCatalog.build(reads: [read], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
         #expect(set.items.isEmpty)
         #expect(set.dropped.contains(DroppedItem(key: nil, pid: 5, reason: .unrecognizedRole("AXStaticText"))))
@@ -172,7 +172,7 @@ struct ItemCatalogBuildThirdPartyTests {
             ExtrasRecord(childIndex: 0, role: ok("AXStaticText"), identifier: ok("gear"), title: ok(), description: ok(), help: ok(), frame: okFrame()),
             ExtrasRecord(childIndex: 1, role: ok("AXMenuBarItem"), identifier: ok("gear"), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 200, minY: 4.5, width: 20, height: 24))),
         ]
-        let read = RawRead(process: process(pid: 5), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records)
+        let read = RawRead(process: process(pid: 5), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records, walkInterrupted: false, childCount: records.count)
         let set = ItemCatalog.build(reads: [read], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
         #expect(set.items.count == 1)
         #expect(set.items.first?.basis == .declared)
@@ -182,7 +182,7 @@ struct ItemCatalogBuildThirdPartyTests {
     @Test("obstacles for PositionRule are other on-bar third-party frames and system elements, never own items")
     func obstaclesExcludeOwnItems() {
         let ownVisible = ExtrasRecord(childIndex: 0, role: ok("AXMenuBarItem"), identifier: ok("Ice.ControlItem.visible"), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 995, minY: 0, width: 30, height: 33)))
-        let ownRead = RawRead(process: process(pid: 900, isSelf: true), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [ownVisible])
+        let ownRead = RawRead(process: process(pid: 900, isSelf: true), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [ownVisible], walkInterrupted: false, childCount: 1)
         // This third-party item sits under the own item's frame; because own
         // items must never be obstacles, it must read onBar, not stacked.
         let third = thirdParty(pid: 5, identifier: "gear", minX: 1000, width: 20)
@@ -202,7 +202,7 @@ struct ItemCatalogBuildThirdPartyTests {
     @Test("system element frames count as obstacles too")
     func systemElementFramesAreObstacles() {
         let agentRecords = [ExtrasRecord(childIndex: 0, role: ok("AXGroup"), identifier: ok(), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 1438, minY: 0, width: 26, height: 33)))]
-        let agentRead = RawRead(process: process(pid: 999), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: agentRecords)
+        let agentRead = RawRead(process: process(pid: 999), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: agentRecords, walkInterrupted: false, childCount: agentRecords.count)
         let third = thirdParty(pid: 5, identifier: "gear", minX: 1440, width: 20)
         let set = ItemCatalog.build(reads: [agentRead, third], agentPID: 999, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
         #expect(set.items.first?.position == .stacked)
@@ -221,7 +221,7 @@ struct ItemCatalogBuildThirdPartyTests {
 
     @Test("a process with no extras (ReadOutcome.none) contributes nothing and is not a failure")
     func noExtrasContributesNothing() {
-        let read = RawRead(process: process(pid: 5), extrasError: "noValue", extrasElapsed: 0.01, childrenError: nil, childrenElapsed: nil, records: [])
+        let read = RawRead(process: process(pid: 5), extrasError: "noValue", extrasElapsed: 0.01, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
         let set = ItemCatalog.build(reads: [read], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
         #expect(set.items.isEmpty)
         #expect(set.completeness == .complete)
@@ -243,7 +243,7 @@ struct ItemCatalogBuildCollisionTests {
         // collide those distinctly-childIndexed keys.
         let recordA = ExtrasRecord(childIndex: 0, role: ok("AXMenuBarItem"), identifier: ok("gear"), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 100, minY: 4.5, width: 20, height: 24)))
         let recordB = ExtrasRecord(childIndex: 1, role: ok("AXMenuBarItem"), identifier: ok("gear"), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 400, minY: 4.5, width: 20, height: 24)))
-        let read = RawRead(process: process(pid: 1), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [recordA, recordB])
+        let read = RawRead(process: process(pid: 1), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [recordA, recordB], walkInterrupted: false, childCount: 2)
         let set = ItemCatalog.build(reads: [read], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
         #expect(set.items.count == 2)
         #expect(set.items.allSatisfy { $0.basis == .positional })
@@ -258,7 +258,7 @@ struct ItemCatalogBuildCollisionTests {
         // rather than silently keep a stale duplicate if it ever happens.
         let recordA = ExtrasRecord(childIndex: 0, role: ok("AXMenuBarItem"), identifier: ok("gear"), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 100, minY: 4.5, width: 20, height: 24)))
         let recordB = ExtrasRecord(childIndex: 0, role: ok("AXMenuBarItem"), identifier: ok("gear"), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 400, minY: 4.5, width: 20, height: 24)))
-        let read = RawRead(process: process(pid: 1), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [recordA, recordB])
+        let read = RawRead(process: process(pid: 1), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [recordA, recordB], walkInterrupted: false, childCount: 2)
         let set = ItemCatalog.build(reads: [read], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
         #expect(set.items.isEmpty)
         #expect(set.dropped.filter { $0.reason == .identityCollision }.count == 2)
@@ -274,9 +274,9 @@ struct ItemCatalogBuildCollisionTests {
         // catch, dropping both and leaving no visibleControlItem.
         let ownIDsLookingLikeATag = OwnIdentifiers(visible: "x/p12", hidden: "Ice.ControlItem.hidden", alwaysHidden: "Ice.ControlItem.alwaysHidden")
         let ownRecord = ExtrasRecord(childIndex: 0, role: ok("AXMenuBarItem"), identifier: ok("x/p12"), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 1600, minY: 4.5, width: 20, height: 24)))
-        let ownRead = RawRead(process: process(pid: 900, isSelf: true, bundleID: "com.example.a"), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [ownRecord])
+        let ownRead = RawRead(process: process(pid: 900, isSelf: true, bundleID: "com.example.a"), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [ownRecord], walkInterrupted: false, childCount: 1)
         let thirdPartyRecord = ExtrasRecord(childIndex: 0, role: ok("AXMenuBarItem"), identifier: ok("x"), title: ok(), description: ok(), help: ok(), frame: okFrame(BarRect(minX: 200, minY: 4.5, width: 20, height: 24)))
-        let thirdPartyRead = RawRead(process: process(pid: 12, bundleID: "com.example.a"), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [thirdPartyRecord])
+        let thirdPartyRead = RawRead(process: process(pid: 12, bundleID: "com.example.a"), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [thirdPartyRecord], walkInterrupted: false, childCount: 1)
 
         let set = ItemCatalog.build(reads: [ownRead, thirdPartyRead], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDsLookingLikeATag, now: 0)
         #expect(set.visibleControlItem == nil)
@@ -286,6 +286,128 @@ struct ItemCatalogBuildCollisionTests {
 }
 
 // MARK: - Fixtures
+
+/// The pass level, which no test reached before this change: what one child's
+/// unreadable `AXIdentifier` costs the whole pass (2026-09-25 plan, T-5).
+///
+/// MEASURED 2026-09-25: before this, one such child made its process `.failed`,
+/// so the process contributed no items and every pass came out `.incomplete` --
+/// and because that process had never once been read successfully, carry-over
+/// had nothing to carry and the item was absent from the list permanently, not
+/// merely stale.
+@Suite("ItemCatalog.build: an unreadable identifier")
+struct ItemCatalogUnreadableIdentifierTests {
+    let bounds = BarBounds(minX: 0, maxX: 1728, minY: 0, barHeight: 33)
+    let ownIDs = OwnIdentifiers(visible: "Ice.ControlItem.visible", hidden: "Ice.ControlItem.hidden", alwaysHidden: "Ice.ControlItem.alwaysHidden")
+
+    /// The shape the bar actually produced: role and frame clean, identifier
+    /// `failure`, one child, the walk not stopped.
+    private func unreadableIdentifier(pid: Int32, minX: Double) -> RawRead {
+        let record = ExtrasRecord(
+            childIndex: 0,
+            role: AttributeRead(value: "AXMenuBarItem", error: "success"),
+            identifier: AttributeRead(value: nil, error: "failure"),
+            title: AttributeRead(value: "", error: "success"),
+            description: AttributeRead(value: "", error: "success"),
+            help: AttributeRead(value: "", error: "success"),
+            frame: AttributeRead(value: BarRect(minX: minX, minY: 4.5, width: 34, height: 24), error: "success")
+        )
+        return RawRead(
+            process: ProcessInfoRecord(pid: pid, bundleID: "com.example.\(pid)", localizedName: nil, executableName: nil, launchTime: 10, isSelf: false),
+            extrasError: "success",
+            extrasElapsed: 0.01,
+            childrenError: "success",
+            childrenElapsed: 0.01,
+            records: [record],
+            walkInterrupted: false,
+            childCount: 1
+        )
+    }
+
+    @Test("the pass stays complete and the item is listed, with its frame")
+    func passStaysCompleteAndTheItemIsListed() {
+        let set = ItemCatalog.build(reads: [unreadableIdentifier(pid: 24, minX: 1321)], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
+
+        #expect(set.completeness == .complete)
+        #expect(set.items.count == 1)
+        #expect(set.items.first?.frame?.minX == 1321)
+        #expect(set.items.first?.position == .onBar)
+    }
+
+    @Test("an unreadable identifier keys the item the way an empty one does -- unnamed, no child index")
+    func itIsKeyedUnnamed() {
+        let set = ItemCatalog.build(reads: [unreadableIdentifier(pid: 24, minX: 1321)], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
+
+        #expect(set.items.first?.basis == .unnamed)
+        #expect(set.items.first?.key.identifier == "")
+        #expect(set.items.first?.key.childIndex == nil)
+        #expect(set.items.first?.key.pid == 24)
+    }
+
+    @Test("carry-over never applies to it, because a complete pass has nothing to carry")
+    func carryOverDoesNotApply() {
+        let first = ItemCatalog.build(reads: [unreadableIdentifier(pid: 24, minX: 1321)], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
+        let second = ItemCatalog.build(reads: [unreadableIdentifier(pid: 24, minX: 1321)], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 60)
+        let carried = ItemCatalog.carryOver(previous: first, current: second, now: 60)
+
+        // 60 s is twice the freshness window: had the pass been incomplete and
+        // the item carried, it would have been dropped as stale by now.
+        #expect(carried.items.count == 1)
+        #expect(carried.items.first?.carriedPasses == 0)
+        #expect(carried.items.first?.lastConfirmedAt == 60)
+        #expect(carried.dropped.isEmpty)
+    }
+
+    @Test("a walk that stopped still loses the process, tolerated error or not")
+    func aStoppedWalkStillFailsThePass() {
+        let stopped = unreadableIdentifier(pid: 24, minX: 1321)
+        let interrupted = RawRead(
+            process: stopped.process,
+            extrasError: stopped.extrasError,
+            extrasElapsed: stopped.extrasElapsed,
+            childrenError: stopped.childrenError,
+            childrenElapsed: stopped.childrenElapsed,
+            records: stopped.records,
+            walkInterrupted: true,
+            childCount: stopped.childCount
+        )
+        let set = ItemCatalog.build(reads: [interrupted], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
+
+        #expect(set.completeness == .incomplete(failedPIDs: [24]))
+        #expect(set.items.isEmpty)
+    }
+
+    @Test("two unreadable identifiers in one process become positional, as two empty ones would")
+    func twoInOneProcessBecomePositional() {
+        func record(_ index: Int, _ minX: Double) -> ExtrasRecord {
+            ExtrasRecord(
+                childIndex: index,
+                role: AttributeRead(value: "AXMenuBarItem", error: "success"),
+                identifier: AttributeRead(value: nil, error: "failure"),
+                title: AttributeRead(value: "", error: "success"),
+                description: AttributeRead(value: "", error: "success"),
+                help: AttributeRead(value: "", error: "success"),
+                frame: AttributeRead(value: BarRect(minX: minX, minY: 4.5, width: 30, height: 24), error: "success")
+            )
+        }
+        let raw = RawRead(
+            process: ProcessInfoRecord(pid: 31, bundleID: "com.example.two", localizedName: nil, executableName: nil, launchTime: 10, isSelf: false),
+            extrasError: "success",
+            extrasElapsed: 0.01,
+            childrenError: "success",
+            childrenElapsed: 0.01,
+            records: [record(0, 1100), record(1, 1200)],
+            walkInterrupted: false,
+            childCount: 2
+        )
+        let set = ItemCatalog.build(reads: [raw], agentPID: nil, bounds: bounds, isTrusted: true, ownIdentifiers: ownIDs, now: 0)
+
+        #expect(set.completeness == .complete)
+        #expect(set.items.count == 2)
+        #expect(set.items.allSatisfy { $0.basis == .positional })
+        #expect(set.items.map(\.key.childIndex) == [0, 1])
+    }
+}
 
 private func process(pid: Int32, isSelf: Bool = false, bundleID: String = "com.example.a", launchTime: Double? = 10) -> ProcessInfoRecord {
     ProcessInfoRecord(pid: pid, bundleID: bundleID, localizedName: nil, executableName: nil, launchTime: launchTime, isSelf: isSelf)
@@ -310,5 +432,5 @@ private func thirdParty(pid: Int32, identifier: String, minX: Double, minY: Doub
         help: ok(),
         frame: resolvedFrame.map(okFrame) ?? AttributeRead(value: nil, error: "noValue")
     )
-    return RawRead(process: process(pid: pid, bundleID: "com.example.\(pid)"), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [record])
+    return RawRead(process: process(pid: pid, bundleID: "com.example.\(pid)"), extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [record], walkInterrupted: false, childCount: 1)
 }

@@ -185,7 +185,7 @@ struct MenuBarDiscovererTests {
 
         let secondReader = FakeExtrasReader { process, _ in
             if process.pid == survivor.pid {
-                return RawRead(process: process, extrasError: "cannotComplete", extrasElapsed: 0.24, childrenError: nil, childrenElapsed: nil, records: [])
+                return RawRead(process: process, extrasError: "cannotComplete", extrasElapsed: 0.24, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
             }
             return rawRead(process: process, records: [])
         }

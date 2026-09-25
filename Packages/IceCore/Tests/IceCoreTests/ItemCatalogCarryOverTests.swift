@@ -54,7 +54,7 @@ struct ItemCatalogCarryOverTests {
     func deadlineTruncatedPassKeepsPreviousItem() {
         let previousItem = item(pid: 5, lastConfirmedAt: 0)
         let previous = set(items: [previousItem], failedPIDs: [])
-        let notAttempted = RawRead(process: previousItem.process, extrasError: "notAttempted", extrasElapsed: 0, childrenError: nil, childrenElapsed: nil, records: [])
+        let notAttempted = RawRead(process: previousItem.process, extrasError: "notAttempted", extrasElapsed: 0, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
         #expect(ReadClassifier.outcome(notAttempted) == .failed(.unexpectedError(call: "extrasBar", error: "notAttempted")))
 
         let built = ItemCatalog.build(reads: [notAttempted], agentPID: nil, bounds: BarBounds(minX: 0, maxX: 1728, minY: 0, barHeight: 33), isTrusted: true, ownIdentifiers: OwnIdentifiers(visible: "v", hidden: "h", alwaysHidden: "a"), now: 10)

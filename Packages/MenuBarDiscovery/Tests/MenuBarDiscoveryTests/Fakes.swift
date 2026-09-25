@@ -124,7 +124,7 @@ func extrasRecord(childIndex: Int, identifier: String, minX: Double, role: Strin
 }
 
 func rawRead(process: ProcessInfoRecord, records: [ExtrasRecord] = []) -> RawRead {
-    RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records)
+    RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records, walkInterrupted: false, childCount: records.count)
 }
 
 let testBounds = BarBounds(minX: 0, maxX: 1728, minY: 0, barHeight: 24)

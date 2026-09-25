@@ -169,7 +169,7 @@ struct DiscoveredFrameReaderTests {
     @Test("the agent's read reporting .none (a real, empty answer) is not a failure -- empty agent frames, not nil")
     func agentReadNoneIsEmptyNotNil() {
         let extras = FakeExtrasReader { process, _ in
-            RawRead(process: process, extrasError: "noValue", extrasElapsed: 0.01, childrenError: nil, childrenElapsed: nil, records: [])
+            RawRead(process: process, extrasError: "noValue", extrasElapsed: 0.01, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
         }
         let reader = makeReader(extras: extras, processes: [])
 

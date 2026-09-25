@@ -210,6 +210,12 @@ struct CensusRead: Codable {
     let childrenError: String?
     let childrenElapsed: Double?
     let records: [CensusRecord]
+    /// Both carried so a census can still tell a truncated walk from a complete
+    /// one. Before one attribute error became tolerable, a stop always left
+    /// `notAttempted` in the records for a reader to spot; it no longer does,
+    /// and this file is the artifact the 2026-09-25 tolerance was argued from.
+    let walkInterrupted: Bool
+    let childCount: Int
 }
 
 func censusRead(from raw: RawRead) -> CensusRead {
@@ -240,7 +246,9 @@ func censusRead(from raw: RawRead) -> CensusRead {
                     error: record.frame.error
                 )
             )
-        }
+        },
+        walkInterrupted: raw.walkInterrupted,
+        childCount: raw.childCount
     )
 }
 
