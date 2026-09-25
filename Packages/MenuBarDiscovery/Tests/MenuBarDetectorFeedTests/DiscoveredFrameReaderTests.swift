@@ -286,6 +286,30 @@ struct DiscoveredFrameReaderTests {
         #expect(extras.interruptsAfter == [false])
     }
 
+    @Test("the default clock and deadline read a sample like the injected ones")
+    func defaultClockAndDeadline() {
+        let key = ItemKey(namespace: "com.example.p571", identifier: "item", pid: 571, childIndex: nil)
+        let extras = makeExtras { process, _ in
+            readerRawRead(process: process, records: [readerExtrasRecord(childIndex: 0, identifier: "item", minX: 100)])
+        }
+        let reader = DiscoveredFrameReader(extras: extras, apps: FakeRunningApps(allProcesses: [readerTestProcess(pid: 571)], agent: Self.agentPID), origin: DiscoveryOrigin(x: 0, y: 0))
+
+        #expect(reader.read(items: [key.encoded: 571])?.itemFrames[key.encoded] != nil)
+        #expect(extras.interrupts == [false, false])
+    }
+
+    @Test("a keyed pid no longer enumerated is still read, by its pid alone")
+    func keyedPIDMissingFromTheEnumerationIsStillRead() {
+        let key = ItemKey(namespace: "com.example.p572", identifier: "item", pid: 572, childIndex: nil)
+        let extras = makeExtras { process, _ in
+            readerRawRead(process: process, records: [readerExtrasRecord(childIndex: 0, identifier: "item", minX: 100)])
+        }
+        let reader = makeReader(extras: extras, processes: [])
+
+        #expect(reader.read(items: [key.encoded: 572])?.itemFrames[key.encoded] != nil)
+        #expect(extras.calls.last == ProcessInfoRecord(pid: 572, bundleID: nil, localizedName: nil, executableName: nil, launchTime: nil, isSelf: false))
+    }
+
     @Test("no agent pid -> nil")
     func noAgentPIDIsNil() {
         let extras = FakeExtrasReader { process, _ in
