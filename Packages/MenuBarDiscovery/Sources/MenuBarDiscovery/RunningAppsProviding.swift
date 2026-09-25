@@ -57,6 +57,17 @@ public struct LiveRunningApps: RunningAppsProviding {
     }
 
     public func agentPID() -> Int32? {
-        NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == LiveExtrasReader.menuBarAgentBundleID }?.processIdentifier
+        NSWorkspace.shared.runningApplications.first { Self.isMenuBarAgent(bundleID: $0.bundleIdentifier, bundleURL: $0.bundleURL) }?.processIdentifier
+    }
+
+    /// The agent's bundle id **and** a bundle under `/System` (hardening plan
+    /// H3): by id alone, any process claiming `com.apple.MenuBarAgent` that came
+    /// first in the list would take over the agent's routing (D4) and its
+    /// quarantine exemption. The path is standardized first, so `..` cannot walk
+    /// out of `/System`, and compared by component, so `/SystemX` is not it.
+    static func isMenuBarAgent(bundleID: String?, bundleURL: URL?) -> Bool {
+        guard bundleID == LiveExtrasReader.menuBarAgentBundleID, let bundleURL, bundleURL.isFileURL else { return false }
+        let components = bundleURL.standardizedFileURL.pathComponents
+        return components.count > 1 && components[0] == "/" && components[1] == "System"
     }
 }
