@@ -53,7 +53,10 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
     private let wallClock: @Sendable () -> Double
     private let timeout: Double
     private let deadline: Double
-    private let queue: DispatchQueue
+    /// Its own, serial, and not injectable (hardening plan H4): two passes must
+    /// never read and write the cursor and the quarantine at once, and a queue
+    /// handed in could be concurrent.
+    private let queue = DispatchQueue(label: "com.icereverse.MenuBarDiscovery.MenuBarDiscoverer")
 
     /// Where the next pass starts: the process the last one's deadline
     /// stopped at.
@@ -72,8 +75,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         now: @escaping @Sendable () -> Double,
         wallClock: @escaping @Sendable () -> Double = { Date().timeIntervalSince1970 },
         timeout: Double = ReadClassifier.defaultTimeout,
-        deadline: Double = 2.0,
-        queue: DispatchQueue = DispatchQueue(label: "com.icereverse.MenuBarDiscovery.MenuBarDiscoverer")
+        deadline: Double = 2.0
     ) {
         self.apps = apps
         self.reader = reader
@@ -84,7 +86,6 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         self.wallClock = wallClock
         self.timeout = timeout
         self.deadline = deadline
-        self.queue = queue
     }
 
     /// `nil` when the display has nothing to report, or when the pass was
