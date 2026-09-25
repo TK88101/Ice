@@ -29,25 +29,26 @@ public struct ProcessIdentity: Hashable, Sendable {
 }
 
 /// What a pass knows beyond its own reads: the menu bar agent's pid, the
-/// identities that owned an item in the caller's previous set, and the wall
-/// clock the age gate is measured against (the start time is wall-clock
-/// seconds; the backoff runs on the caller's monotonic clock instead).
+/// identities that owned an item in the caller's previous set, and the
+/// monotonic now the age gate measures `startUptime` against (hardening plan
+/// H5: the wall clock it replaced made a young process look old after a
+/// forward step). The backoff runs on the caller's own pass clock.
 public struct QuarantineContext: Equatable, Sendable {
     public let agentPID: Int32?
     public let previousOwners: Set<ProcessIdentity>
-    public let wallNow: Double
+    public let uptimeNow: Double
 
-    public init(agentPID: Int32?, previousOwners: Set<ProcessIdentity>, wallNow: Double) {
+    public init(agentPID: Int32?, previousOwners: Set<ProcessIdentity>, uptimeNow: Double) {
         self.agentPID = agentPID
         self.previousOwners = previousOwners
-        self.wallNow = wallNow
+        self.uptimeNow = uptimeNow
     }
 
     /// Every process that owned a listed item -- the visible control item
     /// included -- in `previous`, by identity.
-    public init(agentPID: Int32?, previous: DiscoveredItemSet?, wallNow: Double) {
+    public init(agentPID: Int32?, previous: DiscoveredItemSet?, uptimeNow: Double) {
         let owners = (previous?.listedItems ?? []).compactMap { ProcessIdentity($0.process) }
-        self.init(agentPID: agentPID, previousOwners: Set(owners), wallNow: wallNow)
+        self.init(agentPID: agentPID, previousOwners: Set(owners), uptimeNow: uptimeNow)
     }
 }
 
@@ -158,7 +159,7 @@ public struct ResponsivenessQuarantine: Equatable, Sendable {
             // the rotation -- and it may only enter afresh, below. A synthetic tail
             // record read nothing, so it leaves any entry as it was.
             if raw.extrasError != "notAttempted" { next[identity] = nil }
-            if witnessed, Self.isStall(raw, timeout: timeout), context.wallNow - identity.startTime >= Self.minimumAge {
+            if witnessed, Self.isStall(raw, timeout: timeout), Self.isOldEnough(raw.process, context: context) {
                 next[identity] = Entry(backoff: Self.initialBackoff, nextProbeAt: now + Self.initialBackoff)
             }
         }
@@ -208,6 +209,12 @@ public struct ResponsivenessQuarantine: Equatable, Sendable {
     /// `complete` while its recovered items never came back.
     private static func isLapsed(_ entry: Entry, now: Double) -> Bool {
         now - entry.nextProbeAt >= maxBackoff
+    }
+
+    /// At least `minimumAge` on the monotonic clock; no `startUptime`, never.
+    private static func isOldEnough(_ process: ProcessInfoRecord, context: QuarantineContext) -> Bool {
+        guard let startUptime = process.startUptime else { return false }
+        return context.uptimeNow - startUptime >= minimumAge
     }
 
     /// The only trigger: the process did not even hand over its extras bar.

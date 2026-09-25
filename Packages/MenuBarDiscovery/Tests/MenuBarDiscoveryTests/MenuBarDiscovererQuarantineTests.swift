@@ -439,7 +439,8 @@ struct MenuBarDiscovererQuarantineTests {
 
 // MARK: - fixtures
 
-private let wallNow = 10_000.0
+/// The monotonic now the discoverer's age gate is judged at (hardening plan H5).
+private let uptimeNow = 10_000.0
 
 /// Cancels the task a pass is running in, from inside a fake read. The read runs
 /// on the discoverer's own serial queue, never the cooperative pool, so waiting
@@ -449,9 +450,9 @@ private func cancelOnceKnown(_ task: Box<Task<DiscoveryResult?, Never>?>) {
     task.get()?.cancel()
 }
 
-/// A process old enough for the age gate, with a kernel start time.
+/// A process old enough for the age gate, with a kernel start time on both clocks.
 private func aged(_ pid: Int32) -> ProcessInfoRecord {
-    testProcess(pid: pid, startTime: 1_000)
+    testProcess(pid: pid, startTime: 1_000, startUptime: 1_000)
 }
 
 private func makeDiscoverer(processes: [ProcessInfoRecord], reader: FakeExtrasReader, clock: ManualClock, deadline: Double = 2.0) -> MenuBarDiscoverer {
@@ -459,7 +460,7 @@ private func makeDiscoverer(processes: [ProcessInfoRecord], reader: FakeExtrasRe
         apps: FakeRunningApps(allProcesses: processes, agent: nil), reader: reader,
         display: FakeDisplay(result: (testBounds, DiscoveryOrigin(x: 0, y: 0))),
         isTrusted: { true }, ownIdentifiers: testOwnIdentifiers,
-        now: { clock.now() }, wallClock: { wallNow }, deadline: deadline
+        now: { clock.now() }, uptime: { uptimeNow }, deadline: deadline
     )
 }
 

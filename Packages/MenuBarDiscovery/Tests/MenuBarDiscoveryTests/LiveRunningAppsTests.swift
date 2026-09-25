@@ -29,6 +29,28 @@ struct LiveRunningAppsTests {
     func enumerationFillsIt() {
         #expect(LiveRunningApps().processes().contains { $0.startTime != nil })
     }
+
+    // The same start on the monotonic clock (hardening plan H5).
+
+    @Test("this process has a start uptime, before the clock's now, and it does not move between two reads")
+    func ownStartUptimeIsStable() throws {
+        let first = try #require(LiveRunningApps.startUptime(of: getpid()))
+        let second = try #require(LiveRunningApps.startUptime(of: getpid()))
+
+        #expect(first == second)
+        #expect(first > 0)
+        #expect(first <= LiveRunningApps.uptimeNow())
+    }
+
+    @Test("a pid that does not exist has no start uptime")
+    func missingProcessHasNoStartUptime() {
+        #expect(LiveRunningApps.startUptime(of: Int32.max) == nil)
+    }
+
+    @Test("the enumeration fills the start uptime in for at least one running application")
+    func enumerationFillsStartUptime() {
+        #expect(LiveRunningApps().processes().contains { $0.startUptime != nil })
+    }
 }
 
 /// Which running application is the menu bar agent (hardening plan H3): the

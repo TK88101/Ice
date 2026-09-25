@@ -112,8 +112,8 @@ struct FakeDisplay: DisplayProviding {
 
 // MARK: - Shared fixtures
 
-func testProcess(pid: Int32, bundleID: String? = nil, isSelf: Bool = false, launchTime: Double? = nil, startTime: Double? = nil) -> ProcessInfoRecord {
-    ProcessInfoRecord(pid: pid, bundleID: bundleID ?? "com.example.p\(pid)", localizedName: nil, executableName: nil, launchTime: launchTime, isSelf: isSelf, startTime: startTime)
+func testProcess(pid: Int32, bundleID: String? = nil, isSelf: Bool = false, launchTime: Double? = nil, startTime: Double? = nil, startUptime: Double? = nil) -> ProcessInfoRecord {
+    ProcessInfoRecord(pid: pid, bundleID: bundleID ?? "com.example.p\(pid)", localizedName: nil, executableName: nil, launchTime: launchTime, isSelf: isSelf, startTime: startTime, startUptime: startUptime)
 }
 
 func ok(_ value: String = "") -> AttributeRead<String> {

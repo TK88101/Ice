@@ -108,13 +108,15 @@ public struct ExtrasRecord: Equatable, Sendable {
 /// own process, which `ItemKey.tagTitle` and `TagCollision.split` both treat
 /// specially (D9; plan section 4.1.3).
 ///
-/// Two clocks, on purpose. `launchTime` is LaunchServices' launch date and is
+/// Three clocks, on purpose. `launchTime` is LaunchServices' launch date and is
 /// what `ItemCatalog.carryOver` compares; `startTime` is the kernel's process
-/// start time and is what `ResponsivenessQuarantine` keys on. MEASURED
-/// 2026-09-25: the launch date is missing for 55 of 70 processes, every WebKit
-/// content process among them, while the kernel start time exists for all 70
-/// (responsiveness-quarantine plan, M3/M4) -- so the quarantine needed its own
-/// field, and carry-over keeps the one it always had.
+/// start time and is what `ResponsivenessQuarantine` keys its identity on.
+/// MEASURED 2026-09-25: the launch date is missing for 55 of 70 processes, every
+/// WebKit content process among them, while the kernel start time exists for all
+/// 70 (responsiveness-quarantine plan, M3/M4) -- so the quarantine needed its own
+/// field, and carry-over keeps the one it always had. `startUptime` is the same
+/// start on the monotonic clock, for the quarantine's age gate (hardening plan
+/// H5), because a wall-clock age moves when the clock is set.
 public struct ProcessInfoRecord: Equatable, Hashable, Sendable {
     public let pid: Int32
     public let bundleID: String?
@@ -127,11 +129,18 @@ public struct ProcessInfoRecord: Equatable, Hashable, Sendable {
     /// part in this type's synthesized equality without making one process look
     /// different from pass to pass.
     public let startTime: Double?
+    /// The same start on the monotonic, sleep-excluding clock (mach absolute
+    /// time, in seconds), `nil` when it could not be read. The age gate compares
+    /// it with that clock's now, so a wall-clock step cannot make a young process
+    /// look old; excluding sleep can only make one look younger. MEASURED
+    /// 2026-09-25: available for 73 of 73 processes, stable, `nil` for a dead pid.
+    public let startUptime: Double?
 
-    /// `startTime` alone has a default, and it is `nil` deliberately: a record
-    /// without one can never be quarantined, so a construction site that forgets
-    /// it can only switch the quarantine off, never aim it at the wrong process.
-    public init(pid: Int32, bundleID: String?, localizedName: String?, executableName: String?, launchTime: Double?, isSelf: Bool, startTime: Double? = nil) {
+    /// `startTime` and `startUptime` alone have defaults, and they are `nil`
+    /// deliberately: a record without them can never be quarantined, so a
+    /// construction site that forgets them can only switch the quarantine off,
+    /// never aim it at the wrong process or at a young one.
+    public init(pid: Int32, bundleID: String?, localizedName: String?, executableName: String?, launchTime: Double?, isSelf: Bool, startTime: Double? = nil, startUptime: Double? = nil) {
         self.pid = pid
         self.bundleID = bundleID
         self.localizedName = localizedName
@@ -139,6 +148,7 @@ public struct ProcessInfoRecord: Equatable, Hashable, Sendable {
         self.launchTime = launchTime
         self.isSelf = isSelf
         self.startTime = startTime
+        self.startUptime = startUptime
     }
 }
 
