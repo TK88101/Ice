@@ -84,18 +84,24 @@ public struct LiveExtrasReader: ExtrasReading {
         let bar = barValue as! AXUIElement
         AXUIElementSetMessagingTimeout(bar, Float(timeout))
 
-        return Self.readChildren(
-            of: bar,
+        let childrenStart = clock.now
+        var childrenValue: CFTypeRef?
+        let childrenResult = AXUIElementCopyAttributeValue(bar, Self.childrenAttribute as CFString, &childrenValue)
+        let childrenDuration = clock.now - childrenStart
+        let childrenElapsed = childrenDuration.secondsDouble
+
+        guard childrenResult == .success, childrenDuration < slowThreshold else {
+            let error = (childrenResult == .success) ? "cannotComplete" : AXErrorNames.name(childrenResult)
+            return RawRead(process: process, extrasError: "success", extrasElapsed: barElapsed, childrenError: error, childrenElapsed: childrenElapsed, records: [], walkInterrupted: false, childCount: 0)
+        }
+
+        return Self.walkChildren(
             process: process,
             extrasElapsed: barElapsed,
-            timeout: timeout,
+            childrenElapsed: childrenElapsed,
+            childrenValue: childrenValue,
             cap: Self.maxChildren,
             interrupt: interrupt,
-            fetch: { bar, index, maxValues in
-                var values: CFArray?
-                let result = AXUIElementCopyAttributeValues(bar, Self.childrenAttribute as CFString, index, maxValues, &values)
-                return (result, values)
-            },
             readChild: { index, child in
                 AXUIElementSetMessagingTimeout(child, Float(timeout))
                 return Self.readChild(
@@ -107,36 +113,6 @@ public struct LiveExtrasReader: ExtrasReading {
                 )
             }
         )
-    }
-
-    /// The children read and the walk over it (hardening plan H2). `fetch` is
-    /// asked for children `0` onward, at most `cap + 1` of them -- live, through
-    /// `AXUIElementCopyAttributeValues` -- so a snapshot over the cap never
-    /// crosses the process boundary whole: `cap + 1` back is enough to refuse it.
-    /// The count still comes from the array the walk is handed, and an error, or
-    /// a success that took a stall's time, maps through `AXErrorNames` exactly
-    /// as the single-value read did.
-    static func readChildren(
-        of bar: AXUIElement,
-        process: ProcessInfoRecord,
-        extrasElapsed: Double,
-        timeout: Double,
-        cap: Int,
-        interrupt: () -> Bool,
-        fetch: (AXUIElement, CFIndex, CFIndex) -> (AXError, CFArray?),
-        readChild: (Int, AXUIElement) -> (record: ExtrasRecord, stop: Bool)
-    ) -> RawRead {
-        let clock = ContinuousClock()
-        let start = clock.now
-        let (result, values) = fetch(bar, 0, cap + 1)
-        let duration = clock.now - start
-        let elapsed = duration.secondsDouble
-
-        guard result == .success, duration < .seconds(timeout * ReadClassifier.slowFraction) else {
-            let error = (result == .success) ? "cannotComplete" : AXErrorNames.name(result)
-            return RawRead(process: process, extrasError: "success", extrasElapsed: extrasElapsed, childrenError: error, childrenElapsed: elapsed, records: [], walkInterrupted: false, childCount: 0)
-        }
-        return walkChildren(process: process, extrasElapsed: extrasElapsed, childrenElapsed: elapsed, childrenValue: values, cap: cap, interrupt: interrupt, readChild: readChild)
     }
 
     /// The walk over a successful children read, and the `RawRead` it amounts
