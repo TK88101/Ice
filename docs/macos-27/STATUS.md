@@ -34,7 +34,7 @@ untested. The evidence and its limits are in [FINDINGS.md](FINDINGS.md).
 | Moving, clicking or temporarily showing an item | refused and logged; a click in the search panel does nothing | INFERRED (code) |
 | Apple's own items (the clock, Control Centre) and apps that refuse Accessibility | not listed | INFERRED (code) |
 | Before a divider has first been collapsed for 1 s after launch | every item is listed under Visible | INFERRED (code) |
-| Ice's menu bar item service (XPC) | fails to start within 45 ms; setup does not wait for it | MEASURED, Ice `2e0c553`, 2026-09-25 |
+| Ice's menu bar item service (XPC) | fails to start within 45 ms, and setup, which waits for it, then goes on. That build was ad-hoc signed with no team, while the service only accepts a peer from the same team; a signed release was not run on 27 | MEASURED, Ice `2e0c553`, 2026-09-25; the signing cause INFERRED |
 
 ## Why hiding does not work, and what is next
 
