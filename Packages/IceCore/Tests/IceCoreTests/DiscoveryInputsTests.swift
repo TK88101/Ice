@@ -63,9 +63,9 @@ struct DiscoveryInputsTests {
         let otherRecord = ExtrasRecord(childIndex: 1, role: ok, identifier: ok, title: ok, description: ok, help: ok, frame: frame)
         let process = ProcessInfoRecord(pid: 1, bundleID: nil, localizedName: nil, executableName: nil, launchTime: nil, isSelf: true)
 
-        let a = RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [record])
-        let b = RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [record])
-        let differentRecords = RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [otherRecord])
+        let a = RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [record], walkInterrupted: false, childCount: 1)
+        let b = RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [record], walkInterrupted: false, childCount: 1)
+        let differentRecords = RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [otherRecord], walkInterrupted: false, childCount: 1)
 
         #expect(a == b)
         #expect(a != differentRecords)

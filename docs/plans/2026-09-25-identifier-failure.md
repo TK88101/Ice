@@ -13,7 +13,8 @@ every pass its completeness, which costs T6 its PASS and costs Ice that item
 entirely. And decide what to do about step 6's room gate, whose stated remedy
 ("free 5 pt") is refuted by measurement.
 
-**Non-goals.** Any hiding mechanism. The deferred and withdrawn items (D01,
+**Non-goals.** Any hiding mechanism. Persistent identity aliasing and transition
+telemetry, both ruled out in §3.5. The deferred and withdrawn items (D01,
 D02, D15, D30, D31, D32, N3b; D04, D13, D29). Re-running Ice. `getMenuBarItems`.
 Anything in `Packages/MenuBarCapture` or the detector files (A4 keeps them
 byte-identical to `af4baf1`). Re-opening D10, D7, the pid-in-every-key rule, the
@@ -289,12 +290,47 @@ complete**; R-f **forward** continuity -- once the item is admitted under an
 empty identifier it may acquire a remembered section, and a later declared
 identifier changes its `tagKey` and loses it (`DiscoveredCachePlan.swift:115-119`).
 R-f is not disposed of by the item's pre-change absence, which only disposes of
-*historical* continuity (Codex round 2, adopted): it is either retained, and then
-D3 is the only option that meets it, or dropped as an explicit non-goal with the
-discontinuity documented.
+*historical* continuity (Codex round 2, adopted).
 
-Jev is asked one noul per (combination x requirement). R-f's necessity goes to
-the user if Jev leaves it undecided.
+### 3.5 The ruling
+
+**Q1 = K1**: A2 (the walk proceeds past a **fast `AXIdentifier` `failure`** and
+nothing else) · B2 (`failure` harmless for `identifier` only) · C2 (`RawRead`
+carries `walkInterrupted` and `childCount`, with both partial-walk invariants) ·
+D1 (the identifier becomes `""` and goes through the existing uniqueness rule) ·
+E1 (the item may be a detector target) · **S2** (the sequencing stays in the
+adapter behind an injectable attribute-read operation, tested in
+`MenuBarDiscoveryTests`, plus one minimal live smoke test).
+
+Ruled by: Jev's per-requirement nouls (Appendix B) and four Codex rounds, the
+fourth of which **conceded K1** after Jev contradicted the reviewer's K5
+preference (Appendix A round 4). K2, K3, K4 and K5 are documented rejections and
+are not implemented.
+
+**R-f is an accepted, documented consequence, not a requirement.** Debated on its
+own (Appendix A round 5) after Jev left `rf_is_required` at 0.58. What decided it
+was evidence about the *remedy*, not a preference: D3's alias is keyed by
+`(pid, launchTime, childIndex)`, and a process that reorders its children would
+migrate a remembered section **onto the wrong item** -- a silent misapplication of
+the user's own placement, strictly worse than the bounded harm it prevents, which
+is one item returning to its default section once, after which the user drags it
+back. So:
+
+- no D3, no alias, no persistent state;
+- **no telemetry either** (Appendix A round 6): logging the
+  `empty → declared` transition would cost either the first logging facility in
+  `MenuBarDiscovery`, or D2's rejected identity case, or a new field on the
+  discovered item -- and `ItemKeying.assign` (`ItemKey.swift:176-197`) maps a
+  missing value and a genuinely empty identifier to the same `""` and the same
+  `.unnamed`, so nothing cheaper can tell them apart. Scope (R-b) decides it;
+- the consequence is written into this plan and into FINDINGS: **if that process
+  ever starts answering `AXIdentifier`, that one item's key changes and its
+  remembered section reverts to the default once.** MEASURED against this: the
+  failure is deterministic over 8 consecutive direct reads and every pass of
+  three sessions today; no flip has been observed.
+
+**Q2** stays as §4 rules it: P1 behind the numeric gate predicate, P2 rejected
+for this run, P4 as the fallback with an explicit disposition record.
 
 ## 4. Question 2 -- step 6's room gate
 
@@ -463,6 +499,60 @@ Three rounds, nothing rejected, and round 3 named winners (S2, K5) with no P0
 outstanding -- the debate is converged. What remains is not a disagreement with
 the reviewer: it is R-f, a value judgement no evidence settles, which goes to Jev
 and then to the user.
+
+### Round 4 (Codex, narrow: the K1-vs-K5 contradiction fed back) -- conceded
+
+Jev's per-requirement nouls put K5 as the *more* violating vector on exactly the
+three requirements rounds 2 and 3 had awarded it (R-a 0.66 / 0.46, R-b 0.69 / 0.42,
+R-d 0.58 / 0.20). Fed back with the argument that reading implies: K5's defining
+mechanism is a conditional reorder for every one-child process -- most processes on
+this bar -- which breaks the invariant at `LiveExtrasReader.swift:104-110` and can
+change which failure becomes observable when more than one attribute fails.
+
+**Codex conceded: "K1 wins", and called its own prior K5 recommendation wrong.**
+Its reasons: K1 is one mechanism (allow the specified identifier failure, continue
+the existing sequence) against K5's two coupled ones (inspect the child count, then
+choose a different order); the count condition does not narrow the reorder, it
+applies the altered semantics to the predominant process shape; and K5 must
+maintain two orders, their predicate, and the resulting first-error attribution
+forever. "K5 is strictly more machinery for strictly less coverage."
+
+### Round 5 (Codex, R-f on its own, before putting it to the user)
+
+Asked to argue both sides and decide. **Verdict: accept and document the one-time
+section reset; do not implement D3.** The case *for* R-f was stated fairly -- a
+user's explicit placement should not vanish because accessibility metadata
+improved; the failure could start succeeding after an app update, a TCC change or
+a macOS point release; several items flipping together, an invisible default
+section, or oscillation would each be worse than one drag. What defeated it was
+the remedy: D3's `(pid, launchTime, childIndex)` alias is a plausible identity,
+not a durable one, and a process that reorders its children would migrate a
+remembered section **onto the wrong item** -- silently misapplying the user's
+placement, a worse failure than the bounded one it prevents. Its sentence for the
+owner: "Record R-f as an accepted, monitored consequence: do not add the fragile
+persistent alias for an unobserved transition whose bounded one-time section reset
+is safer than risking silent section migration to the wrong item."
+
+### Round 6 (Codex, the telemetry add-on, with new evidence fed back)
+
+Round 5 proposed structured `empty → declared` telemetry as the cheap half of
+"monitored". Evidence found afterwards and fed back: `MenuBarDiscovery` has **no
+logging facility at all** (no `import os`, `Logger`, `os_log` or `print` anywhere
+in its sources), and logging it in the Ice layer instead needs "unreadable rather
+than empty" to survive into the result -- which is exactly the rejected D2, since
+`ItemKeying.assign` (`ItemKey.swift:176-197`) maps a missing value and a genuinely
+empty identifier to the same `""` and the same `.unnamed`. The options were
+therefore (a) first-ever logging in that package, (b) D2, (c) a new Bool on the
+item, or (d) nothing.
+
+**Codex chose (d), no telemetry**: "preserving 'unreadable versus empty' solely to
+log it expands scope beyond deciding and fixing the reset behavior. Record the
+accepted one-time-reset consequence in the plan and FINDINGS, without adding
+logging infrastructure, identity semantics, or discovery fields."
+
+Six rounds, one concession, nothing rejected out of hand on either side. The two
+judges disagreed exactly once (K1 vs K5) and the disagreement was resolved by
+feeding each side's evidence to the other, not by preferring a judge.
 
 ## Appendix B -- Jev
 

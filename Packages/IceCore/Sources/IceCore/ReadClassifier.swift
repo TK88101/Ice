@@ -53,6 +53,16 @@ public enum FailureReason: Equatable, Sendable {
     /// The named call reported an `AXError` this table does not otherwise
     /// account for.
     case unexpectedError(call: String, error: String)
+    /// The walk policy stopped this process's walk (`RawRead.walkInterrupted`).
+    /// Kept separate from `unexpectedError` because the record that triggered
+    /// the stop may itself look clean now that one attribute error is
+    /// tolerated: the stop is the fact, not the attribute.
+    case walkInterrupted
+    /// The children read succeeded and the walk was not stopped, yet the
+    /// records produced do not match the snapshot the walk was handed -- a
+    /// malformed read, which must not be mistaken for a process with fewer
+    /// items.
+    case partialWalk(childCount: Int, records: Int)
 }
 
 /// The pure function behind plan section 4.1.2's table.
@@ -70,6 +80,17 @@ public enum ReadClassifier {
     /// `cannotComplete`, which for a single attribute carries no elapsed time
     /// to judge fast from slow -- fails the whole read (plan 4.1.2, row 3).
     private static let harmlessAttributeErrors: Set<String> = ["success", "noValue", "attributeUnsupported"]
+
+    /// `identifier` tolerates one error the other two do not: `failure`
+    /// (`kAXErrorFailure`). MEASURED 2026-09-25 -- a third-party process
+    /// answers `AXIdentifier` with it immediately and deterministically while
+    /// answering `AXFrame` correctly, and failing the whole process for it cost
+    /// that item its place in the list entirely and made every pass
+    /// incomplete. Whether the error was fast enough to be read past is not
+    /// decided here, because `AttributeRead` carries no duration:
+    /// `AttributeWalkPolicy` decides it where the clock is, and a stop it made
+    /// arrives here as `RawRead.walkInterrupted` instead.
+    private static let harmlessIdentifierErrors: Set<String> = harmlessAttributeErrors.union(["failure"])
 
     public static func outcome(_ raw: RawRead, timeout: Double = defaultTimeout) -> ReadOutcome {
         let slowThreshold = timeout * slowFraction
@@ -107,9 +128,24 @@ public enum ReadClassifier {
             return .failed(.unexpectedError(call: "children", error: "missing"))
         }
 
+        // What the walk did, before what it produced. A stop is checked first
+        // because it is the more specific fact: an interrupted walk usually
+        // also leaves the records short, and "the policy stopped" is the
+        // cause, while a count mismatch would only be its symptom.
+        if raw.walkInterrupted {
+            return .failed(.walkInterrupted)
+        }
+        // Reached only when the children read succeeded (every other path has
+        // returned above), so a snapshot existed and the records must account
+        // for all of it. Without this, a walk that lost children for any reason
+        // other than a policy stop would read as a process with fewer items.
+        if raw.records.count != raw.childCount {
+            return .failed(.partialWalk(childCount: raw.childCount, records: raw.records.count))
+        }
+
         for record in raw.records {
             if let reason = attributeFailure(call: "role", read: record.role) { return .failed(reason) }
-            if let reason = attributeFailure(call: "identifier", read: record.identifier) { return .failed(reason) }
+            if let reason = attributeFailure(call: "identifier", read: record.identifier, harmless: harmlessIdentifierErrors) { return .failed(reason) }
             if let reason = attributeFailure(call: "frame", read: record.frame) { return .failed(reason) }
         }
 
@@ -118,9 +154,14 @@ public enum ReadClassifier {
 
     /// Shared by `role`/`identifier` (`AttributeRead<String>`) and `frame`
     /// (`AttributeRead<BarRect>`): only the error name decides, never the
-    /// value's type.
-    private static func attributeFailure<Value>(call: String, read: AttributeRead<Value>) -> FailureReason? {
-        guard harmlessAttributeErrors.contains(read.error) else {
+    /// value's type. `harmless` is a parameter because `identifier` tolerates
+    /// one error the other two do not.
+    private static func attributeFailure<Value>(
+        call: String,
+        read: AttributeRead<Value>,
+        harmless: Set<String> = harmlessAttributeErrors
+    ) -> FailureReason? {
+        guard harmless.contains(read.error) else {
             return .unexpectedError(call: call, error: read.error)
         }
         return nil

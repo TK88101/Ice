@@ -71,7 +71,7 @@ public struct LiveExtrasReader: ExtrasReading {
               let barValue, CFGetTypeID(barValue) == AXUIElementGetTypeID()
         else {
             let error = (barResult == .success && barDuration >= slowThreshold) ? "cannotComplete" : AXErrorNames.name(barResult)
-            return RawRead(process: process, extrasError: error, extrasElapsed: barElapsed, childrenError: nil, childrenElapsed: nil, records: [])
+            return RawRead(process: process, extrasError: error, extrasElapsed: barElapsed, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
         }
         // swiftlint:disable:next force_cast
         let bar = barValue as! AXUIElement
@@ -85,80 +85,121 @@ public struct LiveExtrasReader: ExtrasReading {
 
         guard childrenResult == .success, childrenDuration < slowThreshold else {
             let error = (childrenResult == .success) ? "cannotComplete" : AXErrorNames.name(childrenResult)
-            return RawRead(process: process, extrasError: "success", extrasElapsed: barElapsed, childrenError: error, childrenElapsed: childrenElapsed, records: [])
+            return RawRead(process: process, extrasError: "success", extrasElapsed: barElapsed, childrenError: error, childrenElapsed: childrenElapsed, records: [], walkInterrupted: false, childCount: 0)
         }
 
         let children = (childrenValue as? [AXUIElement]) ?? []
         var records = [ExtrasRecord]()
         records.reserveCapacity(children.count)
+        var interrupted = false
         for (index, child) in children.enumerated() {
             AXUIElementSetMessagingTimeout(child, Float(timeout))
-            let (record, shouldStop) = Self.readChild(child, index: index, clock: clock, slowThreshold: slowThreshold, readsLabels: readsLabels)
+            let (record, shouldStop) = Self.readChild(
+                index: index,
+                readsLabels: readsLabels,
+                timeout: timeout,
+                readString: { _, axAttribute in Self.timedString(child, axAttribute, clock: clock) },
+                readFrame: { _ in Self.timedFrame(child, clock: clock) }
+            )
             records.append(record)
-            if shouldStop { break }
+            if shouldStop {
+                interrupted = true
+                break
+            }
         }
 
-        return RawRead(process: process, extrasError: "success", extrasElapsed: barElapsed, childrenError: "success", childrenElapsed: childrenElapsed, records: records)
+        return RawRead(process: process, extrasError: "success", extrasElapsed: barElapsed, childrenError: "success", childrenElapsed: childrenElapsed, records: records, walkInterrupted: interrupted, childCount: children.count)
     }
 
-    /// Reads one child's attributes in order (role, identifier, title,
-    /// description, help, frame -- frame deliberately last, so any early
-    /// stop always leaves at least one of role/identifier/frame unread,
-    /// which is what makes `ReadClassifier.outcome` fail this record
-    /// regardless of which attribute actually triggered the stop). Returns
-    /// whether the *process's* walk should stop here.
-    private static func readChild(_ child: AXUIElement, index: Int, clock: ContinuousClock, slowThreshold: Duration, readsLabels: Bool) -> (ExtrasRecord, Bool) {
+    /// One attribute read exactly as the adapter performed it: what came
+    /// back, the `AXError` name, and how long the call took.
+    /// `AttributeWalkPolicy` needs that duration and `AttributeRead` does not
+    /// carry one, so the two stay separate types.
+    struct TimedRead<Value> {
+        let value: Value?
+        let rawError: String
+        let elapsed: Double
+    }
+
+    /// Reads one child's attributes in the fixed order role, identifier, title,
+    /// description, help, frame, asking `AttributeWalkPolicy` after each
+    /// whether the walk may go on, and returns the record plus whether the
+    /// *process's* walk should stop here.
+    ///
+    /// The reads are injected, which is the whole point: a policy function can
+    /// only prove what the rule says, never that the walk obeys it, so a test
+    /// scripts `readString`/`readFrame`, records which AX attributes were asked
+    /// in which order, and checks that a tolerated identifier failure really
+    /// does go on to ask for the frame and the next child while a slow one does
+    /// not (2026-09-25 plan, seam S2).
+    ///
+    /// The order is unchanged. It is no longer the frame's *lastness* that makes
+    /// a stopped walk fail -- `RawRead.walkInterrupted` carries that now -- but
+    /// reordering would change which failure a process reports first, which is
+    /// behaviour nothing here is trying to change.
+    static func readChild(
+        index: Int,
+        readsLabels: Bool,
+        timeout: Double,
+        readString: (Int, String) -> TimedRead<String>,
+        readFrame: (Int) -> TimedRead<BarRect>
+    ) -> (record: ExtrasRecord, stop: Bool) {
         var stopped = false
 
-        func readString(_ attribute: String) -> AttributeRead<String> {
-            guard !stopped else { return AttributeRead(value: nil, error: notAttempted) }
-            let start = clock.now
-            var value: CFTypeRef?
-            let result = AXUIElementCopyAttributeValue(child, attribute as CFString, &value)
-            let duration = clock.now - start
-            if result == .success, duration >= slowThreshold {
-                stopped = true
-                return AttributeRead(value: nil, error: "cannotComplete")
-            }
-            if result != .success, result != .noValue, result != .attributeUnsupported {
-                stopped = true
-            }
-            return AttributeRead(value: value as? String, error: AXErrorNames.name(result))
+        func read(_ attribute: String, _ axAttribute: String, skipped: Bool = false) -> AttributeRead<String> {
+            guard !stopped, !skipped else { return AttributeRead(value: nil, error: notAttempted) }
+            let timed = readString(index, axAttribute)
+            let verdict = AttributeWalkPolicy.classify(attribute: attribute, rawError: timed.rawError, elapsed: timed.elapsed, timeout: timeout)
+            if verdict.decision == .stopWalk { stopped = true }
+            return AttributeRead(value: verdict.value == .keep ? timed.value : nil, error: verdict.recordedError)
         }
 
-        func readFrame() -> AttributeRead<BarRect> {
-            guard !stopped else { return AttributeRead(value: nil, error: notAttempted) }
-            let start = clock.now
-            var value: CFTypeRef?
-            let result = AXUIElementCopyAttributeValue(child, frameAttribute as CFString, &value)
-            let duration = clock.now - start
-            if result == .success, duration >= slowThreshold {
-                stopped = true
-                return AttributeRead(value: nil, error: "cannotComplete")
-            }
-            if result != .success, result != .noValue, result != .attributeUnsupported {
-                stopped = true
-            }
-            guard result == .success, let value, CFGetTypeID(value) == AXValueGetTypeID() else {
-                return AttributeRead(value: nil, error: AXErrorNames.name(result))
-            }
-            var rect = CGRect.zero
-            // swiftlint:disable:next force_cast
-            AXValueGetValue(value as! AXValue, .cgRect, &rect)
-            let barRect = BarRect(minX: Double(rect.minX), minY: Double(rect.minY), width: Double(rect.width), height: Double(rect.height))
-            return AttributeRead(value: barRect, error: "success")
-        }
+        // The names handed to the policy are the ones `ReadClassifier` uses for
+        // the same attributes, so one vocabulary spans the rule and the verdict.
+        let role = read("role", roleAttribute)
+        let identifier = read("identifier", identifierAttribute)
+        let title = read("title", titleAttribute, skipped: !readsLabels)
+        let description = read("description", descriptionAttribute, skipped: !readsLabels)
+        let help = read("help", helpAttribute, skipped: !readsLabels)
 
-        let role = readString(roleAttribute)
-        let identifier = readString(identifierAttribute)
-        let skipped = AttributeRead<String>(value: nil, error: notAttempted)
-        let title = readsLabels ? readString(titleAttribute) : skipped
-        let description = readsLabels ? readString(descriptionAttribute) : skipped
-        let help = readsLabels ? readString(helpAttribute) : skipped
-        let frame = readFrame()
+        var frame = AttributeRead<BarRect>(value: nil, error: notAttempted)
+        if !stopped {
+            let timed = readFrame(index)
+            let verdict = AttributeWalkPolicy.classify(attribute: "frame", rawError: timed.rawError, elapsed: timed.elapsed, timeout: timeout)
+            if verdict.decision == .stopWalk { stopped = true }
+            frame = AttributeRead(value: verdict.value == .keep ? timed.value : nil, error: verdict.recordedError)
+        }
 
         let record = ExtrasRecord(childIndex: index, role: role, identifier: identifier, title: title, description: description, help: help, frame: frame)
         return (record, stopped)
+    }
+
+    /// The live `readString` operation: one timed `AXUIElementCopyAttributeValue`
+    /// against this child, with no judgement of its own.
+    private static func timedString(_ child: AXUIElement, _ axAttribute: String, clock: ContinuousClock) -> TimedRead<String> {
+        let start = clock.now
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(child, axAttribute as CFString, &value)
+        let elapsed = (clock.now - start).secondsDouble
+        return TimedRead(value: value as? String, rawError: AXErrorNames.name(result), elapsed: elapsed)
+    }
+
+    /// The live `readFrame` operation. A success whose value is not an
+    /// `AXValue` is reported as a success with no value, exactly as before: the
+    /// call did work, it just did not hand back a rect this reader can use.
+    private static func timedFrame(_ child: AXUIElement, clock: ContinuousClock) -> TimedRead<BarRect> {
+        let start = clock.now
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(child, frameAttribute as CFString, &value)
+        let elapsed = (clock.now - start).secondsDouble
+        guard result == .success, let value, CFGetTypeID(value) == AXValueGetTypeID() else {
+            return TimedRead(value: nil, rawError: AXErrorNames.name(result), elapsed: elapsed)
+        }
+        var rect = CGRect.zero
+        // swiftlint:disable:next force_cast
+        AXValueGetValue(value as! AXValue, .cgRect, &rect)
+        let barRect = BarRect(minX: Double(rect.minX), minY: Double(rect.minY), width: Double(rect.width), height: Double(rect.height))
+        return TimedRead(value: barRect, rawError: "success", elapsed: elapsed)
     }
 }
 

@@ -256,9 +256,9 @@ func readerExtrasRecord(childIndex: Int, identifier: String, minX: Double, width
 }
 
 func readerRawRead(process: ProcessInfoRecord, records: [ExtrasRecord] = []) -> RawRead {
-    RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records)
+    RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records, walkInterrupted: false, childCount: records.count)
 }
 
 func readerFailedRawRead(process: ProcessInfoRecord) -> RawRead {
-    RawRead(process: process, extrasError: "cannotComplete", extrasElapsed: 0.24, childrenError: nil, childrenElapsed: nil, records: [])
+    RawRead(process: process, extrasError: "cannotComplete", extrasElapsed: 0.24, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
 }

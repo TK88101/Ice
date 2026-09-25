@@ -131,6 +131,15 @@ public struct ProcessInfoRecord: Equatable, Hashable, Sendable {
 /// when the extras-bar read never got far enough to attempt it. `records`
 /// holds whatever children were read -- `ReadClassifier.outcome` is the pure
 /// function that turns this into a `ReadOutcome` a caller can act on.
+///
+/// `walkInterrupted` and `childCount` say what the walk actually *did*, which
+/// used to be only implied: before `AttributeWalkPolicy` tolerated any
+/// attribute error, a stop always left `notAttempted` on one of
+/// role/identifier/frame, and the classifier failed the record on that alone.
+/// Now that one identifier error is tolerated, that implication is gone, so the
+/// two facts are carried instead (2026-09-25 plan, axis C) -- and they are two,
+/// not one, because "the policy stopped" and "how many children there were" are
+/// different questions with different failure modes.
 public struct RawRead: Equatable, Sendable {
     public let process: ProcessInfoRecord
     public let extrasError: String
@@ -138,14 +147,29 @@ public struct RawRead: Equatable, Sendable {
     public let childrenError: String?
     public let childrenElapsed: Double?
     public let records: [ExtrasRecord]
+    /// `true` the moment the walk policy said stop -- asked *before* whether
+    /// another attribute or child remained, so it is a policy-event flag and
+    /// not a "work was skipped" flag. A stop on the very last attribute of the
+    /// very last child sets it too.
+    public let walkInterrupted: Bool
+    /// The size of the children snapshot the walk was handed, beside the
+    /// `records` it actually produced. `0` whenever the children read produced
+    /// no snapshot at all, which is unambiguous because `childrenError` already
+    /// fails such a read before anything reads `childCount`.
+    public let childCount: Int
 
+    /// No defaults, deliberately: the compiler is what guarantees every
+    /// construction site states what its walk did rather than inheriting a
+    /// plausible-looking `false`.
     public init(
         process: ProcessInfoRecord,
         extrasError: String,
         extrasElapsed: Double,
         childrenError: String?,
         childrenElapsed: Double?,
-        records: [ExtrasRecord]
+        records: [ExtrasRecord],
+        walkInterrupted: Bool,
+        childCount: Int
     ) {
         self.process = process
         self.extrasError = extrasError
@@ -153,5 +177,7 @@ public struct RawRead: Equatable, Sendable {
         self.childrenError = childrenError
         self.childrenElapsed = childrenElapsed
         self.records = records
+        self.walkInterrupted = walkInterrupted
+        self.childCount = childCount
     }
 }

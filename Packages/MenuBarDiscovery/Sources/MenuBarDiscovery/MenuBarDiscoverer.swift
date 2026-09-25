@@ -124,7 +124,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
             var index = truncationIndex
             var remaining = count - reads.count
             while remaining > 0 {
-                reads.append(RawRead(process: processes[index], extrasError: "notAttempted", extrasElapsed: 0, childrenError: nil, childrenElapsed: nil, records: []))
+                reads.append(RawRead(process: processes[index], extrasError: "notAttempted", extrasElapsed: 0, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0))
                 index = (index + 1) % count
                 remaining -= 1
             }
@@ -161,6 +161,6 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
                 frame: AttributeRead(value: adjusted, error: record.frame.error)
             )
         }
-        return RawRead(process: raw.process, extrasError: raw.extrasError, extrasElapsed: raw.extrasElapsed, childrenError: raw.childrenError, childrenElapsed: raw.childrenElapsed, records: adjustedRecords)
+        return RawRead(process: raw.process, extrasError: raw.extrasError, extrasElapsed: raw.extrasElapsed, childrenError: raw.childrenError, childrenElapsed: raw.childrenElapsed, records: adjustedRecords, walkInterrupted: raw.walkInterrupted, childCount: raw.childCount)
     }
 }

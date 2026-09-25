@@ -118,6 +118,72 @@ struct ReadClassifierTests {
         #expect(ReadClassifier.outcome(raw) == .failed(.unexpectedError(call: "children", error: "missing")))
     }
 
+    // MARK: - what the walk reported: the two partial-read invariants (axis C2)
+
+    @Test("an identifier `failure` on its own no longer fails the read, and the record keeps its frame")
+    func toleratedIdentifierFailureYieldsItems() {
+        // MEASURED 2026-09-25: this is the real shape -- role and frame read
+        // clean, the identifier answers kAXErrorFailure. The walk policy let it
+        // through, so the classifier must not fail it again.
+        let tolerated = ExtrasRecord(
+            childIndex: 0,
+            role: ok("AXMenuBarItem"),
+            identifier: attr(error: "failure"),
+            title: ok(),
+            description: ok(),
+            help: ok(),
+            frame: okFrame()
+        )
+        #expect(ReadClassifier.outcome(rawRead(records: [tolerated])) == .items([tolerated]))
+    }
+
+    @Test("a walk the policy stopped fails the read even when every record it produced looks clean")
+    func interruptedWalkFails() {
+        // The point of the flag: now that one attribute error is tolerated, a
+        // stop no longer always leaves `notAttempted` behind for the classifier
+        // to notice, so the stop itself has to be carried.
+        let raw = rawRead(records: [goodRecord(childIndex: 0)], walkInterrupted: true)
+        #expect(ReadClassifier.outcome(raw) == .failed(.walkInterrupted))
+    }
+
+    @Test("records that do not account for the whole children snapshot fail the read, flag or no flag")
+    func partialWalkFails() {
+        let raw = rawRead(records: [goodRecord(childIndex: 0)], walkInterrupted: false, childCount: 2)
+        #expect(ReadClassifier.outcome(raw) == .failed(.partialWalk(childCount: 2, records: 1)))
+    }
+
+    @Test("the snapshot count is only compared when the children read actually produced one")
+    func childCountIgnoredWhenChildrenReadFailed() {
+        // A fast `cannotComplete` on the children read is still "no items", not
+        // a partial walk: there was no snapshot to be partial about.
+        let raw = rawRead(childrenError: "cannotComplete", childrenElapsed: 0.05, records: [], childCount: 0)
+        #expect(ReadClassifier.outcome(raw) == .items([]))
+    }
+
+    @Test("a tolerated identifier failure on one child does not excuse a later child's failure")
+    func laterChildStillFailsTheRead() {
+        let tolerated = ExtrasRecord(
+            childIndex: 0,
+            role: ok("AXMenuBarItem"),
+            identifier: attr(error: "failure"),
+            title: ok(),
+            description: ok(),
+            help: ok(),
+            frame: okFrame()
+        )
+        let bad = ExtrasRecord(
+            childIndex: 1,
+            role: ok("AXMenuBarItem"),
+            identifier: ok("x"),
+            title: ok(),
+            description: ok(),
+            help: ok(),
+            frame: frameErr("apiDisabled")
+        )
+        let raw = rawRead(records: [tolerated, bad])
+        #expect(ReadClassifier.outcome(raw) == .failed(.unexpectedError(call: "frame", error: "apiDisabled")))
+    }
+
     // MARK: - per-child role, identifier, frame
 
     @Test("a failed child role, other than noValue or attributeUnsupported, fails the whole read")
@@ -205,7 +271,18 @@ private func rawRead(
     extrasElapsed: Double = 0.01,
     childrenError: String? = "success",
     childrenElapsed: Double? = 0.01,
-    records: [ExtrasRecord] = []
+    records: [ExtrasRecord] = [],
+    walkInterrupted: Bool = false,
+    childCount: Int? = nil
 ) -> RawRead {
-    RawRead(process: testProcess(), extrasError: extrasError, extrasElapsed: extrasElapsed, childrenError: childrenError, childrenElapsed: childrenElapsed, records: records)
+    RawRead(
+        process: testProcess(),
+        extrasError: extrasError,
+        extrasElapsed: extrasElapsed,
+        childrenError: childrenError,
+        childrenElapsed: childrenElapsed,
+        records: records,
+        walkInterrupted: walkInterrupted,
+        childCount: childCount ?? records.count
+    )
 }

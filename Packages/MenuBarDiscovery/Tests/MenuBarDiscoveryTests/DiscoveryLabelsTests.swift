@@ -109,7 +109,7 @@ struct DiscoveryLabelsTests {
     func incompletePassIsReported() {
         let process = testProcess(pid: 200)
         let good = rawRead(process: process, records: [extrasRecord(childIndex: 0, identifier: "vz-a", minX: 100)])
-        let failed = RawRead(process: testProcess(pid: 300, bundleID: "com.example.slow"), extrasError: "notAttempted", extrasElapsed: 0, childrenError: nil, childrenElapsed: nil, records: [])
+        let failed = RawRead(process: testProcess(pid: 300, bundleID: "com.example.slow"), extrasError: "notAttempted", extrasElapsed: 0, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
         let set = ItemCatalog.build(reads: [good, failed], agentPID: nil, bounds: testBounds, isTrusted: true, ownIdentifiers: testOwnIdentifiers, now: 0)
         let labels = [DiscoveryLabel(owner: set.items[0].key.namespace, childIndex: 0, position: "onBar", basis: "declared", planIndex: nil)]
         let mismatches = DiscoveryLabels.compare(labels: labels, set: set, planVisible: nil)
