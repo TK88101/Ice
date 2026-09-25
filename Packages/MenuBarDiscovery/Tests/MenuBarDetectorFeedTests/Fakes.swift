@@ -218,7 +218,11 @@ final class FakeExtrasReader: ExtrasReading, @unchecked Sendable {
     private let handler: @Sendable (ProcessInfoRecord, Double) -> RawRead
     private let lock = NSLock()
     private(set) var calls: [ProcessInfoRecord] = []
+    /// What each call's interrupt answered before the handler ran.
     private(set) var interrupts: [Bool] = []
+    /// ... and after it -- so a handler that moves a clock shows what the
+    /// reader's interrupt said on each side of the move (H1, f4).
+    private(set) var interruptsAfter: [Bool] = []
 
     init(handler: @escaping @Sendable (ProcessInfoRecord, Double) -> RawRead) {
         self.handler = handler
@@ -230,7 +234,10 @@ final class FakeExtrasReader: ExtrasReading, @unchecked Sendable {
             calls.append(process)
             interrupts.append(interrupted)
         }
-        return handler(process, timeout)
+        let raw = handler(process, timeout)
+        let after = interrupt()
+        lock.withLock { interruptsAfter.append(after) }
+        return raw
     }
 
     var callCount: Int { lock.withLock { calls.count } }
@@ -268,31 +275,3 @@ func readerFailedRawRead(process: ProcessInfoRecord) -> RawRead {
     RawRead(process: process, extrasError: "cannotComplete", extrasElapsed: 0.24, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
 }
 
-/// An `ExtrasReading` fake that asks `interrupt` once before its handler runs
-/// and once after, per call -- so a test whose handler moves a clock can see
-/// what the reader's interrupt answered on each side of that move (H1, f4).
-final class PollingExtrasReader: ExtrasReading, @unchecked Sendable {
-    struct Poll: Equatable {
-        let pid: Int32
-        let before: Bool
-        let after: Bool
-    }
-
-    private let handler: @Sendable (ProcessInfoRecord) -> RawRead
-    private let lock = NSLock()
-    private var recorded: [Poll] = []
-
-    init(handler: @escaping @Sendable (ProcessInfoRecord) -> RawRead) {
-        self.handler = handler
-    }
-
-    func read(_ process: ProcessInfoRecord, timeout: Double, interrupt: () -> Bool) -> RawRead {
-        let before = interrupt()
-        let raw = handler(process)
-        let after = interrupt()
-        lock.withLock { recorded.append(Poll(pid: process.pid, before: before, after: after)) }
-        return raw
-    }
-
-    var polls: [Poll] { lock.withLock { recorded } }
-}

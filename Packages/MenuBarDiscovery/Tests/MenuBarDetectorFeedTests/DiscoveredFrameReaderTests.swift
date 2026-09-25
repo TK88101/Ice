@@ -225,47 +225,65 @@ struct DiscoveredFrameReaderTests {
         #expect(extras.calls.map(\.pid) == [Self.agentPID, 541])
     }
 
-    @Test("f4: a keyed read's interrupt says no before the sample's deadline and yes at it")
+    @Test("f3b: an agent read that outlasts the deadline leaves every keyed pid unread -> nil")
+    func agentOverrunLeavesKeyedPIDsUnread() {
+        let key = ItemKey(namespace: "com.example.p543", identifier: "item", pid: 543, childIndex: nil)
+        let clock = Box(0.0)
+        let extras = FakeExtrasReader { process, _ in
+            guard process.pid == Self.agentPID else {
+                Issue.record("a keyed pid must not be read once the deadline has passed")
+                return readerRawRead(process: process)
+            }
+            clock.set(2.5)
+            return readerRawRead(process: process)
+        }
+        let reader = makeReader(extras: extras, processes: [readerTestProcess(pid: 543)], clock: clock)
+
+        #expect(reader.read(items: [key.encoded: 543]) == nil)
+        #expect(extras.calls.map(\.pid) == [Self.agentPID])
+    }
+
+    @Test("f6: the last keyed read, complete but finished past the deadline, still makes the snapshot nil (codex round 1)")
+    func lastKeyedReadFinishingLateIsNil() {
+        let key = ItemKey(namespace: "com.example.p561", identifier: "item", pid: 561, childIndex: nil)
+        let clock = Box(0.0)
+        let extras = makeExtras { process, _ in
+            clock.set(2.5)
+            return readerRawRead(process: process, records: [readerExtrasRecord(childIndex: 0, identifier: "item", minX: 100)])
+        }
+        let reader = makeReader(extras: extras, processes: [readerTestProcess(pid: 561)], clock: clock)
+
+        #expect(reader.read(items: [key.encoded: 561]) == nil)
+    }
+
+    @Test("f4: a keyed read's interrupt says no before the sample's deadline and yes at it; the agent's says no")
     func keyedInterruptTripsAtTheDeadline() {
         let key = ItemKey(namespace: "com.example.p551", identifier: "item", pid: 551, childIndex: nil)
         let clock = Box(0.0)
-        let extras = PollingExtrasReader { process in
-            guard process.pid == 551 else { return readerRawRead(process: process) }
+        let extras = makeExtras { process, _ in
             clock.set(2.0)
             return RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [], walkInterrupted: true, childCount: 1)
         }
-        let reader = DiscoveredFrameReader(
-            extras: extras,
-            apps: FakeRunningApps(allProcesses: [readerTestProcess(pid: 551)], agent: Self.agentPID),
-            origin: DiscoveryOrigin(x: 0, y: 0),
-            now: { clock.get() },
-            deadline: 2.0
-        )
+        let reader = makeReader(extras: extras, processes: [readerTestProcess(pid: 551)], clock: clock)
 
         #expect(reader.read(items: [key.encoded: 551]) == nil)
-        #expect(extras.polls == [
-            PollingExtrasReader.Poll(pid: Self.agentPID, before: false, after: false),
-            PollingExtrasReader.Poll(pid: 551, before: false, after: true),
-        ])
+        #expect(extras.calls.map(\.pid) == [Self.agentPID, 551])
+        #expect(extras.interrupts == [false, false])
+        #expect(extras.interruptsAfter == [false, true])
     }
 
     @Test("f4b: the agent's read is never cut: with no keys, one that outlasts the deadline still yields a snapshot")
     func agentReadIsNeverCut() {
         let clock = Box(0.0)
-        let extras = PollingExtrasReader { process in
+        let extras = FakeExtrasReader { process, _ in
             clock.set(3.0)
             return readerRawRead(process: process)
         }
-        let reader = DiscoveredFrameReader(
-            extras: extras,
-            apps: FakeRunningApps(allProcesses: [], agent: Self.agentPID),
-            origin: DiscoveryOrigin(x: 0, y: 0),
-            now: { clock.get() },
-            deadline: 2.0
-        )
+        let reader = makeReader(extras: extras, processes: [], clock: clock)
 
         #expect(reader.read(items: [:]) != nil)
-        #expect(extras.polls == [PollingExtrasReader.Poll(pid: Self.agentPID, before: false, after: false)])
+        #expect(extras.interrupts == [false])
+        #expect(extras.interruptsAfter == [false])
     }
 
     @Test("no agent pid -> nil")

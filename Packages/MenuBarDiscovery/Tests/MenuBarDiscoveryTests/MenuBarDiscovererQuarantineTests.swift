@@ -482,10 +482,5 @@ private func cut(_ process: ProcessInfoRecord) -> RawRead {
 
 /// A previous set in which `process` owns one item.
 private func ownedSet(by process: ProcessInfoRecord) -> DiscoveredItemSet {
-    let item = DiscoveredItem(
-        key: ItemKey(namespace: process.bundleID ?? "", identifier: "x", pid: process.pid, childIndex: nil), basis: .declared,
-        process: process, frame: BarRect(minX: 300, minY: 4.5, width: 24, height: 24), position: .onBar,
-        title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
-    )
-    return DiscoveredItemSet(items: [item], visibleControlItem: nil, hiddenDivider: nil, alwaysHiddenDivider: nil, ownRead: .ok, systemElements: [], dropped: [], completeness: .complete)
+    DiscoveredItemSet(items: [ownedItem(process)], visibleControlItem: nil, hiddenDivider: nil, alwaysHiddenDivider: nil, ownRead: .ok, systemElements: [], dropped: [], completeness: .complete)
 }

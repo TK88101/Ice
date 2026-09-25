@@ -63,14 +63,6 @@ public struct DiscoveryResult: Sendable {
         public let quarantined: Bool
         /// Accessibility was not trusted, so the pass read nothing at all.
         public let permissionDenied: Bool
-
-        public init(enumerated: Bool, listed: Bool, failed: Bool, quarantined: Bool, permissionDenied: Bool) {
-            self.enumerated = enumerated
-            self.listed = listed
-            self.failed = failed
-            self.quarantined = quarantined
-            self.permissionDenied = permissionDenied
-        }
     }
 
     public func status(of pid: Int32) -> PIDStatus {

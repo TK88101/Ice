@@ -25,7 +25,7 @@ struct DiscoveryResultStatusTests {
 
     @Test("s3: a process owning an item is listed")
     func listed() {
-        let result = pass(enumerated: [7], items: [item(of: 7)], completeness: .complete)
+        let result = pass(enumerated: [7], items: [ownedItem(testProcess(pid: 7))], completeness: .complete)
 
         #expect(result.status(of: 7).listed)
         #expect(!result.status(of: 8).listed)
@@ -55,9 +55,26 @@ struct DiscoveryResultStatusTests {
 
     @Test("s7: a failed owner whose item is carried -- listed and failed, not quarantined")
     func failedAndCarried() {
-        let result = pass(enumerated: [7], items: [item(of: 7)], completeness: .incomplete(failedPIDs: [7]))
+        let result = pass(enumerated: [7], items: [ownedItem(testProcess(pid: 7))], completeness: .incomplete(failedPIDs: [7]))
 
         #expect(result.status(of: 7) == DiscoveryResult.PIDStatus(enumerated: true, listed: true, failed: true, quarantined: false, permissionDenied: false))
+    }
+
+    @Test("s8: a real pass fills enumeratedPIDs with every process it enumerated, read or not")
+    func discovererFillsEnumeratedPIDs() async throws {
+        let processes = [testProcess(pid: 100), testProcess(pid: 200)]
+        let discoverer = MenuBarDiscoverer(
+            apps: FakeRunningApps(allProcesses: processes, agent: nil),
+            reader: FakeExtrasReader { process, _ in rawRead(process: process) },
+            display: FakeDisplay(result: (testBounds, DiscoveryOrigin(x: 0, y: 0))),
+            isTrusted: { true }, ownIdentifiers: testOwnIdentifiers, now: { 0 }
+        )
+
+        let result = try #require(await discoverer.discover(previous: nil))
+
+        #expect(result.enumeratedPIDs == [100, 200])
+        #expect(result.status(of: 100).enumerated)
+        #expect(!result.status(of: 999).enumerated)
     }
 
     // MARK: - fixtures
@@ -67,15 +84,6 @@ struct DiscoveryResultStatusTests {
         return DiscoveryResult(
             set: set, duration: 0, origin: DiscoveryOrigin(x: 0, y: 0), bounds: testBounds, nextCursor: 0,
             quarantined: quarantined.map { testProcess(pid: $0) }, enumeratedPIDs: Set(enumerated)
-        )
-    }
-
-    private func item(of pid: Int32) -> DiscoveredItem {
-        let process = testProcess(pid: pid)
-        return DiscoveredItem(
-            key: ItemKey(namespace: process.bundleID ?? "", identifier: "x", pid: pid, childIndex: nil), basis: .declared,
-            process: process, frame: BarRect(minX: 300, minY: 4.5, width: 24, height: 24), position: .onBar,
-            title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
         )
     }
 }

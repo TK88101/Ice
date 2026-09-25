@@ -14,8 +14,8 @@ import MenuBarDiscovery
 /// something D15 has not already corrected.
 ///
 /// A keyed pid's read that cannot be trusted fails the whole snapshot
-/// (hardening plan H1): `.failed`, cut by the sample's deadline, or never
-/// reached before it. The contract (`MenuBarAXReading.read`) makes an absent id
+/// (hardening plan H1): `.failed`, cut by the sample's deadline, finished past
+/// it, or never reached before it. The contract (`MenuBarAXReading.read`) makes an absent id
 /// a *successful* read that found nothing, so reporting such a pid's keys as
 /// absent would fabricate a disappearance; `nil` makes the sampler take no
 /// sample instead. A `.none` read -- no extras bar, the process gone -- is an
@@ -68,6 +68,9 @@ public struct DiscoveredFrameReader: MenuBarAXReading {
             guard now() < deadlineAt else { return nil }
             let process = processesByPID[pid] ?? minimalProcess(pid: pid)
             let raw = extras.read(process, timeout: timeout, interrupt: { now() >= deadlineAt })
+            // A read that finished past the deadline is late even when complete:
+            // the deadline bounds the whole sample, the last read included.
+            guard now() < deadlineAt else { return nil }
             let records: [ExtrasRecord]
             switch ReadClassifier.outcome(raw, timeout: timeout) {
             case .items(let read): records = read

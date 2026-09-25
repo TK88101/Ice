@@ -140,5 +140,15 @@ func rawRead(process: ProcessInfoRecord, records: [ExtrasRecord] = []) -> RawRea
     RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records, walkInterrupted: false, childCount: records.count)
 }
 
+/// One on-bar item owned by `process` -- the shape every discovery suite's
+/// "this process owns an item" fixture takes.
+func ownedItem(_ process: ProcessInfoRecord) -> DiscoveredItem {
+    DiscoveredItem(
+        key: ItemKey(namespace: process.bundleID ?? "", identifier: "x", pid: process.pid, childIndex: nil), basis: .declared,
+        process: process, frame: BarRect(minX: 300, minY: 4.5, width: 24, height: 24), position: .onBar,
+        title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
+    )
+}
+
 let testBounds = BarBounds(minX: 0, maxX: 1728, minY: 0, barHeight: 24)
 let testOwnIdentifiers = OwnIdentifiers(visible: "Ice.ControlItem.Visible", hidden: "Ice.ControlItem.Hidden", alwaysHidden: "Ice.ControlItem.AlwaysHidden")
