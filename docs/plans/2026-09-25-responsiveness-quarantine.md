@@ -366,6 +366,22 @@ which carry no names.
 | D-1 | section 9: "the first success lifts the quarantine" | any re-probe outcome other than an extras-bar timeout lifts it, and a failure then counts as a failure | a failure must never be absorbed by the quarantine; a process that answers its extras bar is not the pathology |
 | D-2 | section 9: identity `(pid, launchTime)` | `(pid, startTime)`, the kernel start time | `launchDate` is nil for all 8 WebKit processes (M3); `launchTime` itself stays untouched |
 | D-3 | T6's `--check`: one cold pass | a warm-up pass, then the checked pass on the same discoverer; the checked pass's quarantined count printed and recorded beside the verdict; `--strict` restores the cold-complete meaning | the entering read is counted (A-2), so a cold pass cannot be complete while a stall is first met; the check still fails on any labelled item a quarantined process owns (3.6) |
+| D-4 | T6 (CLI): nothing about output buffering | `mbdiscover` sets stdout line-buffered | L2's second attempt was void: `--watch-pid` lines reached the harness's file only when the process exited, so the stall was sent after the run |
+| D-5 | section 6, L2: "every pass while it stalls" | read as the failing passes after the helper was first read with its item | the valid attempt's pass 0 failed before any stall -- a cold pass that hit the deadline left the helper in the unread tail -- and the first evaluator counted it; the plan's wording never did |
+| D-6 | X7: "opportunistic, not a gate" | observed: WebKit content processes stalled from ~18:07, so the A/B ran on them | recorded in FINDINGS and the evidence; still not a substitute claim for L1 or the other way round |
+
+## Execution record
+
+- T1-T7 done test-first, checkpointed on this branch; suites green (IceCore 371,
+  MenuBarDiscovery 60, Feed 37, IceWatchCore 44 at T7).
+- **X5**: 22 mutation probes -- the 18 of section 4 plus four discoverer-level
+  variants (M2b, M12b, M13b, M15 through d1) -- **22 killed, 0 survived, all
+  compiled**; runner and output in the evidence directory (`mutations/`).
+- **X6**: L0 PASS, L1 PASS, L2 PASS on its third attempt (the first two void by
+  harness and tool defects, D-4, D-5); evidence `20260925-18xxxx-quarantine-live*`.
+- **X7**: observed (D-6): with 6 WebKit content processes stalling, main 954ee5e
+  was `incomplete` on 6 of 6 passes at ~1.55 s warm; this change was
+  `incomplete` only where a stall was first met, otherwise `complete` at 20-36 ms.
 
 ## Appendix A -- review record
 

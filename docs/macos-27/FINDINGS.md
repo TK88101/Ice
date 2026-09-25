@@ -289,6 +289,53 @@ has never once been read successfully, or lowering the per-call timeout -- is a
 decision, and none of it is in the 2026-09-25 plan's scope. Recorded here so the
 next T6 knows its real precondition: **no WebKit content process up**.
 
+**MEASURED 2026-09-25, 17:00-18:30 -- the decision taken, and what it does
+(responsiveness-quarantine plan).** Four facts first:
+- the pathology is a **state**, not a process: from 17:00 to 18:05, twelve
+  census runs found the same 8 WebKit content processes answering *fast* (6 fast
+  `cannotComplete`, a decline; 2 `noValue`) and **zero** timeouts; from about
+  18:07, 3 to 6 of them held the extras-bar read for the full 0.25 s again;
+- `NSRunningApplication.launchDate` is nil for **55 of 70** processes, all 8
+  WebKit content processes among them, while the kernel's start time
+  (`sysctl KERN_PROC_PID`) is there for 70 of 70 and stable. So the quarantine
+  keys on a separate `ProcessInfoRecord.startTime`, and `launchTime` -- what
+  carry-over compares -- is untouched;
+- fast extras answers run 13 ms p50, 32 ms at most;
+- the largest children snapshot on the bar is 6.
+
+What was built: an extras-bar stall by a process at least a minute old that has
+never shown a non-empty extras snapshot, is not self, the agent or a previous
+owner, while fast (< 50 ms) answers outnumber stalls in the pass, is **counted**
+in the pass that meets it and **skipped** from the next pass on, re-probed after
+the rotation within the budget left (2 s, doubling to 30 s), and lifted by any
+other answer. Every read now answers to the pass deadline and to cancellation
+between children, and a snapshot over 64 children is refused as interrupted.
+
+A/B at the same minute, 6 WebKit content processes stalling, read-only:
+| binary | passes | warm pass |
+|---|---|---|
+| main 954ee5e (before) | 6 of 6 `incomplete` | ~1.55 s |
+| this change | `incomplete` only in the passes that first meet a stall, then `complete` | 20-36 ms; ~1 s when the processes that entered together are re-probed together |
+
+T6's precondition changes accordingly: a WebKit content process up no longer
+breaks it. `mbdiscover --check` now runs a warm-up pass and checks the second,
+and the checked pass's quarantined count belongs next to its verdict; `--strict`
+restores the cold-complete meaning. What a non-strict check cannot see is an
+**unlabelled** item of a process that stalls through both passes -- a labelled
+one still fails it.
+
+Live, with a sacrificial helper whose main thread sleeps (`vzhelper stall`): a
+helper that had never shown extras entered, was skipped, and came back 12.5 s
+after its stall began; one that had shown its item stalled for 8 s and was never
+quarantined -- those passes were `incomplete` with its item carried. That helper
+is a stalled supplier, not WebKit's suspension mechanism; the A/B above is the
+WebKit evidence.
+
+Accepted, not fixed: a process whose walk alone needs more than the whole 2 s
+budget is never read to the end (every pass fails it, honestly, and its carried
+items drop after 30 s); and a false quarantine delays a recovered process's
+items by up to the backoff in force plus one pass.
+
 ### Two different kinds of "not visible"
 
 | state | cause | AX frame |
