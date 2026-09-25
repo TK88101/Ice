@@ -1,7 +1,7 @@
 # Can Ice hide menu bar items on macOS 27? -- the feasibility gate
 
 2026-09-25 · branch `wip/hiding-feasibility` (from `main` d21e1e6) · **v1, desk
-research only; no experiment has been run.** v4 after Codex rounds 1-3 (Appendix).
+research only; no experiment has been run.** v5 after Codex rounds 1-4 (Appendix).
 The owner approves this plan before anything that changes the menu bar's state,
 and each stage in section 6 needs its own go.
 
@@ -170,9 +170,11 @@ check, accounting -- 6.2), which Codex reviews.
 
 ### Stage 2 -- robustness and recovery (only a candidate that can still produce GO)
 
-The G2 dimensions and G3a, in the order (a), (b), (c), G3a, (d), then the
-owner-waivable ones not waived. Each dimension is its own run and, where section 5
-says so, its own go.
+The G2 dimensions and the mode's recovery criterion -- G3a in Mode I; in Mode P,
+G3p's three paths: re-allowed by the writer process, re-allowed from System Settings
+with the writer gone, and a `MenuBarAgent` restart -- in the order (a), (b), (c), the
+recovery criterion, (d), then the owner-waivable ones not waived. Each dimension and
+each recovery path is its own run and, where section 5 says so, its own go.
 
 ### 6.2 The run protocol (skeleton; each stage's pre-registration fills it in)
 
@@ -188,7 +190,7 @@ says so, its own go.
   a Space slide caught mid-capture). An inconclusive repeat is re-run at most twice;
   a third inconclusive counts as *not shown*, which is a failure for a mandatory
   criterion. A failure is replicated once before it drops the candidate.
-- N >= 5 per G2 dimension, N >= 3 per G3a path.
+- N >= 5 per G2 dimension, N >= 3 per G3a or G3p path.
 
 ### Stage 3 -- decision
 
@@ -296,3 +298,36 @@ All seven round-2 findings resolved. One new P1, adopted: G3p asked for recovery
 disallowed the app (E2's writer, standing in for Ice exactly as a probe holder does
 for G3a); recovery by Ice itself is G3b, a separately approved run after a GO --
 which is what makes any GO here a feasibility GO.
+
+### Round 4 -- Codex
+
+The round-3 blocker resolved. One new P1, adopted: stage 2 scheduled G3a only, so E
+could have reached a GO without G3p being run. Stage 2 now runs the mode's recovery
+criterion -- G3p's three paths in Mode P -- and 6.2 counts N >= 3 per G3a or G3p path.
+
+## Appendix B -- Jev (TypeSafe System One), per-requirement nouls
+
+Request and response in the evidence directory (`20260925-195224-hardening/jev/`).
+Values are the probability that the option **violates** the requirement; read them as
+consequences to state, not vetoes. The owner decides V1, V2 and V4.
+
+Requirements: R1 never claim hidden when not, never hide what the user did not
+choose; R2 correct across layouts, app switches and Spaces, recoverable without
+manual repair; R3 the owner's items unharmed and always recoverable; R4 useful in
+the owner's daily workflow; R5 low maintenance, no undocumented dependence; R6 a
+trustworthy GO/NO-GO for the least effort and risk.
+
+| option | R1 | R2 | R3 | R4 | R5 | R6 | choice |
+|---|---|---|---|---|---|---|---|
+| V1 yes -- accept Mode P (persistent, per app) | 0.85 | 0.91 | 0.79 | 0.86 | 0.88 | 0.75 | |
+| V1 no | 0.09 | 0.15 | 0.10 | 0.21 | 0.11 | 0.21 | **1.00** |
+| V2 in place -- a hider is useful with items expanded in place | -- | -- | -- | 0.53 | 0.37 | 0.33 | **0.89** |
+| V2 images first | -- | -- | -- | 0.69 | 0.42 | 0.77 | 0.11 |
+| V4 waive all three | -- | 0.80 | -- | 0.65 | -- | 0.67 | 0.02 |
+| V4 waive the second display only | -- | 0.40 | -- | 0.30 | -- | 0.37 | **0.80** |
+| V4 waive none | -- | 0.20 | -- | 0.40 | -- | 0.79 | 0.18 |
+
+Read as consequences: Mode P hides every item of an app, including ones the owner did
+not choose (R1), and leaves the owner to repair it by hand if Ice is gone (R2) --
+which is why Jev rejects it outright. V2 "in place" is preferred but undecided on
+usefulness to this owner (0.53 on R4). V4 keeps auto-hide and sleep/lock mandatory.
