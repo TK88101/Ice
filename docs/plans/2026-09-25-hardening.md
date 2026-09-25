@@ -51,3 +51,20 @@ H1 P1 **adopted, widened**: the deadline must not leave absent keys -- and neith
 
 ### Round 2 -- Codex
 CONVERGED apart from the stale risk text above (fixed): H1-v2's sample starvation and H5's sleep exclusion are both fail-safe.
+
+## Deviations (ledger)
+
+| # | from | to | why |
+|---|---|---|---|
+| HD-1 | H2: bounded fetch through `AXUIElementCopyAttributeValues` | **dropped** (reverted) | section 4's own rule: MEASURED 2026-09-25, read-only, 71 of 71 empty array attributes across the running apps answer `kAXErrorIllegalArgument` to `CopyAttributeValues(index 0)` where `CopyAttributeValue` answers success with `[]` (`AXUIElement.h` documents an out-of-range index as illegal). A process with an extras bar and no children would have failed every pass. The before/after census had agreed (73 of 73) only because no such process was up. The cap still refuses an oversized snapshot, after the copy |
+| HD-2 | H3: bundle id + `/System` first path component | + the running process satisfies `anchor apple and identifier "com.apple.MenuBarAgent"` (by pid, only for a candidate that passed the cheap checks; about 0.8 ms) | security review MEDIUM: `/System/Volumes/Data/...` passes the path check and is user-writable. The path check stays as specified |
+| HD-3 | H1: a keyed pid cut or left unread by the deadline -> `nil` | also a keyed read that **finishes** past the deadline -> `nil` | Codex review P1 (round 1): the last keyed read had no later iteration to check the clock. The deadline bounds the whole sample, as the init's doc says |
+
+## Execution record
+
+### simcodex round 1
+
+- **Codex** (`codex review --base main`): one P1, adopted (HD-3; test f6).
+- **Security review**: MEDIUM H3 spoof -> adopted (HD-2; g1-g5). LOW agent read not bounded by the sample deadline -> **rejected, owner's ruling** ("the agent read keeps `{ false }`"), and it presupposes the spoof HD-2 closes. LOW one keyed process can starve every sample -> accepted as a residual: fail-safe, as section 4 states. LOW H2 empty children -> confirmed by measurement (HD-1). Note: `LiveMenuBarAXReader` (frozen) still matches the agent by bundle id alone; only vizprobe and `MBCaptureSanity` use it -- a residual until the freeze lifts.
+- **Simplify** (reuse, simplification, efficiency, altitude): one owned-item fixture for the discovery tests; `FakeExtrasReader` also records the interrupt after its handler, so f4/f4b use `makeReader` and the extra fake goes; `PIDStatus` uses its synthesized init. **Skipped**: altitude P1 "reuse the discoverer's `now` for the age gate" -- the gate must compare `startUptime` with the clock it was read on; `now` is caller-supplied with only a monotonic contract (tests start it at 0), while `startUptime` and `uptimeNow()` share one timebase conversion in `LiveRunningApps`. Efficiency P2 (a second syscall per process, about 1-2 ms a pass) noted, not changed.
+- Added from my own check: s8 (the discoverer fills `enumeratedPIDs`), f3b (an agent read past the deadline leaves keyed pids unread).
