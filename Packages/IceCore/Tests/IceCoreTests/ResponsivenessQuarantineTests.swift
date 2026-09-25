@@ -63,7 +63,7 @@ struct ResponsivenessQuarantineTests {
 
     @Test("q3: only an extras-bar timeout is a trigger", arguments: NonTrigger.allCases)
     func q3OnlyTheExtrasBarTimeoutTriggers(shape: NonTrigger) {
-        let reads = [shape.read(proc(7, start: oldStart))] + fastReads(3)
+        let reads = [shape.raw(for: proc(7, start: oldStart))] + fastReads(3)
 
         let settled = ResponsivenessQuarantine().settle(processes: processes(reads), reads: reads, reprobes: [], context: context(), now: 100)
 
@@ -121,7 +121,7 @@ struct ResponsivenessQuarantineTests {
             snapshotShown: [try identity(old)]
         )
 
-        #expect(!quarantine.isSkipped(reused, context: context()))
+        #expect(!quarantine.isSkipped(reused, context: context(), now: 100))
 
         let reads = [stall(reused)] + fastReads(3)
         let settled = quarantine.settle(processes: processes(reads), reads: reads, reprobes: [], context: context(), now: 100)
@@ -151,7 +151,7 @@ struct ResponsivenessQuarantineTests {
         let quarantine = ResponsivenessQuarantine(entries: [try identity(process): entry])
         let reads = fastReads(3)
 
-        #expect(quarantine.isSkipped(process, context: context()))
+        #expect(quarantine.isSkipped(process, context: context(), now: 103.9))
         #expect(quarantine.dueReprobes(among: [process], context: context(), now: 103.9).isEmpty)
 
         let settled = quarantine.settle(processes: [process] + processes(reads), reads: reads, reprobes: [], context: context(), now: 103.9)
@@ -241,7 +241,7 @@ struct ResponsivenessQuarantineTests {
         let quarantine = ResponsivenessQuarantine(entries: [identity: .init(backoff: 8, nextProbeAt: 500)])
         let exempting = QuarantineContext(agentPID: nil, previousOwners: [identity], wallNow: wallNow)
 
-        #expect(!quarantine.isSkipped(process, context: exempting))
+        #expect(!quarantine.isSkipped(process, context: exempting, now: 100))
         #expect(quarantine.dueReprobes(among: [process], context: exempting, now: 600).isEmpty)
 
         let reads = [stall(process)] + fastReads(3)
@@ -268,6 +268,37 @@ struct ResponsivenessQuarantineTests {
         let due = quarantine.dueReprobes(among: [a, b, c, later, proc(1, start: oldStart)], context: context(), now: 5)
 
         #expect(due.map(\.pid) == [4, 7, 9])
+    }
+
+    @Test("q16: a quarantine whose re-probe is overdue by the cap lapses -- read in the rotation, counted if it still stalls, then re-entered")
+    func q16OverdueLapses() throws {
+        let process = proc(7, start: oldStart)
+        let id = try identity(process)
+        let quarantine = ResponsivenessQuarantine(entries: [id: .init(backoff: 4, nextProbeAt: 10)])
+
+        // Not yet: 29.9 s overdue is still a quarantine, skipped and due.
+        #expect(quarantine.isSkipped(process, context: context(), now: 39.9))
+        #expect(quarantine.dueReprobes(among: [process], context: context(), now: 39.9) == [process])
+
+        // At the cap it lapses: back in the rotation, no longer due, no longer listed.
+        #expect(!quarantine.isSkipped(process, context: context(), now: 40))
+        #expect(quarantine.dueReprobes(among: [process], context: context(), now: 40).isEmpty)
+
+        let stalled = [stall(process)] + fastReads(3)
+        let reentered = quarantine.settle(processes: processes(stalled), reads: stalled, reprobes: [], context: context(), now: 40)
+        #expect(reentered.admitted == stalled)
+        #expect(reentered.quarantine.entries[id] == .init(backoff: 2, nextProbeAt: 42))
+
+        let answered = [read(process, extrasError: "noValue")] + fastReads(3)
+        let lifted = quarantine.settle(processes: processes(answered), reads: answered, reprobes: [], context: context(), now: 40)
+        #expect(lifted.quarantine.entries.isEmpty)
+
+        // A synthetic tail record read nothing: the lapsed entry stays, but it is
+        // eligible now, so it is not listed as quarantined.
+        let tail = [read(process, extrasError: "notAttempted", extrasElapsed: 0, childrenError: nil, childrenElapsed: nil)] + fastReads(3)
+        let untouched = quarantine.settle(processes: processes(tail), reads: tail, reprobes: [], context: context(), now: 40)
+        #expect(untouched.quarantine.entries[id] == .init(backoff: 4, nextProbeAt: 10))
+        #expect(untouched.quarantined.isEmpty)
     }
 
     // MARK: - startTime in the record's conformances (q15)
@@ -330,18 +361,18 @@ enum NonTrigger: CaseIterable, CustomTestStringConvertible {
 
     var testDescription: String { "\(self)" }
 
-    func read(_ process: ProcessInfoRecord) -> RawRead {
+    func raw(for process: ProcessInfoRecord) -> RawRead {
         switch self {
         case .childrenTimeout:
-            return quarantineRead(process, childrenError: "cannotComplete", childrenElapsed: 0.21)
+            return read(process, childrenError: "cannotComplete", childrenElapsed: 0.21)
         case .extrasUnexpectedError:
-            return quarantineRead(process, extrasError: "failure", extrasElapsed: 0.21, childrenError: nil, childrenElapsed: nil)
+            return read(process, extrasError: "failure", extrasElapsed: 0.21, childrenError: nil, childrenElapsed: nil)
         case .walkInterrupted:
-            return quarantineRead(process, childCount: 0, walkInterrupted: true)
+            return read(process, childCount: 0, walkInterrupted: true)
         case .partialWalk:
-            return quarantineRead(process, childCount: 1)
+            return read(process, childCount: 1)
         case .fastDecline:
-            return quarantineRead(process, extrasError: "cannotComplete", extrasElapsed: 0.02, childrenError: nil, childrenElapsed: nil)
+            return read(process, extrasError: "cannotComplete", extrasElapsed: 0.02, childrenError: nil, childrenElapsed: nil)
         }
     }
 }
@@ -385,24 +416,6 @@ private func read(
     records: [ExtrasRecord] = [],
     walkInterrupted: Bool = false
 ) -> RawRead {
-    quarantineRead(
-        process, extrasError: extrasError, extrasElapsed: extrasElapsed, childrenError: childrenError,
-        childrenElapsed: childrenElapsed, childCount: childCount, records: records, walkInterrupted: walkInterrupted
-    )
-}
-
-/// Shared with the scenario enums above, which cannot see this file's
-/// `private` helpers from their own scope.
-func quarantineRead(
-    _ process: ProcessInfoRecord,
-    extrasError: String = "success",
-    extrasElapsed: Double = 0.01,
-    childrenError: String? = "success",
-    childrenElapsed: Double? = 0.01,
-    childCount: Int? = nil,
-    records: [ExtrasRecord] = [],
-    walkInterrupted: Bool = false
-) -> RawRead {
     RawRead(
         process: process, extrasError: extrasError, extrasElapsed: extrasElapsed,
         childrenError: childrenError, childrenElapsed: childrenElapsed,
@@ -422,10 +435,12 @@ private func fastReads(_ count: Int, elapsed: Double = 0.013) -> [RawRead] {
     (0..<count).map { read(proc(Int32(100 + $0), start: oldStart), extrasError: "noValue", extrasElapsed: elapsed, childrenError: nil, childrenElapsed: nil) }
 }
 
+/// `fixtureItem`, owned by `process`: the shared builder, fed every field of the
+/// record the quarantine keys on.
 private func item(_ process: ProcessInfoRecord) -> DiscoveredItem {
-    DiscoveredItem(
-        key: ItemKey(namespace: process.bundleID ?? "", identifier: "i\(process.pid)", pid: process.pid, childIndex: nil), basis: .declared,
-        process: process, frame: barFrame(minX: 100, width: 24), position: .onBar,
-        title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
+    fixtureItem(
+        namespace: process.bundleID ?? "", identifier: "i\(process.pid)", pid: process.pid,
+        frame: barFrame(minX: 100, width: 24), isSelf: process.isSelf,
+        launchTime: process.launchTime, startTime: process.startTime
     )
 }

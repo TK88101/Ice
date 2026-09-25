@@ -172,6 +172,75 @@ struct MenuBarDiscovererQuarantineTests {
         #expect(second.set.completeness == .incomplete(failedPIDs: [20]))
     }
 
+    @Test("d14: when every rotation leaves no room for a re-probe, the quarantine lapses at the cap and the process is read, and counted, in the rotation")
+    func d14StarvedReprobeLapses() async throws {
+        let stalled = aged(20)
+        let hog = aged(21)
+        let fast = (30..<34).map { aged(Int32($0)) }
+        let clock = ManualClock(0)
+        let reader = FakeExtrasReader { process, _ in
+            // Every pass, one slow-but-answering process eats all but 0.2 s of
+            // the 2 s budget, so no re-probe ever fits after the rotation.
+            if process == hog { clock.advance(by: 1.8) }
+            return process == stalled ? stall(process) : quickNo(process)
+        }
+        let discoverer = makeDiscoverer(processes: [stalled, hog] + fast, reader: reader, clock: clock)
+
+        let entering = try #require(await discoverer.discover(previous: nil))
+        #expect(entering.quarantined.map(\.pid) == [20])
+        let entryReadCount = reader.recordedProcesses.filter { $0 == stalled }.count
+
+        // Entered at t = 1.8, due at 3.8, lapses at 33.8: passes at 5 ... 30 skip
+        // it and have no room to re-probe it; the pass at 35 reads it again.
+        var readAt = [Double]()
+        var lapsePass: DiscoveryResult?
+        var readsSoFar = entryReadCount
+        for start in stride(from: 5.0, through: 40.0, by: 5.0) {
+            clock.advance(by: start - clock.now())
+            let pass = try #require(await discoverer.discover(previous: nil))
+            let reads = reader.recordedProcesses.filter { $0 == stalled }.count
+            if reads > readsSoFar {
+                readAt.append(start)
+                if lapsePass == nil { lapsePass = pass }
+            }
+            readsSoFar = reads
+        }
+
+        #expect(entryReadCount == 1)
+        // Read once at 35 and, having re-entered there, skipped again at 40.
+        #expect(readAt == [35])
+        let lapsed = try #require(lapsePass)
+        #expect(lapsed.set.completeness == .incomplete(failedPIDs: [20]))
+        #expect(lapsed.quarantined.map(\.pid) == [20])
+    }
+
+    @Test("d15: the quarantine judges a whole pass at one instant -- a process is never skipped in the rotation and then left unlisted because it lapsed mid-pass")
+    func d15OneInstantPerPass() async throws {
+        let stalled = aged(20)
+        let hog = aged(21)
+        let fast = (30..<34).map { aged(Int32($0)) }
+        let clock = ManualClock(0)
+        let reader = FakeExtrasReader { process, _ in
+            if process == hog { clock.advance(by: 1.8) }
+            return process == stalled ? stall(process) : quickNo(process)
+        }
+        let discoverer = makeDiscoverer(processes: [stalled, hog] + fast, reader: reader, clock: clock)
+        _ = try #require(await discoverer.discover(previous: nil))
+
+        // Passes 2.5 s apart, so one of them straddles the moment the
+        // quarantine lapses: every pass must still account for the process --
+        // read, listed as quarantined, or failed.
+        for start in stride(from: 5.0, through: 40.0, by: 2.5) {
+            clock.advance(by: start - clock.now())
+            let before = reader.recordedProcesses.filter { $0 == stalled }.count
+            let pass = try #require(await discoverer.discover(previous: nil))
+            let read = reader.recordedProcesses.filter { $0 == stalled }.count > before
+            let listed = pass.quarantined.contains(stalled)
+            let failed: Bool = { if case .incomplete(let pids) = pass.set.completeness { return pids.contains(20) }; return false }()
+            #expect(read || listed || failed, "pass at \(start): the stalled process went unaccounted for")
+        }
+    }
+
     // MARK: - the interrupt every read is handed
 
     @Test("d7: the interrupt trips past the deadline for every read, the first of the pass included")

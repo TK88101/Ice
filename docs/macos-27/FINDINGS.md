@@ -331,6 +331,14 @@ quarantined -- those passes were `incomplete` with its item carried. That helper
 is a stalled supplier, not WebKit's suspension mechanism; the A/B above is the
 WebKit evidence.
 
+Added after the post-implementation security review: a quarantine whose re-probe
+is overdue by the 30 s cap **lapses** back into the ordinary rotation, so a bar
+whose rotations always leave less than one timeout of budget cannot starve a
+recovered process forever; and every quarantine decision in a pass is taken at
+the pass's start, so no process is ever skipped and left unlisted in one pass.
+If passes are further apart than the backoff plus 30 s, every quarantine lapses
+first and discovery simply behaves as it did on main.
+
 Accepted, not fixed: a process whose walk alone needs more than the whole 2 s
 budget is never read to the end (every pass fails it, honestly, and its carried
 items drop after 30 s); and a false quarantine delays a recovered process's

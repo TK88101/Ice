@@ -33,7 +33,8 @@
 //                  process whose Accessibility requests go unanswered, for the
 //                  responsiveness-quarantine live checks (2026-09-25 plan,
 //                  section 6). All three deadmen below, and EOF, run on the main
-//                  queue, so during a stall they fire late -- by at most s.
+//                  queue, so during a stall they fire late; stalls add up to at
+//                  most 60 s over the helper's life, so never later than that.
 //   quit, EOF   -> exit(0)
 // Replies go to stdout, one line each, written unbuffered.
 //
@@ -369,6 +370,8 @@ let selfReadQueue = DispatchQueue(label: "vzhelper.selfread", qos: .userInitiate
 
 // The control channel: one command per line on stdin, buffered across
 // partial reads. EOF is the same exit path as an explicit `quit` line.
+/// Every stall so far: bounded, because each one delays every deadman.
+var stalledTotal = 0.0
 let stdinSource = DispatchSource.makeReadSource(fileDescriptor: FileHandle.standardInput.fileDescriptor, queue: .main)
 var inputBuffer = Data()
 stdinSource.setEventHandler {
@@ -404,6 +407,11 @@ stdinSource.setEventHandler {
                 reply("stall", ["error": "want 0 < seconds <= 30"])
                 break
             }
+            guard stalledTotal + seconds <= 60 else {
+                reply("stall", ["error": "at most 60 s of stalls per helper"])
+                break
+            }
+            stalledTotal += seconds
             reply("stalling", ["seconds": seconds])
             Thread.sleep(forTimeInterval: seconds)
             reply("resumed", ["seconds": seconds])

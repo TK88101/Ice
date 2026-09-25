@@ -104,17 +104,19 @@ public struct ResponsivenessQuarantine: Equatable, Sendable {
         public let quarantined: [ProcessInfoRecord]
     }
 
-    /// Whether the pass's ordinary rotation leaves `process` out.
-    public func isSkipped(_ process: ProcessInfoRecord, context: QuarantineContext) -> Bool {
-        guard let identity = ProcessIdentity(process), entries[identity] != nil else { return false }
-        return !isExempt(process, identity: identity, context: context, shown: snapshotShown)
+    /// Whether the pass's ordinary rotation leaves `process` out: quarantined,
+    /// not exempt, and not lapsed.
+    public func isSkipped(_ process: ProcessInfoRecord, context: QuarantineContext, now: Double) -> Bool {
+        guard let identity = ProcessIdentity(process), let entry = entries[identity] else { return false }
+        return !isExempt(process, identity: identity, context: context, shown: snapshotShown) && !Self.isLapsed(entry, now: now)
     }
 
     /// The skipped processes whose re-probe is due at `now`: oldest due first,
     /// then by pid, so none of them can be starved by the others.
     public func dueReprobes(among processes: [ProcessInfoRecord], context: QuarantineContext, now: Double) -> [ProcessInfoRecord] {
         let due = processes.compactMap { process -> (process: ProcessInfoRecord, at: Double)? in
-            guard isSkipped(process, context: context),
+            // One definition of "skipped", shared with the rotation.
+            guard isSkipped(process, context: context, now: now),
                   let identity = ProcessIdentity(process),
                   let entry = entries[identity],
                   now >= entry.nextProbeAt
@@ -152,18 +154,26 @@ public struct ResponsivenessQuarantine: Equatable, Sendable {
                 next[identity] = nil
                 continue
             }
+            // Read in the rotation, it is not quarantined -- a lapsed one rejoined
+            // the rotation -- and it may only enter afresh, below. A synthetic tail
+            // record read nothing, so it leaves any entry as it was.
+            if raw.extrasError != "notAttempted" { next[identity] = nil }
             if witnessed, Self.isStall(raw, timeout: timeout), context.wallNow - identity.startTime >= Self.minimumAge {
                 next[identity] = Entry(backoff: Self.initialBackoff, nextProbeAt: now + Self.initialBackoff)
             }
         }
 
         for raw in reprobes {
-            guard let identity = ProcessIdentity(raw.process), let entry = next[identity],
+            guard let identity = ProcessIdentity(raw.process) else {
+                admitted.append(raw)
+                continue
+            }
+            guard let entry = next[identity],
                   !isExempt(raw.process, identity: identity, context: context, shown: shown),
                   Self.isStall(raw, timeout: timeout)
             else {
                 // It answered: lifted, and settled like any other read.
-                if let identity = ProcessIdentity(raw.process) { next[identity] = nil }
+                next[identity] = nil
                 admitted.append(raw)
                 continue
             }
@@ -172,7 +182,10 @@ public struct ResponsivenessQuarantine: Equatable, Sendable {
         }
 
         let quarantined = processes
-            .filter { ProcessIdentity($0).map { next[$0] != nil } ?? false }
+            .filter { process in
+                guard let identity = ProcessIdentity(process), let entry = next[identity] else { return false }
+                return !Self.isLapsed(entry, now: now)
+            }
             .sorted { $0.pid < $1.pid }
         return Settlement(quarantine: ResponsivenessQuarantine(entries: next, snapshotShown: shown), admitted: admitted, quarantined: quarantined)
     }
@@ -184,6 +197,17 @@ public struct ResponsivenessQuarantine: Equatable, Sendable {
             || process.pid == context.agentPID
             || shown.contains(identity)
             || context.previousOwners.contains(identity)
+    }
+
+    /// A quarantine whose re-probe has waited `maxBackoff` past its due time
+    /// lapses: the process rejoins the ordinary rotation, under the ordinary
+    /// deadline, and a stall there counts as a failure. MEASURED risk, not
+    /// hypothetical (security review, 2026-09-25): re-probes only run when one
+    /// timeout still fits after the rotation, so a pass that always ends with
+    /// less than that would otherwise skip the process forever -- and report
+    /// `complete` while its recovered items never came back.
+    private static func isLapsed(_ entry: Entry, now: Double) -> Bool {
+        now - entry.nextProbeAt >= maxBackoff
     }
 
     /// The only trigger: the process did not even hand over its extras bar.

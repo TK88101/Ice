@@ -14,12 +14,13 @@ func fixtureItem(
     position: ItemPosition = .onBar,
     isSelf: Bool = false,
     launchTime: Double? = 10,
+    startTime: Double? = nil,
     carriedPasses: Int = 0,
     lastConfirmedAt: Double = 0
 ) -> DiscoveredItem {
     DiscoveredItem(
         key: ItemKey(namespace: namespace, identifier: identifier, pid: pid, childIndex: childIndex), basis: basis,
-        process: ProcessInfoRecord(pid: pid, bundleID: namespace, localizedName: nil, executableName: nil, launchTime: launchTime, isSelf: isSelf),
+        process: ProcessInfoRecord(pid: pid, bundleID: namespace, localizedName: nil, executableName: nil, launchTime: launchTime, isSelf: isSelf, startTime: startTime),
         frame: frame, position: position,
         title: nil, description: nil, help: nil, carriedPasses: carriedPasses, lastConfirmedAt: lastConfirmedAt
     )

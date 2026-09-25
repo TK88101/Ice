@@ -127,6 +127,15 @@ func describePIDs(_ processes: [ProcessInfoRecord]) -> String {
     "[" + processes.map { String($0.pid) }.joined(separator: ",") + "]"
 }
 
+/// One pass with nothing carried in, or the process ends saying why not.
+func discoverOrExit(_ discoverer: MenuBarDiscoverer) async -> DiscoveryResult {
+    guard let result = await discoverer.discover(previous: nil) else {
+        print("discovery failed: no display, or cancelled")
+        exit(1)
+    }
+    return result
+}
+
 func runCheck(labelsPath: String, printHash: Bool, strict: Bool) async {
     let url = URL(fileURLWithPath: labelsPath)
     let data: Data
@@ -157,15 +166,9 @@ func runCheck(labelsPath: String, printHash: Bool, strict: Bool) async {
     // checked pass's quarantined pids are printed and belong in T6's record;
     // `--strict` refuses any, restoring the old cold-complete meaning.
     let discoverer = makeDiscoverer()
-    guard let warmUp = await discoverer.discover(previous: nil) else {
-        print("discovery failed: no display, or cancelled")
-        exit(1)
-    }
+    let warmUp = await discoverOrExit(discoverer)
     print("warm-up: \(describeCompleteness(warmUp.set.completeness)), quarantined \(describePIDs(warmUp.quarantined))")
-    guard let result = await discoverer.discover(previous: nil) else {
-        print("discovery failed: no display, or cancelled")
-        exit(1)
-    }
+    let result = await discoverOrExit(discoverer)
     print("checked: quarantined \(result.quarantined.count) \(describePIDs(result.quarantined))")
 
     // The plan order is checked too (T6): dividers as Ice leaves them at idle
@@ -328,7 +331,8 @@ func runTimed(passes: Int, every spacing: Double?, watchPID: Int32?) async {
         var line = "pass \(index): \(Int((result.duration * 1000).rounded())) ms, \(result.set.items.count) items, completeness \(result.set.completeness), quarantined \(result.quarantined.count)"
         if let watchPID {
             let item = result.set.listedItems.contains { $0.key.pid == watchPID }
-            let failed: Bool = { if case .incomplete(let pids) = result.set.completeness { return pids.contains(watchPID) }; return false }()
+            var failed = false
+            if case .incomplete(let pids) = result.set.completeness { failed = pids.contains(watchPID) }
             let quarantined = result.quarantined.contains { $0.pid == watchPID }
             line += ", watch item=\(item ? "yes" : "no") failed=\(failed ? "yes" : "no") quarantined=\(quarantined ? "yes" : "no")"
         }
@@ -342,9 +346,28 @@ func value(after flag: String) -> String? {
     return arguments[index + 1]
 }
 
+/// `flag`'s value parsed by `parse`; `nil` when the flag is absent. A flag that
+/// is present but unreadable ends the process: `--every 5s` silently running
+/// the passes back to back would be misread as evidence.
+func parsed<T>(_ flag: String, _ parse: (String) -> T?) -> T? {
+    guard arguments.contains(flag) else { return nil }
+    guard let text = value(after: flag), let result = parse(text) else {
+        print("\(flag) needs a value it can read")
+        exit(64)
+    }
+    return result
+}
+
 if arguments.contains("--time") {
-    let passes = value(after: "--time").flatMap { Int($0) } ?? 5
-    await runTimed(passes: passes, every: value(after: "--every").flatMap { Double($0) }, watchPID: value(after: "--watch-pid").flatMap { Int32($0) })
+    let passes = parsed("--time") { Int($0) } ?? 5
+    let spacing = parsed("--every") { Double($0) }
+    // Checked up front: a negative count or a non-finite spacing would trap
+    // (a closed range already refuses NaN and both infinities).
+    guard (0...10_000).contains(passes), spacing.map({ (0...3600).contains($0) }) ?? true else {
+        print("--time wants 0...10000 passes, --every 0...3600 seconds")
+        exit(64)
+    }
+    await runTimed(passes: passes, every: spacing, watchPID: parsed("--watch-pid") { Int32($0) })
 } else if arguments.contains("--census-json") {
     printCensusJSON()
 } else if arguments.contains("--plan") {

@@ -127,7 +127,12 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         // before each child.
         let interrupt = { cancelled.get() || self.now() >= deadlineAt }
 
-        guard let rotation = rotate(processes, from: startIndex, state: state, context: context, deadlineAt: deadlineAt, interrupt: interrupt, cancelled: cancelled) else {
+        // The quarantine judges the whole pass at one instant, its start: who is
+        // skipped, who is due, who has lapsed, and when the next probes fall. With
+        // several instants a process could be skipped by the rotation and then,
+        // having lapsed by settlement, be neither read nor listed (security
+        // re-check LOW-N1; test d15).
+        guard let rotation = rotate(processes, from: startIndex, state: state, context: context, judgedAt: passStart, deadlineAt: deadlineAt, interrupt: interrupt, cancelled: cancelled) else {
             return nil
         }
 
@@ -135,7 +140,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         // one timeout still fits: they never take budget from an eligible process.
         var reprobes = [RawRead]()
         if !rotation.truncated {
-            for process in state.dueReprobes(among: processes, context: context, now: now()) {
+            for process in state.dueReprobes(among: processes, context: context, now: passStart) {
                 if cancelled.get() { return nil }
                 guard now() + timeout <= deadlineAt else { break }
                 reprobes.append(reader.read(process, timeout: timeout, interrupt: interrupt))
@@ -144,7 +149,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         if cancelled.get() { return nil }
 
         let buildTime = now()
-        let settlement = state.settle(processes: processes, reads: rotation.reads, reprobes: reprobes, context: context, now: buildTime, timeout: timeout)
+        let settlement = state.settle(processes: processes, reads: rotation.reads, reprobes: reprobes, context: context, now: passStart, timeout: timeout)
         let adjustedReads = settlement.admitted.map { subtractOrigin($0, origin: origin) }
         let built = ItemCatalog.build(reads: adjustedReads, agentPID: agentPID, bounds: displaySnapshot.bounds, isTrusted: isTrusted(), ownIdentifiers: ownIdentifiers, now: buildTime, timeout: timeout)
         let carried = ItemCatalog.carryOver(previous: previous, current: built, now: buildTime)
@@ -173,6 +178,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         from startIndex: Int,
         state: ResponsivenessQuarantine,
         context: QuarantineContext,
+        judgedAt: Double,
         deadlineAt: Double,
         interrupt: () -> Bool,
         cancelled: DiscoveryBox<Bool>
@@ -187,7 +193,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
             if cancelled.get() { return nil }
             let index = (startIndex + offset) % count
             let process = processes[index]
-            if state.isSkipped(process, context: context) { continue }
+            if state.isSkipped(process, context: context, now: judgedAt) { continue }
             if offset > 0, now() >= deadlineAt {
                 tailStart = offset
                 nextCursor = index
@@ -206,7 +212,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         guard let tailStart else { return (reads, nextCursor, false) }
         for offset in tailStart..<count {
             let process = processes[(startIndex + offset) % count]
-            if state.isSkipped(process, context: context) { continue }
+            if state.isSkipped(process, context: context, now: judgedAt) { continue }
             reads.append(RawRead(process: process, extrasError: "notAttempted", extrasElapsed: 0, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0))
         }
         return (reads, nextCursor, true)

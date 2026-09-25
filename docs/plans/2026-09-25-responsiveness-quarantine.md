@@ -140,6 +140,17 @@ review L1-3, adopted).
   re-enters through 3.2 afresh. The cap is a choice, not a derivation: it bounds
   a recovered process's delay (M8) at roughly half a minute plus one pass, and
   costs one <= 0.25 s read per quarantined identity per 30 s.
+- **Lapse** (added after the security review, ledger D-7): a quarantine whose
+  re-probe is overdue by `maxBackoff` lapses -- the process is no longer skipped
+  or due, rejoins the ordinary rotation under the ordinary rules, and a stall
+  there is counted and re-enters afresh; any read in the rotation ends its entry
+  (a synthetic tail record reads nothing and does not). Without it, a rotation
+  that always ended with less than one timeout of budget left would skip the
+  process forever while every pass reported `complete`.
+- **One instant per pass** (security re-check LOW-N1, ledger D-8): skipped, due,
+  lapsed and the next probe times are all judged at the pass's start, so a
+  process can never be skipped by the rotation and then, having lapsed by
+  settlement, go unread and unlisted in the same pass.
 - **Pruned** at settlement: entries and snapshot-shown identities whose identity is no
   longer enumerated.
 - **Exempt while quarantined** (it appeared in `previous`): the rotation's skip
@@ -330,7 +341,9 @@ which carry no names.
 
 | risk | response |
 |---|---|
-| a real item's process is quarantined by mistake | it must be a minute old, never have shown a non-empty extras snapshot to this discoverer, be absent from `previous`, and stall on the extras bar while fast answers outnumber stalls; the pass that meets the stall still reports it; the cost is a delay (M8), measured by L1 |
+| a real item's process is quarantined by mistake | it must be a minute old, never have shown a non-empty extras snapshot to this discoverer, be absent from `previous`, and stall on the extras bar while fast answers outnumber stalls; the pass that meets the stall still reports it; the cost is a delay (M8), measured by L1 -- bounded by the backoff until due, plus at most `maxBackoff` if re-probes find no room (the lapse, D-7), plus the passes the rotation needs to reach it |
+| passes further apart than the backoff plus `maxBackoff` (a stopped timer, App Nap, `--every >= 33`) | every quarantine lapses before it is re-probed, so the process is read, and counted, every pass: the quarantine stops helping and discovery behaves as on main -- never worse |
+| an adversarial process | the quarantine is a heuristic for benign stalls, not a defence against a process that wants to slow discovery: one answering just under the stall line is never quarantined and costs its own time every pass; one that once returns a non-empty snapshot is exempt for life. Both only affect themselves, as on main (security review LOW-3) |
 | a fresh discoverer (Ice just launched, a new `HidingVerification` after a display change, every `mbdiscover` run) has no memory | then only `previous`, the age gate and the witness protect; the entering pass is still `incomplete` and the delay bound holds |
 | system-wide slowness | the witness majority with a 50 ms fast line |
 | a process known to own items vanishes silently | snapshot-shown memory and `previous`: never quarantined; d4, d12, L2, two mutation probes |
@@ -368,6 +381,8 @@ which carry no names.
 | D-3 | T6's `--check`: one cold pass | a warm-up pass, then the checked pass on the same discoverer; the checked pass's quarantined count printed and recorded beside the verdict; `--strict` restores the cold-complete meaning | the entering read is counted (A-2), so a cold pass cannot be complete while a stall is first met; the check still fails on any labelled item a quarantined process owns (3.6) |
 | D-4 | T6 (CLI): nothing about output buffering | `mbdiscover` sets stdout line-buffered | L2's second attempt was void: `--watch-pid` lines reached the harness's file only when the process exited, so the stall was sent after the run |
 | D-5 | section 6, L2: "every pass while it stalls" | read as the failing passes after the helper was first read with its item | the valid attempt's pass 0 failed before any stall -- a cold pass that hit the deadline left the helper in the unread tail -- and the first evaluator counted it; the plan's wording never did |
+| D-7 | A-9 as built: a due re-probe that finds no room simply waits | a quarantine overdue by `maxBackoff` lapses back into the rotation (3.4) | security review MEDIUM-1, agreed by Codex: a rotation that always leaves less than one timeout would starve re-probes forever while every pass reports `complete`, which broke this plan's own delay bound; the lapse restores it without letting re-probes take budget from eligible processes. Tests q16, d14; mutation M20 |
+| D-8 | 3.4: times "taken once per pass at settlement" | every quarantine decision in a pass uses the pass's start | security re-check LOW-N1: with several instants a lapse falling mid-pass left the process skipped, unread and unlisted for that pass while it reported `complete`. Test d15; mutation M21 |
 | D-6 | X7: "opportunistic, not a gate" | observed: WebKit content processes stalled from ~18:07, so the A/B ran on them | recorded in FINDINGS and the evidence; still not a substitute claim for L1 or the other way round |
 
 ## Execution record
