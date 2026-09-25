@@ -441,6 +441,81 @@ T-8 before the code change and T-9 after it exist because re-freezing labels
 | iCloud duplicates after a rewrite | check for `X 2.swift` before every build, per project memory |
 | rollback | checkpoints on `wip/identifier-failure` only; never pushed, never merged; `git revert` per checkpoint |
 
+## 9. What comes next, and what was ruled out on the way there
+
+Debated with Codex over three rounds after the merge (thecure), and converged --
+its closing word was "I otherwise have no objection". Nothing here is built by
+this plan; it is the handover.
+
+### Ordered
+
+1. **A responsiveness quarantine**, for the WebKit pathology FINDINGS now
+   records. When a process identity `(pid, launchTime)` that has **never
+   successfully supplied extras** holds an AX read for the full timeout, mark it
+   temporarily ineligible: ordinary passes skip it, a bounded backoff re-probes
+   it, and the first success lifts the quarantine. **Processes already known to
+   own a menu bar item are exempt** -- their failure must keep making the pass
+   `incomplete` rather than letting them disappear silently. "Complete" then
+   means complete for currently eligible producers, with controlled
+   revalidation, and that has to be written down where `Completeness` is
+   defined. Three details to pin: "successfully supplied extras" defined
+   narrowly; re-probes obeying the ordinary deadline and cancellation rules; and
+   an identity whose `(pid, launchTime)` cannot be established treated as
+   **not** quarantinable, so pid reuse cannot mis-target one.
+   Deliberately *not* a filter on `activationPolicy` (`.accessory` is what real
+   menu bar apps are) nor on a bundle id (fragile, and it encodes Apple's
+   process naming).
+2. **The deadline and cancellation contract.** `MenuBarDiscoverer.swift:113-118`
+   polls `cancelled` and the 2.0 s deadline only between processes, so one
+   `reader.read` is unbounded against both and a cancelled `Task` cannot take
+   effect during it. Poll both between children inside the walk and return with
+   `walkInterrupted = true` when either trips; cap children per process and
+   record an over-cap read as interrupted rather than truncating in silence.
+   Second because it is a real contract defect but, unlike 1, not a measured
+   one: the cursor rotation at `:106,118,143-144` already stops a slow process
+   from starving the rest across passes.
+3. **The `childCount` wiring**, opportunistically with the next edit to
+   `LiveExtrasReader`, not as a project: have the helper take the raw children
+   value and derive both the count and the elements, so the call site passes no
+   count at all. A mixed `CFArray` plus one record then pins `childCount` 2
+   against `records` 1. (A helper that *accepts* a count does not close it --
+   the same mutation simply moves one level up to the call site.)
+
+### Ruled out, with the evidence
+
+- **A live Ice run for R3 or R12.** R12 changes nothing a reader sees. R3's
+  changed branch is rare and nondeterministic live, so a run is weaker evidence
+  than its characterization plus two regressions. For the record, a run worth
+  anything would have to observe all three of: Ice's cached key going nil after
+  a missed cache pass, the fresh discovery containing Ice's icon, and an
+  otherwise eligible candidate to its right being excluded.
+- **Both proposed mitigations for the empty-identifier ambiguity.** Requiring a
+  successful identifier read on the *record* side of
+  `DiscoveredFrameReader.swift:52-55` regresses a case that is fail-closed
+  today: with an unreadable record excluded from the candidates, a genuinely
+  empty sibling becomes the unique match and the key is handed the wrong frame,
+  where today two candidates make `matches.count == 1` fail. Rejecting every
+  empty-identifier key instead is fail-closed but switches the feature off here:
+  MEASURED, **9 of the 9 on-bar items are `.unnamed`**, because `AXIdentifier`
+  answers `attributeUnsupported` for all but one item on this bar. So the
+  ambiguity **stays a documented consequence** until D2 -- or an equivalent
+  provenance flag carrying the identifier's read error into the item -- is
+  reopened as its own decision.
+- **`agentPID()`'s bundle-id match** gets a cheap reachability check whenever
+  someone next touches that file, not a project.
+
+### The worry that survives
+
+The reviewer's own largest concern is the one thing above that is accepted
+rather than fixed: a tolerated identifier failure is represented as *no*
+identifier, while the detector matches on identifier text alone, so a failed
+read can walk into the empty-identifier path. Both mitigations it proposed were
+refuted, so the concern stands unmitigated and is carried, not closed. The
+riskiest part of item 1, by its reckoning and mine, is calibration -- choosing a
+backoff and a genuinely process-local notion of "full timeout" without
+quarantining transient system-wide slowness -- and the exemption for known item
+owners is the safeguard that keeps a mis-calibration from hiding real items.
+
 ## Deviations (ledger)
 
 Format: trigger → what changed → reason.
