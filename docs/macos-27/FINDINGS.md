@@ -170,8 +170,15 @@ written):
 - **The app's check composes** (`HidingVerification` on a helper, with a
   stand-in for the divider -- a wiring check, not a proof about Ice's
   divider): prepare → hide → verify gave `hidden(folded: false)`; show → the
-  baseline was reused → verify gave `stillDrawn`. The two-item section of
-  step 6 was not run: there was not enough room on this bar (see below).
+  baseline was reused → verify gave `stillDrawn`.
+- **The two-item section (step 6) ran on 2026-09-25 and met every pre-registered
+  expectation**: the pair's second child was observed `drawn(x: 1161.5)` against an
+  AX `minX` of 1160; hiding the section gave `hidden(folded: false)` for **both**
+  items, and with the pair relaunched and left up, `stillDrawn` for both. No user
+  item was displaced, the helper domains were empty afterwards, and MenuBarAgent's
+  defaults were unchanged. Two earlier days skipped it for room and one attempt
+  that day aborted on the safety monitor -- both for the capture indicator, never
+  for the check itself.
 - The capture indicator did not appear left of the items in these runs, so
   every room check carried its 41 pt reserve (plan section 6); this is why
   steps 6 and 7 were skipped once each for room.
