@@ -48,6 +48,21 @@ struct ResponsivenessQuarantineTests {
         #expect(settled.quarantined == [alsoStalled, stalled])
     }
 
+    // MARK: - one name for the trigger (hardening plan H7)
+
+    @Test("t1: the quarantine enters on exactly the extras-bar timeout the classifier names with its shared constant")
+    func t1TriggerIsTheSharedConstant() throws {
+        let stalled = proc(7, start: oldStart)
+        let reads = [stall(stalled)] + fastReads(3)
+
+        let settled = ResponsivenessQuarantine().settle(processes: processes(reads), reads: reads, reprobes: [], context: context(), now: 100)
+
+        #expect(ReadClassifier.outcome(reads[0]) == .failed(.timedOut(call: ReadClassifier.extrasBarCall)))
+        #expect(settled.quarantine.entries[try identity(stalled)] != nil)
+        #expect(ReadClassifier.extrasBarCall == "extrasBar")
+        #expect(ReadClassifier.childrenCall == "children")
+    }
+
     // MARK: - the age gate's clock (hardening plan H5: k1-k4)
 
     @Test("k1: young by the monotonic clock is never entered, however old the wall clock makes it (a forward step)")
@@ -252,7 +267,7 @@ struct ResponsivenessQuarantineTests {
         let identity = try identity(process)
         let quarantine = ResponsivenessQuarantine(entries: [identity: .init(backoff: 2, nextProbeAt: 50)])
         let childrenTimeout = read(process, childrenError: "cannotComplete", childrenElapsed: 0.21)
-        #expect(ReadClassifier.outcome(childrenTimeout) == .failed(.timedOut(call: "children")))
+        #expect(ReadClassifier.outcome(childrenTimeout) == .failed(.timedOut(call: ReadClassifier.childrenCall)))
         let fast = fastReads(3)
 
         let settled = quarantine.settle(processes: [process] + processes(fast), reads: fast, reprobes: [childrenTimeout], context: context(), now: 50)
@@ -489,7 +504,7 @@ private func read(
 /// A process holding its extras-bar read for the full 0.25 s timeout.
 private func stall(_ process: ProcessInfoRecord) -> RawRead {
     let raw = read(process, extrasError: "cannotComplete", extrasElapsed: 0.25, childrenError: nil, childrenElapsed: nil)
-    precondition(ReadClassifier.outcome(raw) == .failed(.timedOut(call: "extrasBar")))
+    precondition(ReadClassifier.outcome(raw) == .failed(.timedOut(call: ReadClassifier.extrasBarCall)))
     return raw
 }
 

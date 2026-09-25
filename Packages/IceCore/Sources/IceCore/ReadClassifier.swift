@@ -73,6 +73,11 @@ public enum ReadClassifier {
     /// A `cannotComplete` at or above this fraction of the timeout is treated
     /// as a stall rather than a quick refusal.
     public static let slowFraction: Double = 0.8
+    /// The call names `FailureReason` carries for the extras-bar and the
+    /// children reads -- one spelling, shared with `ResponsivenessQuarantine`,
+    /// whose only trigger is `.timedOut(call: extrasBarCall)` (hardening plan H7).
+    public static let extrasBarCall = "extrasBar"
+    public static let childrenCall = "children"
 
     /// The attribute errors that never fail a per-child attribute read
     /// (`role`, `identifier`, `frame`): the attribute simply was not there,
@@ -113,10 +118,10 @@ public enum ReadClassifier {
             return .none(.apiDisabled)
         case "cannotComplete":
             return raw.extrasElapsed >= slowThreshold
-                ? .failed(.timedOut(call: "extrasBar"))
+                ? .failed(.timedOut(call: extrasBarCall))
                 : .none(.declinesAccessibility)
         default:
-            return .failed(.unexpectedError(call: "extrasBar", error: raw.extrasError))
+            return .failed(.unexpectedError(call: extrasBarCall, error: raw.extrasError))
         }
 
         switch raw.childrenError {
@@ -125,14 +130,14 @@ public enum ReadClassifier {
         case "cannotComplete":
             let elapsed = raw.childrenElapsed ?? 0
             return elapsed >= slowThreshold
-                ? .failed(.timedOut(call: "children"))
+                ? .failed(.timedOut(call: childrenCall))
                 : .items([])
         case let other?:
-            return .failed(.unexpectedError(call: "children", error: other))
+            return .failed(.unexpectedError(call: childrenCall, error: other))
         case nil:
             // Contract violation by the caller: extras succeeded, so a
             // children read must have been attempted. Fail rather than guess.
-            return .failed(.unexpectedError(call: "children", error: "missing"))
+            return .failed(.unexpectedError(call: childrenCall, error: "missing"))
         }
 
         // What the walk did, before what it produced. A stop is checked first

@@ -219,7 +219,7 @@ public struct ResponsivenessQuarantine: Equatable, Sendable {
 
     /// The only trigger: the process did not even hand over its extras bar.
     private static func isStall(_ raw: RawRead, timeout: Double) -> Bool {
-        ReadClassifier.outcome(raw, timeout: timeout) == .failed(.timedOut(call: "extrasBar"))
+        ReadClassifier.outcome(raw, timeout: timeout) == .failed(.timedOut(call: ReadClassifier.extrasBarCall))
     }
 
     private static func showsSnapshot(_ raw: RawRead) -> Bool {
