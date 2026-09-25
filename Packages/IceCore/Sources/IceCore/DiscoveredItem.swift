@@ -54,7 +54,20 @@ public enum OwnReadStatus: Equatable, Sendable {
 
 /// Whether a pass produced a trustworthy, complete picture (plan section
 /// 4.1.5).
+///
+/// Complete means complete for every process that was **eligible** in the pass
+/// (2026-09-25 responsiveness-quarantine plan, 3.6). A process under the
+/// discoverer's `ResponsivenessQuarantine` is not eligible, and is not read in
+/// ordinary passes: it entered only after one of its reads stalled on the extras
+/// bar in an earlier pass -- which that pass reported as a failure -- while it
+/// had never shown a non-empty extras snapshot, was at least a minute old, was
+/// absent from the caller's previous items, and fast answers outnumbered stalls.
+/// It is re-probed on a bounded backoff and listed in `DiscoveryResult.
+/// quarantined` for as long as it is skipped. A process that has shown a
+/// non-empty snapshot, or owned an item in the previous set, is never
+/// quarantined, so its failures always make a pass `incomplete`.
 public enum Completeness: Equatable, Sendable {
+    /// Every eligible process was read conclusively.
     case complete
     /// At least one process's read was `.failed` (own or third-party). The
     /// pids that failed, so a caller can carry exactly those forward.

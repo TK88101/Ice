@@ -107,6 +107,14 @@ public struct ExtrasRecord: Equatable, Sendable {
 /// `Int32` is layout-compatible with `pid_t` on Darwin. `isSelf` marks Ice's
 /// own process, which `ItemKey.tagTitle` and `TagCollision.split` both treat
 /// specially (D9; plan section 4.1.3).
+///
+/// Two clocks, on purpose. `launchTime` is LaunchServices' launch date and is
+/// what `ItemCatalog.carryOver` compares; `startTime` is the kernel's process
+/// start time and is what `ResponsivenessQuarantine` keys on. MEASURED
+/// 2026-09-25: the launch date is missing for 55 of 70 processes, every WebKit
+/// content process among them, while the kernel start time exists for all 70
+/// (responsiveness-quarantine plan, M3/M4) -- so the quarantine needed its own
+/// field, and carry-over keeps the one it always had.
 public struct ProcessInfoRecord: Equatable, Hashable, Sendable {
     public let pid: Int32
     public let bundleID: String?
@@ -114,14 +122,23 @@ public struct ProcessInfoRecord: Equatable, Hashable, Sendable {
     public let executableName: String?
     public let launchTime: Double?
     public let isSelf: Bool
+    /// The kernel's start time for this process, in seconds since 1970; `nil`
+    /// when it could not be read. Stable for a process's whole life, so it takes
+    /// part in this type's synthesized equality without making one process look
+    /// different from pass to pass.
+    public let startTime: Double?
 
-    public init(pid: Int32, bundleID: String?, localizedName: String?, executableName: String?, launchTime: Double?, isSelf: Bool) {
+    /// `startTime` alone has a default, and it is `nil` deliberately: a record
+    /// without one can never be quarantined, so a construction site that forgets
+    /// it can only switch the quarantine off, never aim it at the wrong process.
+    public init(pid: Int32, bundleID: String?, localizedName: String?, executableName: String?, launchTime: Double?, isSelf: Bool, startTime: Double? = nil) {
         self.pid = pid
         self.bundleID = bundleID
         self.localizedName = localizedName
         self.executableName = executableName
         self.launchTime = launchTime
         self.isSelf = isSelf
+        self.startTime = startTime
     }
 }
 
@@ -151,6 +168,13 @@ public struct RawRead: Equatable, Sendable {
     /// another attribute or child remained, so it is a policy-event flag and
     /// not a "work was skipped" flag. A stop on the very last attribute of the
     /// very last child sets it too.
+    ///
+    /// Also `true` when the walk was stopped from outside or refused outright
+    /// (2026-09-25 responsiveness-quarantine plan, 3.7): the caller's interrupt
+    /// -- the pass's deadline or its cancellation, polled before every child --
+    /// tripped, or the snapshot held more children than the reader's cap, in
+    /// which case no child is walked at all. Every cause fails the read the same
+    /// way; none is a shorter list of items.
     public let walkInterrupted: Bool
     /// The size of the children snapshot the walk was handed, beside the
     /// `records` it actually produced. `0` whenever the children read produced
