@@ -205,7 +205,7 @@ terminal, the shared prefs domain with six settings off for the run
 | question | answer |
 |---|---|
 | does Loading go away | yes: `Finished setting up app state` 1.1 s after the XPC start; no "Loading menu bar items…" in three search panels and two layout panes |
-| the XPC service | `start()` fails in 45 ms (`Session failed … XPCRichError Code=1`, `Start request returned nil`, `Session was cancelled`); the service logs nothing and no service process was ever seen; setup does not wait on it |
+| the XPC service | `start()` fails in 45 ms (`Session failed … XPCRichError Code=1`, `Start request returned nil`, `Session was cancelled`); the service logs nothing and no service process was ever seen; setup does not wait on it (**corrected 2026-09-25, READ `AppState.swift:70-72`: setup does await `start()`; it went on because the call failed fast. That build and its service were ad-hoc signed with no team identifier, and both ends require `.isFromSameTeam()` -- the signing, not macOS 27, is the INFERRED cause**) |
 | permissions | `Passed all permissions checks`; tccd attributes every check to the terminal (responsible) with Ice as the requester; Ice called `TCCAccessRequest` for Accessibility 27 times; no prompt, no write logged |
 | the list | per section, the search panel's names and right-to-left order equal the recorder's on-bar items at that moment (one Apple item under Ice's own name for it); before any collapse: all 11 under Visible, Hidden empty |
 | D10 | two show / hide cycles: at each panel the split was Visible 6 / Hidden 5, equal to `midX >= divider.minX` over the tick at that moment, names and order included |
