@@ -19,6 +19,16 @@ import PackageDescription
 //             section 5: the first run's supervisor, recorder, watchdog and
 //             restorer. IceWatchCore holds the pure rules (Foundation only,
 //             no AppKit, no Accessibility) and is the only tested target
+//   C1Core    docs/plans/2026-09-26-c1-protocol.md section 7, I1: the C1
+//             protocol's pure decisions (scan planner, preflight order and
+//             roster-snapshot checks, baseline-equivalence, the latch, run
+//             accounting, the spacer command parser). Standard library
+//             only, like IceWatchCore -- 100% line coverage.
+//   C1Live    section 7, I3/I4/I5's testable seams (the latching capturer,
+//             the C1 discoverer, the stage's dry-run/trip command
+//             sequencing) -- the live protocol pieces that need
+//             MenuBarCapture/MenuBarDetectorFeed to state their contracts
+//             but must still be reachable from a test target with fakes.
 let package = Package(
     name: "vzreplay",
     platforms: [
@@ -49,7 +59,9 @@ let package = Package(
         ),
         .executableTarget(
             name: "vzhelper",
-            dependencies: ["VZGlyphs"],
+            // I2: the spacer role's `length <pt>`/`rest` commands are
+            // parsed by C1Core's own pure parser, not reimplemented here.
+            dependencies: ["VZGlyphs", "C1Core"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         // T13/T14: the live protocol's controller.
@@ -57,6 +69,8 @@ let package = Package(
             name: "vizprobe",
             dependencies: [
                 "VZGlyphs",
+                "C1Core",
+                "C1Live",
                 .product(name: "IceCore", package: "IceCore"),
                 .product(name: "MenuBarCapture", package: "MenuBarCapture"),
                 .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),
@@ -75,5 +89,20 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(name: "IceWatchCoreTests", dependencies: ["IceWatchCore"]),
+        // C1 protocol (I1): pure decisions only, standard library only.
+        .target(name: "C1Core"),
+        .testTarget(name: "C1CoreTests", dependencies: ["C1Core"]),
+        // C1 protocol (I3/I4/I5): the live seams, testable with fakes.
+        .target(
+            name: "C1Live",
+            dependencies: [
+                "C1Core",
+                .product(name: "IceCore", package: "IceCore"),
+                .product(name: "MenuBarCapture", package: "MenuBarCapture"),
+                .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),
+                .product(name: "MenuBarDetectorFeed", package: "MenuBarDiscovery"),
+            ]
+        ),
+        .testTarget(name: "C1LiveTests", dependencies: ["C1Live"]),
     ]
 )

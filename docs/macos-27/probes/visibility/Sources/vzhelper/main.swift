@@ -4,6 +4,13 @@
 //
 //   vzhelper --controller <pid> --role target|reference|twin
 //       one item, identifier "vz-<role>", the role's glyph (2026-09-19 form)
+//   vzhelper --controller <pid> --role spacer
+//       C1 (docs/plans/2026-09-26-c1-protocol.md section 2): one status
+//       item resting as Ice's own control item rests (`variableLength` plus
+//       a chevron image, no marker views). Controlled by two more stdin
+//       commands, parsed by C1Core's own `SpacerCommandParser`:
+//         length <pt>  -> image = nil, length = pt (0-1000, else refused)
+//         rest         -> image = chevron, length = variableLength
 //
 //   vzhelper --controller <pid> --items 1|2 --identifiers none|<a>[,<b>]
 //            [--glyphs <g>[,<g>]] [--mimic-nodivider] [--autosave <name>]
@@ -44,6 +51,7 @@
 //   - a lifetime cap (default 300 s), independent of the controller.
 import AppKit
 import ApplicationServices
+import C1Core
 import VZGlyphs
 
 func option(_ name: String) -> String? {
@@ -55,7 +63,7 @@ func option(_ name: String) -> String? {
 }
 
 func usage(_ problem: String) -> Never {
-    FileHandle.standardError.write(Data("vzhelper: \(problem)\nusage: vzhelper --controller <pid> (--role target|reference|twin | --items 1|2 --identifiers none|<a>[,<b>] [--glyphs <g>[,<g>]] [--mimic-nodivider] [--autosave <name>]) [--lifetime <s>]\n".utf8))
+    FileHandle.standardError.write(Data("vzhelper: \(problem)\nusage: vzhelper --controller <pid> (--role target|reference|twin|spacer | --items 1|2 --identifiers none|<a>[,<b>] [--glyphs <g>[,<g>]] [--mimic-nodivider] [--autosave <name>]) [--lifetime <s>]\n".utf8))
     exit(64)
 }
 
@@ -69,6 +77,10 @@ struct Config {
     let mimicNoDivider: Bool
     let autosave: String?
     let lifetime: Double
+    /// C1's spacer role (I2): `items` is empty and `mimicNoDivider` is
+    /// irrelevant -- the spacer is neither a glyph item nor a `.noDivider`
+    /// stand-in, it is driven by `length`/`rest` alone.
+    let spacer: Bool
 }
 
 func parseConfig() -> Config {
@@ -76,13 +88,16 @@ func parseConfig() -> Config {
     guard lifetime > 0, lifetime <= 1800 else { usage("--lifetime must be in (0, 1800]") }
 
     if let roleName = option("--role") {
+        if roleName == "spacer" {
+            return Config(items: [], mimicNoDivider: false, autosave: nil, lifetime: lifetime, spacer: true)
+        }
         let glyph: Glyph
         switch roleName {
         case "target", "twin": glyph = .target
         case "reference": glyph = .reference
         default: usage("unknown --role \(roleName)")
         }
-        return Config(items: [ItemSpec(identifier: "vz-\(roleName)", glyph: glyph)], mimicNoDivider: false, autosave: nil, lifetime: lifetime)
+        return Config(items: [ItemSpec(identifier: "vz-\(roleName)", glyph: glyph)], mimicNoDivider: false, autosave: nil, lifetime: lifetime, spacer: false)
     }
 
     guard let count = option("--items").flatMap(Int.init), (1...2).contains(count) else {
@@ -108,7 +123,7 @@ func parseConfig() -> Config {
     if autosave != nil, count != 1 { usage("--autosave takes one item only") }
 
     let items = zip(identifiers, glyphs).map { ItemSpec(identifier: $0, glyph: $1) }
-    return Config(items: items, mimicNoDivider: mimic, autosave: autosave, lifetime: lifetime)
+    return Config(items: items, mimicNoDivider: mimic, autosave: autosave, lifetime: lifetime, spacer: false)
 }
 
 // Plain globals, not `guard let` locals: the delegate class and the stdin
@@ -316,10 +331,69 @@ func selfRead() -> [String: Any] {
     return object
 }
 
+/// C1's spacer role (I2, section 2): rests exactly as Ice's own control
+/// item rests -- `variableLength` plus a chevron-sized template image, the
+/// same rest shape `probes/safewidth/Sources/swctl/Spacer.swift` uses for
+/// its own instrumented spacer -- but with no marker views: I2 only needs
+/// the rest/expand behaviour the C1 discoverer and the preflight order
+/// check read, not safewidth's own pixel instrumentation.
+final class SpacerItem {
+    static let identifier = "vz-spacer"
+
+    private let statusItem: NSStatusItem
+
+    init() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.button?.setAccessibilityIdentifier(Self.identifier)
+        rest()
+    }
+
+    func apply(_ command: SpacerCommand) {
+        switch command {
+        case .rest: rest()
+        case .length(let pt): expand(to: pt)
+        }
+    }
+
+    func state() -> [String: Any] {
+        [
+            "identifier": Self.identifier,
+            "isVisible": statusItem.isVisible,
+            "length": Double(statusItem.length),
+            "resting": statusItem.length == NSStatusItem.variableLength,
+        ]
+    }
+
+    private func rest() {
+        statusItem.button?.image = Self.restImage
+        statusItem.length = NSStatusItem.variableLength
+    }
+
+    private func expand(to pt: Double) {
+        statusItem.button?.image = nil
+        statusItem.length = CGFloat(pt)
+    }
+
+    /// A chevron glyph about the width of Ice's; a template image, so it is
+    /// drawn in the bar's own tint and never matches a marker colour.
+    private static let restImage: NSImage? = {
+        let image = NSImage(systemSymbolName: "chevron.left.2", accessibilityDescription: nil)
+        image?.isTemplate = true
+        return image
+    }()
+}
+
 final class Delegate: NSObject, NSApplicationDelegate {
     var items = [HelperItem]()
+    var spacer: SpacerItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !config.spacer else {
+            let item = SpacerItem()
+            spacer = item
+            reply("up", ["pid": Int(getpid()), "items": 1, "spacer": true])
+            return
+        }
         guard config.mimicNoDivider else {
             for (index, spec) in config.items.enumerated() {
                 items.append(makePlainItem(index: index, spec: spec))
@@ -415,6 +489,18 @@ stdinSource.setEventHandler {
             reply("stalling", ["seconds": seconds])
             Thread.sleep(forTimeInterval: seconds)
             reply("resumed", ["seconds": seconds])
+        case "length", "rest":
+            // C1's spacer commands (I2, section 2), parsed once by
+            // C1Core's own pure parser so the range check (0-1000, else
+            // refused) lives in exactly one, fully tested place.
+            guard config.spacer, let spacer = delegate.spacer else { break }
+            switch SpacerCommandParser.parse(line) {
+            case .success(let command):
+                spacer.apply(command)
+                reply("spacer", spacer.state())
+            case .failure(let error):
+                reply("refused", ["command": line, "reason": "\(error)"])
+            }
         case "quit": exit(0)
         default: break
         }

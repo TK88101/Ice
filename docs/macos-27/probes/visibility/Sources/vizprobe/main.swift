@@ -79,8 +79,46 @@ if arguments.contains("--dry-run") {
     exit(DryRun.run())
 }
 
+// I5: `vizprobe c1` (docs/plans/2026-09-26-c1-protocol.md). `--dry` never
+// sends `length` (C1ExpansionDriver, C1Live) -- the one part of this stage
+// that is safe to run before the owner names a time.
+if arguments.first == "c1" {
+    guard let appsPath = option("--apps", in: arguments) else {
+        fail("c1: missing --apps <dir> (build.sh's output apps directory)")
+    }
+    guard let spacerPath = option("--spacer-app", in: arguments) else {
+        fail("c1: missing --spacer-app <path> (a bundle with a vzhelper binary under com.icespike4.spacer -- build.sh does not produce one yet)")
+    }
+    let appsURL = URL(fileURLWithPath: appsPath)
+    let c1Apps = C1Apps(
+        target: appsURL.appendingPathComponent("Target.app"),
+        protected: appsURL.appendingPathComponent("Protected.app"),
+        spacer: URL(fileURLWithPath: spacerPath)
+    )
+    let dry = arguments.contains("--dry")
+    let stage = StageC1(apps: c1Apps, dry: dry)
+    signal(SIGPIPE, SIG_IGN)
+    for number in [SIGINT, SIGTERM, SIGHUP] {
+        signal(number, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
+        source.setEventHandler {
+            FileHandle.standardError.write(Data("vizprobe c1: signal \(number) -- quitting helpers and exiting\n".utf8))
+            stage.emergencyStop()
+            exit(3)
+        }
+        source.resume()
+    }
+    let watchdogMinutes = option("--watchdog", in: arguments).flatMap(Double.init) ?? StageC1.watchdogMinutes
+    DispatchQueue.global().asyncAfter(deadline: .now() + watchdogMinutes * 60) {
+        FileHandle.standardError.write(Data("vizprobe c1: WATCHDOG after \(watchdogMinutes) min -- quitting helpers and exiting\n".utf8))
+        stage.emergencyStop()
+        exit(2)
+    }
+    exit(stage.run())
+}
+
 guard arguments.first == "live" else {
-    fail("usage: vizprobe --dry-run | vizprobe live --apps <dir>")
+    fail("usage: vizprobe --dry-run | vizprobe live --apps <dir> | vizprobe c1 --apps <dir> --spacer-app <path> [--dry]")
 }
 guard let appsPath = option("--apps", in: arguments) else {
     fail("live: missing --apps <dir> (build.sh's output apps directory)")
