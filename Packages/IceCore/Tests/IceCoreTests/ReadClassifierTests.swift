@@ -152,6 +152,16 @@ struct ReadClassifierTests {
         #expect(ReadClassifier.outcome(raw) == .failed(.partialWalk(childCount: 2, records: 1)))
     }
 
+    @Test("a snapshot whose children all failed to arrive is a partial walk, not an empty bar")
+    func emptyRecordsAgainstANonEmptySnapshotFails() {
+        // The shape a cast failure in the live reader produces: Accessibility
+        // handed back an array of three, the adapter could turn none of them
+        // into records, and nothing stopped the walk. Without the count this
+        // would read as "this process has no extras, read complete".
+        let raw = rawRead(records: [], walkInterrupted: false, childCount: 3)
+        #expect(ReadClassifier.outcome(raw) == .failed(.partialWalk(childCount: 3, records: 0)))
+    }
+
     @Test("the snapshot count is only compared when the children read actually produced one")
     func childCountIgnoredWhenChildrenReadFailed() {
         // A fast `cannotComplete` on the children read is still "no items", not

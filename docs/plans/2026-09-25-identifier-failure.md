@@ -436,7 +436,7 @@ T-8 before the code change and T-9 after it exist because re-freezing labels
 | the rule is right but the walk disobeys it | that is exactly what T-2's seam and scripted-read test exist for; a pure policy alone would not catch it (Codex round 2) |
 | a key flips when the identifier starts reading | documented, not fixed, by K1/K2/K5; K4 is the option that meets R-f, at the cost of state. R-f's necessity is a ruling, not an assumption |
 | `RawRead` gains two required fields | no defaults, so the compiler names every one of the 5 source and 41 test sites; `subtractOrigin` is called out by name because it reconstructs the value |
-| continuing the walk costs time on a hostile process | continue only after a **fast** error; the per-call timeout is unchanged; under K5 the walk never continues at all |
+| continuing the walk costs time on a hostile process | continue only after a **fast** error; the per-call timeout is unchanged. The arithmetic, measured off the code in review: for a process that answers this way at *every* child, worst-case AX calls per pass go from **4** (bar + children + role + identifier, then the break) to **2 + 6N** -- 122 at N = 20, about 30x. That is the cost of recovering the frame and the later children, not waste, and neither budget breaks: tolerance requires `elapsed < slowThreshold` (≈ 0.2 s) or the walk still stops, and `MenuBarDiscoverer`'s 2.0 s pass deadline is checked between processes, as it was before this change |
 | changing a pre-registered gate mid-protocol | P2 rejected for this run; P1 conditional on re-measuring both gates; P4 as the fallback |
 | iCloud duplicates after a rewrite | check for `X 2.swift` before every build, per project memory |
 | rollback | checkpoints on `wip/identifier-failure` only; never pushed, never merged; `git revert` per checkpoint |
@@ -518,6 +518,39 @@ Format: trigger → what changed → reason.
    turn on the identifier error but on the leftmost item's x, so it still needs
    that app (or any one menu bar icon) quit -- `predictedFree` is 113.5 pt against
    the 138.5 pt the predicate requires.
+
+10. **The two new facts are belt and braces today, and that is the point**
+   (simcodex round 1, the altitude and security reviews agreeing independently).
+   Under this exact policy no live read can reach them: the only tolerated error
+   is on `identifier`, `frame` is read after it, so every stop still leaves a
+   non-harmless `frame` on the interrupted child, which the per-record check
+   already fails -- `interruptedWalkFails` has to hand-build a `RawRead` the real
+   reader cannot produce. They are in the plan because that is a coincidence of
+   the read order, and Deviation 4 says the order is no longer load-bearing: the
+   moment a tolerance reaches `role` or `frame`, or the order changes, or a second
+   adapter produces a `RawRead`, they are what keeps R-e true instead of silently
+   regressing it. Said plainly in the code rather than implied to be load-bearing.
+11. **One real hole in the invariant, found by the security review and fixed**
+   (MEDIUM-2). `childCount` was taken *after* `(childrenValue as? [AXUIElement])
+   ?? []`, and that cast fails **wholesale** if any one element is not an
+   `AXUIElement`. A process could therefore return an array of N, have the
+   adapter produce zero records, and the pass would read `childrenError:
+   "success"`, `walkInterrupted: false`, `childCount: 0` -> `.items([])`: "this
+   process has no extras, read complete". Exactly the case the count was added to
+   catch, slipping past beside it. Now the count comes from the array
+   Accessibility returned (`CFArrayGetCount`), so such a read fails as
+   `.partialWalk`; a value that is not an array at all, or none, is unchanged,
+   because no array means no evidence of a child. Pinned by a new classifier test
+   with that exact shape (records empty, `childCount` 3).
+12. **`.discard` on the tolerated error** (security review LOW-1): the tolerated
+   verdict kept whatever the failed call returned, so "tolerated failure implies
+   no identifier" was true by trust, not by construction -- if Accessibility ever
+   populated the out-parameter while returning the error, the item would be keyed
+   on a string a failed call produced. Now discarded, and the policy test says so.
+13. **The census carries both facts** (security review LOW-6): `--census-json`
+   omitted them, which would have left the very artifact this tolerance was argued
+   from unable to tell a truncated walk from a complete one. Verified live: 70
+   reads, both keys present, none interrupted, no count mismatch.
 
 ## Appendix A -- review record
 

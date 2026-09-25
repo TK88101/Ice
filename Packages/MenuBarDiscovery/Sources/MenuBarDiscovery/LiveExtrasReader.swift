@@ -88,6 +88,21 @@ public struct LiveExtrasReader: ExtrasReading {
             return RawRead(process: process, extrasError: "success", extrasElapsed: barElapsed, childrenError: error, childrenElapsed: childrenElapsed, records: [], walkInterrupted: false, childCount: 0)
         }
 
+        // `childCount` has to describe what Accessibility returned, not what
+        // Swift could cast. `as? [AXUIElement]` fails *wholesale* when any one
+        // element is not an `AXUIElement`, and the `[]` fallback would then read
+        // as "this process has no extras" on an otherwise clean pass -- exactly
+        // the case the count exists to catch. Taking the count from the array
+        // itself makes such a read come back `.failed(.partialWalk)` instead.
+        // A value that is not an array at all, or none, is left as it was: no
+        // array means no evidence of any child, and "no extras" is the honest
+        // reading of that.
+        let snapshotCount: Int
+        if let childrenValue, CFGetTypeID(childrenValue) == CFArrayGetTypeID() {
+            snapshotCount = CFArrayGetCount(unsafeDowncast(childrenValue, to: CFArray.self))
+        } else {
+            snapshotCount = 0
+        }
         let children = (childrenValue as? [AXUIElement]) ?? []
         var records = [ExtrasRecord]()
         records.reserveCapacity(children.count)
@@ -108,7 +123,7 @@ public struct LiveExtrasReader: ExtrasReading {
             }
         }
 
-        return RawRead(process: process, extrasError: "success", extrasElapsed: barElapsed, childrenError: "success", childrenElapsed: childrenElapsed, records: records, walkInterrupted: interrupted, childCount: children.count)
+        return RawRead(process: process, extrasError: "success", extrasElapsed: barElapsed, childrenError: "success", childrenElapsed: childrenElapsed, records: records, walkInterrupted: interrupted, childCount: snapshotCount)
     }
 
     /// One attribute read exactly as the adapter performed it: what came
@@ -146,29 +161,25 @@ public struct LiveExtrasReader: ExtrasReading {
     ) -> (record: ExtrasRecord, stop: Bool) {
         var stopped = false
 
-        func read(_ attribute: String, _ axAttribute: String, skipped: Bool = false) -> AttributeRead<String> {
+        /// Generic over the value's type so the frame goes through the same
+        /// three steps as the five strings -- ask, classify, latch -- instead of
+        /// a second copy of them written inline.
+        func attribute<Value>(_ name: String, skipped: Bool = false, fetch: (Int) -> TimedRead<Value>) -> AttributeRead<Value> {
             guard !stopped, !skipped else { return AttributeRead(value: nil, error: notAttempted) }
-            let timed = readString(index, axAttribute)
-            let verdict = AttributeWalkPolicy.classify(attribute: attribute, rawError: timed.rawError, elapsed: timed.elapsed, timeout: timeout)
+            let timed = fetch(index)
+            let verdict = AttributeWalkPolicy.classify(attribute: name, rawError: timed.rawError, elapsed: timed.elapsed, timeout: timeout)
             if verdict.decision == .stopWalk { stopped = true }
             return AttributeRead(value: verdict.value == .keep ? timed.value : nil, error: verdict.recordedError)
         }
 
         // The names handed to the policy are the ones `ReadClassifier` uses for
         // the same attributes, so one vocabulary spans the rule and the verdict.
-        let role = read("role", roleAttribute)
-        let identifier = read("identifier", identifierAttribute)
-        let title = read("title", titleAttribute, skipped: !readsLabels)
-        let description = read("description", descriptionAttribute, skipped: !readsLabels)
-        let help = read("help", helpAttribute, skipped: !readsLabels)
-
-        var frame = AttributeRead<BarRect>(value: nil, error: notAttempted)
-        if !stopped {
-            let timed = readFrame(index)
-            let verdict = AttributeWalkPolicy.classify(attribute: "frame", rawError: timed.rawError, elapsed: timed.elapsed, timeout: timeout)
-            if verdict.decision == .stopWalk { stopped = true }
-            frame = AttributeRead(value: verdict.value == .keep ? timed.value : nil, error: verdict.recordedError)
-        }
+        let role = attribute("role") { readString($0, roleAttribute) }
+        let identifier = attribute("identifier") { readString($0, identifierAttribute) }
+        let title = attribute("title", skipped: !readsLabels) { readString($0, titleAttribute) }
+        let description = attribute("description", skipped: !readsLabels) { readString($0, descriptionAttribute) }
+        let help = attribute("help", skipped: !readsLabels) { readString($0, helpAttribute) }
+        let frame = attribute("frame", fetch: readFrame)
 
         let record = ExtrasRecord(childIndex: index, role: role, identifier: identifier, title: title, description: description, help: help, frame: frame)
         return (record, stopped)

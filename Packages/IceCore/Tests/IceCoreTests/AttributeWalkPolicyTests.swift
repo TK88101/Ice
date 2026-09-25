@@ -22,10 +22,13 @@ struct AttributeWalkPolicyTests {
 
     // MARK: - the tolerated case, and how narrow it is
 
-    @Test("a fast identifier failure lets the walk go on, keeping what the call returned")
+    @Test("a fast identifier failure lets the walk go on, and discards whatever the failed call returned")
     func fastIdentifierFailureProceeds() {
+        // `.discard` is what makes "tolerated failure implies no identifier"
+        // true by construction: reading past the error is only defensible
+        // because the item is keyed as if it had none.
         let verdict = AttributeWalkPolicy.classify(attribute: "identifier", rawError: "failure", elapsed: 0.001, timeout: timeout)
-        #expect(verdict == AttributeVerdict(recordedError: "failure", value: .keep, decision: .proceed))
+        #expect(verdict == AttributeVerdict(recordedError: "failure", value: .discard, decision: .proceed))
     }
 
     @Test("the same identifier failure taken slowly stops the walk")

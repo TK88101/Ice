@@ -79,18 +79,25 @@ public enum ReadClassifier {
     /// or this process does not support it. Everything else -- including
     /// `cannotComplete`, which for a single attribute carries no elapsed time
     /// to judge fast from slow -- fails the whole read (plan 4.1.2, row 3).
-    private static let harmlessAttributeErrors: Set<String> = ["success", "noValue", "attributeUnsupported"]
+    ///
+    /// Not `private`: `AttributeWalkPolicy` answers the same question one layer
+    /// earlier, at walk time, and the two must never disagree -- a walk that
+    /// read past an error this type then failed, or the reverse, is drift no
+    /// pass invariant can catch, because the walk simply never produces the
+    /// record that would have failed. One definition, read from both.
+    static let harmlessAttributeErrors: Set<String> = ["success", "noValue", "attributeUnsupported"]
 
-    /// `identifier` tolerates one error the other two do not: `failure`
-    /// (`kAXErrorFailure`). MEASURED 2026-09-25 -- a third-party process
-    /// answers `AXIdentifier` with it immediately and deterministically while
-    /// answering `AXFrame` correctly, and failing the whole process for it cost
-    /// that item its place in the list entirely and made every pass
+    /// The one hard error `identifier` tolerates that the other two do not:
+    /// `failure` (`kAXErrorFailure`). MEASURED 2026-09-25 -- a third-party
+    /// process answers `AXIdentifier` with it immediately and deterministically
+    /// while answering `AXFrame` correctly, and failing the whole process for it
+    /// cost that item its place in the list entirely and made every pass
     /// incomplete. Whether the error was fast enough to be read past is not
     /// decided here, because `AttributeRead` carries no duration:
-    /// `AttributeWalkPolicy` decides it where the clock is, and a stop it made
-    /// arrives here as `RawRead.walkInterrupted` instead.
-    private static let harmlessIdentifierErrors: Set<String> = harmlessAttributeErrors.union(["failure"])
+    /// `AttributeWalkPolicy` decides that where the clock is, and a stop it made
+    /// arrives here as `RawRead.walkInterrupted` instead. Shared with the policy
+    /// for the same reason the set above is.
+    static let toleratedIdentifierError = "failure"
 
     public static func outcome(_ raw: RawRead, timeout: Double = defaultTimeout) -> ReadOutcome {
         let slowThreshold = timeout * slowFraction
@@ -137,15 +144,25 @@ public enum ReadClassifier {
         }
         // Reached only when the children read succeeded (every other path has
         // returned above), so a snapshot existed and the records must account
-        // for all of it. Without this, a walk that lost children for any reason
-        // other than a policy stop would read as a process with fewer items.
+        // for all of it: a walk that lost children for any reason other than a
+        // policy stop would otherwise read as a process with fewer items.
+        //
+        // Honest about what these two checks are worth *today*: under the
+        // current policy they are belt and braces. The only tolerated error is
+        // on `identifier`, and `frame` is read after it, so any stop still
+        // leaves a non-harmless `frame` on the interrupted child -- which the
+        // per-record loop below already fails. They are here because that is a
+        // coincidence of the read order, and the order is explicitly no longer
+        // load-bearing: the moment a tolerance is added to `role` or `frame`, or
+        // the order changes, or a second adapter produces a `RawRead`, this is
+        // what keeps R-e true instead of silently regressing it.
         if raw.records.count != raw.childCount {
             return .failed(.partialWalk(childCount: raw.childCount, records: raw.records.count))
         }
 
         for record in raw.records {
             if let reason = attributeFailure(call: "role", read: record.role) { return .failed(reason) }
-            if let reason = attributeFailure(call: "identifier", read: record.identifier, harmless: harmlessIdentifierErrors) { return .failed(reason) }
+            if let reason = attributeFailure(call: "identifier", read: record.identifier, toleratesFailure: true) { return .failed(reason) }
             if let reason = attributeFailure(call: "frame", read: record.frame) { return .failed(reason) }
         }
 
@@ -154,16 +171,15 @@ public enum ReadClassifier {
 
     /// Shared by `role`/`identifier` (`AttributeRead<String>`) and `frame`
     /// (`AttributeRead<BarRect>`): only the error name decides, never the
-    /// value's type. `harmless` is a parameter because `identifier` tolerates
-    /// one error the other two do not.
+    /// value's type. `toleratesFailure` is a flag rather than a second set of
+    /// harmless errors, because the fact it carries is one string on one call.
     private static func attributeFailure<Value>(
         call: String,
         read: AttributeRead<Value>,
-        harmless: Set<String> = harmlessAttributeErrors
+        toleratesFailure: Bool = false
     ) -> FailureReason? {
-        guard harmless.contains(read.error) else {
-            return .unexpectedError(call: call, error: read.error)
-        }
-        return nil
+        if harmlessAttributeErrors.contains(read.error) { return nil }
+        if toleratesFailure, read.error == toleratedIdentifierError { return nil }
+        return .unexpectedError(call: call, error: read.error)
     }
 }

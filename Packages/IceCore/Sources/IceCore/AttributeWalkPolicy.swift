@@ -38,22 +38,27 @@ public struct AttributeVerdict: Equatable, Sendable {
 }
 
 public enum AttributeWalkPolicy {
-    /// The errors that never stop a walk: the attribute simply was not there,
-    /// or this process does not support it.
-    private static let harmlessErrors: Set<String> = ["success", "noValue", "attributeUnsupported"]
-
-    /// The one attribute whose hard error may be tolerated, named here so the
-    /// exception cannot silently widen to another attribute.
+    /// The one attribute whose hard error may be tolerated, named so the
+    /// exception cannot silently widen to another one. This is the policy's own
+    /// constant rather than `ReadClassifier`'s `call:` label: there the string
+    /// names a failure, here it gates behaviour.
     private static let identifierAttribute = "identifier"
 
-    /// The one error tolerated on that attribute. MEASURED 2026-09-25: a
-    /// third-party process answers `AXIdentifier` with `kAXErrorFailure`
-    /// immediately, deterministically, while answering `AXFrame` correctly --
-    /// so stopping the walk threw away a readable frame and every later child
-    /// of that process, and made every pass incomplete. Everything else, and
-    /// this same error taken slowly, still stops: a slow answer is a stall,
-    /// and a stall is not something to read past.
-    private static let toleratedIdentifierError = "failure"
+    /// Which errors are harmless, and which single error `identifier` tolerates
+    /// beyond them, both come from `ReadClassifier` -- the type that has to
+    /// accept whatever this one reads past. Restating either here would let the
+    /// walk and the verdict drift apart, and that drift is invisible to the pass
+    /// invariants: the walk would simply never produce the record that would
+    /// have failed.
+    ///
+    /// MEASURED 2026-09-25 for the tolerated error: a third-party process
+    /// answers `AXIdentifier` with `kAXErrorFailure` immediately and
+    /// deterministically while answering `AXFrame` correctly, so stopping the
+    /// walk threw away a readable frame and every later child of that process.
+    /// Everything else, and this same error taken slowly, still stops: a slow
+    /// answer is a stall, and a stall is not something to read past.
+    private static var harmlessErrors: Set<String> { ReadClassifier.harmlessAttributeErrors }
+    private static var toleratedIdentifierError: String { ReadClassifier.toleratedIdentifierError }
 
     /// Judges one read from the attribute it was, the `AXError` name it ended
     /// with, how long it took, and the per-call timeout in force.
@@ -83,7 +88,13 @@ public enum AttributeWalkPolicy {
         }
 
         if attribute == Self.identifierAttribute, rawError == Self.toleratedIdentifierError, elapsed < slowThreshold {
-            return AttributeVerdict(recordedError: rawError, value: .keep, decision: .proceed)
+            // `.discard`, not `.keep`: reading past this error is only defensible
+            // because the item is then keyed as if it had no identifier at all.
+            // If Accessibility ever populated the out-parameter while returning
+            // the error, keeping it would key the item on a string a failed call
+            // produced. Discarding makes "tolerated failure implies no
+            // identifier" true by construction rather than by trust.
+            return AttributeVerdict(recordedError: rawError, value: .discard, decision: .proceed)
         }
 
         return AttributeVerdict(recordedError: rawError, value: .keep, decision: .stopWalk)
