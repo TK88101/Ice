@@ -1,7 +1,7 @@
 # Can Ice hide menu bar items on macOS 27? -- the feasibility gate
 
 2026-09-25 · branch `wip/hiding-feasibility` (from `main` d21e1e6) · **v1, desk
-research only; no experiment has been run.** v3 after Codex rounds 1-2 (Appendix).
+research only; no experiment has been run.** v4 after Codex rounds 1-3 (Appendix).
 The owner approves this plan before anything that changes the menu bar's state,
 and each stage in section 6 needs its own go.
 
@@ -91,8 +91,8 @@ candidate is tested, never after), or **informational** (recorded, decides nothi
 | G1 | **effect on the observable population**: every item chosen to be hidden is not drawn; no `«` appears; no other item of the observable population disappears. The observable population is every item discovery lists plus the strip outside them (unexplained ink appearing or vanishing counts), in a bar whose contents the run controls (section 5). A pass says *no observed collateral effect*, not that none exists on another bar | the pixel detector plus the strip check; AX only says where to look | mandatory | mandatory |
 | G2 | **robust**: G1 still holds after (a) the frontmost app changes (narrow, mid, wide menus); (b) an item appears or leaves while hidden; (c) the hiding target's own app relaunches while hidden; (d) a Space switch, including into and out of a full-screen app's Space; (e) the menu bar's own auto-hide, set as the owner has it; (f) display sleep and wake, screen lock and unlock; (g) a second display, if one is attached | the protocol of 6.2 | (a)-(d) mandatory; (e)-(g) owner-waivable | same |
 | G3a | **recoverable, mechanism**: showing restores every hidden item within 2 s; when the mechanism's holder quits or is killed (SIGKILL), and when `MenuBarAgent` restarts, the bar returns to its true state with no manual step | the protocol of 6.2, N >= 3 each | mandatory | -- (replaced by G3p) |
-| G3p | **recoverable, persistent**: allowing the app again -- from Ice, and from System Settings with Ice gone -- restores every item of it within 2 s; a `MenuBarAgent` restart neither loses nor corrupts the setting | same | -- | mandatory |
-| G3b | **recoverable, Ice**: G3a or G3p when Ice itself quits or is killed | a separately approved run of a modified Ice after a GO; not part of this study | informational | informational |
+| G3p | **recoverable, persistent**: allowing the app again -- by the process that disallowed it (E2's writer, standing in for Ice, as a probe holder does for G3a), and from System Settings with that process gone -- restores every item of it within 2 s; a `MenuBarAgent` restart neither loses nor corrupts the setting | same | -- | mandatory |
+| G3b | **recoverable, Ice**: G3a or G3p done by Ice itself, and when Ice quits or is killed | a separately approved run of a modified Ice after a GO -- which is why a GO here is a feasibility GO; not part of this study | informational | informational |
 | G4 | **verifiable at runtime**: Ice can tell, for a stated class of items (glyphs with clear background, room >= 41 pt, fold absent at baseline), that G1 holds -- or, for E, can read the OS's allowance state for the intended app; every item outside that class, every unreadable verdict and every unreadable state falls back safely (shown, never reported hidden) | the check's verdicts with capture active (C); E3 (E) | mandatory | mandatory |
 | G5 | **selectable** at the granularity of the mode: per item and per section (Mode I); per app (Mode P) | by construction | mandatory | mandatory |
 | G6 | **supportable**: no private entitlement; no side effect beyond the menu bar that cannot be bounded; nothing the user cannot undo from System Settings if Ice is gone | read, plus the pre-registered observations | mandatory | mandatory |
@@ -288,3 +288,11 @@ coverage); 3 maintained, all conceded:
 | P1 new: C2's chosen length had no baseline pass | adopted | baseline G1 + G4, N = 5, in every configuration, before any robustness run |
 | P1 new: V2 did not affect the decision | adopted | "images first" makes a GO feasibility-only (section 1) |
 | P2 new: the isolated account's auto-hide may differ from the owner's | adopted | its menu bar settings mirror the owner's, recorded at S0.4 |
+
+### Round 3 -- Codex
+
+All seven round-2 findings resolved. One new P1, adopted: G3p asked for recovery
+"from Ice" while Ice is not run in this study. G3p now asks it of the process that
+disallowed the app (E2's writer, standing in for Ice exactly as a probe holder does
+for G3a); recovery by Ice itself is G3b, a separately approved run after a GO --
+which is what makes any GO here a feasibility GO.
