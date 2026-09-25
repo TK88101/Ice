@@ -1,4 +1,5 @@
 import Darwin
+import Foundation
 import IceCore
 import MenuBarCapture
 import MenuBarDiscovery
@@ -11,20 +12,41 @@ import MenuBarDiscovery
 /// frame minus the display origin, trimmed by `CheckFrames.trim` (D15) --
 /// never a raw AX frame, so no caller of this reader can feed the detector
 /// something D15 has not already corrected.
+///
+/// A keyed pid's read that cannot be trusted fails the whole snapshot
+/// (hardening plan H1): `.failed`, cut by the sample's deadline, or never
+/// reached before it. The contract (`MenuBarAXReading.read`) makes an absent id
+/// a *successful* read that found nothing, so reporting such a pid's keys as
+/// absent would fabricate a disappearance; `nil` makes the sampler take no
+/// sample instead. A `.none` read -- no extras bar, the process gone -- is an
+/// honest absence and still leaves its keys out.
 public struct DiscoveredFrameReader: MenuBarAXReading {
     private let extras: any ExtrasReading
     private let apps: any RunningAppsProviding
     private let origin: DiscoveryOrigin
     private let timeout: Double
+    private let now: @Sendable () -> Double
+    private let deadline: Double
 
-    public init(extras: any ExtrasReading, apps: any RunningAppsProviding, origin: DiscoveryOrigin, timeout: Double = ReadClassifier.defaultTimeout) {
+    /// `deadline` bounds one sample, measured on `now` from the start of `read`.
+    public init(
+        extras: any ExtrasReading,
+        apps: any RunningAppsProviding,
+        origin: DiscoveryOrigin,
+        timeout: Double = ReadClassifier.defaultTimeout,
+        now: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime },
+        deadline: Double = 2.0
+    ) {
         self.extras = extras
         self.apps = apps
         self.origin = origin
         self.timeout = timeout
+        self.now = now
+        self.deadline = deadline
     }
 
     public func read(items: [String: pid_t]) -> MenuBarAXSnapshot? {
+        let deadlineAt = now() + deadline
         let processesByPID = Dictionary(apps.processes().map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
 
         guard let agentPID = apps.agentPID() else { return nil }
@@ -41,12 +63,17 @@ public struct DiscoveredFrameReader: MenuBarAXReading {
         }
 
         var itemFrames = [String: ItemFrame]()
-        for (pid, entries) in keysByPID {
+        // Sorted, so which pid a deadline leaves unread never depends on hashing.
+        for (pid, entries) in keysByPID.sorted(by: { $0.key < $1.key }) {
+            guard now() < deadlineAt else { return nil }
             let process = processesByPID[pid] ?? minimalProcess(pid: pid)
-            // Never cut short: a sample reads a handful of known pids, with no
-            // pass deadline of its own to answer to.
-            let raw = extras.read(process, timeout: timeout, interrupt: { false })
-            guard case .items(let records) = ReadClassifier.outcome(raw, timeout: timeout) else { continue }
+            let raw = extras.read(process, timeout: timeout, interrupt: { now() >= deadlineAt })
+            let records: [ExtrasRecord]
+            switch ReadClassifier.outcome(raw, timeout: timeout) {
+            case .items(let read): records = read
+            case .none: continue
+            case .failed: return nil
+            }
 
             // Only the records `ItemCatalog.build` keys (role `AXMenuBarItem`),
             // so a key is matched against exactly the records it was made from.
