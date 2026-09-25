@@ -57,7 +57,7 @@ final class BarReader {
         var agentFrames: [WatchFrame] = []
         var agentState = ReadState.failed
         if let agent {
-            let raw = reader.read(agent, timeout: Self.timeout)
+            let raw = reader.read(agent, timeout: Self.timeout, interrupt: { false })
             switch ReadClassifier.outcome(raw, timeout: Self.timeout) {
             case .items(let children):
                 agentState = .ok
@@ -90,7 +90,7 @@ final class BarReader {
     }
 
     private func readProcess(_ process: ProcessInfoRecord, isIce: Bool) -> (ProcessRead, [String: Any]) {
-        let raw = reader.read(process, timeout: Self.timeout)
+        let raw = reader.read(process, timeout: Self.timeout, interrupt: { false })
         var record: [String: Any] = ["pid": process.pid, "owner": process.bundleID ?? process.executableName ?? "pid:\(process.pid)"]
         switch ReadClassifier.outcome(raw, timeout: Self.timeout) {
         case .failed:

@@ -120,14 +120,14 @@ extension StageRun {
             let dropped = pass?.set.dropped.filter { $0.pid == helper.pid }.map { "\($0.reason)" } ?? []
             let constraintFound = appKit?["constraintFound"] as? Bool ?? false
             let reproduced = appKit?["reachedNoDividerState"] as? Bool ?? false
-            let conclusive = pass.map { readConclusively(helper.pid, in: $0.set) } ?? false
+            let conclusive = pass.map { readConclusively(helper.pid, in: $0) } ?? false
 
             evidence.record("step9", [
                 "appKit": appKit ?? NSNull(),
                 "raw": raw.record(),
                 "listed": listed.map { describe($0) },
                 "dropped": dropped,
-                "readConclusively": pass.map { readConclusively(helper.pid, in: $0.set) } ?? false,
+                "readConclusively": pass.map { readConclusively(helper.pid, in: $0) } ?? false,
             ])
             summary["step9"] = [
                 "status": appKit == nil ? "inconclusive: no frames reply from the helper"
@@ -172,7 +172,7 @@ extension StageRun {
             let selfRead = helper.request("selfread", reply: "selfread", timeout: 5)
             let pass = discover()
             let listed = pass?.set.items.filter { $0.process.pid == helper.pid } ?? []
-            let listingConclusive = pass.map { readConclusively(helper.pid, in: $0.set) } ?? false
+            let listingConclusive = pass.map { readConclusively(helper.pid, in: $0) } ?? false
             let domainKeys = HelperDefaults.keys(HelperRole.target)
             let safety = safetyCheck(step)
 

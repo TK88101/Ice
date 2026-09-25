@@ -34,7 +34,7 @@ struct StandInDividerDiscoverer: Discovering {
             staleProcesses: set.staleProcesses,
             completeness: set.completeness
         )
-        return DiscoveryResult(set: stoodIn, duration: result.duration, origin: result.origin, bounds: result.bounds, nextCursor: result.nextCursor)
+        return DiscoveryResult(set: stoodIn, duration: result.duration, origin: result.origin, bounds: result.bounds, nextCursor: result.nextCursor, quarantined: result.quarantined)
     }
 }
 

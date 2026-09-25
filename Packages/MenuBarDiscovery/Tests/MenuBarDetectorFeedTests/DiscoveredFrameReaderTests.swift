@@ -50,6 +50,19 @@ struct DiscoveredFrameReaderTests {
         #expect(snapshot?.itemFrames[key.encoded] == ItemFrame(id: key.encoded, minX: 201, minY: 4.5, width: 22, height: 24))
     }
 
+    @Test("a sample never cuts a walk short: every read it makes, the agent's included, is handed an interrupt that says no")
+    func neverInterruptsAWalk() {
+        let key = ItemKey(namespace: "com.example.p501", identifier: "beta", pid: 501, childIndex: nil)
+        let extras = makeExtras { process, _ in
+            readerRawRead(process: process, records: [readerExtrasRecord(childIndex: 0, identifier: "beta", minX: 200)])
+        }
+        let reader = makeReader(extras: extras, processes: [readerTestProcess(pid: 501)])
+
+        _ = reader.read(items: [key.encoded: 501])
+
+        #expect(extras.interrupts == [false, false])
+    }
+
     @Test("only AXMenuBarItem records are matched, as ItemCatalog keys them: another empty-identifier child does not hide an .unnamed key")
     func nonItemRolesAreNotMatched() {
         let key = ItemKey(namespace: "com.example.p509", identifier: "", pid: 509, childIndex: nil)

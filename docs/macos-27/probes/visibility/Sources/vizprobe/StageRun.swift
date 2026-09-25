@@ -404,7 +404,7 @@ final class StageRun {
     func discoverItems(of pid: pid_t, count: Int) -> (result: DiscoveryResult, items: [DiscoveredItem])? {
         let deadline = Date().addingTimeInterval(5)
         repeat {
-            if let result = discover(), readConclusively(pid, in: result.set) {
+            if let result = discover(), readConclusively(pid, in: result) {
                 let items = result.set.items.filter { $0.process.pid == pid }
                 if items.count == count { return (result, items) }
             }
@@ -413,8 +413,12 @@ final class StageRun {
         return nil
     }
 
-    func readConclusively(_ pid: pid_t, in set: DiscoveredItemSet) -> Bool {
-        switch set.completeness {
+    /// A quarantined pid was not read at all, whatever `.complete` says: that
+    /// completeness speaks only for eligible processes (2026-09-25
+    /// responsiveness-quarantine plan, 3.6).
+    func readConclusively(_ pid: pid_t, in result: DiscoveryResult) -> Bool {
+        if result.quarantined.contains(where: { $0.pid == pid }) { return false }
+        switch result.set.completeness {
         case .complete: return true
         case .incomplete(let failed): return !failed.contains(pid)
         case .permissionDenied: return false

@@ -198,7 +198,7 @@ func fixtureSet(items: [DiscoveredItem], hiddenDivider: DividerReading? = fixtur
 }
 
 func fixtureDiscovery(set: DiscoveredItemSet, origin: DiscoveryOrigin = DiscoveryOrigin(x: 0, y: 0)) -> DiscoveryResult {
-    DiscoveryResult(set: set, duration: 0, origin: origin, bounds: fixtureBounds, nextCursor: 0)
+    DiscoveryResult(set: set, duration: 0, origin: origin, bounds: fixtureBounds, nextCursor: 0, quarantined: [])
 }
 
 // MARK: - Fakes for `DiscoveredFrameReader` (its own seams: `ExtrasReading`,
@@ -218,13 +218,18 @@ final class FakeExtrasReader: ExtrasReading, @unchecked Sendable {
     private let handler: @Sendable (ProcessInfoRecord, Double) -> RawRead
     private let lock = NSLock()
     private(set) var calls: [ProcessInfoRecord] = []
+    private(set) var interrupts: [Bool] = []
 
     init(handler: @escaping @Sendable (ProcessInfoRecord, Double) -> RawRead) {
         self.handler = handler
     }
 
-    func read(_ process: ProcessInfoRecord, timeout: Double) -> RawRead {
-        lock.withLock { calls.append(process) }
+    func read(_ process: ProcessInfoRecord, timeout: Double, interrupt: () -> Bool) -> RawRead {
+        let interrupted = interrupt()
+        lock.withLock {
+            calls.append(process)
+            interrupts.append(interrupted)
+        }
         return handler(process, timeout)
     }
 

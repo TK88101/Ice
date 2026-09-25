@@ -24,9 +24,16 @@ final class DiscoveryBox<Value>: @unchecked Sendable {
 /// Runs the whole AX walk (plan section 4.2): every running process
 /// including its own, starting each pass at the rotating cursor where the
 /// previous pass's deadline stopped, so a truncation never falls on the same
-/// processes twice running; cancellation and the deadline are both checked
-/// between processes; the result has the display's origin already subtracted
+/// processes twice running; cancellation and the deadline are checked between
+/// processes and, through the interrupt every read is handed, between the
+/// children of one walk; the result has the display's origin already subtracted
 /// from every frame and `ItemCatalog.carryOver` already applied.
+///
+/// It also keeps a `ResponsivenessQuarantine` across passes (2026-09-25
+/// responsiveness-quarantine plan, section 3): quarantined processes are left
+/// out of the rotation and re-probed after it, only while one timeout still fits
+/// the pass's budget, so they can never push an eligible process into the
+/// unread tail.
 ///
 /// Everything happens on `queue`, a dedicated serial queue -- never the main
 /// thread or the cooperative thread pool (D19) -- reached from `async` via
@@ -41,6 +48,9 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
     private let isTrusted: @Sendable () -> Bool
     private let ownIdentifiers: OwnIdentifiers
     private let now: @Sendable () -> Double
+    /// Wall-clock seconds since 1970, for the quarantine's age gate: a process's
+    /// start time is on that clock, while `now` is monotonic.
+    private let wallClock: @Sendable () -> Double
     private let timeout: Double
     private let deadline: Double
     private let queue: DispatchQueue
@@ -49,6 +59,10 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
     /// stopped at.
     private let cursor = DiscoveryBox(0)
 
+    /// The quarantine the next pass starts from; stored only by a pass that
+    /// completes, like the cursor.
+    private let quarantine = DiscoveryBox(ResponsivenessQuarantine())
+
     public init(
         apps: any RunningAppsProviding,
         reader: any ExtrasReading,
@@ -56,6 +70,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         isTrusted: @escaping @Sendable () -> Bool,
         ownIdentifiers: OwnIdentifiers,
         now: @escaping @Sendable () -> Double,
+        wallClock: @escaping @Sendable () -> Double = { Date().timeIntervalSince1970 },
         timeout: Double = ReadClassifier.defaultTimeout,
         deadline: Double = 2.0,
         queue: DispatchQueue = DispatchQueue(label: "com.icereverse.MenuBarDiscovery.MenuBarDiscoverer")
@@ -66,6 +81,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         self.isTrusted = isTrusted
         self.ownIdentifiers = ownIdentifiers
         self.now = now
+        self.wallClock = wallClock
         self.timeout = timeout
         self.deadline = deadline
         self.queue = queue
@@ -105,41 +121,101 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
 
         let startIndex = count > 0 ? cursor.get() % count : 0
         let deadlineAt = passStart + deadline
+        let state = quarantine.get()
+        let context = QuarantineContext(agentPID: agentPID, previous: previous, wallNow: wallClock())
+        // Handed to every read, the first of the pass included: the walk polls it
+        // before each child.
+        let interrupt = { cancelled.get() || self.now() >= deadlineAt }
 
+        // The quarantine judges the whole pass at one instant, its start: who is
+        // skipped, who is due, who has lapsed, and when the next probes fall. With
+        // several instants a process could be skipped by the rotation and then,
+        // having lapsed by settlement, be neither read nor listed (security
+        // re-check LOW-N1; test d15).
+        guard let rotation = rotate(processes, from: startIndex, state: state, context: context, judgedAt: passStart, deadlineAt: deadlineAt, interrupt: interrupt, cancelled: cancelled) else {
+            return nil
+        }
+
+        // Re-probes only after a rotation that was not cut short, and only while
+        // one timeout still fits: they never take budget from an eligible process.
+        var reprobes = [RawRead]()
+        if !rotation.truncated {
+            for process in state.dueReprobes(among: processes, context: context, now: passStart) {
+                if cancelled.get() { return nil }
+                guard now() + timeout <= deadlineAt else { break }
+                reprobes.append(reader.read(process, timeout: timeout, interrupt: interrupt))
+            }
+        }
+        if cancelled.get() { return nil }
+
+        let buildTime = now()
+        let settlement = state.settle(processes: processes, reads: rotation.reads, reprobes: reprobes, context: context, now: passStart, timeout: timeout)
+        let adjustedReads = settlement.admitted.map { subtractOrigin($0, origin: origin) }
+        let built = ItemCatalog.build(reads: adjustedReads, agentPID: agentPID, bounds: displaySnapshot.bounds, isTrusted: isTrusted(), ownIdentifiers: ownIdentifiers, now: buildTime, timeout: timeout)
+        let carried = ItemCatalog.carryOver(previous: previous, current: built, now: buildTime)
+
+        cursor.set(rotation.nextCursor)
+        quarantine.set(settlement.quarantine)
+
+        return DiscoveryResult(set: carried, duration: now() - passStart, origin: origin, bounds: displaySnapshot.bounds, nextCursor: rotation.nextCursor, quarantined: settlement.quarantined)
+    }
+
+    /// One pass's rotation, from `startIndex`: every process not skipped by the
+    /// quarantine, read in turn until the deadline, then a synthetic
+    /// `notAttempted` read for every later offset that is not skipped either --
+    /// the tail is built from offsets, so a skipped process can never make it
+    /// read one process twice or another not at all. `nil` when cancelled.
+    ///
+    /// The cursor: where the deadline stopped the pass before a read, that
+    /// process is next (as before). Where a read itself came back cut past the
+    /// deadline, it is kept as the failure it is and the cursor goes **on** it if
+    /// it was not the pass's first -- so next pass it has the whole budget -- and
+    /// **past** it if it was, since it already had the whole budget. Either way
+    /// the cursor never stays where the pass started, so every pass makes
+    /// progress (plan 3.7).
+    private func rotate(
+        _ processes: [ProcessInfoRecord],
+        from startIndex: Int,
+        state: ResponsivenessQuarantine,
+        context: QuarantineContext,
+        judgedAt: Double,
+        deadlineAt: Double,
+        interrupt: () -> Bool,
+        cancelled: DiscoveryBox<Bool>
+    ) -> (reads: [RawRead], nextCursor: Int, truncated: Bool)? {
+        let count = processes.count
         var reads = [RawRead]()
         reads.reserveCapacity(count)
-        var truncationIndex: Int?
+        var tailStart: Int?
+        var nextCursor = 0
 
         for offset in 0..<count {
             if cancelled.get() { return nil }
             let index = (startIndex + offset) % count
-            if now() >= deadlineAt {
-                truncationIndex = index
+            let process = processes[index]
+            if state.isSkipped(process, context: context, now: judgedAt) { continue }
+            if offset > 0, now() >= deadlineAt {
+                tailStart = offset
+                nextCursor = index
                 break
             }
-            reads.append(reader.read(processes[index], timeout: timeout))
-        }
-
-        if let truncationIndex {
-            var index = truncationIndex
-            var remaining = count - reads.count
-            while remaining > 0 {
-                reads.append(RawRead(process: processes[index], extrasError: "notAttempted", extrasElapsed: 0, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0))
-                index = (index + 1) % count
-                remaining -= 1
+            let raw = reader.read(process, timeout: timeout, interrupt: interrupt)
+            reads.append(raw)
+            if raw.walkInterrupted, now() >= deadlineAt {
+                tailStart = offset + 1
+                nextCursor = offset == 0 ? (index + 1) % count : index
+                break
             }
         }
+        if cancelled.get() { return nil }
 
-        let adjustedReads = reads.map { subtractOrigin($0, origin: origin) }
-
-        let buildTime = now()
-        let built = ItemCatalog.build(reads: adjustedReads, agentPID: agentPID, bounds: displaySnapshot.bounds, isTrusted: isTrusted(), ownIdentifiers: ownIdentifiers, now: buildTime, timeout: timeout)
-        let carried = ItemCatalog.carryOver(previous: previous, current: built, now: buildTime)
-
-        let nextCursor = truncationIndex ?? 0
-        cursor.set(nextCursor)
-
-        return DiscoveryResult(set: carried, duration: now() - passStart, origin: origin, bounds: displaySnapshot.bounds, nextCursor: nextCursor)
+        guard let tailStart else { return (reads, nextCursor, false) }
+        for offset in tailStart..<count {
+            let process = processes[(startIndex + offset) % count]
+            if state.isSkipped(process, context: context, now: judgedAt) { continue }
+            reads.append(RawRead(process: process, extrasError: "notAttempted", extrasElapsed: 0, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0))
+        }
+        return (reads, nextCursor, true)
     }
 
     /// Every AX frame in `raw.records` is in the global Accessibility

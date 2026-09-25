@@ -63,17 +63,30 @@ final class FakeExtrasReader: ExtrasReading, @unchecked Sendable {
     private let lock = NSLock()
     private var calls: [ProcessInfoRecord] = []
     private var callThreads: [Bool] = []
+    private var interrupts: [Bool] = []
 
     init(handler: @escaping @Sendable (ProcessInfoRecord, Double) -> RawRead) {
         self.handler = handler
     }
 
-    func read(_ process: ProcessInfoRecord, timeout: Double) -> RawRead {
+    /// Runs the handler, then asks `interrupt` once and records the answer --
+    /// what the caller's closure said at the moment this read would next have
+    /// polled it (the fake clock may have moved during the handler).
+    func read(_ process: ProcessInfoRecord, timeout: Double, interrupt: () -> Bool) -> RawRead {
         lock.withLock {
             calls.append(process)
             callThreads.append(Thread.isMainThread)
         }
-        return handler(process, timeout)
+        let raw = handler(process, timeout)
+        let interrupted = interrupt()
+        lock.withLock { interrupts.append(interrupted) }
+        return raw
+    }
+
+    /// One entry per call, in call order: what `interrupt` answered after the
+    /// handler ran.
+    var recordedInterrupts: [Bool] {
+        lock.withLock { interrupts }
     }
 
     var callCount: Int {
@@ -99,8 +112,8 @@ struct FakeDisplay: DisplayProviding {
 
 // MARK: - Shared fixtures
 
-func testProcess(pid: Int32, bundleID: String? = nil, isSelf: Bool = false, launchTime: Double? = nil) -> ProcessInfoRecord {
-    ProcessInfoRecord(pid: pid, bundleID: bundleID ?? "com.example.p\(pid)", localizedName: nil, executableName: nil, launchTime: launchTime, isSelf: isSelf)
+func testProcess(pid: Int32, bundleID: String? = nil, isSelf: Bool = false, launchTime: Double? = nil, startTime: Double? = nil) -> ProcessInfoRecord {
+    ProcessInfoRecord(pid: pid, bundleID: bundleID ?? "com.example.p\(pid)", localizedName: nil, executableName: nil, launchTime: launchTime, isSelf: isSelf, startTime: startTime)
 }
 
 func ok(_ value: String = "") -> AttributeRead<String> {
