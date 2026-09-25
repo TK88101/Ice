@@ -1,9 +1,9 @@
 # Can Ice hide menu bar items on macOS 27? -- the feasibility gate
 
 2026-09-25 · branch `wip/hiding-feasibility` (from `main` d21e1e6) · **v1, desk
-research only; no experiment has been run.** The owner approves this plan before
-anything that changes the menu bar's state, and each stage in section 6 needs its
-own go.
+research only; no experiment has been run.** v2 after Codex round 1 (Appendix).
+The owner approves this plan before anything that changes the menu bar's state,
+and each stage in section 6 needs its own go.
 
 Converged order (not re-opened): first this gate -- hiding that is reliable and
 recoverable across layouts, app switches and Spaces, or a declared read-only
@@ -14,14 +14,19 @@ likely disabled, not fixed).
 
 One of two outcomes, written up for the owner:
 
-- **GO** -- at least one mechanism passes every gate criterion (section 3). Its
-  implementation is a separate plan (section 8 lists what it would touch).
+- **GO** -- at least one mechanism meets every **mandatory** criterion of section 3,
+  and every **owner-waivable** criterion it does not meet was waived by the owner
+  *before* its testing began (section 7). Its implementation is a separate plan
+  (section 8 lists what it would touch).
 - **NO-GO** -- none does. macOS 27 is declared read-only: `STATUS.md` already
   says that this is the fallback, and section 9 lists what read-only mode changes.
 
-A candidate is dropped the first time it fails a kill criterion (G1, G3 or G6),
-after one replication to rule out a flake. The study stops as soon as the outcome
-is settled.
+Staged elimination (Codex round 1): the owner's value calls and the structural
+questions (does the mechanism exist, can it be verified, is there a common safe
+setting) are settled first; robustness is run only for a candidate that can still
+produce GO. A candidate is dropped the first time it fails a mandatory criterion,
+after one replication to rule out a flake. The study stops as soon as the outcome is
+settled.
 
 ## 2. What is known (desk)
 
@@ -68,102 +73,135 @@ Constraints any GO has to live with (READ unless tagged):
 
 ## 3. The gate -- what a mechanism must show
 
-| # | criterion | measured how | kind |
+Each criterion has one disposition: **mandatory** (a failure drops the candidate),
+**owner-waivable** (the owner may waive it for a candidate before that candidate is
+tested, never after), or **informational** (recorded, decides nothing).
+
+| # | criterion | measured how | disposition |
 |---|---|---|---|
-| G1 | **effect**: every item chosen to be hidden is not drawn; no `«` appears; nothing else disappears (other items, system items, the microphone/camera indicator) | the pixel detector plus a strip check of every other listed item; AX only says where to look | kill |
-| G2 | **robust**: G1 still holds after (a) the frontmost app changes (narrow, mid, wide menus); (b) an item appears or leaves while hidden; (c) a Space switch, including into and out of a full-screen app's Space; (d) display sleep and wake, screen lock and unlock; (e) a second display, if one is attached | N >= 5 each; a verdict of `unreadable` counts as not shown, never as a pass | kill for (a)-(c); (d)-(e) owner may accept a stated gap |
-| G3 | **recoverable**: showing restores every hidden item within 2 s; after Ice quits, after Ice is killed (SIGKILL), and after `MenuBarAgent` restarts, the bar returns to its true state with no manual step | detector plus the strip check, N >= 3 each | kill |
-| G4 | **verifiable at runtime**: Ice itself can tell that G1 holds on the user's bar, or it would fail silently | the check's verdict on the mechanism's own state | kill for C; E and D may substitute the OS's own state if it can be read |
-| G5 | **selectable** at the granularity Ice offers (per item, per section) | by construction | value call if only per app |
-| G6 | **supportable**: no private entitlement; no side effect beyond the menu bar; nothing the user cannot undo from System Settings if Ice is gone | read + observed during G1-G3 | kill |
+| G1 | **effect on the observable population**: every item chosen to be hidden is not drawn; no `«` appears; no other item of the observable population disappears. The observable population is every item discovery lists plus the strip outside them (unexplained ink appearing or vanishing counts), in a bar whose contents the run controls (section 5). A pass says *no observed collateral effect*, not that none exists on another bar; system items discovery does not list are watched by the strip check only | the pixel detector plus the strip check; AX only says where to look | mandatory |
+| G2 | **robust**: G1 still holds after (a) the frontmost app changes (narrow, mid, wide menus); (b) an item appears or leaves while hidden; (c) the hiding target's own app relaunches while hidden; (d) a Space switch, including into and out of a full-screen app's Space; (e) the menu bar's own auto-hide, if the owner uses it; (f) display sleep and wake, screen lock and unlock; (g) a second display, if one is attached | the protocol of 6.2 | (a)-(d) mandatory; (e)-(g) owner-waivable |
+| G3a | **recoverable, mechanism**: showing restores every hidden item within 2 s; when the process holding the mechanism quits or is killed (SIGKILL), and when `MenuBarAgent` restarts, the bar returns to its true state with no manual step | the protocol of 6.2, N >= 3 each | mandatory -- except that for E the owner may instead accept, before testing, that hiding is **persistent** and undone from System Settings (V1) |
+| G3b | **recoverable, Ice**: the same when Ice itself quits or is killed | a separately approved run of a modified Ice after a GO; not part of this study | informational here |
+| G4 | **verifiable at runtime**: Ice can tell, for a stated class of items (glyphs with clear background, room >= 41 pt, fold absent at baseline), that G1 holds; every item outside that class, and every unreadable verdict, falls back safely (shown, never reported hidden) | the check's verdicts on the mechanism's own state, capture active | mandatory for C; for E the OS's own state may stand in if Ice can read it |
+| G5 | **selectable** at the granularity Ice offers (per item, per section) | E and D act per app (bundle id): two items of one app cannot be separated, and a section mixing items of one app cannot be honoured | mandatory -- E and D fail it unless the owner accepts a per-app mode before testing (V1) |
+| G6 | **supportable**: no private entitlement; no side effect beyond the menu bar; nothing the user cannot undo from System Settings if Ice is gone | read, plus a pre-registered list of observations | mandatory; an effect outside the menu bar that cannot be bounded counts as a failure (so D fails it by default, section 4) |
+
+Unsupported unless separately tested, and stated as such in any GO: logout and
+login, restart, attaching or detaching a display.
 
 ## 4. Order of candidates, and why
 
-1. **E first.** If the OS offers the switch, it is robust by construction
-   (persisted, applied by the agent itself, restored by it, visible and reversible
-   in System Settings) and needs no geometry. What can kill it is cheap to learn:
-   whether it exists on 27 as a user setting, whether a third party can set it
-   without an entitlement or a privacy prompt, and whether per-app granularity is
-   acceptable (G5, the owner's call).
-2. **C second.** Public API and Ice's own mechanism at another length. What can kill
-   it: the band moving with the room (so a fixed length fails G2a/b), a runtime
-   length choice the detector cannot confirm (G4), or the band not surviving a
-   Space or app switch.
-3. **D last.** A private "assessment mode" assertion whose allow-list hides
-   everything unlisted -- including items that appear while it is held -- with no
-   measured restore on invalidation or on holder death. It is attempted only in an
-   isolated account, and only if E and C both fail.
+1. **E first, if V1 allows it.** If the OS offers the switch, it is robust by
+   construction (persisted, applied by the agent itself, visible and reversible in
+   System Settings) and needs no geometry. It is also per app and persistent, so it
+   passes G3a and G5 only if the owner accepts a persistent per-app mode before it is
+   tested (V1); otherwise it is dropped at stage 0.
+2. **C second.** Public API and Ice's own mechanism at another length. It is decided
+   in the cheapest order: does the detector give a usable verdict in the band at all
+   (C1, a smoke test with capture active), is there one length safe in every layout
+   (C2), and only then robustness.
+3. **D excluded by default.** A private "assessment mode" assertion whose effects
+   outside the menu bar are unknown and cannot be bounded by observation (G6), whose
+   allow-list hides everything unlisted -- including items that appear while it is
+   held -- and which needs a complete, stable inventory of every other app and system
+   item to be selective. It is reconsidered only if the owner answers V3 yes **and**
+   E and C are both dropped; then G6 is narrowed to a pre-registered list of
+   observations, and any result is limited to the isolated account's population.
 
 ## 5. Environment
 
 - **Sacrificial helpers only**: `com.icespike4.target` / `.protected` (vzhelper);
-  never the user's items; the user-item safety monitor stops a run on two
-  consecutive misses.
-- **An isolated macOS user account is strongly preferred**, and required for D and
-  for C's transfer runs: an empty bar gives the room this account lacks, and nothing
-  of the owner's can be hidden by an allow-list or displaced by a spacer. Creating
-  it is the owner's action.
-- Ice itself is not run in stages 0-2 (the mechanisms are exercised by the probes);
-  a stage-3 run of a modified Ice would be a separate go.
+  never the user's items.
+- **An isolated macOS user account is required** for every run that expands a spacer
+  (all of C -- the owner's standing constraint is that no spacer is expanded on their
+  bar), for any programmatic write of E (E2), and for D. Its empty bar also gives the
+  room this account lacks. Creating it is the owner's action; so is lifting the
+  no-spacer constraint inside it.
+- On the owner's own account, only E1 (the owner switching the **helper's** entry by
+  hand) and stage 0 run.
+- **Latch**: the first credible disappearance of anything outside the target -- one
+  miss, not two -- stops the run and restores at once (the spacer collapsed, the
+  helper's entry switched back, the holder quit), then the bar is re-read.
+- Ice itself is not run in this study (G3b is a later, separate go).
 - Event injection (a Space switch by Control-arrow, clicks) happens only with the
   owner's explicit go for that run; the alternative is the owner doing it by hand
   while the instrument records.
 - Session-wide steps -- display sleep, screen lock, `killall MenuBarAgent` -- each
-  need their own go.
+  need their own go, and in the isolated account.
 - No recordings kept; captures used for verdicts are deleted afterwards or kept only
   in the evidence directory, as the owner decides. Output that names apps goes only
   to the evidence directory.
 
 ## 6. Stages
 
-Each task: what, then DoD.
+Each task: what, then DoD. Before each stage's go, its runs are pre-registered in a
+short protocol document (stimulus, timing, settled-state predicate, controls, reset
+check, accounting -- 6.2), which Codex reviews.
 
-### Stage 0 -- desk and eyes only, no state change
+### Stage 0 -- desk, eyes and the owner's value calls; no state change
 
 | # | task | DoD |
 |---|---|---|
 | S0.1 | The owner opens System Settings' menu bar settings **and only looks**: is there a per-app "allow in the menu bar" list, and are the sacrificial helpers in it? | yes/no recorded, with a screenshot the owner may delete |
-| S0.2 | Read-only: where the tracked-application store lives, who owns it, whether it is under an app-data privacy fence (reading another group container can raise a privacy prompt -- so this runs with the owner present, or not at all) | ownership and protection recorded; no content read |
-| S0.3 | Read-only: `MenuBarAgent` log lines for `Disallowed application` over the last day (count only), to learn whether the gate already acts on this machine | count recorded |
-| S0.4 | Decide the environment: isolated account yes/no; second display yes/no | recorded; it scopes stages 1-2 |
+| S0.2 | Read-only: where the tracked-application store lives, who owns it, whether it is under an app-data privacy fence (reading another group container can raise a privacy prompt -- so this runs with the owner present, or not at all). It says nothing about whether writing is safe | ownership and protection recorded; no content read |
+| S0.3 | Read-only: `MenuBarAgent` log lines for `Disallowed application` over the last day (count only) | count recorded |
+| S0.4 | The environment: isolated account yes/no; second display yes/no; the menu bar's auto-hide on/off | recorded; it scopes stages 1-2 |
+| S0.5 | The owner answers V1-V4 (section 7) | answers recorded before stage 1 |
 
-**Kill after stage 0**: if S0.1 finds no such setting, E is dropped.
+**Dropped after stage 0**: E if S0.1 finds no such setting or V1 is no; D unless V3
+is yes (and even then it waits for E and C to be dropped).
 
-### Stage 1 -- does the mechanism exist (helpers only; each run its own go)
+### Stage 1 -- structure: does it exist, can it be verified, is there a safe setting
 
 | # | task | pass | DoD |
 |---|---|---|---|
-| E1 | The owner switches the **helper's** entry off in System Settings (by hand -- nothing programmatic yet), then on again; the instrument watches | helper not drawn, no `«`, nothing else changed; on again restores it; the setting survives the helper relaunching | verdicts, N = 3 |
-| E2 | Only if E1 passes and S0.2 allows: can a third-party process change that entry for the helper (the public preferences path, or the private setter), without an entitlement or a prompt? | it can, and E1's pass holds | yes/no, with the error if no |
-| C1 | Reproduce the band on today's build with the helper as target (the safe-width instrument, jump path); bisect the upper edge, which was never bisected | the band exists; both edges bracketed to 4 pt | brackets recorded |
-| C2 | In the isolated account: repeat C1 with 1-4 helper items and three frontmost-menu widths | the band's edges move less than its width, so one length can serve all layouts -- or they move predictably from a quantity Ice can read | edges per configuration |
-| C3 | In the band: does the detector give `hidden(folded: false)` for the target, and `restored` after showing -- or does the AX placement veto refuse? | the detector decides; no `contradictsAccessibility` | verdicts, N = 5 |
-| D1 | Isolated account only, and only if E and C are dead: activate the assertion allowing everything except the helper; observe; invalidate; then kill the holding process | only the helper disappears; invalidation and holder death both restore; no side effect outside the menu bar | observations, N = 3 |
+| E1 | The owner switches the **helper's** entry off in System Settings by hand, then on again; the instrument watches | helper not drawn, no `«`, nothing else of the observable population changed; on again restores it; the setting survives the helper relaunching | verdicts, N = 3 |
+| E2 | Isolated account only, and only if E1 passes: can a third-party process change the helper's entry (the public preferences path, or the private setter) without an entitlement or a prompt? The helper's pre-state is recorded; after every attempt -- success, error or crash -- the entry is verified back at its pre-state | it can, and E1's pass holds when it does | yes/no, with the error if no; restoration verified after each attempt |
+| C1 | Isolated account: a coarse scan (16 pt steps) finds the band for one helper at Ice's rest; then a **smoke test at its midpoint** with capture active: does the detector give `hidden(folded: false)`, and `restored` after collapsing, with stable controls -- or does the AX placement veto refuse, or does the capture indicator move the band? | the detector decides, N = 5, no `contradictsAccessibility`, the band unmoved by capturing | verdicts; if it fails, C is dropped and no edge is mapped |
+| C2 | Only if C1 passes. Isolated account: bracket both edges (jump path, 4 pt) with 1-4 helper items and three frontmost-menu widths; pick **one** length inside the intersection of all conservatively bracketed bands, with at least 16 pt of margin to every edge; then test exactly that length under G2(b) | such a length exists and holds | the brackets, the length, its G2(b) result |
+| D1 | Only if D is back in (V3 yes, E and C dropped). Isolated account, a pre-registered population: activate the assertion allowing that population except the helper; observe the pre-registered list; invalidate; then kill the holding process | only the helper disappears; invalidation and holder death both restore; nothing on the list changes outside the menu bar | observations, N = 3, limited to that population |
 
-### Stage 2 -- robustness and recovery (surviving candidates only)
+### Stage 2 -- robustness and recovery (only a candidate that can still produce GO)
 
-G2 (a)-(e) and G3 as defined in section 3, N >= 5 (G3: N >= 3), with the
-candidate hiding the helper. Each dimension is its own run and its own go where
-section 5 says so. The first failure of a kill criterion ends that candidate after
-one replication.
+The G2 dimensions and G3a, in the order (a), (b), (c), G3a, (d), then the
+owner-waivable ones not waived. Each dimension is its own run and, where section 5
+says so, its own go.
+
+### 6.2 The run protocol (skeleton; each stage's pre-registration fills it in)
+
+- **Settled state**: two consecutive stable captures at least 1 s apart, starting no
+  earlier than 1 s after the stimulus; no settled state within 10 s is a failure of
+  that run.
+- **Controls**: the `.protected` helper stays drawn throughout; the strip outside the
+  listed items is compared against the run's own baseline.
+- **Reset check between repeats**: every helper drawn at its baseline x, the fold
+  absent, the spacer collapsed (C), the helper's entry allowed (E) -- or the run
+  stops.
+- **Accounting**: each repeat is pass, fail or inconclusive (an unreadable verdict,
+  a Space slide caught mid-capture). An inconclusive repeat is re-run at most twice;
+  a third inconclusive counts as *not shown*, which is a failure for a mandatory
+  criterion. A failure is replicated once before it drops the candidate.
+- N >= 5 per G2 dimension, N >= 3 per G3a path.
 
 ### Stage 3 -- decision
 
 A report to the owner: per candidate, the gate table filled in with MEASURED
-results, the kill (if any) and the evidence; the GO/NO-GO recommendation. The
-value calls in section 7 are put to the owner, with Jev's per-requirement reading
-beside them.
+results, the kill (if any) and the evidence; the GO/NO-GO recommendation, with Jev's
+per-requirement reading of the value calls beside it.
 
-## 7. Value calls the owner makes (not decided by evidence)
+## 7. Value calls the owner makes before stage 1 (not decided by evidence)
 
-- **V1** Per-app hiding (E) instead of per-item: acceptable for macOS 27?
-- **V2** IceBar mode, the owner's configuration, cannot show hidden items on 27. Is a
-  hider useful without it, i.e. with items expanded in place -- or does the gate
-  also require the image track first?
-- **V3** Whether a private-API mechanism (D) may be considered at all, given
-  FINDINGS' "do not build core behaviour on it".
-- **V4** Whether G2(d) (sleep, lock) and G2(e) (second display) may be accepted as
-  stated gaps rather than kills.
+- **V1** A **persistent, per-app** mode for macOS 27 (E): hiding means the OS stops
+  showing an app's items until it is allowed again -- surviving Ice quitting, undone in
+  System Settings -- and two items of one app cannot be separated. Acceptable?
+- **V2** IceBar mode, the owner's configuration, cannot show hidden items on 27 (blank
+  images, refused clicks). Is a hider useful without it, i.e. with items expanded in
+  place -- or does GO also need the image track first?
+- **V3** May a private-API mechanism (D) be considered at all, given FINDINGS' "do not
+  build core behaviour on it"?
+- **V4** Which of G2(e)-(g) -- auto-hide, sleep and lock, a second display -- may be
+  waived as stated gaps?
 
 ## 8. If GO -- what an implementation would touch (for scale, not now)
 
@@ -199,13 +237,31 @@ one call site outside A10's fence; `AppState.swift:72` is inside it. Its own pla
 
 | risk | response |
 |---|---|
-| a stage changes the owner's bar | helpers only; isolated account for D and C2; the safety monitor; each stage its own go |
-| E is a system setting, so an experiment changes System Settings state | only the helper's entry, switched back at the end of the run; the owner does it by hand in E1 |
-| D leaves a restriction in place after its holder dies | D runs only in the isolated account, last, and its first observation is holder death |
-| measuring disturbs the band (the capture indicator takes room) | C3 measures exactly that; if verification shifts the band, C fails G4 |
-| a verdict is unreadable (Space slide, indicator churn) | an unreadable run is inconclusive and repeated, never a pass |
+| a stage changes the owner's bar | on the owner's account only stage 0 and E1 (the helper's own entry, by hand); every spacer, write and assertion run in the isolated account; the one-miss latch |
+| E is a system setting, so an experiment changes System Settings state | only the helper's entry, pre-state recorded, verified back after every attempt |
+| D leaves a restriction in place, or acts outside the menu bar | excluded by default; if the owner brings it back, isolated account only, holder death observed first, results limited to the pre-registered population |
+| measuring disturbs the band (the capture indicator takes room) | C1 measures exactly that before any edge is mapped; if capturing moves the band, C fails G4 |
+| a verdict is unreadable (Space slide, indicator churn) | 6.2: inconclusive, re-run at most twice, then *not shown* |
 | the study drifts into building | stages 0-2 change no Ice source; implementation is a separate plan |
 
 ## Appendix -- review record
 
-(to be filled by the Codex debate and Jev's readings)
+### Round 1 -- Codex (gpt-5.6-terra, medium)
+
+| finding | ruling | how |
+|---|---|---|
+| P0 E is persistent, so it contradicts G3 when Ice dies | **adopted, modified** | not an automatic NO-GO: G3 split (G3a mechanism, G3b Ice); for E the owner decides before testing whether a persistent per-app mode is acceptable (V1); without it E is dropped at stage 0 |
+| P0 D's effects outside the menu bar cannot be bounded by observation (G6) | **adopted** | D excluded by default; back only with V3 yes and E, C dropped, with G6 narrowed to a pre-registered list and results limited to that population |
+| P1 the decision rule disagreed with the criteria's labels | adopted | one disposition per criterion; waivers only before testing (section 1, 3) |
+| P1 G4/C3 cannot speak for "the user's bar" | adopted | G4 scoped to a stated item class with a safe fallback; C1 is a smoke test of the detector in the band, with capture active, before any edge is mapped |
+| P1 G1's "nothing else disappears" cannot be shown | adopted | the observable population defined; a pass means no observed collateral effect |
+| P1 G5 is not met "by construction" by E or D | adopted | E and D fail G5 unless the owner accepts a per-app mode (V1) |
+| P1 D1 assumes a complete allow-list inventory | adopted | a pre-registered population, results limited to it |
+| P1 C1 would expand a spacer on the owner's bar | adopted | the owner's standing constraint already forbids it: every spacer run is in the isolated account; the latch fires on one miss |
+| P1 N >= 5 is not a protocol | **adopted, modified** | a protocol skeleton now (6.2); each stage pre-registers its runs, reviewed by Codex before that stage's go |
+| P2 G2 misses relaunch, auto-hide, logout, display attach | adopted in part | relaunch while hidden and auto-hide added; logout, restart and display attach/detach listed as unsupported unless tested |
+| P2 C2's "edges move less than the width" rule | adopted | one pre-selected length inside the intersection of the bands, 16 pt margin, tested under G2(b) |
+| P2 holder death is not Ice death | adopted | G3a / G3b |
+| P2 E2 had no pre-state or rollback | adopted | isolated account; pre-state recorded and verified after every attempt |
+| P3 mapping C's edges before knowing the detector can decide | adopted | C1 smoke test first |
+| P3 stage 2 over-designed | adopted | staged elimination (section 1) |
