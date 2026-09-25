@@ -212,6 +212,16 @@ per-requirement reading of the value calls beside it.
 (V3, whether the private assertion D may be considered, fell away in round 2: D is
 NO-GO under G6.)
 
+### Owner's decisions (2026-09-25, after a thecure debate with Codex: no objection)
+
+The plan is approved. **V1 no** -- Mode P is not accepted, so E is dropped and
+S0.1-S0.3 are not run; C, in Mode I, is the only candidate. **V2 in place** -- a hider
+counts as useful with items expanded in place; IceBar on 27 waits for the image
+track. **V4** -- only G2(g), a second display, is waived; auto-hide and sleep/lock stay
+mandatory, and no result may be read as supporting an attached second display.
+**Next**: nothing runs until the owner has created the isolated user account and
+lifted the no-spacer rule inside it; C1 is the first run, and the likeliest to fail.
+
 ## 8. If GO -- what an implementation would touch (for scale, not now)
 
 - `ControlItem.updateStatusItemVisibility` is the only place hiding state becomes a
