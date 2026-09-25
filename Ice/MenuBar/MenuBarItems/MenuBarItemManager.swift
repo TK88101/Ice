@@ -528,6 +528,15 @@ extension MenuBarItemManager {
             logger.debug("Discarding superseded menu bar item cache pass")
             return
         }
+        // Numbers and pids only, never a name: what the responsiveness
+        // quarantine did this pass (2026-09-25 plan, the Ice run).
+        let completeness: String = switch discovery.set.completeness {
+        case .complete: "complete"
+        case .incomplete(let failed): "incomplete(\(failed.count) failed: \(failed.map(String.init).joined(separator: ",")))"
+        case .permissionDenied: "permissionDenied"
+        }
+        let quarantined = discovery.quarantined.map { String($0.pid) }.joined(separator: ",")
+        logger.debug("Discovery pass: \(Int((discovery.duration * 1000).rounded()), privacy: .public) ms, \(completeness, privacy: .public), quarantined [\(quarantined, privacy: .public)]")
 
         let states = DividerStates(
             hidden: dividerState(.hidden, before: before.hidden, passStart: passStart),

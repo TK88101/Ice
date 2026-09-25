@@ -339,6 +339,14 @@ the pass's start, so no process is ever skipped and left unlisted in one pass.
 If passes are further apart than the backoff plus 30 s, every quarantine lapses
 first and discovery simply behaves as it did on main.
 
+**MEASURED 2026-09-25 19:18, Ice itself** (one debug line per cache pass, on a
+run branch): 41 passes in five minutes; only the cold launch pass was
+`incomplete` (2002 ms), four processes that stalled at launch entered the
+quarantine there, were re-probed after the next rotation, answered and were
+lifted; the other 40 passes were `complete`, median 36.5 ms. The layout pane
+rendered without "Loading menu bar items..."; the bar and Ice's preferences were
+identical before and after.
+
 Accepted, not fixed: a process whose walk alone needs more than the whole 2 s
 budget is never read to the end (every pass fails it, honestly, and its carried
 items drop after 30 s); and a false quarantine delays a recovered process's
