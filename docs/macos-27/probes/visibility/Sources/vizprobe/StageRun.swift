@@ -415,14 +415,11 @@ final class StageRun {
 
     /// A quarantined pid was not read at all, whatever `.complete` says: that
     /// completeness speaks only for eligible processes (2026-09-25
-    /// responsiveness-quarantine plan, 3.6).
+    /// responsiveness-quarantine plan, 3.6). A pid the pass did not enumerate --
+    /// a helper that has quit -- is conclusively not there.
     func readConclusively(_ pid: pid_t, in result: DiscoveryResult) -> Bool {
-        if result.quarantined.contains(where: { $0.pid == pid }) { return false }
-        switch result.set.completeness {
-        case .complete: return true
-        case .incomplete(let failed): return !failed.contains(pid)
-        case .permissionDenied: return false
-        }
+        let status = result.status(of: pid)
+        return !status.failed && !status.quarantined && !status.permissionDenied
     }
 
     /// A helper item as the evidence may show it: nothing about the user's

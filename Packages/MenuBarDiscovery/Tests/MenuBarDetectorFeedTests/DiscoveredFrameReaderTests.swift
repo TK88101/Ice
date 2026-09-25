@@ -17,9 +17,16 @@ struct DiscoveredFrameReaderTests {
         extras: FakeExtrasReader,
         agent: pid_t? = agentPID,
         processes: [ProcessInfoRecord] = [],
-        origin: DiscoveryOrigin = DiscoveryOrigin(x: 0, y: 0)
+        origin: DiscoveryOrigin = DiscoveryOrigin(x: 0, y: 0),
+        clock: Box<Double> = Box(0)
     ) -> DiscoveredFrameReader {
-        DiscoveredFrameReader(extras: extras, apps: FakeRunningApps(allProcesses: processes, agent: agent), origin: origin)
+        DiscoveredFrameReader(
+            extras: extras,
+            apps: FakeRunningApps(allProcesses: processes, agent: agent),
+            origin: origin,
+            now: { clock.get() },
+            deadline: 2.0
+        )
     }
 
     /// A working extras reader: the agent pid always answers with one usable
@@ -50,8 +57,8 @@ struct DiscoveredFrameReaderTests {
         #expect(snapshot?.itemFrames[key.encoded] == ItemFrame(id: key.encoded, minX: 201, minY: 4.5, width: 22, height: 24))
     }
 
-    @Test("a sample never cuts a walk short: every read it makes, the agent's included, is handed an interrupt that says no")
-    func neverInterruptsAWalk() {
+    @Test("before the sample's deadline no read is cut short: the agent's and the keyed pid's interrupts both say no")
+    func noInterruptBeforeTheDeadline() {
         let key = ItemKey(namespace: "com.example.p501", identifier: "beta", pid: 501, childIndex: nil)
         let extras = makeExtras { process, _ in
             readerRawRead(process: process, records: [readerExtrasRecord(childIndex: 0, identifier: "beta", minX: 200)])
@@ -156,6 +163,151 @@ struct DiscoveredFrameReaderTests {
         let snapshot = reader.read(items: [key.encoded: 506])
 
         #expect(snapshot?.itemFrames[key.encoded] == nil)
+    }
+
+    // MARK: - H1: a keyed read that cannot be trusted fails the whole snapshot
+    //
+    // The frozen contract (`MenuBarAXReading.read`) says an absent id is a
+    // *successful* read that found nothing. Before H1 a `.failed` read left its
+    // keys absent -- a fabricated disappearance (characterized green on the old
+    // code first; hardening plan H1).
+
+    @Test("f1: a keyed pid whose read is .failed makes the whole snapshot nil")
+    func failedKeyedReadIsNil() {
+        let key = ItemKey(namespace: "com.example.p510", identifier: "item", pid: 510, childIndex: nil)
+        let extras = makeExtras { process, _ in readerFailedRawRead(process: process) }
+        let reader = makeReader(extras: extras, processes: [readerTestProcess(pid: 510)])
+
+        #expect(reader.read(items: [key.encoded: 510]) == nil)
+    }
+
+    @Test("f2: a keyed pid whose read is .none (no extras bar) is an honest absence, not a failure")
+    func noneKeyedReadIsAbsent() {
+        let key = ItemKey(namespace: "com.example.p511", identifier: "item", pid: 511, childIndex: nil)
+        let extras = makeExtras { process, _ in
+            RawRead(process: process, extrasError: "noValue", extrasElapsed: 0.01, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
+        }
+        let reader = makeReader(extras: extras, processes: [readerTestProcess(pid: 511)])
+
+        let snapshot = reader.read(items: [key.encoded: 511])
+
+        #expect(snapshot != nil)
+        #expect(snapshot?.itemFrames[key.encoded] == nil)
+    }
+
+    @Test("f5: keyed pids are read in ascending pid order, after the agent")
+    func keyedPIDsAreReadInSortedOrder() {
+        let pids: [Int32] = [530, 521, 527, 523, 529, 522, 526, 524]
+        let items = Dictionary(uniqueKeysWithValues: pids.map { pid in
+            (ItemKey(namespace: "com.example.p\(pid)", identifier: "item", pid: pid, childIndex: nil).encoded, pid)
+        })
+        let extras = makeExtras { process, _ in readerRawRead(process: process) }
+        let reader = makeReader(extras: extras, processes: pids.map { readerTestProcess(pid: $0) })
+
+        _ = reader.read(items: items)
+
+        #expect(extras.calls.map(\.pid) == [Self.agentPID] + pids.sorted())
+    }
+
+    @Test("f3: a first keyed pid slow past the deadline -> nil, and the second pid is never read")
+    func slowFirstPIDPastTheDeadlineIsNil() {
+        let first = ItemKey(namespace: "com.example.p541", identifier: "item", pid: 541, childIndex: nil)
+        let second = ItemKey(namespace: "com.example.p542", identifier: "item", pid: 542, childIndex: nil)
+        let clock = Box(0.0)
+        let extras = makeExtras { process, _ in
+            if process.pid == 542 { Issue.record("the pid after the deadline must not be read") }
+            clock.set(clock.get() + 2.5)
+            return readerRawRead(process: process, records: [readerExtrasRecord(childIndex: 0, identifier: "item", minX: 100)])
+        }
+        let reader = makeReader(extras: extras, processes: [readerTestProcess(pid: 541), readerTestProcess(pid: 542)], clock: clock)
+
+        #expect(reader.read(items: [first.encoded: 541, second.encoded: 542]) == nil)
+        #expect(extras.calls.map(\.pid) == [Self.agentPID, 541])
+    }
+
+    @Test("f3b: an agent read that outlasts the deadline leaves every keyed pid unread -> nil")
+    func agentOverrunLeavesKeyedPIDsUnread() {
+        let key = ItemKey(namespace: "com.example.p543", identifier: "item", pid: 543, childIndex: nil)
+        let clock = Box(0.0)
+        let extras = FakeExtrasReader { process, _ in
+            guard process.pid == Self.agentPID else {
+                Issue.record("a keyed pid must not be read once the deadline has passed")
+                return readerRawRead(process: process)
+            }
+            clock.set(2.5)
+            return readerRawRead(process: process)
+        }
+        let reader = makeReader(extras: extras, processes: [readerTestProcess(pid: 543)], clock: clock)
+
+        #expect(reader.read(items: [key.encoded: 543]) == nil)
+        #expect(extras.calls.map(\.pid) == [Self.agentPID])
+    }
+
+    @Test("f6: the last keyed read, complete but finished past the deadline, still makes the snapshot nil (codex round 1)")
+    func lastKeyedReadFinishingLateIsNil() {
+        let key = ItemKey(namespace: "com.example.p561", identifier: "item", pid: 561, childIndex: nil)
+        let clock = Box(0.0)
+        let extras = makeExtras { process, _ in
+            clock.set(2.5)
+            return readerRawRead(process: process, records: [readerExtrasRecord(childIndex: 0, identifier: "item", minX: 100)])
+        }
+        let reader = makeReader(extras: extras, processes: [readerTestProcess(pid: 561)], clock: clock)
+
+        #expect(reader.read(items: [key.encoded: 561]) == nil)
+    }
+
+    @Test("f4: a keyed read's interrupt says no before the sample's deadline and yes at it; the agent's says no")
+    func keyedInterruptTripsAtTheDeadline() {
+        let key = ItemKey(namespace: "com.example.p551", identifier: "item", pid: 551, childIndex: nil)
+        let clock = Box(0.0)
+        let extras = makeExtras { process, _ in
+            clock.set(2.0)
+            return RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: [], walkInterrupted: true, childCount: 1)
+        }
+        let reader = makeReader(extras: extras, processes: [readerTestProcess(pid: 551)], clock: clock)
+
+        #expect(reader.read(items: [key.encoded: 551]) == nil)
+        #expect(extras.calls.map(\.pid) == [Self.agentPID, 551])
+        #expect(extras.interrupts == [false, false])
+        #expect(extras.interruptsAfter == [false, true])
+    }
+
+    @Test("f4b: the agent's read is never cut: with no keys, one that outlasts the deadline still yields a snapshot")
+    func agentReadIsNeverCut() {
+        let clock = Box(0.0)
+        let extras = FakeExtrasReader { process, _ in
+            clock.set(3.0)
+            return readerRawRead(process: process)
+        }
+        let reader = makeReader(extras: extras, processes: [], clock: clock)
+
+        #expect(reader.read(items: [:]) != nil)
+        #expect(extras.interrupts == [false])
+        #expect(extras.interruptsAfter == [false])
+    }
+
+    @Test("the default clock and deadline read a sample like the injected ones")
+    func defaultClockAndDeadline() {
+        let key = ItemKey(namespace: "com.example.p571", identifier: "item", pid: 571, childIndex: nil)
+        let extras = makeExtras { process, _ in
+            readerRawRead(process: process, records: [readerExtrasRecord(childIndex: 0, identifier: "item", minX: 100)])
+        }
+        let reader = DiscoveredFrameReader(extras: extras, apps: FakeRunningApps(allProcesses: [readerTestProcess(pid: 571)], agent: Self.agentPID), origin: DiscoveryOrigin(x: 0, y: 0))
+
+        #expect(reader.read(items: [key.encoded: 571])?.itemFrames[key.encoded] != nil)
+        #expect(extras.interrupts == [false, false])
+    }
+
+    @Test("a keyed pid no longer enumerated is still read, by its pid alone")
+    func keyedPIDMissingFromTheEnumerationIsStillRead() {
+        let key = ItemKey(namespace: "com.example.p572", identifier: "item", pid: 572, childIndex: nil)
+        let extras = makeExtras { process, _ in
+            readerRawRead(process: process, records: [readerExtrasRecord(childIndex: 0, identifier: "item", minX: 100)])
+        }
+        let reader = makeReader(extras: extras, processes: [])
+
+        #expect(reader.read(items: [key.encoded: 572])?.itemFrames[key.encoded] != nil)
+        #expect(extras.calls.last == ProcessInfoRecord(pid: 572, bundleID: nil, localizedName: nil, executableName: nil, launchTime: nil, isSelf: false))
     }
 
     @Test("no agent pid -> nil")

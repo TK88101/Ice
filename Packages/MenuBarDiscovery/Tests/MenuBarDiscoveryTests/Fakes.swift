@@ -112,8 +112,8 @@ struct FakeDisplay: DisplayProviding {
 
 // MARK: - Shared fixtures
 
-func testProcess(pid: Int32, bundleID: String? = nil, isSelf: Bool = false, launchTime: Double? = nil, startTime: Double? = nil) -> ProcessInfoRecord {
-    ProcessInfoRecord(pid: pid, bundleID: bundleID ?? "com.example.p\(pid)", localizedName: nil, executableName: nil, launchTime: launchTime, isSelf: isSelf, startTime: startTime)
+func testProcess(pid: Int32, bundleID: String? = nil, isSelf: Bool = false, launchTime: Double? = nil, startTime: Double? = nil, startUptime: Double? = nil) -> ProcessInfoRecord {
+    ProcessInfoRecord(pid: pid, bundleID: bundleID ?? "com.example.p\(pid)", localizedName: nil, executableName: nil, launchTime: launchTime, isSelf: isSelf, startTime: startTime, startUptime: startUptime)
 }
 
 func ok(_ value: String = "") -> AttributeRead<String> {
@@ -138,6 +138,16 @@ func extrasRecord(childIndex: Int, identifier: String, minX: Double, role: Strin
 
 func rawRead(process: ProcessInfoRecord, records: [ExtrasRecord] = []) -> RawRead {
     RawRead(process: process, extrasError: "success", extrasElapsed: 0.01, childrenError: "success", childrenElapsed: 0.01, records: records, walkInterrupted: false, childCount: records.count)
+}
+
+/// One on-bar item owned by `process` -- the shape every discovery suite's
+/// "this process owns an item" fixture takes.
+func ownedItem(_ process: ProcessInfoRecord) -> DiscoveredItem {
+    DiscoveredItem(
+        key: ItemKey(namespace: process.bundleID ?? "", identifier: "x", pid: process.pid, childIndex: nil), basis: .declared,
+        process: process, frame: BarRect(minX: 300, minY: 4.5, width: 24, height: 24), position: .onBar,
+        title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
+    )
 }
 
 let testBounds = BarBounds(minX: 0, maxX: 1728, minY: 0, barHeight: 24)

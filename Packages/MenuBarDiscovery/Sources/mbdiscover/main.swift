@@ -330,11 +330,8 @@ func runTimed(passes: Int, every spacing: Double?, watchPID: Int32?) async {
         previous = result.set
         var line = "pass \(index): \(Int((result.duration * 1000).rounded())) ms, \(result.set.items.count) items, completeness \(result.set.completeness), quarantined \(result.quarantined.count)"
         if let watchPID {
-            let item = result.set.listedItems.contains { $0.key.pid == watchPID }
-            var failed = false
-            if case .incomplete(let pids) = result.set.completeness { failed = pids.contains(watchPID) }
-            let quarantined = result.quarantined.contains { $0.pid == watchPID }
-            line += ", watch item=\(item ? "yes" : "no") failed=\(failed ? "yes" : "no") quarantined=\(quarantined ? "yes" : "no")"
+            let status = result.status(of: watchPID)
+            line += ", watch item=\(status.listed ? "yes" : "no") failed=\(status.failed ? "yes" : "no") quarantined=\(status.quarantined ? "yes" : "no")"
         }
         print(line)
     }

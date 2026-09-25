@@ -198,7 +198,7 @@ func fixtureSet(items: [DiscoveredItem], hiddenDivider: DividerReading? = fixtur
 }
 
 func fixtureDiscovery(set: DiscoveredItemSet, origin: DiscoveryOrigin = DiscoveryOrigin(x: 0, y: 0)) -> DiscoveryResult {
-    DiscoveryResult(set: set, duration: 0, origin: origin, bounds: fixtureBounds, nextCursor: 0, quarantined: [])
+    DiscoveryResult(set: set, duration: 0, origin: origin, bounds: fixtureBounds, nextCursor: 0, quarantined: [], enumeratedPIDs: Set(set.listedItems.map(\.process.pid)))
 }
 
 // MARK: - Fakes for `DiscoveredFrameReader` (its own seams: `ExtrasReading`,
@@ -218,7 +218,11 @@ final class FakeExtrasReader: ExtrasReading, @unchecked Sendable {
     private let handler: @Sendable (ProcessInfoRecord, Double) -> RawRead
     private let lock = NSLock()
     private(set) var calls: [ProcessInfoRecord] = []
+    /// What each call's interrupt answered before the handler ran.
     private(set) var interrupts: [Bool] = []
+    /// ... and after it -- so a handler that moves a clock shows what the
+    /// reader's interrupt said on each side of the move (H1, f4).
+    private(set) var interruptsAfter: [Bool] = []
 
     init(handler: @escaping @Sendable (ProcessInfoRecord, Double) -> RawRead) {
         self.handler = handler
@@ -230,7 +234,10 @@ final class FakeExtrasReader: ExtrasReading, @unchecked Sendable {
             calls.append(process)
             interrupts.append(interrupted)
         }
-        return handler(process, timeout)
+        let raw = handler(process, timeout)
+        let after = interrupt()
+        lock.withLock { interruptsAfter.append(after) }
+        return raw
     }
 
     var callCount: Int { lock.withLock { calls.count } }
@@ -267,3 +274,4 @@ func readerRawRead(process: ProcessInfoRecord, records: [ExtrasRecord] = []) -> 
 func readerFailedRawRead(process: ProcessInfoRecord) -> RawRead {
     RawRead(process: process, extrasError: "cannotComplete", extrasElapsed: 0.24, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
 }
+

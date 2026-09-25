@@ -40,6 +40,34 @@ struct MenuBarDiscovererTests {
         #expect(result.set.items.map(\.process.pid) == [200])
     }
 
+    @Test("c1: two concurrent passes never overlap inside the reader -- the discoverer owns one serial queue (hardening plan H4)")
+    func concurrentPassesNeverOverlap() async {
+        let processes = (0..<3).map { testProcess(pid: Int32(300 + $0)) }
+        let inside = Box(0)
+        let most = Box(0)
+        let reader = FakeExtrasReader { process, _ in
+            inside.mutate { $0 += 1 }
+            most.mutate { $0 = max($0, inside.get()) }
+            // Long enough that two passes on a concurrent queue would meet here.
+            usleep(30_000)
+            inside.mutate { $0 -= 1 }
+            return rawRead(process: process)
+        }
+        let discoverer = MenuBarDiscoverer(
+            apps: FakeRunningApps(allProcesses: processes, agent: nil), reader: reader,
+            display: FakeDisplay(result: (testBounds, DiscoveryOrigin(x: 0, y: 0))),
+            isTrusted: { true }, ownIdentifiers: testOwnIdentifiers, now: { 0 }
+        )
+
+        async let first = discoverer.discover(previous: nil)
+        async let second = discoverer.discover(previous: nil)
+        let results = await [first, second]
+
+        #expect(results.allSatisfy { $0 != nil })
+        #expect(reader.callCount == 6)
+        #expect(most.get() == 1)
+    }
+
     @Test("cancellation mid-walk returns nil and stops the reader within one process")
     func cancellationStopsWithinOneProcess() async throws {
         let processes = (0..<10).map { testProcess(pid: Int32(100 + $0)) }

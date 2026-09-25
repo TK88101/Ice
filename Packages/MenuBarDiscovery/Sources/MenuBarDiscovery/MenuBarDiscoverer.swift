@@ -48,12 +48,15 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
     private let isTrusted: @Sendable () -> Bool
     private let ownIdentifiers: OwnIdentifiers
     private let now: @Sendable () -> Double
-    /// Wall-clock seconds since 1970, for the quarantine's age gate: a process's
-    /// start time is on that clock, while `now` is monotonic.
-    private let wallClock: @Sendable () -> Double
+    /// Seconds on the mach absolute clock, for the quarantine's age gate: each
+    /// process's `startUptime` is on that clock (hardening plan H5).
+    private let uptime: @Sendable () -> Double
     private let timeout: Double
     private let deadline: Double
-    private let queue: DispatchQueue
+    /// Its own, serial, and not injectable (hardening plan H4): two passes must
+    /// never read and write the cursor and the quarantine at once, and a queue
+    /// handed in could be concurrent.
+    private let queue = DispatchQueue(label: "com.icereverse.MenuBarDiscovery.MenuBarDiscoverer")
 
     /// Where the next pass starts: the process the last one's deadline
     /// stopped at.
@@ -70,10 +73,9 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         isTrusted: @escaping @Sendable () -> Bool,
         ownIdentifiers: OwnIdentifiers,
         now: @escaping @Sendable () -> Double,
-        wallClock: @escaping @Sendable () -> Double = { Date().timeIntervalSince1970 },
+        uptime: @escaping @Sendable () -> Double = { LiveRunningApps.uptimeNow() },
         timeout: Double = ReadClassifier.defaultTimeout,
-        deadline: Double = 2.0,
-        queue: DispatchQueue = DispatchQueue(label: "com.icereverse.MenuBarDiscovery.MenuBarDiscoverer")
+        deadline: Double = 2.0
     ) {
         self.apps = apps
         self.reader = reader
@@ -81,10 +83,9 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         self.isTrusted = isTrusted
         self.ownIdentifiers = ownIdentifiers
         self.now = now
-        self.wallClock = wallClock
+        self.uptime = uptime
         self.timeout = timeout
         self.deadline = deadline
-        self.queue = queue
     }
 
     /// `nil` when the display has nothing to report, or when the pass was
@@ -122,7 +123,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         let startIndex = count > 0 ? cursor.get() % count : 0
         let deadlineAt = passStart + deadline
         let state = quarantine.get()
-        let context = QuarantineContext(agentPID: agentPID, previous: previous, wallNow: wallClock())
+        let context = QuarantineContext(agentPID: agentPID, previous: previous, uptimeNow: uptime())
         // Handed to every read, the first of the pass included: the walk polls it
         // before each child.
         let interrupt = { cancelled.get() || self.now() >= deadlineAt }
@@ -157,7 +158,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         cursor.set(rotation.nextCursor)
         quarantine.set(settlement.quarantine)
 
-        return DiscoveryResult(set: carried, duration: now() - passStart, origin: origin, bounds: displaySnapshot.bounds, nextCursor: rotation.nextCursor, quarantined: settlement.quarantined)
+        return DiscoveryResult(set: carried, duration: now() - passStart, origin: origin, bounds: displaySnapshot.bounds, nextCursor: rotation.nextCursor, quarantined: settlement.quarantined, enumeratedPIDs: Set(processes.map(\.pid)))
     }
 
     /// One pass's rotation, from `startIndex`: every process not skipped by the

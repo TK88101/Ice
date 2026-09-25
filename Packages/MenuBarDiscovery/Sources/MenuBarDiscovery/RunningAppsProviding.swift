@@ -1,5 +1,6 @@
 import AppKit
 import IceCore
+import Security
 
 /// The running-process half of one discovery pass (plan section 4.2): every
 /// process `MenuBarDiscoverer` should ask Accessibility about, and the pid of
@@ -36,7 +37,8 @@ public struct LiveRunningApps: RunningAppsProviding {
                 executableName: app.executableURL?.lastPathComponent,
                 launchTime: app.launchDate?.timeIntervalSince1970,
                 isSelf: app.processIdentifier == selfPID,
-                startTime: Self.kernelStartTime(of: app.processIdentifier)
+                startTime: Self.kernelStartTime(of: app.processIdentifier),
+                startUptime: Self.startUptime(of: app.processIdentifier)
             )
         }
     }
@@ -56,7 +58,83 @@ public struct LiveRunningApps: RunningAppsProviding {
         return Double(started.tv_sec) + Double(started.tv_usec) / 1_000_000
     }
 
+    /// The process's start on the mach absolute clock, in seconds, from
+    /// `proc_pid_rusage`'s `ri_proc_start_abstime`; `nil` when the process is
+    /// gone or the call fails (hardening plan H5). MEASURED 2026-09-25: available
+    /// for 73 of 73 processes, stable, `nil` for a dead pid. The clock does not
+    /// run during sleep, so an age taken on it is never more than the real age.
+    static func startUptime(of pid: pid_t) -> Double? {
+        var info = rusage_info_v4()
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V4, $0) }
+        }
+        guard result == 0, info.ri_proc_start_abstime > 0 else { return nil }
+        return machSeconds(info.ri_proc_start_abstime)
+    }
+
+    /// Now, on the clock `startUptime` is read on.
+    public static func uptimeNow() -> Double {
+        machSeconds(mach_absolute_time())
+    }
+
+    private static let timebase: mach_timebase_info_data_t = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return info
+    }()
+
+    private static func machSeconds(_ ticks: UInt64) -> Double {
+        Double(ticks) * Double(timebase.numer) / Double(timebase.denom) / 1_000_000_000
+    }
+
     public func agentPID() -> Int32? {
-        NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == LiveExtrasReader.menuBarAgentBundleID }?.processIdentifier
+        let candidates = NSWorkspace.shared.runningApplications.map {
+            Candidate(pid: $0.processIdentifier, bundleID: $0.bundleIdentifier, bundleURL: $0.bundleURL)
+        }
+        return Self.agentPID(among: candidates, isAppleSignedAgent: Self.isAppleSignedAgent(pid:))
+    }
+
+    /// One running application as `agentPID` judges it.
+    struct Candidate {
+        let pid: Int32
+        let bundleID: String?
+        let bundleURL: URL?
+    }
+
+    /// The first candidate with the agent's bundle id, a bundle under `/System`
+    /// and Apple's signature for that id. The signature is what cannot be
+    /// borrowed (security review of H3): the path check alone accepts
+    /// `/System/Volumes/Data/...`, which the user can write to, so a bundle
+    /// there claiming the id -- listed first once the real agent relaunches --
+    /// would pass it. The signature is asked only of a candidate that passed the
+    /// cheap checks, so normally once (about 0.8 ms, MEASURED 2026-09-25).
+    static func agentPID(among candidates: [Candidate], isAppleSignedAgent: (Int32) -> Bool) -> Int32? {
+        candidates.first { candidate in
+            isMenuBarAgent(bundleID: candidate.bundleID, bundleURL: candidate.bundleURL) && isAppleSignedAgent(candidate.pid)
+        }?.pid
+    }
+
+    /// Whether the running process `pid` satisfies `anchor apple and identifier
+    /// "com.apple.MenuBarAgent"`; `false` for a process that is gone or cannot
+    /// be checked.
+    static func isAppleSignedAgent(pid: Int32) -> Bool {
+        var requirement: SecRequirement?
+        let text = "anchor apple and identifier \"\(LiveExtrasReader.menuBarAgentBundleID)\"" as CFString
+        guard SecRequirementCreateWithString(text, [], &requirement) == errSecSuccess, let requirement else { return false }
+        var code: SecCode?
+        let attributes = [kSecGuestAttributePid: NSNumber(value: pid)] as CFDictionary
+        guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess, let code else { return false }
+        return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
+    }
+
+    /// The agent's bundle id **and** a bundle under `/System` (hardening plan
+    /// H3): by id alone, any process claiming `com.apple.MenuBarAgent` that came
+    /// first in the list would take over the agent's routing (D4) and its
+    /// quarantine exemption. The path is standardized first, so `..` cannot walk
+    /// out of `/System`, and compared by component, so `/SystemX` is not it.
+    static func isMenuBarAgent(bundleID: String?, bundleURL: URL?) -> Bool {
+        guard bundleID == LiveExtrasReader.menuBarAgentBundleID, let bundleURL, bundleURL.isFileURL else { return false }
+        let components = bundleURL.standardizedFileURL.pathComponents
+        return components.count > 1 && components[0] == "/" && components[1] == "System"
     }
 }

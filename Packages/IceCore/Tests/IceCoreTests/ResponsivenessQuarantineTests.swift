@@ -26,10 +26,10 @@ struct ResponsivenessQuarantineTests {
             visibleControlItem: item(own)
         )
 
-        let context = QuarantineContext(agentPID: nil, previous: previous, wallNow: wallNow)
+        let context = QuarantineContext(agentPID: nil, previous: previous, uptimeNow: uptimeNow)
 
         #expect(context.previousOwners == [try identity(owner), try identity(own)])
-        #expect(QuarantineContext(agentPID: nil, previous: nil, wallNow: wallNow).previousOwners.isEmpty)
+        #expect(QuarantineContext(agentPID: nil, previous: nil, uptimeNow: uptimeNow).previousOwners.isEmpty)
     }
 
     // MARK: - entry (q1, q2, q3)
@@ -46,6 +46,65 @@ struct ResponsivenessQuarantineTests {
         let entry = try #require(settled.quarantine.entries[try identity(stalled)])
         #expect(entry == ResponsivenessQuarantine.Entry(backoff: 2, nextProbeAt: 102))
         #expect(settled.quarantined == [alsoStalled, stalled])
+    }
+
+    // MARK: - one name for the trigger (hardening plan H7)
+
+    @Test("t1: the quarantine enters on exactly the extras-bar timeout the classifier names with its shared constant")
+    func t1TriggerIsTheSharedConstant() throws {
+        let stalled = proc(7, start: oldStart)
+        let reads = [stall(stalled)] + fastReads(3)
+
+        let settled = ResponsivenessQuarantine().settle(processes: processes(reads), reads: reads, reprobes: [], context: context(), now: 100)
+
+        #expect(ReadClassifier.outcome(reads[0]) == .failed(.timedOut(call: ReadClassifier.extrasBarCall)))
+        #expect(settled.quarantine.entries[try identity(stalled)] != nil)
+        #expect(ReadClassifier.extrasBarCall == "extrasBar")
+        #expect(ReadClassifier.childrenCall == "children")
+    }
+
+    // MARK: - the age gate's clock (hardening plan H5: k1-k4)
+
+    @Test("k1: young by the monotonic clock is never entered, however old the wall clock makes it (a forward step)")
+    func k1YoungByUptimeIsNotEntered() {
+        let young = proc(7, start: 0, uptime: uptimeNow - 30)
+        let reads = [stall(young)] + fastReads(3)
+
+        let settled = ResponsivenessQuarantine().settle(processes: processes(reads), reads: reads, reprobes: [], context: context(), now: 100)
+
+        #expect(settled.quarantine.entries.isEmpty)
+        #expect(settled.quarantined.isEmpty)
+    }
+
+    @Test("k2: old by the monotonic clock is entered, even with a wall start time after the wall clock's now (a backward step)")
+    func k2BackwardWallStepChangesNothing() throws {
+        let old = proc(7, start: 9_000_000_000, uptime: uptimeNow - 100)
+        let reads = [stall(old)] + fastReads(3)
+
+        let settled = ResponsivenessQuarantine().settle(processes: processes(reads), reads: reads, reprobes: [], context: context(), now: 100)
+
+        #expect(settled.quarantine.entries[try identity(old)] != nil)
+    }
+
+    @Test("k3: no start uptime, no entry -- the identity alone is not enough")
+    func k3NoStartUptimeIsNeverEntered() {
+        let unknownAge = proc(7, start: oldStart, uptime: .some(nil))
+        let reads = [stall(unknownAge)] + fastReads(3)
+
+        let settled = ResponsivenessQuarantine().settle(processes: processes(reads), reads: reads, reprobes: [], context: context(), now: 100)
+
+        #expect(ProcessIdentity(unknownAge) != nil)
+        #expect(settled.quarantine.entries.isEmpty)
+    }
+
+    @Test("k4: the 60 s boundary is inclusive on the monotonic clock", arguments: [(60.0, true), (59.999, false)])
+    func k4Boundary(age: Double, enters: Bool) {
+        let process = proc(7, start: oldStart, uptime: uptimeNow - age)
+        let reads = [stall(process)] + fastReads(3)
+
+        let settled = ResponsivenessQuarantine().settle(processes: processes(reads), reads: reads, reprobes: [], context: context(), now: 100)
+
+        #expect(settled.quarantine.entries.isEmpty == !enters)
     }
 
     @Test("q2: each entry condition alone keeps the stalled process out", arguments: EntryBlocker.allCases)
@@ -208,7 +267,7 @@ struct ResponsivenessQuarantineTests {
         let identity = try identity(process)
         let quarantine = ResponsivenessQuarantine(entries: [identity: .init(backoff: 2, nextProbeAt: 50)])
         let childrenTimeout = read(process, childrenError: "cannotComplete", childrenElapsed: 0.21)
-        #expect(ReadClassifier.outcome(childrenTimeout) == .failed(.timedOut(call: "children")))
+        #expect(ReadClassifier.outcome(childrenTimeout) == .failed(.timedOut(call: ReadClassifier.childrenCall)))
         let fast = fastReads(3)
 
         let settled = quarantine.settle(processes: [process] + processes(fast), reads: fast, reprobes: [childrenTimeout], context: context(), now: 50)
@@ -252,7 +311,7 @@ struct ResponsivenessQuarantineTests {
         let process = proc(7, start: oldStart)
         let identity = try identity(process)
         let quarantine = ResponsivenessQuarantine(entries: [identity: .init(backoff: 8, nextProbeAt: 500)])
-        let exempting = QuarantineContext(agentPID: nil, previousOwners: [identity], wallNow: wallNow)
+        let exempting = QuarantineContext(agentPID: nil, previousOwners: [identity], uptimeNow: uptimeNow)
 
         #expect(!quarantine.isSkipped(process, context: exempting, now: 100))
         #expect(quarantine.dueReprobes(among: [process], context: exempting, now: 600).isEmpty)
@@ -348,15 +407,15 @@ enum EntryBlocker: CaseIterable, CustomTestStringConvertible {
         case .noStartTime:
             return (.init(), [stall(proc(7, start: nil))] + fastReads(3), context())
         case .tooYoung:
-            return (.init(), [stall(proc(7, start: wallNow - 59))] + fastReads(3), context())
+            return (.init(), [stall(proc(7, start: uptimeNow - 59))] + fastReads(3), context())
         case .isSelf:
             return (.init(), [stall(proc(7, start: oldStart, isSelf: true))] + fastReads(3), context())
         case .agent:
-            return (.init(), [stall(old)] + fastReads(3), QuarantineContext(agentPID: 7, previousOwners: [], wallNow: wallNow))
+            return (.init(), [stall(old)] + fastReads(3), QuarantineContext(agentPID: 7, previousOwners: [], uptimeNow: uptimeNow))
         case .snapshotShown:
             return (.init(snapshotShown: [oldIdentity]), [stall(old)] + fastReads(3), context())
         case .previousOwner:
-            return (.init(), [stall(old)] + fastReads(3), QuarantineContext(agentPID: nil, previousOwners: [oldIdentity], wallNow: wallNow))
+            return (.init(), [stall(old)] + fastReads(3), QuarantineContext(agentPID: nil, previousOwners: [oldIdentity], uptimeNow: uptimeNow))
         case .witnessesNotAMajority:
             return (.init(), [stall(old), stall(proc(8, start: oldStart))] + fastReads(2), context())
         case .witnessTooSlow:
@@ -392,7 +451,10 @@ enum NonTrigger: CaseIterable, CustomTestStringConvertible {
 
 // MARK: - fixtures
 
-private let wallNow = 10_000.0
+/// The mach-clock now every context is judged at (hardening plan H5). Fixtures
+/// give a process a `startUptime` equal to its `startTime` unless a test says
+/// otherwise, so ages read the same on both clocks by default.
+private let uptimeNow = 10_000.0
 private let oldStart = 1_000.0
 
 private func identity(_ process: ProcessInfoRecord) throws -> ProcessIdentity {
@@ -400,11 +462,14 @@ private func identity(_ process: ProcessInfoRecord) throws -> ProcessIdentity {
 }
 
 private func context() -> QuarantineContext {
-    QuarantineContext(agentPID: nil, previousOwners: [], wallNow: wallNow)
+    QuarantineContext(agentPID: nil, previousOwners: [], uptimeNow: uptimeNow)
 }
 
-private func proc(_ pid: Int32, start: Double?, isSelf: Bool = false) -> ProcessInfoRecord {
-    ProcessInfoRecord(pid: pid, bundleID: "com.example.p\(pid)", localizedName: nil, executableName: nil, launchTime: nil, isSelf: isSelf, startTime: start)
+private func proc(_ pid: Int32, start: Double?, isSelf: Bool = false, uptime: Double?? = .none) -> ProcessInfoRecord {
+    ProcessInfoRecord(
+        pid: pid, bundleID: "com.example.p\(pid)", localizedName: nil, executableName: nil, launchTime: nil, isSelf: isSelf,
+        startTime: start, startUptime: uptime ?? start
+    )
 }
 
 private func processes(_ reads: [RawRead]) -> [ProcessInfoRecord] {
@@ -439,7 +504,7 @@ private func read(
 /// A process holding its extras-bar read for the full 0.25 s timeout.
 private func stall(_ process: ProcessInfoRecord) -> RawRead {
     let raw = read(process, extrasError: "cannotComplete", extrasElapsed: 0.25, childrenError: nil, childrenElapsed: nil)
-    precondition(ReadClassifier.outcome(raw) == .failed(.timedOut(call: "extrasBar")))
+    precondition(ReadClassifier.outcome(raw) == .failed(.timedOut(call: ReadClassifier.extrasBarCall)))
     return raw
 }
 
