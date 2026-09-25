@@ -29,6 +29,12 @@ public struct DiscoveredItemSet: Equatable, Sendable {
     public let staleProcesses: [Int32: ProcessInfoRecord]
     public let completeness: Completeness
 
+    /// The third-party items, then Ice's own icon when this set has it --
+    /// parked ones included, so not a filter for what a view may list.
+    public var listedItems: [DiscoveredItem] {
+        items + (visibleControlItem.map { [$0] } ?? [])
+    }
+
     public init(
         items: [DiscoveredItem],
         visibleControlItem: DiscoveredItem?,

@@ -15,20 +15,20 @@ struct CheckPlanDividerTests {
     private func usable(_ frame: BarRect) -> DividerReading { DividerReading.make(frame: frame, in: bounds) }
 
     private func set(items: [DiscoveredItem] = [], hiddenDivider: DividerReading? = nil, alwaysHiddenDivider: DividerReading? = nil, ownRead: OwnReadStatus = .ok, visibleControlItem: DiscoveredItem? = nil) -> DiscoveredItemSet {
-        DiscoveredItemSet(items: items, visibleControlItem: visibleControlItem, hiddenDivider: hiddenDivider, alwaysHiddenDivider: alwaysHiddenDivider, ownRead: ownRead, systemElements: [], dropped: [], completeness: .complete)
+        fixtureSet(items: items, visibleControlItem: visibleControlItem, hiddenDivider: hiddenDivider, alwaysHiddenDivider: alwaysHiddenDivider, ownRead: ownRead)
     }
 
     @Test("sections containing .hidden uses the hidden divider; missing -> skip(.dividerUnavailable)")
     func hiddenSectionNeedsHiddenDivider() {
         let s = set(hiddenDivider: nil, alwaysHiddenDivider: usable(BarRect(minX: 900, minY: 0, width: 16, height: 33)))
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], explicitCandidates: nil)
         #expect(result == .skip(.dividerUnavailable))
     }
 
     @Test("sections not containing .hidden uses the always-hidden divider; missing -> skip(.dividerUnavailable)")
     func nonHiddenSectionNeedsAlwaysHiddenDivider() {
         let s = set(hiddenDivider: usable(BarRect(minX: 1100, minY: 0, width: 16, height: 33)), alwaysHiddenDivider: nil)
-        let result = CheckPlan.make(sections: [.alwaysHidden], set: s, sectionMap: [:], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.alwaysHidden], set: s, sectionMap: [:], explicitCandidates: nil)
         #expect(result == .skip(.dividerUnavailable))
     }
 
@@ -36,14 +36,14 @@ struct CheckPlanDividerTests {
     func unusableDividerIsUnavailable() {
         let offBar = DividerReading.make(frame: BarRect(minX: 1100, minY: 40, width: 16, height: 33), in: bounds)
         let s = set(hiddenDivider: offBar)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], explicitCandidates: nil)
         #expect(result == .skip(.dividerUnavailable))
     }
 
     @Test("own read not ok -> skip(.dividerUnavailable), even with a usable divider reading")
     func ownReadNotOkIsUnavailable() {
         let s = set(hiddenDivider: usable(BarRect(minX: 1100, minY: 0, width: 16, height: 33)), ownRead: .failed)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], explicitCandidates: nil)
         #expect(result == .skip(.dividerUnavailable))
     }
 }
@@ -54,14 +54,7 @@ struct CheckPlanTargetsTests {
     let dividerFrame = BarRect(minX: 1000, minY: 0, width: 16, height: 33)
 
     private func item(identifier: String, pid: Int32, minX: Double, basis: IdentityBasis = .declared, position: ItemPosition = .onBar) -> DiscoveredItem {
-        let childIndex: Int? = basis == .positional ? 0 : nil
-        let key = ItemKey(namespace: "com.example.a", identifier: identifier, pid: pid, childIndex: childIndex)
-        return DiscoveredItem(
-            key: key, basis: basis,
-            process: ProcessInfoRecord(pid: pid, bundleID: "com.example.a", localizedName: nil, executableName: nil, launchTime: 10, isSelf: false),
-            frame: BarRect(minX: minX, minY: 4.5, width: 14, height: 24), position: position,
-            title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
-        )
+        fixtureItem(identifier: identifier, pid: pid, childIndex: basis == .positional ? 0 : nil, basis: basis, frame: barFrame(minX: minX, width: 14), position: position)
     }
 
     /// A reference candidate right of the divider, present in every test so
@@ -71,14 +64,14 @@ struct CheckPlanTargetsTests {
     private func referenceItem() -> DiscoveredItem { item(identifier: "reference", pid: 99, minX: 1100) }
 
     private func set(items: [DiscoveredItem]) -> DiscoveredItemSet {
-        DiscoveredItemSet(items: items + [referenceItem()], visibleControlItem: nil, hiddenDivider: DividerReading.make(frame: dividerFrame, in: bounds), alwaysHiddenDivider: nil, ownRead: .ok, systemElements: [], dropped: [], completeness: .complete)
+        fixtureSet(items: items + [referenceItem()], hiddenDivider: DividerReading.make(frame: dividerFrame, in: bounds))
     }
 
     @Test("an item whose section is in `sections` and not parked becomes a target")
     func inSectionItemIsATarget() {
         let inSection = item(identifier: "a", pid: 1, minX: 800)
         let s = set(items: [inSection])
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [inSection.tagKey: .hidden], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [inSection.tagKey: .hidden], explicitCandidates: nil)
         guard case .observe(let targets, _, _, let skipped) = result else { Issue.record("expected observe"); return }
         #expect(targets == [inSection.key])
         #expect(skipped.isEmpty)
@@ -88,7 +81,7 @@ struct CheckPlanTargetsTests {
     func notInSectionIsLeftOut() {
         let outOfSection = item(identifier: "a", pid: 1, minX: 800)
         let s = set(items: [outOfSection])
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [outOfSection.tagKey: .visible], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [outOfSection.tagKey: .visible], explicitCandidates: nil)
         guard case .observe(let targets, let alsoObserved, _, let skipped) = result else { Issue.record("expected observe"); return }
         #expect(targets.isEmpty)
         #expect(skipped.isEmpty)
@@ -102,7 +95,7 @@ struct CheckPlanTargetsTests {
     func parkedItemIsLeftOut() {
         let parked = item(identifier: "a", pid: 1, minX: 800, position: .parked)
         let s = set(items: [parked])
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [parked.tagKey: .hidden], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [parked.tagKey: .hidden], explicitCandidates: nil)
         guard case .observe(let targets, _, _, let skipped) = result else { Issue.record("expected observe"); return }
         #expect(targets.isEmpty)
         #expect(skipped.isEmpty)
@@ -112,7 +105,7 @@ struct CheckPlanTargetsTests {
     func positionalItemIsSkipped() {
         let positional = item(identifier: "a", pid: 1, minX: 800, basis: .positional)
         let s = set(items: [positional])
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [positional.tagKey: .hidden], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [positional.tagKey: .hidden], explicitCandidates: nil)
         guard case .observe(let targets, _, _, let skipped) = result else { Issue.record("expected observe"); return }
         #expect(targets.isEmpty)
         #expect(skipped[positional.key] == .positional)
@@ -122,7 +115,7 @@ struct CheckPlanTargetsTests {
     func stackedItemIsSkipped() {
         let stacked = item(identifier: "a", pid: 1, minX: 800, position: .stacked)
         let s = set(items: [stacked])
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [stacked.tagKey: .hidden], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [stacked.tagKey: .hidden], explicitCandidates: nil)
         guard case .observe(let targets, _, _, let skipped) = result else { Issue.record("expected observe"); return }
         #expect(targets.isEmpty)
         #expect(skipped[stacked.key] == .stacked)
@@ -134,17 +127,11 @@ struct CheckPlanReferencesTests {
     let bounds = BarBounds(minX: 0, maxX: 1728, minY: 0, barHeight: 33)
 
     private func item(identifier: String, pid: Int32, minX: Double, width: Double = 14, basis: IdentityBasis = .declared, position: ItemPosition = .onBar, isSelf: Bool = false) -> DiscoveredItem {
-        let key = ItemKey(namespace: isSelf ? "IceApp" : "com.example.a", identifier: identifier, pid: pid, childIndex: nil)
-        return DiscoveredItem(
-            key: key, basis: basis,
-            process: ProcessInfoRecord(pid: pid, bundleID: isSelf ? "IceApp" : "com.example.a", localizedName: nil, executableName: nil, launchTime: 10, isSelf: isSelf),
-            frame: BarRect(minX: minX, minY: 4.5, width: width, height: 24), position: position,
-            title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
-        )
+        fixtureItem(namespace: isSelf ? "IceApp" : "com.example.a", identifier: identifier, pid: pid, basis: basis, frame: barFrame(minX: minX, width: width), position: position, isSelf: isSelf)
     }
 
     private func set(items: [DiscoveredItem], dividerFrame: BarRect, visibleControlItem: DiscoveredItem? = nil) -> DiscoveredItemSet {
-        DiscoveredItemSet(items: items, visibleControlItem: visibleControlItem, hiddenDivider: DividerReading.make(frame: dividerFrame, in: bounds), alwaysHiddenDivider: nil, ownRead: .ok, systemElements: [], dropped: [], completeness: .complete)
+        fixtureSet(items: items, visibleControlItem: visibleControlItem, hiddenDivider: DividerReading.make(frame: dividerFrame, in: bounds))
     }
 
     @Test("default layout: only Ice's icon right of the divider -> skip(.noReference)")
@@ -152,7 +139,7 @@ struct CheckPlanReferencesTests {
         let dividerFrame = BarRect(minX: 1600, minY: 0, width: 16, height: 33)
         let iceIcon = item(identifier: "gear", pid: 900, minX: 1650, isSelf: true)
         let s = set(items: [], dividerFrame: dividerFrame, visibleControlItem: iceIcon)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], iceIconKey: iceIcon.key, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], explicitCandidates: nil)
         #expect(result == .skip(.noReference))
     }
 
@@ -166,7 +153,7 @@ struct CheckPlanReferencesTests {
         let target = item(identifier: "target", pid: 1, minX: 1074.5) // maxX 1088.5 == divider minX, per the plan's recorded numbers
         let reference = item(identifier: "reference", pid: 2, minX: 1086.5)
         let s = set(items: [target, reference], dividerFrame: dividerFrame)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [target.tagKey: .hidden], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [target.tagKey: .hidden], explicitCandidates: nil)
         guard case .observe(_, _, let referenceCandidates, _) = result else { Issue.record("expected observe"); return }
         #expect(referenceCandidates == [reference.key])
     }
@@ -178,7 +165,7 @@ struct CheckPlanReferencesTests {
         let iceIcon = item(identifier: "gear", pid: 900, minX: 1200, isSelf: true) // midX 1207
         let pastIcon = item(identifier: "past", pid: 3, minX: 1300) // midX 1307, past the icon
         let s = set(items: [beforeIcon, pastIcon], dividerFrame: dividerFrame, visibleControlItem: iceIcon)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], iceIconKey: iceIcon.key, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], explicitCandidates: nil)
         guard case .observe(_, _, let referenceCandidates, _) = result else { Issue.record("expected observe"); return }
         #expect(referenceCandidates == [beforeIcon.key])
     }
@@ -191,7 +178,7 @@ struct CheckPlanReferencesTests {
         let near = item(identifier: "near", pid: 1, minX: 1050)
         let far = item(identifier: "far", pid: 2, minX: 1061) // trimmed (1062, 1074) overlaps near's trimmed (1051,1063)
         let s = set(items: [near, far], dividerFrame: dividerFrame)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], explicitCandidates: nil)
         guard case .observe(_, _, let referenceCandidates, _) = result else { Issue.record("expected observe"); return }
         #expect(referenceCandidates == [near.key])
     }
@@ -202,7 +189,7 @@ struct CheckPlanReferencesTests {
         let near = item(identifier: "near", pid: 1, minX: 1050) // trimmed (1051, 1063)
         let far = item(identifier: "far", pid: 2, minX: 1100) // trimmed (1101, 1113) -- clear
         let s = set(items: [near, far], dividerFrame: dividerFrame)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], explicitCandidates: nil)
         guard case .observe(_, _, let referenceCandidates, _) = result else { Issue.record("expected observe"); return }
         #expect(referenceCandidates == [near.key, far.key])
     }
@@ -218,7 +205,7 @@ struct CheckPlanReferencesTests {
         // and is excluded by its own trimmed-overlap) are both rejected.
         let clean = item(identifier: "clean", pid: 3, minX: 1200)
         let s = set(items: [target, overlappingCandidate, clean], dividerFrame: dividerFrame)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [target.tagKey: .hidden], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [target.tagKey: .hidden], explicitCandidates: nil)
         guard case .observe(let targets, _, let referenceCandidates, _) = result else { Issue.record("expected observe"); return }
         #expect(targets == [target.key])
         #expect(!referenceCandidates.contains(overlappingCandidate.key))
@@ -232,7 +219,7 @@ struct CheckPlanReferencesTests {
         // candidates bypass the geometric eligibility search entirely.
         let explicit = item(identifier: "explicit", pid: 5, minX: 500)
         let s = set(items: [explicit], dividerFrame: dividerFrame)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], iceIconKey: nil, explicitCandidates: [explicit.key])
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], explicitCandidates: [explicit.key])
         guard case .observe(_, _, let referenceCandidates, _) = result else { Issue.record("expected observe"); return }
         #expect(referenceCandidates == [explicit.key])
     }
@@ -244,7 +231,7 @@ struct CheckPlanReferencesTests {
         let b = item(identifier: "b", pid: 2, minX: 1100)
         let c = item(identifier: "c", pid: 3, minX: 1150)
         let s = set(items: [a, b, c], dividerFrame: dividerFrame)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], explicitCandidates: nil)
         guard case .observe(_, _, let referenceCandidates, _) = result else { Issue.record("expected observe"); return }
         #expect(referenceCandidates.count == 2)
         #expect(referenceCandidates == [a.key, b.key])
@@ -256,17 +243,11 @@ struct CheckPlanAlsoObservedTests {
     let bounds = BarBounds(minX: 0, maxX: 1728, minY: 0, barHeight: 33)
 
     private func item(identifier: String, pid: Int32, minX: Double, width: Double = 14, basis: IdentityBasis = .declared, position: ItemPosition = .onBar) -> DiscoveredItem {
-        let key = ItemKey(namespace: "com.example.a", identifier: identifier, pid: pid, childIndex: nil)
-        return DiscoveredItem(
-            key: key, basis: basis,
-            process: ProcessInfoRecord(pid: pid, bundleID: "com.example.a", localizedName: nil, executableName: nil, launchTime: 10, isSelf: false),
-            frame: BarRect(minX: minX, minY: 4.5, width: width, height: 24), position: position,
-            title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
-        )
+        fixtureItem(identifier: identifier, pid: pid, basis: basis, frame: barFrame(minX: minX, width: width), position: position)
     }
 
     private func set(items: [DiscoveredItem], dividerFrame: BarRect) -> DiscoveredItemSet {
-        DiscoveredItemSet(items: items, visibleControlItem: nil, hiddenDivider: DividerReading.make(frame: dividerFrame, in: bounds), alwaysHiddenDivider: nil, ownRead: .ok, systemElements: [], dropped: [], completeness: .complete)
+        fixtureSet(items: items, hiddenDivider: DividerReading.make(frame: dividerFrame, in: bounds))
     }
 
     @Test("everything left of the leftmost accepted candidate, not a target, is alsoObserved")
@@ -276,7 +257,7 @@ struct CheckPlanAlsoObservedTests {
         let target = item(identifier: "target", pid: 2, minX: 950) // in-section
         let candidate = item(identifier: "cand", pid: 3, minX: 1100)
         let s = set(items: [farLeft, target, candidate], dividerFrame: dividerFrame)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [target.tagKey: .hidden], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [target.tagKey: .hidden], explicitCandidates: nil)
         guard case .observe(let targets, let alsoObserved, let referenceCandidates, _) = result else { Issue.record("expected observe"); return }
         #expect(targets == [target.key])
         #expect(referenceCandidates == [candidate.key])
@@ -290,7 +271,7 @@ struct CheckPlanAlsoObservedTests {
         let stackedLeft = item(identifier: "stacked", pid: 1, minX: 100, position: .stacked)
         let candidate = item(identifier: "cand", pid: 2, minX: 1100)
         let s = set(items: [stackedLeft, candidate], dividerFrame: dividerFrame)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], explicitCandidates: nil)
         guard case .observe(_, let alsoObserved, _, _) = result else { Issue.record("expected observe"); return }
         #expect(!alsoObserved.contains(stackedLeft.key))
     }
@@ -301,7 +282,7 @@ struct CheckPlanAlsoObservedTests {
         let positionalLeft = item(identifier: "positional", pid: 1, minX: 100, basis: .positional)
         let candidate = item(identifier: "cand", pid: 2, minX: 1100)
         let s = set(items: [positionalLeft, candidate], dividerFrame: dividerFrame)
-        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], iceIconKey: nil, explicitCandidates: nil)
+        let result = CheckPlan.make(sections: [.hidden], set: s, sectionMap: [:], explicitCandidates: nil)
         guard case .observe(_, let alsoObserved, _, _) = result else { Issue.record("expected observe"); return }
         #expect(!alsoObserved.contains(positionalLeft.key))
     }

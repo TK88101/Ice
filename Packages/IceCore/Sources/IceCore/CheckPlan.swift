@@ -18,7 +18,6 @@ public enum CheckPlan {
         sections: Set<ItemSection>,
         set: DiscoveredItemSet,
         sectionMap: [TagKey: ItemSection],
-        iceIconKey: ItemKey?,
         explicitCandidates: [ItemKey]?
     ) -> CheckPlanResult {
         let useHidden = sections.contains(.hidden)
@@ -34,9 +33,7 @@ public enum CheckPlan {
         var skipped = [ItemKey: CheckSkipReason]()
         var sectionEligibleKeys = Set<ItemKey>()
 
-        for item in set.items {
-            guard item.position != .parked else { continue }
-            guard let section = sectionMap[item.tagKey], sections.contains(section) else { continue }
+        for item in sectionMembers(set: set, sectionMap: sectionMap, sections: sections) where item.position != .parked {
             sectionEligibleKeys.insert(item.key)
             if item.basis == .positional {
                 skipped[item.key] = .positional
@@ -47,10 +44,8 @@ public enum CheckPlan {
             }
         }
 
-        let iceIconFrame: BarRect? = {
-            guard let iceIconKey, let visible = set.visibleControlItem, visible.key == iceIconKey else { return nil }
-            return visible.frame
-        }()
+        // D14: a reference sits left of Ice's own icon, as this set read it.
+        let iceIconFrame = set.visibleControlItem?.frame
 
         let rawCandidateKeys: [ItemKey]
         if let explicitCandidates {
@@ -86,9 +81,8 @@ public enum CheckPlan {
         }
 
         let acceptedSet = Set(accepted)
-        let allListed = set.items + (set.visibleControlItem.map { [$0] } ?? [])
         var alsoObserved = [ItemKey]()
-        for item in allListed {
+        for item in set.listedItems {
             guard item.position == .onBar, item.basis != .positional, let frame = item.frame else { continue }
             guard !sectionEligibleKeys.contains(item.key), !acceptedSet.contains(item.key) else { continue }
             let trimmed = CheckFrames.trim(frame)
@@ -97,6 +91,18 @@ public enum CheckPlan {
         }
 
         return .observe(targets: targets, alsoObserved: alsoObserved, referenceCandidates: accepted, skipped: skipped)
+    }
+
+    /// Every item of `set.items` whose mapped section is one of `sections`,
+    /// parked, stacked and positional ones included, in the set's order --
+    /// the roster a prepare reports when it has no geometry or the plan
+    /// skips the whole section. After an `.observe` plan, the roster is the
+    /// plan's targets plus its per-item skips, which leave parked items out.
+    public static func sectionMembers(set: DiscoveredItemSet, sectionMap: [TagKey: ItemSection], sections: Set<ItemSection>) -> [DiscoveredItem] {
+        set.items.filter { item in
+            guard let section = sectionMap[item.tagKey] else { return false }
+            return sections.contains(section)
+        }
     }
 
     /// Keeps `accepted` candidates in `candidates`'s own order, at most

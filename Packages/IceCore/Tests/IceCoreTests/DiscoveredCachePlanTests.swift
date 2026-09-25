@@ -13,30 +13,15 @@ struct DiscoveredCachePlanTests {
     let bounds = BarBounds(minX: 0, maxX: 1728, minY: 0, barHeight: 33)
 
     private func item(identifier: String, minX: Double?, pid: Int32 = 1) -> DiscoveredItem {
-        let key = ItemKey(namespace: "com.example.a", identifier: identifier, pid: pid, childIndex: nil)
-        return DiscoveredItem(
-            key: key, basis: .declared,
-            process: ProcessInfoRecord(pid: pid, bundleID: "com.example.a", localizedName: nil, executableName: nil, launchTime: 10, isSelf: false),
-            frame: minX.map { BarRect(minX: $0, minY: 4.5, width: 20, height: 24) },
-            position: .onBar, title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
-        )
+        fixtureItem(identifier: identifier, pid: pid, frame: minX.map { barFrame(minX: $0, width: 20) })
     }
 
     private func parkedItem(identifier: String, pid: Int32 = 1) -> DiscoveredItem {
-        let key = ItemKey(namespace: "com.example.a", identifier: identifier, pid: pid, childIndex: nil)
-        return DiscoveredItem(
-            key: key, basis: .declared,
-            process: ProcessInfoRecord(pid: pid, bundleID: "com.example.a", localizedName: nil, executableName: nil, launchTime: 10, isSelf: false),
-            frame: BarRect(minX: 7, minY: 1105, width: 24, height: 24),
-            position: .parked, title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
-        )
+        fixtureItem(identifier: identifier, pid: pid, frame: BarRect(minX: 7, minY: 1105, width: 24, height: 24), position: .parked)
     }
 
     private func set(items: [DiscoveredItem], hiddenDivider: DividerReading?, alwaysHiddenDivider: DividerReading?, ownRead: OwnReadStatus = .ok, visibleControlItem: DiscoveredItem? = nil) -> DiscoveredItemSet {
-        DiscoveredItemSet(
-            items: items, visibleControlItem: visibleControlItem, hiddenDivider: hiddenDivider, alwaysHiddenDivider: alwaysHiddenDivider,
-            ownRead: ownRead, systemElements: [], dropped: [], completeness: .complete
-        )
+        fixtureSet(items: items, visibleControlItem: visibleControlItem, hiddenDivider: hiddenDivider, alwaysHiddenDivider: alwaysHiddenDivider, ownRead: ownRead)
     }
 
     private func collapsed(_ frame: BarRect, for collapsedFor: Double = 5, changedDuringPass: Bool = false, isEnabled: Bool = true) -> DividerState {
@@ -49,7 +34,7 @@ struct DiscoveredCachePlanTests {
 
     @Test("untrusted / permissionDenied -> keepPrevious")
     func permissionDeniedKeepsPrevious() {
-        let untrustedSet = DiscoveredItemSet(items: [], visibleControlItem: nil, hiddenDivider: nil, alwaysHiddenDivider: nil, ownRead: .notRead, systemElements: [], dropped: [], completeness: .permissionDenied)
+        let untrustedSet = fixtureSet(items: [], ownRead: .notRead, completeness: .permissionDenied)
         let result = DiscoveredCachePlan.make(set: untrustedSet, dividerStates: DividerStates(hidden: expanded(), alwaysHidden: expanded()), previous: [:])
         #expect(result == .keepPrevious(.permissionDenied))
     }
@@ -90,13 +75,7 @@ struct DiscoveredCachePlanTests {
         // frame, this item (midX 1023 >= 1012) would misread visible; D10
         // requires the boundary to be unknown while expanded, so it must
         // instead keep whatever section it held before the jump.
-        let key = ItemKey(namespace: "com.example.a", identifier: "jumped", pid: 1, childIndex: nil)
-        let jumped = DiscoveredItem(
-            key: key, basis: .declared,
-            process: ProcessInfoRecord(pid: 1, bundleID: "com.example.a", localizedName: nil, executableName: nil, launchTime: 10, isSelf: false),
-            frame: BarRect(minX: 1016, minY: 4.5, width: 14, height: 24), position: .onBar,
-            title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
-        )
+        let jumped = fixtureItem(identifier: "jumped", pid: 1, frame: barFrame(minX: 1016, width: 14))
         let dividerFrame = BarRect(minX: 1012, minY: 0, width: 5002, height: 33)
         let s = set(items: [jumped], hiddenDivider: DividerReading.make(frame: dividerFrame, in: bounds), alwaysHiddenDivider: nil)
         let previous: [TagKey: ItemSection] = [jumped.tagKey: .hidden]
@@ -314,13 +293,7 @@ struct DiscoveredCachePlanTests {
     @Test("the visibleControlItem is placed like any other item")
     func visibleControlItemIsPlacedLikeAnyItem() {
         let dividerFrame = BarRect(minX: 1100, minY: 0, width: 16, height: 33)
-        let ownKey = ItemKey(namespace: "IceApp", identifier: "gear", pid: 900, childIndex: nil)
-        let ownItem = DiscoveredItem(
-            key: ownKey, basis: .declared,
-            process: ProcessInfoRecord(pid: 900, bundleID: "IceApp", localizedName: nil, executableName: nil, launchTime: 10, isSelf: true),
-            frame: BarRect(minX: 1600, minY: 4.5, width: 20, height: 24), position: .onBar,
-            title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
-        )
+        let ownItem = fixtureItem(namespace: "IceApp", identifier: "gear", pid: 900, frame: barFrame(minX: 1600, width: 20), isSelf: true)
         let s = set(items: [], hiddenDivider: DividerReading.make(frame: dividerFrame, in: bounds), alwaysHiddenDivider: nil, visibleControlItem: ownItem)
         let result = DiscoveredCachePlan.make(set: s, dividerStates: DividerStates(hidden: collapsed(dividerFrame), alwaysHidden: expanded()), previous: [:])
         guard case .publish(let pub) = result else { Issue.record("expected publish"); return }

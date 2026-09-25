@@ -12,15 +12,12 @@ import OSLog
 
 /// What the layout pane shows about the last check (plan D7).
 struct HidingCheckStatus: Equatable {
-    let summary: VerificationSummary
     /// One line: "Hiding did not take effect for N item(s)" when anything is still drawn; otherwise "Hidden: N" when
     /// something was seen hidden, followed by "Not checked: <reason names>" for what could not be checked; "Not checked:
     /// <reason names>" alone when nothing was observed; "No items to check" when the section was empty.
     let message: String
 
     init(summary: VerificationSummary) {
-        self.summary = summary
-
         let reasons = Set(summary.skipped.keys)
             .union(summary.refused.keys)
             .union(summary.unverifiable.keys)
@@ -41,7 +38,6 @@ struct HidingCheckStatus: Equatable {
 @MainActor
 final class HidingVerifier {
     private let sectionMap: @MainActor () -> [TagKey: ItemSection]
-    private let iceIconKey: @MainActor () -> ItemKey?
     private let verification: @MainActor () -> HidingVerification?
     private let settle: Duration
     private let report: @MainActor (HidingCheckStatus) -> Void
@@ -76,13 +72,11 @@ final class HidingVerifier {
     init(
         inputs: AnyPublisher<VerificationInputs, Never>,
         sectionMap: @escaping @MainActor () -> [TagKey: ItemSection],
-        iceIconKey: @escaping @MainActor () -> ItemKey?,
         verification: @escaping @MainActor () -> HidingVerification?,
         settle: Duration = .seconds(1),
         report: @escaping @MainActor (HidingCheckStatus) -> Void
     ) {
         self.sectionMap = sectionMap
-        self.iceIconKey = iceIconKey
         self.verification = verification
         self.settle = settle
         self.report = report
@@ -153,7 +147,6 @@ final class HidingVerifier {
         let prepared = await verifier.prepare(
             sections: sections,
             sectionMap: sectionMap(),
-            iceIconKey: iceIconKey(),
             explicitCandidates: nil,
             reusing: lastPrepared
         )

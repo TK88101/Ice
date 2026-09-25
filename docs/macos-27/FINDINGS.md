@@ -182,7 +182,50 @@ Ice not run: moving, clicking and temporarily showing an item are refused on 27
 rows cannot show item images; `MenuBarAgent`'s elements (the clock, Control
 Centre) are not listed; items of apps that refuse Accessibility are not listed;
 before the first time a divider has been collapsed for a second after launch,
-every item is filed under the visible section.
+every item is filed under the visible section. (The first run below measured
+several of these.)
+
+### Ice itself on the user's bar -- the first run (2026-09-25)
+
+**MEASURED.** Ice built from `main` (`2e0c553`), spawned by `icewatch` from the
+terminal, the shared prefs domain with six settings off for the run
+(`UseIceBar`, `ShowOnClick`, `ShowOnScroll`, `EnableSecondaryContextMenu`,
+`ShowAllSectionsOnUserDrag`, `AutoRehide`), Sparkle off by launch arguments;
+18 min of Ice, 5 202 recorder ticks, no trip. Protocol:
+`docs/plans/2026-09-24-ice-first-run.md`; raw evidence outside the repo,
+`~/IceReverse-evidence/20260925-092244-icerun` (`results.md` there).
+
+| question | answer |
+|---|---|
+| does Loading go away | yes: `Finished setting up app state` 1.1 s after the XPC start; no "Loading menu bar items…" in three search panels and two layout panes |
+| the XPC service | `start()` fails in 45 ms (`Session failed … XPCRichError Code=1`, `Start request returned nil`, `Session was cancelled`); the service logs nothing and no service process was ever seen; setup does not wait on it |
+| permissions | `Passed all permissions checks`; tccd attributes every check to the terminal (responsible) with Ice as the requester; Ice called `TCCAccessRequest` for Accessibility 27 times; no prompt, no write logged |
+| the list | per section, the search panel's names and right-to-left order equal the recorder's on-bar items at that moment (one Apple item under Ice's own name for it); before any collapse: all 11 under Visible, Hidden empty |
+| D10 | two show / hide cycles: at each panel the split was Visible 6 / Hidden 5, equal to `midX >= divider.minX` over the tick at that moment, names and order included |
+| the check | status line `Hiding did not take effect for 5 item(s)`, as predicted from the census before the cycle; 10 per-item lines over two cycles, all `checked(stillDrawn)`; after collapses shorter than 1 s: `Not checked: noBaseline` |
+| hiding | **does not take effect**: with the hidden divider expanded, every item of the hidden section was still drawn (the check), and every user item stayed on the bar in AX |
+| the launch | the hidden divider appeared parked off the bar (x 7, y 1121.5, w 5002) at the first tick with Ice's items; no intermediate frame |
+| collapse / expand beside the user's items | 9 collapses (4 by the harness, 5 not): no `«`, no stacking, no item lost; the items left of the divider moved ≤ 1 pt. After the first collapse the expanded divider no longer parks: its AX frame sits on the bar (x 1228, w 5002) overlapping Ice's icon and two items that are drawn |
+| synthesized events | none: no `Posting` line |
+| one left click on Ice's icon (`ShowOnClick` off) | one toggle |
+| the search panel's item images | blank grey placeholders |
+| exit | Ice ended 0.2 s after SIGTERM; all 10 user items on the bar after it, same order and widths; the shared domain restored exactly (46 keys) |
+
+Not measured here: Ice in the user's own configuration (IceBar mode, where no
+click collapses a divider, so neither D10 nor the check runs; only a ⌘-drag
+collapses the dividers, giving `Not checked: iceBarMode` -- READ); the
+first-run protocol's launch transient shorter than a tick; anything during
+the 14 recorder gaps longer than 1 s (13 of them while the harness compiled a
+tool, max 2.6 s).
+
+**MEASURED 2026-09-25** (T6 re-freeze, `20260925-103322-t6`): one third-party
+item answering `AXIdentifier` with `kAXErrorFailure` makes its whole process
+read `.failed` (`ReadClassifier` treats any non-harmless attribute error so),
+so every pass is `incomplete` and T6 cannot pass while that app runs; an
+accessory process that never finished launching held every
+`AXExtrasMenuBar` read for the full 0.25 s timeout, which alone took warm
+passes from ~25 ms to ~290 ms. Whether an identifier read error should
+instead make the item `unnamed` is open.
 
 ### Two different kinds of "not visible"
 

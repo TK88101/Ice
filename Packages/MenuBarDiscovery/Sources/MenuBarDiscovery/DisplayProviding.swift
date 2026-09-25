@@ -9,7 +9,7 @@ import IceCore
 /// exactly the mismatch `LiveMenuBarAXReader`'s own doc comment calls out
 /// (plan section 0).
 public protocol DisplayProviding: Sendable {
-    func bar() -> (bounds: BarBounds, origin: (x: Double, y: Double))?
+    func bar() -> (bounds: BarBounds, origin: DiscoveryOrigin)?
 }
 
 /// The screen `screen` returns -- `NSScreen.main` unless the caller passes
@@ -30,7 +30,7 @@ public struct LiveDisplay: DisplayProviding {
         self.screen = screen
     }
 
-    public func bar() -> (bounds: BarBounds, origin: (x: Double, y: Double))? {
+    public func bar() -> (bounds: BarBounds, origin: DiscoveryOrigin)? {
         guard let screen = screen() else { return nil }
         let displayID = Self.directDisplayID(for: screen) ?? CGMainDisplayID()
         let originPoint = CGDisplayBounds(displayID).origin
@@ -42,7 +42,7 @@ public struct LiveDisplay: DisplayProviding {
         let barHeight = safeAreaTop > 0 ? safeAreaTop : Double(NSStatusBar.system.thickness)
 
         let bounds = BarBounds(minX: 0, maxX: width, minY: 0, barHeight: barHeight)
-        return (bounds, (Double(originPoint.x), Double(originPoint.y)))
+        return (bounds, DiscoveryOrigin(x: Double(originPoint.x), y: Double(originPoint.y)))
     }
 
     private static func directDisplayID(for screen: NSScreen) -> CGDirectDisplayID? {

@@ -92,9 +92,9 @@ final class FakeExtrasReader: ExtrasReading, @unchecked Sendable {
 }
 
 struct FakeDisplay: DisplayProviding {
-    let result: (bounds: BarBounds, origin: (x: Double, y: Double))?
+    let result: (bounds: BarBounds, origin: DiscoveryOrigin)?
 
-    func bar() -> (bounds: BarBounds, origin: (x: Double, y: Double))? { result }
+    func bar() -> (bounds: BarBounds, origin: DiscoveryOrigin)? { result }
 }
 
 // MARK: - Shared fixtures

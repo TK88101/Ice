@@ -289,7 +289,7 @@ extension StageRun {
             let standIn = StandInDividerDiscoverer(base: discoverer, sectionKeys: Set(items.map(\.key)))
             let set = Pump.blocking { await standIn.discover(previous: nil) }?.set
             let sectionMap = Dictionary(uniqueKeysWithValues: items.map { ($0.tagKey, ItemSection.hidden) })
-            let plan = set.map { CheckPlan.make(sections: [.hidden], set: $0, sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [referenceKey]) }
+            let plan = set.map { CheckPlan.make(sections: [.hidden], set: $0, sectionMap: sectionMap, explicitCandidates: [referenceKey]) }
 
             // Only the helpers' own keys reach the evidence: `alsoObserved` is
             // counted, never listed.

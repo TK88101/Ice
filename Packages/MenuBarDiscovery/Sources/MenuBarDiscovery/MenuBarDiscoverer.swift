@@ -2,7 +2,7 @@ import Foundation
 import IceCore
 
 /// A small lock-protected box, used internally for the cancellation flag a
-/// running pass polls between processes. Not `Locked<T>` from the standard
+/// running pass polls between processes and for the rotating cursor. Not `Locked<T>` from the standard
 /// library (macOS 14's deployment target predates it).
 final class DiscoveryBox<Value>: @unchecked Sendable {
     private var value: Value
@@ -45,8 +45,9 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
     private let deadline: Double
     private let queue: DispatchQueue
 
-    private let cursorLock = NSLock()
-    private var cursor: Int = 0
+    /// Where the next pass starts: the process the last one's deadline
+    /// stopped at.
+    private let cursor = DiscoveryBox(0)
 
     public init(
         apps: any RunningAppsProviding,
@@ -55,7 +56,7 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         isTrusted: @escaping @Sendable () -> Bool,
         ownIdentifiers: OwnIdentifiers,
         now: @escaping @Sendable () -> Double,
-        timeout: Double = 0.25,
+        timeout: Double = ReadClassifier.defaultTimeout,
         deadline: Double = 2.0,
         queue: DispatchQueue = DispatchQueue(label: "com.icereverse.MenuBarDiscovery.MenuBarDiscoverer")
     ) {
@@ -93,16 +94,16 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
 
     private func runPass(
         previous: DiscoveredItemSet?,
-        display displaySnapshot: (bounds: BarBounds, origin: (x: Double, y: Double)),
+        display displaySnapshot: (bounds: BarBounds, origin: DiscoveryOrigin),
         cancelled: DiscoveryBox<Bool>
     ) -> DiscoveryResult? {
         let passStart = now()
         let processes = apps.processes()
         let agentPID = apps.agentPID()
         let count = processes.count
-        let origin = DiscoveryOrigin(x: displaySnapshot.origin.x, y: displaySnapshot.origin.y)
+        let origin = displaySnapshot.origin
 
-        let startIndex = count > 0 ? currentCursor() % count : 0
+        let startIndex = count > 0 ? cursor.get() % count : 0
         let deadlineAt = passStart + deadline
 
         var reads = [RawRead]()
@@ -129,31 +130,23 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
             }
         }
 
-        let adjustedReads = reads.map { subtractOrigin($0, origin: displaySnapshot.origin) }
+        let adjustedReads = reads.map { subtractOrigin($0, origin: origin) }
 
         let buildTime = now()
         let built = ItemCatalog.build(reads: adjustedReads, agentPID: agentPID, bounds: displaySnapshot.bounds, isTrusted: isTrusted(), ownIdentifiers: ownIdentifiers, now: buildTime, timeout: timeout)
         let carried = ItemCatalog.carryOver(previous: previous, current: built, now: buildTime)
 
         let nextCursor = truncationIndex ?? 0
-        setCursor(nextCursor)
+        cursor.set(nextCursor)
 
         return DiscoveryResult(set: carried, duration: now() - passStart, origin: origin, bounds: displaySnapshot.bounds, nextCursor: nextCursor)
-    }
-
-    private func currentCursor() -> Int {
-        cursorLock.withLock { cursor }
-    }
-
-    private func setCursor(_ value: Int) {
-        cursorLock.withLock { cursor = value }
     }
 
     /// Every AX frame in `raw.records` is in the global Accessibility
     /// coordinate space; IceCore's rules (`PositionRule`, `DividerReading`,
     /// D10's boundaries) are all written against display-local frames, so
     /// this is applied before `ItemCatalog.build` ever sees a read.
-    private func subtractOrigin(_ raw: RawRead, origin: (x: Double, y: Double)) -> RawRead {
+    private func subtractOrigin(_ raw: RawRead, origin: DiscoveryOrigin) -> RawRead {
         guard !raw.records.isEmpty else { return raw }
         let adjustedRecords = raw.records.map { record -> ExtrasRecord in
             guard let frame = record.frame.value else { return record }

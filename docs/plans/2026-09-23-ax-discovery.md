@@ -153,6 +153,18 @@ Scope: one machine, one display.
 **What the user will see on 27, and what it costs.** All INFERRED from the
 code: Ice is not run.
 
+> **Corrected 2026-09-25** (the first run, `2026-09-24-ice-first-run.md`, and
+> its recon; FINDINGS "Ice itself on the user's bar"): the check's status line
+> reads `Hiding did not take effect for N item(s)` (not "items"); **IceBar mode
+> gives no status line in normal use** -- no click, scroll or hotkey collapses
+> a divider there, so D10 never computes and `VerificationTrigger.reduce`
+> schedules nothing; only a ⌘-drag in the bar collapses the dividers, and that
+> yields `Not checked: iceBarMode` (READ, first-run F4, `reduce`); on the user's layout the check **did** reach a verdict
+> (two user items sat between the divider and Ice's icon): 10 × `stillDrawn`
+> (MEASURED); the search panel lists items with their apps' icons and blank
+> per-item images, and before the first collapse every item is under Visible
+> (MEASURED).
+
 - **The check captures the menu bar.** After a section is shown: about 1 s
   settle, 6 s of warm-up captures, ≥ 3 s of baseline, up to 5 retries 1 s apart
   — typically 10–15 s, at worst ≈ 30 s; after it is hidden: 1 s, 6 s warm-up,
@@ -397,7 +409,7 @@ section ordered by `minX`.
 | `CGEvent.menuBarItemEvent` | takes `windowID: CGWindowID` |
 | `IceBar` (`:142-152`, `:364`, `:377`, `:416`, `:433`) | control-item bounds via `source`, **`nil` for an AX item without a frame** (so the bar falls back as today); loading gate; `ForEach(id: \.id)`; on-screen helper `item.source.windowID.map(Bridging.isWindowOnScreen) ?? false` |
 | `MenuBarSearchPanel` (`:197-198`, `:253-265`, `:380`, `:418`) | loading gate; loaded and empty → "No menu bar items"; on-screen helper |
-| `MenuBarLayoutSettingsPane` (`:12-13`, `:50-57`, `:83-89`) | loading gate; loaded and empty → "No menu bar items"; **on 27 a status line** from `AppState`'s published verification summary ("Hiding did not take effect for N items", "Not checked: <reason>") |
+| `MenuBarLayoutSettingsPane` (`:12-13`, `:50-57`, `:83-89`) | loading gate; loaded and empty → "No menu bar items"; **on 27 a status line** from `AppState`'s published verification summary ("Hiding did not take effect for N item(s)" -- corrected 2026-09-25 from "N items", "Not checked: <reason>"; in IceBar mode none unless a ⌘-drag collapses the dividers) |
 | `MenuBarItemImageCache` (`:189`, `:259-261`) | accessibility items dropped first; nothing left → no capture; the warning at `debug` for accessibility-only sections |
 | `ControlItem` (`:70-72`) | behind `#available(macOS 27, *)`: `statusItem.button?.setAccessibilityIdentifier(controlItem.identifier.rawValue)` inside the existing `if let button`. Nothing else changes (A10). |
 | new `Ice/MenuBar/Verification/HidingVerifier.swift` | `@MainActor`; initialised from publishers and closures only (section map, timestamped divider inputs, Ice's icon key, a `HidingVerification` (which reads the dividers itself at prepare time)); feeds `VerificationTrigger`, runs the jobs through `HidingVerification`, publishes `lastSummary`; logs per-item results with keys `.private`. |
@@ -407,6 +419,18 @@ section ordered by `minX`.
 Untouched and inert on 27 as today: `HIDEventManager`, `MenuBarOverlayPanel`
 (`:559`), `SourcePIDCache`, the `MenuBarItemService` connection, the six
 `getMenuBarItems` callers, `IceBar.show`.
+
+> **Corrected 2026-09-25** (first-run recon F9, F10 and the first run):
+> `HIDEventManager` is untouched but **not inert** -- its "is the click on an
+> item?" test reads the per-item window list, empty on 27, so with
+> `ShowOnClick` a left click on any of the user's own items would toggle the
+> hidden section, with `EnableSecondaryContextMenu` a right click pops Ice's
+> menu, with `ShowAllSectionsOnUserDrag` any ⌘-drag collapses every divider
+> (READ / INFERRED; the run had all three off, and one left click on Ice's
+> icon toggled once, MEASURED). The `MenuBarItemService` connection is
+> untouched but **on the setup path**: `AppState` awaits its `start()` before
+> the first discovery pass; for the ad-hoc build it failed in 45 ms and setup
+> finished 1.1 s later (MEASURED).
 
 ---
 
@@ -939,6 +963,14 @@ Format: trigger → what changed → reason.
    evidence package: `PreparedVerification.generation` (unread), the Ice
    icon key threaded through four layers although the fresh set holds it,
    section membership decided twice, and the P2 lists.
+
+11. 2026-09-25, residuals plan (`2026-09-25-residuals.md`, R13/R14): T6
+   re-frozen from a fresh census twice (`~/IceReverse-evidence/20260925-103322-t6`):
+   all labels agree, the control is detected, no drift, but every pass is
+   incomplete while one third-party app answers `AXIdentifier` with an
+   error -- not PASS, not VOID. Verify re-run twice after the cleanup
+   (`20260925-103606-vzverify`, `20260925-110859-vzverify`): steps 3 and 5 as
+   before; step 6 skipped for room again (113.5 of 118.5 pt).
 
 ## Progress (for a resumed session)
 

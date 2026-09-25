@@ -15,6 +15,10 @@ import PackageDescription
 //             `discover` and `verify` stages of the 2026-09-23 plan
 //   VZGlyphs  the helpers' glyphs, shared so vizprobe's dry run can check
 //             that they are pairwise distinct under IceCore's own rules
+//   IceWatchCore / icewatch  docs/plans/2026-09-24-ice-first-run.md
+//             section 5: the first run's supervisor, recorder, watchdog and
+//             restorer. IceWatchCore holds the pure rules (Foundation only,
+//             no AppKit, no Accessibility) and is the only tested target
 let package = Package(
     name: "vzreplay",
     platforms: [
@@ -60,5 +64,16 @@ let package = Package(
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .target(name: "IceWatchCore"),
+        .executableTarget(
+            name: "icewatch",
+            dependencies: [
+                "IceWatchCore",
+                .product(name: "IceCore", package: "IceCore"),
+                .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(name: "IceWatchCoreTests", dependencies: ["IceWatchCore"]),
     ]
 )
