@@ -28,6 +28,12 @@
 //   selfread    -> one `selfread <json>` line: this process reads its own
 //                  AXExtrasMenuBar from a background queue while the main
 //                  thread keeps running the app (plan 6 step 10)
+//   stall <s>   -> `stalling {"seconds":s}`, then the main thread sleeps s
+//                  seconds (0 < s <= 30), then `resumed {"seconds":s}`: a
+//                  process whose Accessibility requests go unanswered, for the
+//                  responsiveness-quarantine live checks (2026-09-25 plan,
+//                  section 6). All three deadmen below, and EOF, run on the main
+//                  queue, so during a stall they fire late -- by at most s.
 //   quit, EOF   -> exit(0)
 // Replies go to stdout, one line each, written unbuffered.
 //
@@ -391,6 +397,16 @@ stdinSource.setEventHandler {
                 let result = selfRead()
                 reply("selfread", result)
             }
+        case "stall":
+            // The main thread is what answers Accessibility, so sleeping it is
+            // the stall. Bounded, because every deadman waits behind it.
+            guard words.count > 1, let seconds = Double(words[1]), seconds > 0, seconds <= 30 else {
+                reply("stall", ["error": "want 0 < seconds <= 30"])
+                break
+            }
+            reply("stalling", ["seconds": seconds])
+            Thread.sleep(forTimeInterval: seconds)
+            reply("resumed", ["seconds": seconds])
         case "quit": exit(0)
         default: break
         }

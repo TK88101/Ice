@@ -296,6 +296,11 @@ func printCensusJSON() {
 
 // MARK: - Entry point
 
+// One line at a time even into a file or a pipe, so a harness can act on a
+// pass as soon as it is printed (`--time --watch-pid`), not when the process
+// exits and the block buffer finally flushes.
+setvbuf(stdout, nil, _IOLBF, 0)
+
 let arguments = Array(CommandLine.arguments.dropFirst())
 
 /// `--time N [--every S] [--watch-pid P]`: N passes in one process, printing
