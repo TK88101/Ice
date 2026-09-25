@@ -575,6 +575,20 @@ Format: trigger → what changed → reason.
    from unable to tell a truncated walk from a complete one. Verified live: 70
    reads, both keys present, none interrupted, no count mismatch.
 
+14. **T6's real precondition, found after it passed.** The check was re-run
+   after the round-2 fixes and came back `incomplete` three times, then four and
+   five -- a growing count, so not a transient. The census named them: four
+   `com.apple.WebKit.WebContent` XPC services, each holding its
+   `AXExtrasMenuBar` read for the full 0.25 s. Not a regression from anything in
+   this plan -- the census shows no `partial`, no `walkInterrupted`, and no
+   attribute error beyond the tolerated one, and the previously-absent item is
+   still enumerated (items 11, unnamed 10). The T6 PASS recorded at 14:02 stands
+   on its archived evidence; what changed is the bar's condition, not the code.
+   The finding itself is in FINDINGS: those processes are `.accessory`, so the
+   `.prohibited` filter that `RunningAppsProviding.swift:20-28` names as the
+   mitigation for exactly this case never sees them. Out of scope here, and the
+   obvious widening is wrong (`.accessory` is what real menu bar apps are).
+
 ## Appendix A -- review record
 
 ### Round 1 (Codex, gpt-5.6-terra, reasoning=medium, on v1: 7 P1, 6 P2)

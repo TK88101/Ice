@@ -260,6 +260,28 @@ Three consequences, recorded rather than fixed:
   process that reorders its children would migrate a remembered section onto the
   **wrong** item, which is worse than one reset.
 
+**MEASURED 2026-09-25, and it corrects Deviation 11's attribution.** The
+processes that hold every `AXExtrasMenuBar` read for the full 0.25 s timeout --
+recorded earlier as "an accessory process that never finished launching" -- are
+**`com.apple.WebKit.WebContent` XPC services**, reproducibly. Four were up at
+14:20 (uptimes 9 to 55 minutes, accumulating as pages are opened); each one costs
+a pass its full per-call timeout and makes that pass `incomplete`, so warm passes
+went from 16-30 ms to roughly a second and `mbdiscover --check` fails on
+completeness alone.
+
+`RunningAppsProviding.swift:20-28` already names this case -- "a suspended one (a
+WebKit content process in T6) holds an Accessibility request for the full
+timeout" -- and leaves it to the `.prohibited` filter. **The filter cannot see
+them**: MEASURED, all four report `activationPolicy == .accessory`, not
+`.prohibited`. So the stated mitigation does not cover the case it names.
+
+Not fixable by widening the filter: `.accessory` is what ordinary menu bar apps
+are, so skipping it would skip the items discovery exists to find. Anything else
+-- excluding that bundle id, treating a timeout as a decline for a process that
+has never once been read successfully, or lowering the per-call timeout -- is a
+decision, and none of it is in the 2026-09-25 plan's scope. Recorded here so the
+next T6 knows its real precondition: **no WebKit content process up**.
+
 ### Two different kinds of "not visible"
 
 | state | cause | AX frame |
