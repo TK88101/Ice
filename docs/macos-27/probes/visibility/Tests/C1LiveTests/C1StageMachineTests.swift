@@ -25,6 +25,68 @@ struct C1StageMachineTests {
         #expect(machine.terminalReason == .latchTrip(.protectedMissing))
     }
 
+    // MARK: - Items 1/9: safetyStop is part of the machine's own locked
+    // state, set atomically with `terminalReason` -- by the time a caller
+    // observes `isTerminal == true` (necessarily after the same
+    // `trip()`/`watchdogFired()`/etc. call that set it), `safetyStop` is
+    // already set too. There is no window where accounting could read
+    // `isTerminal` true and `safetyStop` nil.
+
+    @Test("a latch trip sets safetyStop to .stop, atomically with terminalReason")
+    func tripSetsSafetyStopToStop() {
+        var machine = C1StageMachine()
+        _ = machine.trip(.protectedMissing)
+        #expect(machine.safetyStop == .stop)
+    }
+
+    @Test("the watchdog sets safetyStop to .needingAttention")
+    func watchdogSetsSafetyStopToNeedingAttention() {
+        var machine = C1StageMachine()
+        _ = machine.watchdogFired()
+        #expect(machine.safetyStop == .needingAttention)
+    }
+
+    @Test("a teardown reap failure sets safetyStop to .needingAttention")
+    func teardownReapFailedSetsSafetyStopToNeedingAttention() {
+        var machine = C1StageMachine()
+        _ = machine.teardownReapFailed()
+        #expect(machine.safetyStop == .needingAttention)
+    }
+
+    @Test("item 7: a reset-check failure is terminal, immediately, with safetyStop .stop")
+    func resetCheckFailedIsTerminal() {
+        var machine = C1StageMachine()
+        let actions = machine.resetCheckFailed()
+        #expect(machine.isTerminal)
+        #expect(machine.terminalReason == .resetCheckFailed)
+        #expect(machine.safetyStop == .stop)
+        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers, .stopCaffeinate])
+    }
+
+    @Test("safetyStop is nil before any terminal event")
+    func safetyStopNilBeforeTerminal() {
+        let machine = C1StageMachine()
+        #expect(machine.safetyStop == nil)
+    }
+
+    @Test("a second terminal event never overwrites the first's safetyStop")
+    func secondTerminalEventNeverOverwritesSafetyStop() {
+        var machine = C1StageMachine()
+        _ = machine.trip(.protectedMissing)
+        _ = machine.watchdogFired()
+        #expect(machine.safetyStop == .stop)
+    }
+
+    @Test("item 1: a teardown mismatch (a non-empty helper domain, or the bar not baseline-equivalent after teardown) is also terminal, through the machine, needing attention")
+    func teardownMismatchIsTerminal() {
+        var machine = C1StageMachine()
+        let actions = machine.teardownMismatch()
+        #expect(machine.isTerminal)
+        #expect(machine.terminalReason == .teardownMismatch)
+        #expect(machine.safetyStop == .needingAttention)
+        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers, .stopCaffeinate])
+    }
+
     @Test("trip() returns the cleanup actions in order: rest, quit, reap, stop caffeinate")
     func tripReturnsCleanupActions() {
         var machine = C1StageMachine()

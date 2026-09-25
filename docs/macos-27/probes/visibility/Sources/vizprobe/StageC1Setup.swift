@@ -81,32 +81,17 @@ extension StageC1 {
     /// Section 2's launch order: Protected, the spacer, Target -- each
     /// waits for `up` and a fresh discovery listing its item (by pid and
     /// AX identifier, P0-1 -- never by bundle id) before the next helper
-    /// starts. Builds `channel` and, from it, `latchingCapturer` (P0-2):
-    /// every capture from here on goes through the latch first, even
-    /// though it has no owner baseline to assess against yet (its own
-    /// `assess` closure reads `ownerBaseline` lazily and is a no-op until
-    /// `step3Baseline` sets it -- there is nothing to compare against
-    /// before then, so silence is the faithful answer, not a gap).
+    /// starts. `channel` (and, from it, `latchingCapturer`, P0-2) is built
+    /// *before* any launch and every helper is registered with it the
+    /// instant its process starts (item 2), so a failure partway through
+    /// -- Protected launches but the spacer does not, say -- still leaves
+    /// `runCleanup()` a channel that knows about Protected and can quit
+    /// and reap it. `latchingCapturer`'s `assess` closure reads
+    /// `ownerBaseline` lazily and is a no-op until `step3Baseline` sets
+    /// it -- there is nothing to compare against before then, so silence
+    /// is the faithful answer, not a gap.
     func step2Launch() -> StepResult {
-        guard let protected = launchAndDiscover(label: "protected", app: apps.protected, bundleID: C1HelperRole.protected, role: "reference", identifier: "vz-reference") else {
-            return .abort("could not launch or discover Protected")
-        }
-        protectedHelper = protected.helper
-        protectedKey = protected.key
-
-        guard let spacer = launchAndDiscover(label: "spacer", app: apps.spacer, bundleID: C1HelperRole.protected, role: "spacer", identifier: SpacerIdentifier.value) else {
-            return .abort("could not launch or discover the spacer")
-        }
-        spacerHelper = spacer.helper
-        spacerKey = spacer.key
-
-        guard let target = launchAndDiscover(label: "target", app: apps.target, bundleID: C1HelperRole.target, role: "target", identifier: "vz-target") else {
-            return .abort("could not launch or discover Target")
-        }
-        targetHelper = target.helper
-        targetKey = target.key
-
-        let channel = HelperControlChannel(helpers: [protected.helper, spacer.helper, target.helper], spacer: { [weak self] in self?.spacerHelper })
+        let channel = HelperControlChannel()
         self.channel = channel
         expansionDriver = C1ExpansionDriver(channel: channel, dry: dry)
         latchingCapturer = LatchingCapturer(
@@ -116,15 +101,36 @@ extension StageC1 {
         ) { [weak self] image in
             self?.assessLatch(image: image) ?? .init(captureFailed: true)
         }
+
+        guard let protected = launchAndDiscover(label: "protected", app: apps.protected, bundleID: C1HelperRole.protected, role: "reference", identifier: "vz-reference", channel: channel) else {
+            return .abort("could not launch or discover Protected")
+        }
+        protectedHelper = protected.helper
+        protectedKey = protected.key
+
+        guard let spacer = launchAndDiscover(label: "spacer", app: apps.spacer, bundleID: C1HelperRole.protected, role: "spacer", identifier: SpacerIdentifier.value, channel: channel, isSpacer: true) else {
+            return .abort("could not launch or discover the spacer")
+        }
+        spacerHelper = spacer.helper
+        spacerKey = spacer.key
+
+        guard let target = launchAndDiscover(label: "target", app: apps.target, bundleID: C1HelperRole.target, role: "target", identifier: "vz-target", channel: channel) else {
+            return .abort("could not launch or discover Target")
+        }
+        targetHelper = target.helper
+        targetKey = target.key
+
         evidence.record("step2.launched", ["protected": describeKey(protected.key), "spacer": describeKey(spacer.key), "target": describeKey(target.key)])
         return .ok
     }
 
-    /// Deletes the bundle id's domain, launches one helper, waits for its
-    /// `up` line, then discovers its declared item -- by pid and AX
+    /// Deletes the bundle id's domain, launches one helper, registers it
+    /// with `channel` the instant its process exists (item 2), then waits
+    /// for its `up` line and discovers its declared item -- by pid and AX
     /// identifier (P0-1). `nil` on any failure -- the caller aborts the
-    /// whole launch sequence rather than continue with a partial roster.
-    func launchAndDiscover(label: String, app: URL, bundleID: String, role: String, identifier: String) -> (helper: HelperControl, key: ItemKey)? {
+    /// whole launch sequence rather than continue with a partial roster,
+    /// but the helper (if it got that far) stays registered for cleanup.
+    func launchAndDiscover(label: String, app: URL, bundleID: String, role: String, identifier: String, channel: HelperControlChannel, isSpacer: Bool = false) -> (helper: HelperControl, key: ItemKey)? {
         // Neither vzhelper role here ever sets `--autosave`, so this never
         // has data to lose even when Protected and the spacer share a
         // bundle id and this runs while Protected is already up (P0-1) --
@@ -139,6 +145,7 @@ extension StageC1 {
             evidence.record("helper.launchFailed", ["label": label])
             return nil
         }
+        channel.register(helper, isSpacer: isSpacer)
         guard helper.awaitReply("up", timeout: 5) != nil else {
             helper.quit()
             evidence.record("helper.noUp", ["label": label])

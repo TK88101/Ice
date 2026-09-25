@@ -28,14 +28,17 @@ extension StageC1 {
         evidence.record("teardown.helperDomains", ["empty": domainsEmpty])
         // P1: a non-empty or unreadable helper preference domain fails
         // teardown -- a safety stop needing attention, not a plain PASS.
+        // Item 1: routed through the machine (`markTeardownMismatch`),
+        // never a stage-level flag `RunAccounting` might read before it
+        // is set.
         if !domainsEmpty {
-            safetyStop = safetyStop ?? .needingAttention
+            markTeardownMismatch()
             evidence.record("teardown.domainsNotEmpty", [:])
         }
 
         let teardownEquivalent = waitForTeardownBaselineEquivalence()
         if !teardownEquivalent {
-            safetyStop = safetyStop ?? .needingAttention
+            markTeardownMismatch()
         }
 
         let input = RunAccounting.Input(

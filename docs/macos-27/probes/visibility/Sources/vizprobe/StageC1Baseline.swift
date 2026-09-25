@@ -38,8 +38,9 @@ extension StageC1 {
         // P0-2: the owner observer's sampler reads through the latch, not
         // the raw capturer -- the very baseline this step takes is itself
         // watched (its own `assess` closure is a no-op until this
-        // baseline exists, which is exactly this call).
-        let reader = LiveMenuBarAXReader(origin: CGPoint(x: origin.x, y: origin.y))
+        // baseline exists, which is exactly this call). Item 8: the AX
+        // half of the sampler's bracket is bounded too.
+        let reader = TimedAXReader(wrapping: LiveMenuBarAXReader(origin: CGPoint(x: origin.x, y: origin.y)))
         let sampler = Sampler(capturer: latchingCapturer, axReader: reader)
         ownerObserver = VisibilityObserver(sampler: sampler, parameters: parameters)
 
@@ -64,13 +65,16 @@ extension StageC1 {
         verification = HidingVerification(
             discoverer: C1Discoverer(base: discoverer, targetKey: targetKey, spacerKey: spacerKey, protectedKey: protectedKey),
             capturer: latchingCapturer,
-            readerFactory: { readerOrigin in DiscoveredFrameReader(extras: LiveExtrasReader(), apps: LiveRunningApps(), origin: readerOrigin) },
+            // Item 8: the reader backing `HidingVerification`'s own
+            // internal Sampler is bounded too -- this is the one seam of
+            // that frozen type this stage controls.
+            readerFactory: { readerOrigin in TimedAXReader(wrapping: DiscoveredFrameReader(extras: LiveExtrasReader(), apps: LiveRunningApps(), origin: readerOrigin)) },
             geometry: { NSScreen.main.flatMap { BarGeometry(screen: $0) } },
             preflight: { [weak self] in
                 guard let self, let screen = NSScreen.main, let geometry = BarGeometry(screen: screen) else {
                     return .unavailable(.captureUnavailable)
                 }
-                let reader = DiscoveredFrameReader(extras: LiveExtrasReader(), apps: LiveRunningApps(), origin: liveOrigin)
+                let reader = TimedAXReader(wrapping: DiscoveredFrameReader(extras: LiveExtrasReader(), apps: LiveRunningApps(), origin: liveOrigin))
                 return Preflight.run(capturer: self.latchingCapturer, axReader: reader, geometry: geometry)
             }
         )
@@ -82,7 +86,8 @@ extension StageC1 {
         }
         prepared = firstPrepared
 
-        seedBaselines(baseline: ownerBaseline, discovery: pass, targetID: targetKey.encoded, spacerID: spacerKey.encoded, protectedID: protectedKey.encoded)
+        let seeded = seedBaselines(baseline: ownerBaseline, discovery: pass, targetID: targetKey.encoded, spacerID: spacerKey.encoded, protectedID: protectedKey.encoded)
+        guard case .ok = seeded else { return seeded }
         preflightEverPassed = false
         return .ok
     }
@@ -119,7 +124,15 @@ extension StageC1 {
     /// stands in for the first "passing reset"), section 5's
     /// baseline-equivalence readings for templated items, and G-b's AX
     /// baseline for untemplated ones.
-    func seedBaselines(baseline: BaselineResult, discovery: DiscoveryResult, targetID: String, spacerID: String, protectedID: String) {
+    ///
+    /// Item 4: a candidate untemplated owner item with no AX frame at
+    /// baseline aborts the whole run here, before any expansion -- G-b's
+    /// watch is only as good as the baseline it compares against, and an
+    /// item this run cannot even place at the start can never be
+    /// evaluated "listed and stationary" later. The earlier draft
+    /// silently dropped such an item from `untemplatedOwnerBaseline`
+    /// instead, which stopped watching it rather than refusing to run.
+    func seedBaselines(baseline: BaselineResult, discovery: DiscoveryResult, targetID: String, spacerID: String, protectedID: String) -> StepResult {
         let indicator = detectIndicatorFrame()
         let fullRoster = discovery.set.listedItems
             .filter { $0.frame != nil }
@@ -138,9 +151,15 @@ extension StageC1 {
         // G-b: every owner item discovery lists but the pixel baseline did
         // not accept as a template -- watched by AX minX instead.
         let templatedIDs = Set(baseline.templates.keys)
-        untemplatedOwnerBaseline = discovery.set.listedItems
+        let untemplatedCandidates = discovery.set.listedItems
             .filter { ![targetKey, spacerKey, protectedKey].contains($0.key) && !templatedIDs.contains($0.key.encoded) }
-            .compactMap { item in item.frame.map { UntemplatedOwnerWatch.Reading(id: item.key.encoded, minX: $0.minX) } }
+        guard untemplatedCandidates.allSatisfy({ $0.frame != nil }) else {
+            let missing = untemplatedCandidates.filter { $0.frame == nil }.map(\.key.encoded)
+            evidence.record("step3.untemplatedNoFrame", ["ids": missing])
+            return .abort("step 3: an untemplated owner item (\(missing.joined(separator: ", "))) has no AX frame at baseline -- G-b fails closed")
+        }
+        untemplatedOwnerBaseline = untemplatedCandidates.map { UntemplatedOwnerWatch.Reading(id: $0.key.encoded, minX: $0.frame!.minX) }
+        return .ok
     }
 
     /// The capture indicator: a `MenuBarAgent` frame in
@@ -158,12 +177,15 @@ extension StageC1 {
     }
 
     /// G-b: every `untemplatedOwnerBaseline` id's current AX reading, from
-    /// one fresh discovery pass -- `nil` for an id the pass could not read
-    /// conclusively (failed, quarantined) or did not list at all, which
-    /// `UntemplatedOwnerWatch.check` then fails closed on.
+    /// one fresh, bounded discovery pass (item 8: `TimedDiscoverer`) --
+    /// `nil` for an id the pass could not read conclusively (failed,
+    /// quarantined, or -- item 4 -- not actually enumerated this pass, so
+    /// a stale carried-over item cannot be mistaken for a fresh read) or
+    /// did not list at all, which `UntemplatedOwnerWatch.check` then
+    /// fails closed on.
     func currentUntemplatedReadings() -> [String: UntemplatedOwnerWatch.Reading?] {
         guard !untemplatedOwnerBaseline.isEmpty else { return [:] }
-        guard let discovery = Pump.blocking({ await self.discoverer.discover(previous: nil) }) else {
+        guard let discovery = Pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }) else {
             latchingCapturer.feed(.init(captureFailed: true))
             return Dictionary(uniqueKeysWithValues: untemplatedOwnerBaseline.map { ($0.id, Optional<UntemplatedOwnerWatch.Reading>.none) })
         }
@@ -175,7 +197,7 @@ extension StageC1 {
                 continue
             }
             let status = discovery.status(of: item.key.pid)
-            guard !status.failed, !status.quarantined, !status.permissionDenied else {
+            guard status.enumerated, !status.failed, !status.quarantined, !status.permissionDenied else {
                 result[base.id] = nil
                 continue
             }

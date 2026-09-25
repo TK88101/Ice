@@ -74,6 +74,15 @@ public enum RunAccounting {
             return .inconclusive("preflight never passed or captures stayed unreadable")
         }
 
+        // Item 6 (Codex round 2): a preflight failure partway through the
+        // scan must not let a later smoke -- run at whatever midpoint a
+        // truncated scan happened to produce -- reach PASS. Only a scan
+        // that read every one of section 5 step 2's 19 lengths may be
+        // judged at all.
+        guard input.scanReadings.count == ScanPlanner.lengths.count else {
+            return .inconclusive("the scan did not complete all \(ScanPlanner.lengths.count) lengths")
+        }
+
         guard input.scanReadings.contains(.hidden(folded: false)) else {
             return .provisionalFail("no scanned length gave hidden(folded: false)")
         }

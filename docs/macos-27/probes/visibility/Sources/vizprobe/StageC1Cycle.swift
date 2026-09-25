@@ -55,13 +55,21 @@ extension StageC1 {
         guard !isTerminal else { return nil }
         let restored = classify(restoredCheck[targetKey!], expected: .stillDrawn) == .expected
 
-        let resetOK = performResetCheck(label: "\(label).reset")
-        guard !isTerminal else { return nil }
-        if !resetOK { safetyStop = safetyStop ?? .stop }
-
         let protectedAndOwnersDrawn = readOwnerAndProtectedDrawn(label: "\(label).drawn")
         let untemplatedFailures = UntemplatedOwnerWatch.check(current: currentUntemplatedReadings(), baseline: untemplatedOwnerBaseline)
-        let otherChecksPassed = foldAbsentAtExpansion && protectedAndOwnersDrawn && untemplatedFailures.isEmpty && restored && resetOK
+        guard !isTerminal else { return nil }
+
+        // Item 7: a reset-check (baseline-equivalence) failure is itself
+        // an immediate safety stop -- no result for this cycle, and the
+        // caller's scan/smoke loop stops on `isTerminal` without any
+        // further scan length or smoke cycle running.
+        guard performResetCheck(label: "\(label).reset") else {
+            markResetCheckFailed()
+            return nil
+        }
+        guard !isTerminal else { return nil }
+
+        let otherChecksPassed = foldAbsentAtExpansion && protectedAndOwnersDrawn && untemplatedFailures.isEmpty && restored
         evidence.record("cycle", ["label": label, "reading": "\(hiddenReading)", "otherChecksPassed": otherChecksPassed, "untemplatedFailures": untemplatedFailures.map { "\($0)" }])
         return C1CycleResult(reading: hiddenReading, otherChecksPassed: otherChecksPassed)
     }
@@ -94,7 +102,7 @@ extension StageC1 {
     /// read of `targets`/`references` -- `nil` on a capture/AX failure
     /// (fed to the latch as an immediate abort) or an unsettled/unstable
     /// pair.
-    private func settledPairedRead(targets: [String], references: [String]) -> ObservationResult? {
+    func settledPairedRead(targets: [String], references: [String]) -> ObservationResult? {
         guard let first = ownerObserver.observe(baseline: ownerBaseline, targets: targets, references: references, items: ownerItemIDs), first.reading.captureStable else {
             latchingCapturer.feed(.init(captureFailed: true))
             return nil
@@ -126,7 +134,7 @@ extension StageC1 {
     /// the expansion window is closed -- the preflight, the reset check
     /// and teardown all call this; the mid-expansion read never does (the
     /// fold going up there is expected, not a violation).
-    private func watchFold(_ fold: Fold, label: String) {
+    func watchFold(_ fold: Fold, label: String) {
         guard fold == .present, !expansionWindowOpen else { return }
         evidence.record("fold.appearedWithoutExpansion", ["label": label])
         latchingCapturer.feed(.init(foldAppearedWithoutExpansion: true))
@@ -168,7 +176,8 @@ extension StageC1 {
     /// setup and never again.
     private func passesPreflightOnce(label: String) -> Bool {
         guard let targetKey, let spacerKey, let protectedKey else { return false }
-        guard let fresh = Pump.blocking({ await self.discoverer.discover(previous: nil) }) else {
+        // Item 8: bounded, like the untemplated watch's own discovery read.
+        guard let fresh = Pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }) else {
             latchingCapturer.feed(.init(captureFailed: true))
             return false
         }

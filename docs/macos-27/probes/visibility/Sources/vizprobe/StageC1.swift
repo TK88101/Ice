@@ -43,22 +43,36 @@ enum C1HelperRole {
 /// so `C1Live`'s tested pieces (`LatchingCapturer`, `C1ExpansionDriver`,
 /// `C1StageMachine`) can drive the same real helpers the launch steps
 /// started, and a fake can stand in for it in a test.
+///
+/// Item 2 (Codex round 2): built *before* any helper launches and
+/// registered with each one as soon as its process actually starts --
+/// `register(_:isSpacer:)`, not a constructor that only exists once all
+/// three have succeeded. A failure discovering the spacer or Target must
+/// still be able to quit and reap whatever already launched (Protected,
+/// or Protected and the spacer); the old constructor-based channel had no
+/// way to reach a helper that started but whose launch step had not yet
+/// returned.
 final class HelperControlChannel: C1HelperChannel, @unchecked Sendable {
     private let lock = NSLock()
-    private var helpers: [HelperControl]
-    private let spacerHelper: () -> HelperControl?
+    private var helpers: [HelperControl] = []
+    private var spacerHelperRef: HelperControl?
 
-    init(helpers: [HelperControl], spacer: @escaping () -> HelperControl?) {
-        self.helpers = helpers
-        self.spacerHelper = spacer
+    /// Registers a helper the instant its process starts (P0-2/item 2),
+    /// before this run waits for its `up` reply or discovers its item --
+    /// so a launch failure right after this still has a way to quit it.
+    func register(_ helper: HelperControl, isSpacer: Bool = false) {
+        lock.withLock {
+            helpers.append(helper)
+            if isSpacer { spacerHelperRef = helper }
+        }
     }
 
     func sendLength(_ pt: Double) {
-        spacerHelper()?.send("length \(pt)")
+        (lock.withLock { spacerHelperRef })?.send("length \(pt)")
     }
 
     func sendRest() {
-        spacerHelper()?.send("rest")
+        (lock.withLock { spacerHelperRef })?.send("rest")
     }
 
     /// Quits every helper this channel knows about. Not itself a
@@ -93,6 +107,12 @@ final class StageC1 {
         ownIdentifiers: StageRun.ownIdentifiers,
         now: { ProcessInfo.processInfo.systemUptime }
     )
+    /// Item 8: "same bound for the keyed discovery reads used by the
+    /// untemplated watch and preflight" -- `currentUntemplatedReadings()`
+    /// and `passesPreflightOnce()`'s AX order fetch use this, never
+    /// `discoverer` directly. Launch-time and reap discovery keep using
+    /// `discoverer` unbounded -- item 8 names only these two reads.
+    lazy var timedDiscoverer: any Discovering = TimedDiscoverer(wrapping: discoverer)
 
     var geometry: BarGeometry!
     var evidence: LiveEvidence!
@@ -133,12 +153,6 @@ final class StageC1 {
 
     var caffeinate: Process?
     var summary = [String: Any]()
-    /// The verdict `RunAccounting` sees. Kept in sync with `machine`'s own
-    /// terminal state by `handleTerminal(_:)` -- `machine` decides *that*
-    /// and *when* the run goes terminal (P0-3); this is what
-    /// `RunAccounting.decide` reads to tell a plain safety stop from one
-    /// needing the owner's attention.
-    var safetyStop: RunAccounting.SafetyStop?
     var preflightEverPassed = false
     var capturesStayedUnreadable = false
 
@@ -210,6 +224,10 @@ final class StageC1 {
 
     var isTerminal: Bool { lock.withLock { machine.isTerminal } }
 
+    /// Items 1/9: accounting reads only the machine -- there is no
+    /// separate stage-level copy that could lag behind or race it.
+    var safetyStop: RunAccounting.SafetyStop? { lock.withLock { machine.safetyStop } }
+
     /// Opens the expansion window, sends `length` (unless `--dry`), runs
     /// `body`, and guarantees `rest` plus a closed window on every exit
     /// (P0-4) -- `C1StageMachine.beginExpansion()`/`endExpansion()`
@@ -220,14 +238,32 @@ final class StageC1 {
     /// own queue thread, not this one. Holding `lock` for the whole of
     /// `body` would deadlock that callback against this thread's own wait
     /// on the same lock.
+    ///
+    /// Item 3 (G-a, Codex round 2): the window stays open through
+    /// `confirmRestSettledFold()` -- a settled, bracketed read confirming
+    /// the spacer is actually back at rest, not merely that `rest` was
+    /// sent -- and only that read's own fold, found once the window is
+    /// finally closed, is fed to the latch (`watchFold` itself checks
+    /// `!expansionWindowOpen`, so feeding it before closing would always
+    /// be silently ignored as "still mid-expansion").
     func withExpansionWindow<T>(to lengthPt: Double, _ body: () -> T) -> T {
         lock.withLock { machine.beginExpansion() }
         expansionDriver.expand(to: lengthPt)
         defer {
             expansionDriver.collapse()
+            let fold = confirmRestSettledFold()
             lock.withLock { machine.endExpansion() }
+            if let fold { watchFold(fold, label: "collapse.rest") }
         }
         return body()
+    }
+
+    /// G-a: the spacer's own settled, bracketed read after `rest` was
+    /// sent. `nil` on a capture/AX failure (`settledPairedRead` already
+    /// fed `.captureFailed`) or if the spacer's own key is not yet known.
+    private func confirmRestSettledFold() -> Fold? {
+        guard let spacerKey else { return nil }
+        return settledPairedRead(targets: [spacerKey.encoded], references: [])?.reading.fold
     }
 
     var expansionWindowOpen: Bool { lock.withLock { machine.expansionWindowOpen } }
@@ -252,21 +288,34 @@ final class StageC1 {
         handleTerminal(lock.withLock { machine.teardownReapFailed() })
     }
 
+    /// Item 7: a reset-check (baseline-equivalence) failure is itself an
+    /// immediate safety stop -- no further cycle or scan-length work.
+    func markResetCheckFailed() {
+        handleTerminal(lock.withLock { machine.resetCheckFailed() })
+    }
+
+    /// Item 1: teardown's own mismatch (a non-empty/unreadable helper
+    /// domain, or the bar not baseline-equivalent within 30 s) -- routed
+    /// through the machine like every other safety event, not a
+    /// stage-level flag.
+    func markTeardownMismatch() {
+        handleTerminal(lock.withLock { machine.teardownMismatch() })
+    }
+
     /// P0-5: every exit after setup starts, that is not already itself a
     /// terminal event, still runs the one idempotent cleanup.
     func runCleanup() {
         perform(lock.withLock { machine.cleanup() })
     }
 
+    /// `machine.trip`/`watchdogFired`/`teardownReapFailed`/
+    /// `resetCheckFailed`/`teardownMismatch` already set `isTerminal`,
+    /// `terminalReason` and `safetyStop` together, atomically, before
+    /// returning `actions` (items 1/9) -- this only performs those
+    /// actions and records the reason for evidence.
     private func handleTerminal(_ actions: [C1StageAction]) {
         perform(actions)
         guard let reason = lock.withLock({ machine.terminalReason }) else { return }
-        switch reason {
-        case .latchTrip:
-            safetyStop = safetyStop ?? .stop
-        case .watchdog, .teardownReapFailed:
-            safetyStop = safetyStop ?? .needingAttention
-        }
         evidence?.record("terminal", ["reason": "\(reason)"])
     }
 

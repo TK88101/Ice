@@ -6,13 +6,15 @@ import Testing
 /// INCONCLUSIVE.
 @Suite("RunAccounting")
 struct RunAccountingTests {
-    /// A clean run that should PASS: the scan found a band, and all five
-    /// smoke cycles pass every check.
+    /// A clean run that should PASS: the scan completed all 19 lengths,
+    /// found a band, and all five smoke cycles pass every check.
     func passingInput() -> RunAccounting.Input {
-        RunAccounting.Input(
+        var scan = Array(repeating: TargetReading.stillDrawn, count: ScanPlanner.lengths.count)
+        scan[9] = .hidden(folded: false)
+        return RunAccounting.Input(
             preflightEverPassed: true,
             capturesStayedUnreadable: false,
-            scanReadings: [.stillDrawn, .hidden(folded: false), .stillDrawn],
+            scanReadings: scan,
             smokeReadings: Array(repeating: .hidden(folded: false), count: 5),
             smokeChecksPassed: Array(repeating: true, count: 5),
             safetyStop: nil
@@ -41,8 +43,37 @@ struct RunAccountingTests {
     @Test("no scanned length gave hidden(folded: false) -> provisional FAIL")
     func noBandFound() {
         var input = passingInput()
-        input.scanReadings = [.stillDrawn, .hidden(folded: true), .refused]
+        input.scanReadings = Array(repeating: .hidden(folded: true), count: ScanPlanner.lengths.count)
         #expect(RunAccounting.decide(input) == .provisionalFail("no scanned length gave hidden(folded: false)"))
+    }
+
+    @Test("item 6: the scan did not complete all 19 lengths -> INCONCLUSIVE, never PASS from a partial scan")
+    func incompleteScanIsInconclusive() {
+        var input = passingInput()
+        input.scanReadings = Array(repeating: TargetReading.hidden(folded: false), count: ScanPlanner.lengths.count - 1)
+        #expect(RunAccounting.decide(input) == .inconclusive("the scan did not complete all \(ScanPlanner.lengths.count) lengths"))
+    }
+
+    @Test("item 6: an empty scan (preflight failed before any length) -> INCONCLUSIVE")
+    func emptyScanIsInconclusive() {
+        var input = passingInput()
+        input.scanReadings = []
+        #expect(RunAccounting.decide(input) == .inconclusive("the scan did not complete all \(ScanPlanner.lengths.count) lengths"))
+    }
+
+    @Test("item 6: an incomplete scan is checked before 'no band found' -- both would otherwise apply")
+    func incompleteScanCheckedBeforeNoBandFound() {
+        var input = passingInput()
+        input.scanReadings = [.stillDrawn, .stillDrawn]
+        #expect(RunAccounting.decide(input) == .inconclusive("the scan did not complete all \(ScanPlanner.lengths.count) lengths"))
+    }
+
+    @Test("item 6: a safety stop still overrides an incomplete scan")
+    func safetyStopOverridesIncompleteScan() {
+        var input = passingInput()
+        input.scanReadings = [.hidden(folded: false)]
+        input.safetyStop = .stop
+        #expect(RunAccounting.decide(input) == .safetyStop)
     }
 
     @Test("more than one smoke refusal -> provisional FAIL, named as such")

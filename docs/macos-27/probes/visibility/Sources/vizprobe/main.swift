@@ -110,11 +110,31 @@ if arguments.first == "c1" {
         }
         source.resume()
     }
+    // Item 5 (Codex round 2): the watchdog must run the same terminal
+    // safety teardown a trip does -- rest first (already synchronous
+    // inside `emergencyStop`), then reap, then the 30 s
+    // baseline-equivalence check, then a recorded verdict (including
+    // needs-attention) -- not exit before any of that happens.
+    // `emergencyStop()` only marks the run terminal and performs the
+    // immediate rest/quit/reap/stop-caffeinate cleanup; `stage.run()`'s
+    // own main-thread loop notices `isTerminal` at its next checkpoint
+    // and falls through to `runTeardownAndDecide(...)`, whose exit code
+    // `exit(stage.run())` below reports. Item 8's AX/discovery bounds are
+    // what make that checkpoint reachable within a few seconds even if a
+    // read was hung when the watchdog fired.
     let watchdogMinutes = option("--watchdog", in: arguments).flatMap(Double.init) ?? StageC1.watchdogMinutes
     DispatchQueue.global().asyncAfter(deadline: .now() + watchdogMinutes * 60) {
-        FileHandle.standardError.write(Data("vizprobe c1: WATCHDOG after \(watchdogMinutes) min -- quitting helpers and exiting\n".utf8))
+        FileHandle.standardError.write(Data("vizprobe c1: WATCHDOG after \(watchdogMinutes) min -- entering the terminal safety teardown\n".utf8))
         stage.emergencyStop()
-        exit(2)
+        // A last-resort backstop only: `run()` should reach `finish(...)`
+        // and this process should already have exited via `exit(stage.
+        // run())` below well before this fires. If it somehow has not --
+        // every bounded read stuck at once -- do not leave the process
+        // running forever.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 120) {
+            FileHandle.standardError.write(Data("vizprobe c1: WATCHDOG teardown did not finish within 2 min of firing -- forcing exit\n".utf8))
+            exit(2)
+        }
     }
     exit(stage.run())
 }

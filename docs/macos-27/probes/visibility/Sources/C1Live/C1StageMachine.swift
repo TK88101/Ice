@@ -18,6 +18,15 @@ public enum C1TerminalReason: Equatable, Sendable {
     case latchTrip(LatchTrip)
     case watchdog
     case teardownReapFailed
+    /// Item 7 (Codex round 2): section 5's reset check (baseline
+    /// equivalence) failing is itself an immediate safety stop, not a
+    /// flag that lets the current cycle or a later scan length continue.
+    case resetCheckFailed
+    /// Item 1: teardown's own discoveries -- a helper preference domain
+    /// that is not empty or not readable, or the bar not
+    /// baseline-equivalent within teardown's 30 s window -- also go
+    /// through the machine rather than a separate stage-level flag.
+    case teardownMismatch
 }
 
 /// The stage's own control-flow state (Amendment v4 / Codex review round
@@ -30,6 +39,13 @@ public enum C1TerminalReason: Equatable, Sendable {
 public struct C1StageMachine: Sendable {
     public private(set) var isTerminal = false
     public private(set) var terminalReason: C1TerminalReason?
+    /// Items 1/9 (Codex round 2): part of the machine's own state, set in
+    /// the same assignment that sets `terminalReason` -- a caller that
+    /// only ever reads `isTerminal`/`terminalReason`/`safetyStop` through
+    /// one lock (as `StageC1` does) can never observe `isTerminal == true`
+    /// with `safetyStop == nil`. `RunAccounting.Input.safetyStop` reads
+    /// this value alone, never a copy the stage keeps separately.
+    public private(set) var safetyStop: RunAccounting.SafetyStop?
     public private(set) var expansionWindowOpen = false
     private var cleanupRan = false
 
@@ -55,6 +71,21 @@ public struct C1StageMachine: Sendable {
     @discardableResult
     public mutating func teardownReapFailed() -> [C1StageAction] {
         enterTerminal(.teardownReapFailed)
+    }
+
+    /// Item 7: a reset-check (baseline-equivalence) failure is itself an
+    /// immediate safety stop -- section 5 states this as unconditional,
+    /// not a flag the run carries while continuing.
+    @discardableResult
+    public mutating func resetCheckFailed() -> [C1StageAction] {
+        enterTerminal(.resetCheckFailed)
+    }
+
+    /// Item 1: teardown's own mismatch (a non-empty/unreadable helper
+    /// domain, or the bar not baseline-equivalent within 30 s).
+    @discardableResult
+    public mutating func teardownMismatch() -> [C1StageAction] {
+        enterTerminal(.teardownMismatch)
     }
 
     /// Section 4 / P0-3: "forbids any later reset" -- once terminal, the
@@ -117,10 +148,23 @@ public struct C1StageMachine: Sendable {
         return [.sendRest, .quitAllHelpers, .reapHelpers, .stopCaffeinate]
     }
 
+    /// Items 1/9/7: `isTerminal`, `terminalReason` and `safetyStop` are set
+    /// together, before `cleanup()` (and its potentially slow reap) even
+    /// starts -- publication is complete the instant this method returns.
     private mutating func enterTerminal(_ reason: C1TerminalReason) -> [C1StageAction] {
         guard !isTerminal else { return [] }
         isTerminal = true
         terminalReason = reason
+        safetyStop = Self.safetyStop(for: reason)
         return cleanup()
+    }
+
+    private static func safetyStop(for reason: C1TerminalReason) -> RunAccounting.SafetyStop {
+        switch reason {
+        case .latchTrip, .resetCheckFailed:
+            return .stop
+        case .watchdog, .teardownReapFailed, .teardownMismatch:
+            return .needingAttention
+        }
     }
 }
