@@ -217,6 +217,19 @@ struct ResponsivenessQuarantineTests {
         #expect(settled.admitted.contains(childrenTimeout))
     }
 
+    @Test("q17: a re-probe read of a process without an identity is settled like any other read, and touches no entry")
+    func q17ReprobeWithoutIdentityIsAdmitted() throws {
+        let quarantined = proc(7, start: oldStart)
+        let quarantine = ResponsivenessQuarantine(entries: [try identity(quarantined): .init(backoff: 2, nextProbeAt: 50)])
+        let anonymous = stall(proc(9, start: nil))
+        let fast = fastReads(3)
+
+        let settled = quarantine.settle(processes: [quarantined, anonymous.process] + processes(fast), reads: fast, reprobes: [anonymous], context: context(), now: 50)
+
+        #expect(settled.admitted == fast + [anonymous])
+        #expect(settled.quarantine.entries == quarantine.entries)
+    }
+
     @Test("q11: a re-probe that hands over children makes the identity exempt from then on")
     func q11ReprobeWithChildrenExempts() throws {
         let process = proc(7, start: oldStart)

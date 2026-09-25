@@ -389,9 +389,22 @@ which carry no names.
 
 - T1-T7 done test-first, checkpointed on this branch; suites green (IceCore 371,
   MenuBarDiscovery 60, Feed 37, IceWatchCore 44 at T7).
-- **X5**: 22 mutation probes -- the 18 of section 4 plus four discoverer-level
-  variants (M2b, M12b, M13b, M15 through d1) -- **22 killed, 0 survived, all
-  compiled**; runner and output in the evidence directory (`mutations/`).
+- **X5**: 24 mutation probes -- the 18 of section 4, four discoverer-level
+  variants (M2b, M12b, M13b, M15 through d1), M20 (no lapse, D-7) and M21
+  (settlement judged later than the rotation, D-8) -- **24 killed**. M21 as first
+  written (the rotation judged *later*) survived and was an invalid probe:
+  judging the rotation later can only read a process sooner, never lose it; the
+  note and both runs are in the evidence (`mutations/`).
+- **X1** (final): IceCore 373, MenuBarDiscovery 62, Feed 37, MenuBarCapture 30,
+  SafeWidthCore 277, IceWatchCore 44 -- all green. Line coverage: IceCore 97.53 %
+  (`ResponsivenessQuarantine.swift` 100 %); Discovery+Feed 97.70 % excluding the
+  live adapters, the CLI and generated sources (regex archived with the report).
+- **X2/X3/X4**: Ice builds; `build.sh` builds; A3/A4 byte-identical to af4baf1;
+  A8 71 hits as expected; A8b empty; A10 as expected; IceCore imports nothing.
+- **X8**: `/simcodex`, three rounds -- simplify fixes (fixtureItem reuse, one
+  read helper, one "skipped", one check guard; P2s noted), Codex reviews clean in
+  all three rounds, a security review (MEDIUM-1 -> D-7; LOW-3, -6, -7 fixed; the
+  rest deferred) and its re-check (MEDIUM-1 closed; LOW-N1 -> D-8).
 - **X6**: L0 PASS, L1 PASS, L2 PASS on its third attempt (the first two void by
   harness and tool defects, D-4, D-5); evidence `20260925-18xxxx-quarantine-live*`.
 - **X7**: observed (D-6): with 6 WebKit content processes stalling, main 954ee5e
