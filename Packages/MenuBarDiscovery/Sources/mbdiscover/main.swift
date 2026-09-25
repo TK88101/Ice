@@ -58,6 +58,7 @@ func printPlainListing(_ result: DiscoveryResult) {
     print("systemElements: \(set.systemElements.count)")
     print("ownRead: \(set.ownRead)")
     print("completeness: \(describeCompleteness(set.completeness))")
+    print("quarantined: \(result.quarantined.count)")
     print("duration: \(result.duration)")
     print("")
 
@@ -119,9 +120,14 @@ func printPlanSection(_ name: String, _ items: [DiscoveredItem]) {
     }
 }
 
-// MARK: - --check <labels.json> [--hash]
+// MARK: - --check <labels.json> [--hash] [--strict]
 
-func runCheck(labelsPath: String, printHash: Bool) async {
+/// Pids only: nothing here names an app.
+func describePIDs(_ processes: [ProcessInfoRecord]) -> String {
+    "[" + processes.map { String($0.pid) }.joined(separator: ",") + "]"
+}
+
+func runCheck(labelsPath: String, printHash: Bool, strict: Bool) async {
     let url = URL(fileURLWithPath: labelsPath)
     let data: Data
     do {
@@ -144,10 +150,23 @@ func runCheck(labelsPath: String, printHash: Bool) async {
         exit(1)
     }
 
-    guard let result = await runOneDiscovery() else {
+    // A warm-up pass on the same discoverer, then the checked pass, neither
+    // carrying anything into the other (responsiveness-quarantine plan, 3.6,
+    // ledger D-3): a stall first met is counted where it is met, so a single
+    // cold pass could never be complete while a suspended process is up. The
+    // checked pass's quarantined pids are printed and belong in T6's record;
+    // `--strict` refuses any, restoring the old cold-complete meaning.
+    let discoverer = makeDiscoverer()
+    guard let warmUp = await discoverer.discover(previous: nil) else {
         print("discovery failed: no display, or cancelled")
         exit(1)
     }
+    print("warm-up: \(describeCompleteness(warmUp.set.completeness)), quarantined \(describePIDs(warmUp.quarantined))")
+    guard let result = await discoverer.discover(previous: nil) else {
+        print("discovery failed: no display, or cancelled")
+        exit(1)
+    }
+    print("checked: quarantined \(result.quarantined.count) \(describePIDs(result.quarantined))")
 
     // The plan order is checked too (T6): dividers as Ice leaves them at idle
     // (expanded), no previous sections, so every listed item is a new
@@ -157,7 +176,10 @@ func runCheck(labelsPath: String, printHash: Bool) async {
     if case .publish(let publication) = DiscoveredCachePlan.make(set: result.set, dividerStates: DividerStates(hidden: idle, alwaysHidden: idle), previous: [:]) {
         planVisible = publication.visible
     }
-    let mismatches = DiscoveryLabels.compare(labels: labels, set: result.set, planVisible: planVisible)
+    var mismatches = DiscoveryLabels.compare(labels: labels, set: result.set, planVisible: planVisible)
+    if strict, !result.quarantined.isEmpty {
+        mismatches.append("strict: \(result.quarantined.count) process(es) quarantined, not read")
+    }
     if mismatches.isEmpty {
         print("agree: \(labels.count) labels")
         exit(0)
@@ -276,25 +298,48 @@ func printCensusJSON() {
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 
-/// `--time N`: N passes in one process, printing each duration, so the warm
-/// cost of a pass (plan T6: > 50 ms warm revisits D12) can be read at all --
-/// every other mode is a fresh process and therefore a cold pass.
-func runTimed(passes: Int) async {
+/// `--time N [--every S] [--watch-pid P]`: N passes in one process, printing
+/// each duration, so the warm cost of a pass (plan T6: > 50 ms warm revisits
+/// D12) can be read at all -- every other mode is a fresh process and therefore
+/// a cold pass. `--every S` starts the passes S seconds apart (start to start);
+/// `--watch-pid P` adds, per pass, whether P owns a listed item, failed, or is
+/// quarantined -- yes/no only, so a live check can decide from it without any
+/// app's name (responsiveness-quarantine plan, section 6).
+func runTimed(passes: Int, every spacing: Double?, watchPID: Int32?) async {
     let discoverer = makeDiscoverer()
     var previous: DiscoveredItemSet?
+    let clock = ContinuousClock()
+    let start = clock.now
     for index in 0..<passes {
+        if let spacing {
+            let due = start + .milliseconds(Int((spacing * Double(index) * 1000).rounded()))
+            if clock.now < due { try? await Task.sleep(until: due, clock: clock) }
+        }
         guard let result = await discoverer.discover(previous: previous) else {
             print("pass \(index): discovery failed")
             exit(1)
         }
         previous = result.set
-        print("pass \(index): \(Int((result.duration * 1000).rounded())) ms, \(result.set.items.count) items, completeness \(result.set.completeness)")
+        var line = "pass \(index): \(Int((result.duration * 1000).rounded())) ms, \(result.set.items.count) items, completeness \(result.set.completeness), quarantined \(result.quarantined.count)"
+        if let watchPID {
+            let item = result.set.listedItems.contains { $0.key.pid == watchPID }
+            let failed: Bool = { if case .incomplete(let pids) = result.set.completeness { return pids.contains(watchPID) }; return false }()
+            let quarantined = result.quarantined.contains { $0.pid == watchPID }
+            line += ", watch item=\(item ? "yes" : "no") failed=\(failed ? "yes" : "no") quarantined=\(quarantined ? "yes" : "no")"
+        }
+        print(line)
     }
 }
 
-if let timeIndex = arguments.firstIndex(of: "--time") {
-    let passes = arguments.indices.contains(timeIndex + 1) ? Int(arguments[timeIndex + 1]) ?? 5 : 5
-    await runTimed(passes: passes)
+/// The value after `flag`, if both are there.
+func value(after flag: String) -> String? {
+    guard let index = arguments.firstIndex(of: flag), arguments.indices.contains(index + 1) else { return nil }
+    return arguments[index + 1]
+}
+
+if arguments.contains("--time") {
+    let passes = value(after: "--time").flatMap { Int($0) } ?? 5
+    await runTimed(passes: passes, every: value(after: "--every").flatMap { Double($0) }, watchPID: value(after: "--watch-pid").flatMap { Int32($0) })
 } else if arguments.contains("--census-json") {
     printCensusJSON()
 } else if arguments.contains("--plan") {
@@ -304,7 +349,7 @@ if let timeIndex = arguments.firstIndex(of: "--time") {
         print("--check requires a path to a labels JSON file")
         exit(1)
     }
-    await runCheck(labelsPath: arguments[checkIndex + 1], printHash: arguments.contains("--hash"))
+    await runCheck(labelsPath: arguments[checkIndex + 1], printHash: arguments.contains("--hash"), strict: arguments.contains("--strict"))
 } else {
     guard let result = await runOneDiscovery() else {
         print("discovery failed: no display, or cancelled")
