@@ -5,13 +5,16 @@ import MenuBarDiscovery
 /// What `HidingVerification.prepare` produced, handed unchanged to
 /// `HidingVerification.verify` (plan section 4.3).
 ///
-/// `targets` is the *full roster*: every item `sectionMap` places in the
-/// requested sections, independent of whether `CheckPlan` could actually
-/// baseline it. `verify` reports a `SectionItemCheck` for every one of these
-/// -- as `.skipped(reason)` when `state` is `.skip`, or as whatever
-/// `state.ready`'s own per-key data says otherwise -- so a caller always gets
-/// a complete accounting of the section, never a partial one silently missing
-/// the items that could not be checked.
+/// `targets` is the roster the check reports on, in one of three shapes:
+/// empty when there was no set to plan from (cancelled before or during
+/// discovery, or no display); every item `sectionMap` places in the
+/// requested sections, parked ones included, when there is no geometry or
+/// `CheckPlan` skipped the whole section; otherwise `CheckPlan`'s targets
+/// plus its per-item skips, whether or not a baseline could be taken.
+/// `verify` reports a `SectionItemCheck` for every one of these -- as
+/// `.skipped(reason)` when `state` is `.skip`, or as whatever `state.ready`'s
+/// own per-key data says otherwise -- so no item on the roster goes without
+/// a result.
 public struct PreparedVerification: Sendable, Equatable {
     /// Either the section could not be prepared at all (`skip`), or a
     /// baseline exists and `verify` can read it (`ready`).
@@ -81,15 +84,10 @@ public struct PreparedVerification: Sendable, Equatable {
     /// which is what lets `BaselineReuse.maxAge` bound a baseline's total
     /// lifetime rather than a sliding window since its last reuse).
     public let createdAt: Double
-    /// Monotonically increasing per `HidingVerification.prepare` call, so a
-    /// caller holding onto more than one `PreparedVerification` can tell
-    /// which is newer.
-    public let generation: Int
 
-    public init(state: State, targets: [ItemKey], createdAt: Double, generation: Int) {
+    public init(state: State, targets: [ItemKey], createdAt: Double) {
         self.state = state
         self.targets = targets
         self.createdAt = createdAt
-        self.generation = generation
     }
 }

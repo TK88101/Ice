@@ -57,7 +57,7 @@ struct HidingVerificationTests {
             axResults: reads
         )
 
-        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: nil)
         guard case .ready = prepared.state else { Issue.record("expected .ready, got \(prepared.state)"); return }
 
         let results = await verification.verify(prepared)
@@ -83,7 +83,7 @@ struct HidingVerificationTests {
             axResults: reads
         )
 
-        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: nil)
         guard case .ready = prepared.state else { Issue.record("expected .ready, got \(prepared.state)"); return }
 
         let results = await verification.verify(prepared)
@@ -120,7 +120,7 @@ struct HidingVerificationTests {
             axResults: reads
         )
 
-        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref1.key, ref2.key], reusing: nil)
+        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref1.key, ref2.key], reusing: nil)
 
         guard case .ready(let ready) = prepared.state else { Issue.record("expected .ready, got \(prepared.state)"); return }
         #expect(ready.references == [ref2.key])
@@ -150,7 +150,7 @@ struct HidingVerificationTests {
             axResults: reads
         )
 
-        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref1.key, ref2.key], reusing: nil)
+        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref1.key, ref2.key], reusing: nil)
 
         #expect(prepared.state == .skip(.noReference))
     }
@@ -192,7 +192,7 @@ struct HidingVerificationTests {
             baselineFrames: [:]
         )
         let roster = checkableTargets + Array(planSkipped.keys)
-        return PreparedVerification(state: .ready(ready), targets: roster, createdAt: 0, generation: 1)
+        return PreparedVerification(state: .ready(ready), targets: roster, createdAt: 0)
     }
 
     @Test("a target refused at baseline (.foldNotAbsentAtBaseline) reads .refusedAtBaseline, never .notObserved")
@@ -323,7 +323,7 @@ struct HidingVerificationTests {
             retries: 5
         )
 
-        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: nil)
 
         guard case .ready = prepared.state else { Issue.record("expected .ready after the fold became readable, got \(prepared.state)"); return }
         #expect(capturer.callCount == Scenario.baselineCaptureCount() * 3, "exactly 3 attempts' worth of captures")
@@ -363,14 +363,14 @@ struct HidingVerificationTests {
             retries: 5
         )
 
-        let first = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+        let first = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: nil)
         guard case .ready = first.state else { Issue.record("expected .ready, got \(first.state)"); return }
         let afterFirst = capturer.callCount
         #expect(afterFirst == Scenario.baselineCaptureCount())
 
         // Same geometry, same fresh frames (a fresh discovery with identical
         // items) -> reused, no capture.
-        let second = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: first)
+        let second = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: first)
         guard case .ready = second.state else { Issue.record("expected .ready (reused), got \(second.state)"); return }
         #expect(capturer.callCount == afterFirst, "no capture should happen on a reusable baseline")
         #expect(second.createdAt == first.createdAt, "reuse must not reset the baseline's original creation time")
@@ -383,7 +383,7 @@ struct HidingVerificationTests {
         // make `BarGeometry` unequal (D16's reuse rule) without touching
         // pixel math.
         geometryBox.set(BarGeometry(widthPt: TestBar.geometry.widthPt + 1, heightPt: TestBar.geometry.heightPt, scale: TestBar.geometry.scale, notch: nil))
-        let third = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: second)
+        let third = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: second)
         guard case .ready = third.state else { Issue.record("expected .ready after recapture, got \(third.state)"); return }
         #expect(capturer.callCount == afterFirst + Scenario.baselineCaptureCount(), "a changed geometry must recapture")
     }
@@ -423,7 +423,7 @@ struct HidingVerificationTests {
         )
 
         let task = Task {
-            await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+            await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: nil)
         }
 
         blockingWait(reachedCheckpoint)
@@ -454,7 +454,7 @@ struct HidingVerificationTests {
             axResults: reads
         )
 
-        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: nil)
         _ = await verification.verify(prepared)
 
         #expect(!capturer.mainThreadCalls.isEmpty)
@@ -489,8 +489,8 @@ struct HidingVerificationTests {
             retries: 5
         )
 
-        async let first = verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
-        async let second = verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+        async let first = verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: nil)
+        async let second = verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: nil)
         _ = await (first, second)
 
         #expect(tracker.peak <= 1, "captures from two prepare() sessions must never overlap")
@@ -534,7 +534,7 @@ struct HidingVerificationTests {
             axResults: baselineReads + Scenario.repeated(observeSnap, count: Scenario.observeReadCount())
         )
 
-        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: nil)
         guard case .ready(let ready) = prepared.state else { Issue.record("expected .ready, got \(prepared.state)"); return }
         #expect(ready.alsoObserved.isEmpty, "dyn's dynamic template must be dropped from the observed set")
 

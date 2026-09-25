@@ -41,7 +41,6 @@ extension AppState {
         return HidingVerifier(
             inputs: inputs,
             sectionMap: { [weak self] in self?.itemManager.discoveredSectionMap ?? [:] },
-            iceIconKey: { [weak self] in self?.itemManager.iceIconKey },
             verification: {
                 guard let screen = NSScreen.screenWithActiveMenuBar ?? NSScreen.main else {
                     return nil

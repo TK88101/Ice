@@ -8,17 +8,11 @@ import Testing
 @Suite("RoomGuard.hasRoom")
 struct RoomGuardTests {
     private func item(minX: Double, pid: Int32 = 1, position: ItemPosition = .onBar) -> DiscoveredItem {
-        let key = ItemKey(namespace: "com.example.a", identifier: "x", pid: pid, childIndex: nil)
-        return DiscoveredItem(
-            key: key, basis: .declared,
-            process: ProcessInfoRecord(pid: pid, bundleID: "com.example.a", localizedName: nil, executableName: nil, launchTime: 10, isSelf: false),
-            frame: BarRect(minX: minX, minY: 4.5, width: 20, height: 24), position: position,
-            title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
-        )
+        fixtureItem(identifier: "x", pid: pid, frame: barFrame(minX: minX, width: 20), position: position)
     }
 
     private func set(items: [DiscoveredItem], visibleControlItem: DiscoveredItem? = nil) -> DiscoveredItemSet {
-        DiscoveredItemSet(items: items, visibleControlItem: visibleControlItem, hiddenDivider: nil, alwaysHiddenDivider: nil, ownRead: .ok, systemElements: [], dropped: [], completeness: .complete)
+        fixtureSet(items: items, visibleControlItem: visibleControlItem)
     }
 
     @Test("no items at all -> room is assumed (true)")
@@ -51,6 +45,15 @@ struct RoomGuardTests {
         let onBar = item(minX: 500, pid: 2)
         let s = set(items: [parked, onBar])
         #expect(RoomGuard.hasRoom(set: s, notchMaxX: 100) == true)
+    }
+
+    @Test("a parked or frameless icon does not count as the leftmost either")
+    func parkedOrFramelessIconDoesNotCount() {
+        let onBar = item(minX: 500, pid: 2)
+        let parkedIcon = item(minX: 7, pid: 900, position: .parked)
+        let framelessIcon = fixtureItem(identifier: "x", pid: 900, frame: nil)
+        #expect(RoomGuard.hasRoom(set: set(items: [onBar], visibleControlItem: parkedIcon), notchMaxX: 100) == true)
+        #expect(RoomGuard.hasRoom(set: set(items: [onBar], visibleControlItem: framelessIcon), notchMaxX: 100) == true)
     }
 }
 

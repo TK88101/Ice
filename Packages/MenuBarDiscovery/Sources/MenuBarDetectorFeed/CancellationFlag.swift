@@ -6,17 +6,17 @@ import Foundation
 /// below poll it so a running session stops within one sample rather than
 /// racing a blocking Accessibility or capture call it has no way to
 /// interrupt.
-public final class CancellationFlag: @unchecked Sendable {
+final class CancellationFlag: @unchecked Sendable {
     private var flag = false
     private let lock = NSLock()
 
-    public init() {}
+    init() {}
 
-    public func set() {
+    func set() {
         lock.withLock { flag = true }
     }
 
-    public func isSet() -> Bool {
+    func isSet() -> Bool {
         lock.withLock { flag }
     }
 }

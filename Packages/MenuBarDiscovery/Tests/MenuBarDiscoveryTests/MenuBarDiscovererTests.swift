@@ -28,7 +28,7 @@ struct MenuBarDiscovererTests {
         }
 
         let discoverer = MenuBarDiscoverer(
-            apps: apps, reader: reader, display: FakeDisplay(result: (testBounds, (0, 0))),
+            apps: apps, reader: reader, display: FakeDisplay(result: (testBounds, DiscoveryOrigin(x: 0, y: 0))),
             isTrusted: { true }, ownIdentifiers: testOwnIdentifiers, now: { 0 }
         )
 
@@ -56,7 +56,7 @@ struct MenuBarDiscovererTests {
         }
 
         let discoverer = MenuBarDiscoverer(
-            apps: apps, reader: reader, display: FakeDisplay(result: (testBounds, (0, 0))),
+            apps: apps, reader: reader, display: FakeDisplay(result: (testBounds, DiscoveryOrigin(x: 0, y: 0))),
             isTrusted: { true }, ownIdentifiers: testOwnIdentifiers, now: { 0 }
         )
 
@@ -83,7 +83,7 @@ struct MenuBarDiscovererTests {
         }
 
         let discoverer = MenuBarDiscoverer(
-            apps: apps, reader: reader, display: FakeDisplay(result: (testBounds, (0, 0))),
+            apps: apps, reader: reader, display: FakeDisplay(result: (testBounds, DiscoveryOrigin(x: 0, y: 0))),
             isTrusted: { true }, ownIdentifiers: testOwnIdentifiers, now: { clock.now() },
             deadline: 2.0
         )
@@ -113,7 +113,7 @@ struct MenuBarDiscovererTests {
         let reader = FakeExtrasReader { process, _ in rawRead(process: process) }
 
         let discoverer = MenuBarDiscoverer(
-            apps: apps, reader: reader, display: FakeDisplay(result: (testBounds, (0, 0))),
+            apps: apps, reader: reader, display: FakeDisplay(result: (testBounds, DiscoveryOrigin(x: 0, y: 0))),
             isTrusted: { true }, ownIdentifiers: testOwnIdentifiers, now: { 0 }
         )
 
@@ -128,7 +128,7 @@ struct MenuBarDiscovererTests {
         let records = [extrasRecord(childIndex: 0, identifier: "vz-a", minX: 1828)]
         let reader = FakeExtrasReader { process, _ in rawRead(process: process, records: records) }
 
-        let origin = (x: 1728.0, y: 0.0)
+        let origin = DiscoveryOrigin(x: 1728, y: 0)
         let discoverer = MenuBarDiscoverer(
             apps: apps, reader: reader, display: FakeDisplay(result: (testBounds, origin)),
             isTrusted: { true }, ownIdentifiers: testOwnIdentifiers, now: { 0 }
@@ -157,7 +157,7 @@ struct MenuBarDiscovererTests {
         let apps = FakeRunningApps(allProcesses: [], agent: nil)
         let reader = FakeExtrasReader { process, _ in rawRead(process: process) }
         let discoverer = MenuBarDiscoverer(
-            apps: apps, reader: reader, display: FakeDisplay(result: (testBounds, (0, 0))),
+            apps: apps, reader: reader, display: FakeDisplay(result: (testBounds, DiscoveryOrigin(x: 0, y: 0))),
             isTrusted: { true }, ownIdentifiers: testOwnIdentifiers, now: { 0 }
         )
         let result = try #require(await discoverer.discover(previous: nil))
@@ -177,7 +177,7 @@ struct MenuBarDiscovererTests {
             rawRead(process: process, records: [extrasRecord(childIndex: 0, identifier: "vz-\(process.pid)", minX: Double(process.pid))])
         }
         let discovererOne = MenuBarDiscoverer(
-            apps: apps, reader: firstReader, display: FakeDisplay(result: (testBounds, (0, 0))),
+            apps: apps, reader: firstReader, display: FakeDisplay(result: (testBounds, DiscoveryOrigin(x: 0, y: 0))),
             isTrusted: { true }, ownIdentifiers: testOwnIdentifiers, now: { 0 }
         )
         let firstResult = try #require(await discovererOne.discover(previous: nil))
@@ -190,7 +190,7 @@ struct MenuBarDiscovererTests {
             return rawRead(process: process, records: [])
         }
         let discovererTwo = MenuBarDiscoverer(
-            apps: apps, reader: secondReader, display: FakeDisplay(result: (testBounds, (0, 0))),
+            apps: apps, reader: secondReader, display: FakeDisplay(result: (testBounds, DiscoveryOrigin(x: 0, y: 0))),
             isTrusted: { true }, ownIdentifiers: testOwnIdentifiers, now: { 1 }
         )
         let secondResult = try #require(await discovererTwo.discover(previous: firstResult.set))

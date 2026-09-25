@@ -111,7 +111,6 @@ extension StageRun {
         var object: [String: Any] = [
             "targets": prepared.targets.map(\.encoded),
             "createdAt": prepared.createdAt,
-            "generation": prepared.generation,
         ]
         switch prepared.state {
         case .skip(let reason):

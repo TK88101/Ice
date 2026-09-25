@@ -62,7 +62,7 @@ public enum DiscoveryLabels {
     /// `compare` both call it, so a label written from one always finds its
     /// item in the other.
     public static func indexed(_ set: DiscoveredItemSet) -> [IndexedItem] {
-        let all = set.items + (set.visibleControlItem.map { [$0] } ?? [])
+        let all = set.listedItems
         var perOwner = [String: Int]()
         return all.map { item in
             let owner = item.key.namespace

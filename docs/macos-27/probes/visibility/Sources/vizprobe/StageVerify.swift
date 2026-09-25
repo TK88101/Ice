@@ -67,7 +67,7 @@ extension StageRun {
         let ids: [String: pid_t] = [targetKey.encoded: target.pid, referenceKey.encoded: reference.pid]
         let verification = makeVerification(sectionKeys: [targetKey])
 
-        let first = Pump.blocking { await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [referenceKey], reusing: nil) }
+        let first = Pump.blocking { await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [referenceKey], reusing: nil) }
         evidence.record("step5.prepare", describe(first))
         guard case .ready = first.state else {
             switch explain(first, ids: ids, referenceID: referenceKey.encoded, origin: found.result.origin, step: "step5") {
@@ -88,7 +88,7 @@ extension StageRun {
         target.show()
         Pump.run(1.0)
         if case .abort(let reason) = barCheck("step5.shown") { return .abort(reason) }
-        let second = Pump.blocking { await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [referenceKey], reusing: first) }
+        let second = Pump.blocking { await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [referenceKey], reusing: first) }
         let reused = second.createdAt == first.createdAt
         evidence.record("step5.prepareAgain", describe(second).merging(["reused": reused]) { $1 })
         guard case .ready = second.state else {
@@ -156,7 +156,7 @@ extension StageRun {
         for key in keys { ids[key.encoded] = pair.helper.pid }
         let verification = makeVerification(sectionKeys: keys)
         let sectionMap = Dictionary(uniqueKeysWithValues: pair.items.map { ($0.tagKey, ItemSection.hidden) })
-        let prepared = Pump.blocking { await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [referenceKey], reusing: nil) }
+        let prepared = Pump.blocking { await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [referenceKey], reusing: nil) }
         evidence.record("step6b.prepare", describe(prepared))
         guard case .ready = prepared.state else {
             let failure = explain(prepared, ids: ids, referenceID: referenceKey.encoded, origin: pair.origin, step: "step6b")
@@ -198,7 +198,7 @@ extension StageRun {
         for key in againKeys { againIDs[key.encoded] = again.helper.pid }
         let againVerification = makeVerification(sectionKeys: againKeys)
         let againMap = Dictionary(uniqueKeysWithValues: again.items.map { ($0.tagKey, ItemSection.hidden) })
-        let preparedAgain = Pump.blocking { await againVerification.prepare(sections: [.hidden], sectionMap: againMap, iceIconKey: nil, explicitCandidates: [referenceKey], reusing: nil) }
+        let preparedAgain = Pump.blocking { await againVerification.prepare(sections: [.hidden], sectionMap: againMap, explicitCandidates: [referenceKey], reusing: nil) }
         evidence.record("step6b.prepareAgain", describe(preparedAgain))
         guard case .ready = preparedAgain.state else {
             switch explain(preparedAgain, ids: againIDs, referenceID: referenceKey.encoded, origin: again.origin, step: "step6b.again") {

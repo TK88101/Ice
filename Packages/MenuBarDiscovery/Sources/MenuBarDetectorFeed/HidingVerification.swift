@@ -30,9 +30,6 @@ public final class HidingVerification: @unchecked Sendable {
     private let retries: Int
     private let retrySpacing: Double
 
-    private let generationLock = NSLock()
-    private var generationCounter = 0
-
     public init(
         discoverer: any Discovering,
         capturer: any StripCapturing,
@@ -68,23 +65,21 @@ public final class HidingVerification: @unchecked Sendable {
     public func prepare(
         sections: Set<ItemSection>,
         sectionMap: [TagKey: ItemSection],
-        iceIconKey: ItemKey?,
         explicitCandidates: [ItemKey]?,
         reusing previous: PreparedVerification?
     ) async -> PreparedVerification {
         let flag = CancellationFlag()
-        let generation = nextGeneration()
 
         return await withTaskCancellationHandler {
             guard !flag.isSet() else {
-                return self.skipResult(.cancelled, targets: [], generation: generation)
+                return self.skipResult(.cancelled, targets: [])
             }
             guard let discovery = await self.discoverer.discover(previous: nil) else {
                 // The discoverer also returns nil when there is no display.
-                return self.skipResult(flag.isSet() || Task.isCancelled ? .cancelled : .noGeometry, targets: [], generation: generation)
+                return self.skipResult(flag.isSet() || Task.isCancelled ? .cancelled : .noGeometry, targets: [])
             }
             guard !flag.isSet() else {
-                return self.skipResult(.cancelled, targets: [], generation: generation)
+                return self.skipResult(.cancelled, targets: [])
             }
 
             return await withCheckedContinuation { (continuation: CheckedContinuation<PreparedVerification, Never>) in
@@ -93,11 +88,9 @@ public final class HidingVerification: @unchecked Sendable {
                         discovery: discovery,
                         sections: sections,
                         sectionMap: sectionMap,
-                        iceIconKey: iceIconKey,
                         explicitCandidates: explicitCandidates,
                         previous: previous,
-                        flag: flag,
-                        generation: generation
+                        flag: flag
                     )
                     continuation.resume(returning: result)
                 }
@@ -114,34 +107,28 @@ public final class HidingVerification: @unchecked Sendable {
         discovery: DiscoveryResult,
         sections: Set<ItemSection>,
         sectionMap: [TagKey: ItemSection],
-        iceIconKey: ItemKey?,
         explicitCandidates: [ItemKey]?,
         previous: PreparedVerification?,
-        flag: CancellationFlag,
-        generation: Int
+        flag: CancellationFlag
     ) -> PreparedVerification {
         let set = discovery.set
         let origin = discovery.origin
 
-        var itemsByKey = Dictionary(uniqueKeysWithValues: set.items.map { ($0.key, $0) })
-        if let visible = set.visibleControlItem { itemsByKey[visible.key] = visible }
-
-        func rosterTargets() -> [ItemKey] {
-            set.items.filter { item in
-                guard let section = sectionMap[item.tagKey] else { return false }
-                return sections.contains(section)
-            }.map(\.key)
+        guard !flag.isSet() else {
+            return skipResult(.cancelled, targets: [])
         }
 
-        guard !flag.isSet() else {
-            return skipResult(.cancelled, targets: [], generation: generation)
+        /// The roster of a skip without geometry or of a whole-section plan
+        /// skip: every section member, parked ones included.
+        func sectionMembers() -> [ItemKey] {
+            CheckPlan.sectionMembers(set: set, sectionMap: sectionMap, sections: sections).map(\.key)
         }
 
         guard let geometry = self.geometry() else {
-            return skipResult(.noGeometry, targets: rosterTargets(), generation: generation)
+            return skipResult(.noGeometry, targets: sectionMembers())
         }
 
-        let plan = CheckPlan.make(sections: sections, set: set, sectionMap: sectionMap, iceIconKey: iceIconKey, explicitCandidates: explicitCandidates)
+        let plan = CheckPlan.make(sections: sections, set: set, sectionMap: sectionMap, explicitCandidates: explicitCandidates)
 
         let targets: [ItemKey]
         let alsoObserved: [ItemKey]
@@ -149,7 +136,7 @@ public final class HidingVerification: @unchecked Sendable {
         let planSkipped: [ItemKey: CheckSkipReason]
         switch plan {
         case .skip(let reason):
-            return skipResult(reason, targets: rosterTargets(), generation: generation)
+            return skipResult(reason, targets: sectionMembers())
         case .observe(let t, let a, let r, let s):
             targets = t
             alsoObserved = a
@@ -160,14 +147,16 @@ public final class HidingVerification: @unchecked Sendable {
         let fullRoster = targets + Array(planSkipped.keys)
 
         guard !flag.isSet() else {
-            return skipResult(.cancelled, targets: fullRoster, generation: generation)
+            return skipResult(.cancelled, targets: fullRoster)
         }
 
         guard RoomGuard.hasRoom(set: set, notchMaxX: geometry.notch?.hi ?? 0) else {
-            return skipResult(.noRoom, targets: fullRoster, generation: generation)
+            return skipResult(.noRoom, targets: fullRoster)
         }
 
         let baselineKeys = targets + alsoObserved + referenceCandidates
+        let itemsByKey = Dictionary(set.listedItems.map { ($0.key, $0) }, uniquingKeysWith: { _, icon in icon })
+        let baselineFrames = frames(for: baselineKeys, in: itemsByKey)
 
         // D16 reuse: same capture geometry, the same roster (Deviation 5),
         // and exactly the previous baseline's items at essentially the same
@@ -176,62 +165,43 @@ public final class HidingVerification: @unchecked Sendable {
         // `createdAt` is carried, not refreshed).
         if let previous, case .ready(let readyPrev) = previous.state, geometry == readyPrev.geometry,
            BaselineReuse.sameRoster(baselineTargets: readyPrev.checkableTargets, baselineSkipped: readyPrev.planSkipped, freshTargets: targets, freshSkipped: planSkipped) {
-            let freshFrames = frames(for: baselineKeys, in: itemsByKey)
             let age = now() - previous.createdAt
-            if BaselineReuse.isReusable(baselineFrames: readyPrev.baselineFrames, freshFrames: freshFrames, age: age) {
-                return PreparedVerification(state: previous.state, targets: fullRoster, createdAt: previous.createdAt, generation: generation)
+            if BaselineReuse.isReusable(baselineFrames: readyPrev.baselineFrames, freshFrames: baselineFrames, age: age) {
+                return PreparedVerification(state: previous.state, targets: fullRoster, createdAt: previous.createdAt)
             }
         }
 
         guard !flag.isSet() else {
-            return skipResult(.cancelled, targets: fullRoster, generation: generation)
+            return skipResult(.cancelled, targets: fullRoster)
         }
 
         switch preflight() {
         case .unavailable(let reason):
-            return skipResult(.preflight(String(describing: reason)), targets: fullRoster, generation: generation)
+            return skipResult(.preflight(String(describing: reason)), targets: fullRoster)
         case .ready:
             break
         }
 
-        let cancelCapturer = CancellableCapturer(wrapping: capturer, flag: flag)
-        let cancelReader = CancellableReader(wrapping: readerFactory(origin), flag: flag)
-
-        for _ in 0..<warmUpCount {
-            guard !flag.isSet() else { return skipResult(.cancelled, targets: fullRoster, generation: generation) }
-            _ = cancelCapturer.capture()
-            sleep(warmUpSpacing)
+        guard let observer = warmedUpObserver(origin: origin, flag: flag) else {
+            return skipResult(.cancelled, targets: fullRoster)
         }
-
-        let observer = VisibilityObserver(
-            sampler: Sampler(capturer: cancelCapturer, axReader: cancelReader, now: now),
-            parameters: parameters,
-            sleep: sleep
-        )
         let baselineItems = DiscoveredTargets.items(baselineKeys)
-
-        var lastBaseline: BaselineResult?
-        for attempt in 0..<retries {
-            guard !flag.isSet() else { return skipResult(.cancelled, targets: fullRoster, generation: generation) }
-            if let result = observer.baseline(items: baselineItems, geometry: geometry) {
-                lastBaseline = result
-                if result.foldAtBaseline == .absent { break }
-            }
-            if attempt < retries - 1 { sleep(retrySpacing) }
-        }
+        let lastBaseline = retrying(flag: flag) {
+            observer.baseline(items: baselineItems, geometry: geometry)
+        } until: { $0.foldAtBaseline == .absent }
 
         guard !flag.isSet() else {
-            return skipResult(.cancelled, targets: fullRoster, generation: generation)
+            return skipResult(.cancelled, targets: fullRoster)
         }
 
         guard let baseline = lastBaseline else {
-            return skipResult(.captureFailed, targets: fullRoster, generation: generation)
+            return skipResult(.captureFailed, targets: fullRoster)
         }
 
         let acceptedKeys = Set(baseline.templates.keys.compactMap(ItemKey.decode))
         let references = CheckPlan.references(candidates: referenceCandidates, accepted: acceptedKeys)
         guard !references.isEmpty else {
-            return skipResult(.noReference, targets: fullRoster, generation: generation)
+            return skipResult(.noReference, targets: fullRoster)
         }
 
         // D15: an observed item the baseline marked dynamic is dropped, so
@@ -248,8 +218,6 @@ public final class HidingVerification: @unchecked Sendable {
             }
         }
 
-        let baselineFrames = frames(for: baselineKeys, in: itemsByKey)
-
         let ready = PreparedVerification.Ready(
             baseline: baseline,
             geometry: geometry,
@@ -261,7 +229,7 @@ public final class HidingVerification: @unchecked Sendable {
             baselineRejections: baselineRejections,
             baselineFrames: baselineFrames
         )
-        return PreparedVerification(state: .ready(ready), targets: fullRoster, createdAt: now(), generation: generation)
+        return PreparedVerification(state: .ready(ready), targets: fullRoster, createdAt: now())
     }
 
     // MARK: - verify
@@ -285,11 +253,12 @@ public final class HidingVerification: @unchecked Sendable {
             Dictionary(uniqueKeysWithValues: prepared.targets.map { ($0, .skipped(reason)) })
         }
 
-        guard case .ready(let ready) = prepared.state else {
-            if case .skip(let reason) = prepared.state {
-                return allSkipped(reason)
-            }
-            return allSkipped(.cancelled)
+        let ready: PreparedVerification.Ready
+        switch prepared.state {
+        case .skip(let reason):
+            return allSkipped(reason)
+        case .ready(let value):
+            ready = value
         }
 
         let age = now() - prepared.createdAt
@@ -305,37 +274,19 @@ public final class HidingVerification: @unchecked Sendable {
         let observeKeys = observedTargets + ready.alsoObserved
         let referenceKeys = ready.references
 
-        let cancelCapturer = CancellableCapturer(wrapping: capturer, flag: flag)
-        let cancelReader = CancellableReader(wrapping: readerFactory(ready.origin), flag: flag)
-
-        for _ in 0..<warmUpCount {
-            guard !flag.isSet() else { return allSkipped(.cancelled) }
-            _ = cancelCapturer.capture()
-            sleep(warmUpSpacing)
+        guard let observer = warmedUpObserver(origin: ready.origin, flag: flag) else {
+            return allSkipped(.cancelled)
         }
-
-        let observer = VisibilityObserver(
-            sampler: Sampler(capturer: cancelCapturer, axReader: cancelReader, now: now),
-            parameters: parameters,
-            sleep: sleep
-        )
         let observeItems = DiscoveredTargets.items(observeKeys + referenceKeys)
-
-        var lastResult: ObservationResult?
-        for attempt in 0..<retries {
-            guard !flag.isSet() else { return allSkipped(.cancelled) }
-            if let result = observer.observe(baseline: ready.baseline, targets: observeKeys.map(\.encoded), references: referenceKeys.map(\.encoded), items: observeItems) {
-                lastResult = result
-                if result.reading.fold != .unreadable { break }
-            }
-            if attempt < retries - 1 { sleep(retrySpacing) }
-        }
+        let lastObservation = retrying(flag: flag) {
+            observer.observe(baseline: ready.baseline, targets: observeKeys.map(\.encoded), references: referenceKeys.map(\.encoded), items: observeItems)
+        } until: { $0.reading.fold != .unreadable }
 
         guard !flag.isSet() else {
             return allSkipped(.cancelled)
         }
 
-        guard let reading = lastResult?.reading else {
+        guard let reading = lastObservation?.reading else {
             return allSkipped(.captureFailed)
         }
 
@@ -356,15 +307,48 @@ public final class HidingVerification: @unchecked Sendable {
 
     // MARK: - Helpers
 
-    private func nextGeneration() -> Int {
-        generationLock.withLock {
-            generationCounter += 1
-            return generationCounter
+    /// The warm-up captures that settle the strip before a session reads
+    /// it, then the observer both sessions read through; `nil` once
+    /// cancelled during the warm-up.
+    private func warmedUpObserver(origin: DiscoveryOrigin, flag: CancellationFlag) -> VisibilityObserver? {
+        let cancelCapturer = CancellableCapturer(wrapping: capturer, flag: flag)
+        let cancelReader = CancellableReader(wrapping: readerFactory(origin), flag: flag)
+
+        for _ in 0..<warmUpCount {
+            guard !flag.isSet() else { return nil }
+            _ = cancelCapturer.capture()
+            sleep(warmUpSpacing)
         }
+
+        return VisibilityObserver(
+            sampler: Sampler(capturer: cancelCapturer, axReader: cancelReader, now: now),
+            parameters: parameters,
+            sleep: sleep
+        )
     }
 
-    private func skipResult(_ reason: CheckSkipReason, targets: [ItemKey], generation: Int) -> PreparedVerification {
-        PreparedVerification(state: .skip(reason), targets: targets, createdAt: now(), generation: generation)
+    /// Up to `retries` attempts `retrySpacing` apart, stopping once
+    /// `isSettled` holds or the flag is set; the last result an attempt
+    /// produced. The caller checks the flag afterwards.
+    private func retrying<Value>(
+        flag: CancellationFlag,
+        _ attempt: () -> Value?,
+        until isSettled: (Value) -> Bool
+    ) -> Value? {
+        var last: Value?
+        for index in 0..<retries {
+            guard !flag.isSet() else { break }
+            if let result = attempt() {
+                last = result
+                if isSettled(result) { break }
+            }
+            if index < retries - 1 { sleep(retrySpacing) }
+        }
+        return last
+    }
+
+    private func skipResult(_ reason: CheckSkipReason, targets: [ItemKey]) -> PreparedVerification {
+        PreparedVerification(state: .skip(reason), targets: targets, createdAt: now())
     }
 
     private func frames(for keys: [ItemKey], in itemsByKey: [ItemKey: DiscoveredItem]) -> [ItemKey: BarRect] {

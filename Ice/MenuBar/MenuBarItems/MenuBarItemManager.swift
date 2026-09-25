@@ -20,10 +20,6 @@ final class MenuBarItemManager: ObservableObject {
     /// plan 4.4), published read-only for the hiding-check verifier.
     @Published private(set) var discoveredSectionMap = [TagKey: ItemSection]()
 
-    /// The key of Ice's own visible control item, as the last macOS 27
-    /// discovery pass read it, published read-only for the verifier.
-    @Published private(set) var iceIconKey: ItemKey?
-
     /// The last macOS 27 discovery pass's set, kept so `MenuBarDiscoverer`'s
     /// rotating cursor and `ItemCatalog.carryOver` both continue across
     /// passes (D11).
@@ -551,10 +547,6 @@ extension MenuBarItemManager {
 
             if discoveredSectionMap != publication.sectionMap {
                 discoveredSectionMap = publication.sectionMap
-            }
-            let newIceIconKey = discovery.set.visibleControlItem?.key
-            if iceIconKey != newIceIconKey {
-                iceIconKey = newIceIconKey
             }
             if itemCache != cache {
                 itemCache = cache

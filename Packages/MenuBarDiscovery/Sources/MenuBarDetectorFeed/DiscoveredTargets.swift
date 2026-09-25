@@ -8,8 +8,8 @@ import IceCore
 /// detector target) -- `key.childIndex != nil` is exactly how `ItemKeying`
 /// marks a positional key (plan section 4.1.3), so no separate `basis` field
 /// is needed here.
-public enum DiscoveredTargets {
-    public static func items(_ keys: [ItemKey]) -> [String: pid_t] {
+enum DiscoveredTargets {
+    static func items(_ keys: [ItemKey]) -> [String: pid_t] {
         var result = [String: pid_t]()
         for key in keys where key.childIndex == nil {
             result[key.encoded] = key.pid

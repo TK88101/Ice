@@ -16,21 +16,11 @@ import Testing
 @Suite("ItemCatalog.carryOver")
 struct ItemCatalogCarryOverTests {
     private func item(pid: Int32, identifier: String = "gear", carriedPasses: Int = 0, isSelf: Bool = false, bundleID: String = "com.example.a", launchTime: Double? = 10, minX: Double = 100, lastConfirmedAt: Double = 0) -> DiscoveredItem {
-        let key = ItemKey(namespace: bundleID, identifier: identifier, pid: pid, childIndex: nil)
-        return DiscoveredItem(
-            key: key, basis: .declared,
-            process: ProcessInfoRecord(pid: pid, bundleID: bundleID, localizedName: nil, executableName: nil, launchTime: launchTime, isSelf: isSelf),
-            frame: BarRect(minX: minX, minY: 4.5, width: 20, height: 24), position: .onBar,
-            title: nil, description: nil, help: nil, carriedPasses: carriedPasses, lastConfirmedAt: lastConfirmedAt
-        )
+        fixtureItem(namespace: bundleID, identifier: identifier, pid: pid, frame: barFrame(minX: minX, width: 20), isSelf: isSelf, launchTime: launchTime, carriedPasses: carriedPasses, lastConfirmedAt: lastConfirmedAt)
     }
 
     private func set(items: [DiscoveredItem], failedPIDs: [Int32], staleProcesses: [Int32: ProcessInfoRecord] = [:], dropped: [DroppedItem] = []) -> DiscoveredItemSet {
-        DiscoveredItemSet(
-            items: items, visibleControlItem: nil, hiddenDivider: nil, alwaysHiddenDivider: nil,
-            ownRead: .ok, systemElements: [], dropped: dropped, staleProcesses: staleProcesses,
-            completeness: failedPIDs.isEmpty ? .complete : .incomplete(failedPIDs: failedPIDs)
-        )
+        fixtureSet(items: items, dropped: dropped, staleProcesses: staleProcesses, completeness: failedPIDs.isEmpty ? .complete : .incomplete(failedPIDs: failedPIDs))
     }
 
     @Test("previous nil -> current returned untouched")
@@ -168,19 +158,8 @@ struct ItemCatalogCarryOverTests {
         // from real AX data (a third-party tagTitle always embeds its pid),
         // but carryOver must still detect and drop it rather than publish a
         // duplicate.
-        let sharedKey = ItemKey(namespace: "com.example.a", identifier: "gear", pid: 5, childIndex: nil)
-        let carriedCandidate = DiscoveredItem(
-            key: sharedKey, basis: .declared,
-            process: ProcessInfoRecord(pid: 5, bundleID: "com.example.a", localizedName: nil, executableName: nil, launchTime: 10, isSelf: false),
-            frame: BarRect(minX: 100, minY: 4.5, width: 20, height: 24), position: .onBar,
-            title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
-        )
-        let currentItemSameTag = DiscoveredItem(
-            key: sharedKey, basis: .declared,
-            process: ProcessInfoRecord(pid: 5, bundleID: "com.example.a", localizedName: nil, executableName: nil, launchTime: 10, isSelf: false),
-            frame: BarRect(minX: 400, minY: 4.5, width: 20, height: 24), position: .onBar,
-            title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 5
-        )
+        let carriedCandidate = item(pid: 5, minX: 100)
+        let currentItemSameTag = item(pid: 5, minX: 400, lastConfirmedAt: 5)
         let previous = set(items: [carriedCandidate], failedPIDs: [])
         // pid 5 is in failedPIDs here purely to exercise the carry path;
         // currentItemSameTag stands in for an item that happens (by forced

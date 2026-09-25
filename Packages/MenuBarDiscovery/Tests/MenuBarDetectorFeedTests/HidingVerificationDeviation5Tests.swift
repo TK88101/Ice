@@ -25,7 +25,7 @@ struct HidingVerificationDeviation5Tests {
             axResults: []
         )
 
-        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: nil)
 
         #expect(prepared.state == .skip(.captureFailed))
         #expect(Set(prepared.targets) == [t1.key, t2.key])
@@ -45,7 +45,7 @@ struct HidingVerificationDeviation5Tests {
             axResults: Scenario.repeated(drawnSnap, count: Scenario.baselineReadCount())
         )
 
-        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+        let prepared = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: nil)
         guard case .ready = prepared.state else { Issue.record("expected .ready, got \(prepared.state)"); return }
 
         let results = await verification.verify(prepared)
@@ -56,7 +56,7 @@ struct HidingVerificationDeviation5Tests {
     func nilDiscoveryIsNoGeometry() async {
         let (verification, _, capturer, _, _) = Scenario.makeVerification(discoveryResults: [nil], capturerResults: [], axResults: [])
 
-        let prepared = await verification.prepare(sections: [.hidden], sectionMap: [:], iceIconKey: nil, explicitCandidates: nil, reusing: nil)
+        let prepared = await verification.prepare(sections: [.hidden], sectionMap: [:], explicitCandidates: nil, reusing: nil)
 
         #expect(prepared.state == .skip(.noGeometry))
         #expect(capturer.callCount == 0)
@@ -95,10 +95,10 @@ struct HidingVerificationDeviation5Tests {
                 + Scenario.repeated(drawnSnap, count: Scenario.baselineReadCount() + Scenario.observeReadCount())
         )
 
-        let first = await verification.prepare(sections: [.hidden], sectionMap: Scenario.sectionMap([t1]), iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+        let first = await verification.prepare(sections: [.hidden], sectionMap: Scenario.sectionMap([t1]), explicitCandidates: [ref.key], reusing: nil)
         guard case .ready = first.state else { Issue.record("expected .ready, got \(first.state)"); return }
 
-        let second = await verification.prepare(sections: [.hidden], sectionMap: Scenario.sectionMap([t1, t2]), iceIconKey: nil, explicitCandidates: [ref.key], reusing: first)
+        let second = await verification.prepare(sections: [.hidden], sectionMap: Scenario.sectionMap([t1, t2]), explicitCandidates: [ref.key], reusing: first)
         guard case .ready(let ready) = second.state else { Issue.record("expected .ready, got \(second.state)"); return }
         #expect(capturer.callCount == Scenario.baselineCaptureCount() * 2, "a changed roster must recapture")
         #expect(Set(ready.checkableTargets) == [t1.key, t2.key])
@@ -121,10 +121,10 @@ struct HidingVerificationDeviation5Tests {
             reads: Scenario.repeated(drawnSnap, count: Scenario.baselineReadCount() * 2)
         )
 
-        let first = await verification.prepare(sections: [.hidden], sectionMap: Scenario.sectionMap([t1, t2]), iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+        let first = await verification.prepare(sections: [.hidden], sectionMap: Scenario.sectionMap([t1, t2]), explicitCandidates: [ref.key], reusing: nil)
         guard case .ready = first.state else { Issue.record("expected .ready, got \(first.state)"); return }
 
-        let second = await verification.prepare(sections: [.hidden], sectionMap: Scenario.sectionMap([t1]), iceIconKey: nil, explicitCandidates: [ref.key], reusing: first)
+        let second = await verification.prepare(sections: [.hidden], sectionMap: Scenario.sectionMap([t1]), explicitCandidates: [ref.key], reusing: first)
         guard case .ready(let ready) = second.state else { Issue.record("expected .ready, got \(second.state)"); return }
         #expect(capturer.callCount == Scenario.baselineCaptureCount() * 2, "a changed roster must recapture")
         #expect(ready.checkableTargets == [t1.key])
@@ -150,10 +150,10 @@ struct HidingVerificationDeviation5Tests {
         )
         let sectionMap = Scenario.sectionMap([t1])
 
-        let first = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: nil)
+        let first = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: nil)
         guard case .ready = first.state else { Issue.record("expected .ready, got \(first.state)"); return }
 
-        let second = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, iceIconKey: nil, explicitCandidates: [ref.key], reusing: first)
+        let second = await verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [ref.key], reusing: first)
         guard case .ready(let ready) = second.state else { Issue.record("expected .ready, got \(second.state)"); return }
         #expect(capturer.callCount == Scenario.baselineCaptureCount() * 2, "an item the baseline never saw must recapture")
         #expect(ready.alsoObserved == [other.key])

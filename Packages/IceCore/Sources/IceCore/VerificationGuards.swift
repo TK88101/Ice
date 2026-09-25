@@ -14,12 +14,9 @@ public enum RoomGuard {
     /// include own items at all) minus `notchMaxX`. No listed on-bar item at
     /// all -> room is assumed.
     public static func hasRoom(set: DiscoveredItemSet, notchMaxX: Double) -> Bool {
-        var minXs = set.items
+        let minXs: [Double] = set.listedItems
             .filter { $0.position == .onBar }
-            .compactMap(\.frame?.minX)
-        if let own = set.visibleControlItem, own.position == .onBar, let frame = own.frame {
-            minXs.append(frame.minX)
-        }
+            .compactMap { $0.frame?.minX }
         guard let leftmost = minXs.min() else { return true }
         return leftmost - notchMaxX >= minimumFreeRoom
     }

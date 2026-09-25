@@ -23,9 +23,11 @@ extension HidingVerification {
         // boxing it `@unchecked` is safe here.
         let screenBox = UncheckedBox(screen)
         let capturer = CGWindowListStripCapturer(screenProvider: { screenBox.value })
+        // Frames only: the check never needs an item's labels.
+        let extras = LiveExtrasReader(readsLabels: false)
         let discoverer = MenuBarDiscoverer(
             apps: LiveRunningApps(),
-            reader: LiveExtrasReader(readsLabels: false),
+            reader: extras,
             display: LiveDisplay(screen: { screenBox.value }),
             isTrusted: { AXIsProcessTrusted() },
             ownIdentifiers: ownIdentifiers,
@@ -38,7 +40,7 @@ extension HidingVerification {
             discoverer: discoverer,
             capturer: capturer,
             readerFactory: { origin in
-                DiscoveredFrameReader(extras: LiveExtrasReader(readsLabels: false), apps: LiveRunningApps(), origin: origin)
+                DiscoveredFrameReader(extras: extras, apps: LiveRunningApps(), origin: origin)
             },
             geometry: {
                 BarGeometry(screen: screenBox.value)
@@ -47,7 +49,7 @@ extension HidingVerification {
                 guard let geometry = BarGeometry(screen: screenBox.value) else {
                     return .unavailable(.captureUnavailable)
                 }
-                let reader = DiscoveredFrameReader(extras: LiveExtrasReader(readsLabels: false), apps: LiveRunningApps(), origin: liveOrigin)
+                let reader = DiscoveredFrameReader(extras: extras, apps: LiveRunningApps(), origin: liveOrigin)
                 return Preflight.run(capturer: capturer, axReader: reader, geometry: geometry)
             }
         )
