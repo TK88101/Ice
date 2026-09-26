@@ -254,7 +254,7 @@ struct I7AmendmentV7Tests {
     /// found left of the helpers, all three helpers reaped and their
     /// domains empty. Never a safety stop.
     ///
-    /// Rework #8a: this world's default `honoursPreferredPosition: false`
+    /// Rework #8a: this world's default `placementHonoring: .ignored`
     /// keeps macOS "ignoring" whatever `step1bPlacementPlan`/`launchAndDiscover`
     /// now write -- the helpers still render at their old fixed positions,
     /// so the post-launch gate still fails exactly as before. Amendment
@@ -272,9 +272,9 @@ struct I7AmendmentV7Tests {
         #expect(run.evidence.lastVerdict() == "inconclusive(\"helpers not leftmost: 2 owner items left\")")
         #expect(run.evidence.lastVerdict() != "safetyStop")
         #expect(run.evidence.lastVerdict() != "safetyStopNeedingAttention")
-        let placementRecord = run.evidence.allRecords().first { $0.kind == "placement.notLeftmost" }
+        let placementRecord = run.evidence.allRecords().first { $0.kind == "placement.gateFailed" }
         #expect(placementRecord != nil)
-        #expect(placementRecord?.fields["count"] as? Int == 2)
+        #expect(placementRecord?.fields["reason"] as? String == "helpers not leftmost: 2 owner items left")
         #expect(!world.commandLog.contains { $0.hasPrefix("spacer.length ") })
         #expect(world.commandLog.contains("protected.quit"))
         #expect(world.commandLog.contains("spacer.quit"))
@@ -339,9 +339,9 @@ struct I7AmendmentV7Tests {
     /// already proves once the gate is clean. This is the wiring's own
     /// end-to-end proof: the plan, the write, the honoured render and the
     /// post-launch gate all agree.
-    @Test("Amendment v8a: honoured -> the realistic layout still reaches PASS (calibrated duration reported)")
+    @Test("Amendment v8a/v9: honoured (sort-key) -> the realistic layout still reaches PASS (calibrated duration reported)")
     func honouredPreferredPositionOnRealisticLayoutPasses() {
-        let world = FakeBarWorld(templatedOwnerPresent: true, untemplatedOwnerCount: 4, ownerItemsLeftOfHelpersCount: 2, honoursPreferredPosition: true)
+        let world = FakeBarWorld(templatedOwnerPresent: true, untemplatedOwnerCount: 4, ownerItemsLeftOfHelpersCount: 2, placementHonoring: .sortKey)
         let start = world.clock.now()
         let run = I7.run(world: world)
         let elapsedSeconds = world.clock.now() - start
@@ -350,7 +350,7 @@ struct I7AmendmentV7Tests {
         #expect(run.code == 0)
         #expect(run.evidence.lastVerdict() == "pass")
         #expect(elapsedSeconds <= 17 * 60)
-        #expect(!run.evidence.allRecords().contains { $0.kind == "placement.notLeftmost" })
+        #expect(!run.evidence.allRecords().contains { $0.kind == "placement.gateFailed" })
         let planRecord = run.evidence.allRecords().first { $0.kind == "placement.plan" }
         #expect(planRecord != nil)
         #expect(world.commandLog.contains { $0.hasPrefix("spacer.length ") })
@@ -368,15 +368,15 @@ struct I7AmendmentV7Tests {
     /// under `--dry`, per Amendment v7's own scenario 5), but gate-clean --
     /// no setup abort, no safety stop, an equivalent teardown -- proving
     /// the placement wiring itself does not depend on `--dry` at all.
-    @Test("Amendment v8a: --dry honoured -> PROVISIONAL FAIL, gate-clean (no setup abort, no safety stop, an equivalent teardown)")
+    @Test("Amendment v8a/v9: --dry honoured (sort-key) -> PROVISIONAL FAIL, gate-clean (no setup abort, no safety stop, an equivalent teardown)")
     func dryHonouredPreferredPositionIsGateClean() {
-        let world = FakeBarWorld(ownerItemsLeftOfHelpersCount: 2, honoursPreferredPosition: true)
+        let world = FakeBarWorld(ownerItemsLeftOfHelpersCount: 2, placementHonoring: .sortKey)
         let run = I7.run(world: world, dry: true)
 
         #expect(!world.commandLog.contains { $0.hasPrefix("spacer.length ") })
         #expect(run.evidence.lastVerdict()?.hasPrefix("provisionalFail") == true)
         #expect(!run.evidence.allRecords().contains { $0.kind == "step.abort" })
-        #expect(!run.evidence.allRecords().contains { $0.kind == "placement.notLeftmost" })
+        #expect(!run.evidence.allRecords().contains { $0.kind == "placement.gateFailed" })
         #expect(run.evidence.lastVerdict() != "safetyStop")
         #expect(run.evidence.lastVerdict() != "safetyStopNeedingAttention")
         #expect(run.evidence.allRecords().contains { $0.kind == "teardown.baselineEquivalent" && ($0.fields["matched"] as? Bool) == true })

@@ -91,11 +91,26 @@ public enum C1AutosaveName {
 /// `itemLengthPt`, restated here for the same reason `SpacerIdentifier`
 /// is); the spacer at rest draws `DetectorParameters.chevronWidthPt`
 /// (IceCore's own measured chevron width) -- both approximations of the
-/// real rendered width, since the exact figure is not itself load-bearing
-/// here: `PlacementPlan.marginPt` is what absorbs the slack, and
-/// `step2bPlacementGate`'s own post-launch read is what actually decides.
+/// declared AX width, not what a live item actually occupies once macOS
+/// packs it against its neighbours.
+///
+/// Amendment v9, "Real pitch" (crosscheck-rework8.json #1): every recorded
+/// live helper pair (`~/IceReverse-evidence/20260925-145233-vzverify/samples.jsonl`
+/// and a dozen other runs) shows 14 pt AX frames at a 28 pt pitch -- about
+/// twice `plainItemPt`'s own 12. `PlacementPlan.plan`'s own room/order math
+/// now uses these occupied-pitch constants, not the declared AX widths
+/// above, so a real, packed layout cannot insert Target between the spacer
+/// and Protected the way the old, narrower nominal widths could.
 public enum C1HelperWidth {
     public static let plainItemPt = 12.0
+    /// The real occupied pitch of one plain helper item (Target or
+    /// Protected): the 14 pt AX frame every recorded live run shows, plus
+    /// its own spacing to the next item, rounded up.
+    public static let occupiedPitchPt = 28.0
+    /// The spacer's own real occupied pitch at rest: its wider chevron
+    /// frame (`DetectorParameters.chevronWidthPt`, 17.5 pt) plus spacing --
+    /// "at least 32 pt" per Amendment v9's own wording.
+    public static let spacerOccupiedPitchPt = 32.0
 }
 
 /// I5's channel: every command this stage sends a helper goes through here,
@@ -408,6 +423,17 @@ public final class StageC1 {
         // yet -- a terminal event here (a signal before setup even
         // starts) has nothing to tear down, so it is reported straight
         // from `safetyStop`, never a re-runnable INCONCLUSIVE.
+        //
+        // Amendment v9, "Signal precedence" (crosscheck-rework8.json #5):
+        // `step1bPlacementPlan` is the first step in this loop whose own
+        // body can turn a terminal state into a plain `.abort` (it checks
+        // `isTerminal` around its own discovery pass) -- so a signal
+        // landing inside that pass reached here as an ordinary abort,
+        // recorded INCONCLUSIVE (exit 2, re-runnable) even though the
+        // machine had already recorded a safety stop needing attention
+        // (exit 3). `safetyStop` is re-checked after every step's own
+        // abort, not only before the next step begins, so a recorded stop
+        // always wins.
         for step in [("step0.bundles", step0Bundles), ("step1.setup", step1Setup), ("step1b.placementPlan", step1bPlacementPlan)] {
             evidence?.record("step.begin", ["step": step.0])
             if let stop = safetyStop {
@@ -415,6 +441,9 @@ public final class StageC1 {
             }
             if case .abort(let reason) = step.1() {
                 evidence?.record("step.abort", ["step": step.0, "reason": reason])
+                if let stop = safetyStop {
+                    return finish(stop == .needingAttention ? .safetyStopNeedingAttention : .safetyStop)
+                }
                 return finish(.inconclusive("setup: \(step.0): \(reason)"))
             }
         }

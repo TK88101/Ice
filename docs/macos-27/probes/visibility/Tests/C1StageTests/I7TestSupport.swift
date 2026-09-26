@@ -28,10 +28,17 @@ enum I7 {
     /// helper begins launching (`FakeHelperLauncher.onLaunch`), simulating
     /// a signal arriving mid-setup with no change to any file outside this
     /// test target.
+    ///
+    /// `signalDuringStep1bDiscovery`: Amendment v9, H5's "signal during
+    /// step1b" fixture -- when `true`, `stage.signalReceived()` fires
+    /// synchronously right before the very first discovery pass
+    /// `step1bPlacementPlan` makes (`FakeDiscoverer.onFirstDiscovery`),
+    /// with no change to any file outside this test target.
     static func run(
         world: FakeBarWorld,
         dry: Bool = false,
         signalDuringLaunchOfRole: String? = nil,
+        signalDuringStep1bDiscovery: Bool = false,
         discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds
     ) -> Run {
         let evidence = FakeEvidence()
@@ -44,7 +51,11 @@ enum I7 {
                 handback.stage?.signalReceived()
             }
         }
-        let environment = FakeC1EnvironmentFactory.make(world: world, evidence: evidence, caffeinate: caffeinate, onHelperLaunch: onLaunch, discoveryExecutorBoundSeconds: discoveryExecutorBoundSeconds)
+        var onFirstDiscovery: (@Sendable () -> Void)?
+        if signalDuringStep1bDiscovery {
+            onFirstDiscovery = { handback.stage?.signalReceived() }
+        }
+        let environment = FakeC1EnvironmentFactory.make(world: world, evidence: evidence, caffeinate: caffeinate, onHelperLaunch: onLaunch, onFirstDiscovery: onFirstDiscovery, discoveryExecutorBoundSeconds: discoveryExecutorBoundSeconds)
         let stage = StageC1(environment: environment, apps: apps(), dry: dry)
         handback.stage = stage
         let code = stage.run()

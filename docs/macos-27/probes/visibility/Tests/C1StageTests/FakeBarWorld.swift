@@ -86,17 +86,101 @@ final class FakeBarWorld: @unchecked Sendable {
         return true
     }
 
+    /// Amendment v9, "Sort-key values": which reading of the written
+    /// "NSStatusItem Preferred Position" values, if any, this world's own
+    /// `resolvedXLocked` models. `.ignored` keeps every existing scenario's
+    /// own fixed, unplaced positions (macOS never reads the key back at
+    /// all); `.distance` is the old (now known-contradicted,
+    /// crosscheck-rework8.json #0/#4) right-edge-distance reading;
+    /// `.sortKey` is the reading the owner's own recorded evidence fits --
+    /// items ordered by comparing their own stored values, not an absolute
+    /// x (`sortKeyPackedXLocked`).
+    enum PlacementHonoring: Equatable, Sendable {
+        case ignored
+        case distance
+        case sortKey
+    }
+
+    /// Amendment v9, "Gate": which of the two on-bar helper items this
+    /// world's own rendering swaps, so an I7 scenario can exercise
+    /// `PlacementGate.check`'s `.misorder` path against the real stage --
+    /// "macOS packed the helpers in a different order than the plan's own
+    /// written values implied," independent of whether the values
+    /// themselves were honoured.
+    private enum HelperMisorderRole { case target, protected }
+
     /// Amendment v8a: the honoured-position read -- `nil` (use `fallback`)
-    /// unless `honoursPreferredPosition` is `true` and this exact
+    /// unless `placementHonoring` is not `.ignored` and this exact
     /// `bundleID`/`autosaveName` pair already has a written value, in
-    /// which case the render X is the inverse of `PlacementPlan`'s own
-    /// `barRightEdge - minX` conversion (the INFERRED right-edge-distance
-    /// assumption, SEAM-AUDIT.md). Called only while holding `lock`.
+    /// which case the render X follows that mode's own reading
+    /// (`.distance`: the inverse of `PlacementPlan`'s own
+    /// `barRightEdge - minX` conversion; `.sortKey`: `sortKeyPackedXLocked`).
+    /// Called only while holding `lock`.
     private func resolvedXLocked(bundleID: String, autosaveName: String, fallback: Double) -> Double {
-        guard honoursPreferredPosition,
-              let value = defaultsDomains[bundleID]?[PreferredPositionKey.stringKey(autosaveName: autosaveName)]
-        else { return fallback }
-        return Self.geometry.widthPt - value
+        guard let value = defaultsDomains[bundleID]?[PreferredPositionKey.stringKey(autosaveName: autosaveName)] else { return fallback }
+        switch placementHonoring {
+        case .ignored: return fallback
+        case .distance: return Self.geometry.widthPt - value
+        case .sortKey: return sortKeyPackedXLocked(value: value)
+        }
+    }
+
+    /// Amendment v9, ".sortKey" mode: ranks `value` against every other
+    /// helper's own currently-written value, plus the stale owner's own
+    /// fixed stored value (when present) -- descending value = further
+    /// left, packed at `Self.sortKeyPitchPt` from `Self.sortKeyAnchorX`.
+    /// Models "macOS orders items by comparing stored preferred-position
+    /// values against each other," the reading crosscheck-rework8.json
+    /// #0/#4 found the owner's own recorded evidence fits (never called
+    /// with `defaultsDomains` unlocked -- see `resolvedXLocked`).
+    private func sortKeyPackedXLocked(value: Double) -> Double {
+        var candidates = [value]
+        for (bundleID, autosaveName) in [
+            (C1HelperRole.target, C1AutosaveName.target),
+            (C1HelperRole.protected, C1AutosaveName.spacer),
+            (C1HelperRole.protected, C1AutosaveName.protected),
+        ] {
+            guard let other = defaultsDomains[bundleID]?[PreferredPositionKey.stringKey(autosaveName: autosaveName)], other != value else { continue }
+            candidates.append(other)
+        }
+        if staleOwnerPresent { candidates.append(Self.staleOwnerRecordedValue) }
+        let rank = candidates.sorted(by: >).firstIndex(of: value) ?? 0
+        return Self.sortKeyAnchorX + Double(rank) * Self.sortKeyPitchPt
+    }
+
+    /// Amendment v9, "Gate": `resolvedXLocked`'s own render X for Target's
+    /// or Protected's own preferred-position key, with the two swapped
+    /// when `forceHelperMisorder` is armed and `placementHonoring ==
+    /// .distance` -- see `HelperMisorderRole`'s own doc comment.
+    private func helperRenderXLocked(role: HelperMisorderRole, fallback: Double) -> Double {
+        let (bundleID, autosaveName): (String, String) = role == .target
+            ? (C1HelperRole.target, C1AutosaveName.target)
+            : (C1HelperRole.protected, C1AutosaveName.protected)
+        let normal = resolvedXLocked(bundleID: bundleID, autosaveName: autosaveName, fallback: fallback)
+        guard forceHelperMisorder, placementHonoring == .distance else { return normal }
+        switch role {
+        case .target:
+            return resolvedXLocked(bundleID: C1HelperRole.protected, autosaveName: C1AutosaveName.protected, fallback: Self.protectedX)
+        case .protected:
+            return resolvedXLocked(bundleID: C1HelperRole.target, autosaveName: C1AutosaveName.target, fallback: Self.targetRestX)
+        }
+    }
+
+    /// Amendment v9: the read-only owner-domain scan's own fake seam
+    /// (`FakeOwnerPreferenceScanner`, `FakeC1Environment.swift`) reads
+    /// through here -- `nil` when `ownerPreferenceUnreadable` marks the
+    /// templated owner item's own bundle id (`ownerKey.namespace`)
+    /// unreadable, otherwise every "NSStatusItem Preferred Position " key
+    /// already in this world's own preferences model for `bundleID`
+    /// (pre-seeded for the stale-owner fixture, or written by `StageC1`
+    /// itself for a helper's own domain -- this method never distinguishes
+    /// the two, mirroring the live seam, which also cannot).
+    func ownerMatchingValues(bundleID: String) -> [String]? {
+        lock.withLock {
+            if ownerPreferenceUnreadable, bundleID == Self.ownerKey.namespace { return nil }
+            let domain = defaultsDomains[bundleID] ?? [:]
+            return domain.filter { $0.key.hasPrefix(PreferredPositionKey.scanPrefix) }.values.map { "\($0)" }
+        }
     }
 
     /// Whether the templated owner item (`ownerKey`, `ownerX`) exists in
@@ -115,16 +199,30 @@ final class FakeBarWorld: @unchecked Sendable {
     /// scenario's own "helpers land leftmost" layout, which Amendment v8's
     /// own work item keeps as the *post-placement* case (scenario 1 etc.).
     let ownerItemsLeftOfHelpersCount: Int
-    /// Amendment v8a: whether this world's own defaults-domain model
-    /// (`defaultsWrite`/`defaultsForget`/`defaultsKeys`) is honoured when
-    /// rendering the helpers' own rest position -- modelling "macOS 27
-    /// honours the stored `NSStatusItem Preferred Position`" (`true`) vs.
-    /// "macOS 27 ignores it" (`false`, the default -- every existing
-    /// scenario's own fixed positions, unaffected by whatever `StageC1`
-    /// now writes). Unproven either way on the real bar (SEAM-AUDIT.md);
-    /// this fake models both outcomes so the wiring is exercised
-    /// regardless of which turns out true.
-    let honoursPreferredPosition: Bool
+    /// Amendment v9: which reading of the written "NSStatusItem Preferred
+    /// Position" values, if any, this world's own rendering models --
+    /// `.ignored` (the default -- every existing scenario's own fixed
+    /// positions, unaffected by whatever `StageC1` writes), `.distance`
+    /// (the old, now known-contradicted right-edge-distance reading) or
+    /// `.sortKey` (the reading the owner's own recorded evidence fits).
+    /// Unproven which, if any, macOS 27 actually uses (SEAM-AUDIT.md); this
+    /// fake models every outcome so the wiring is exercised regardless of
+    /// which turns out true.
+    let placementHonoring: PlacementHonoring
+    /// Amendment v9, "Gate": armed together with `placementHonoring ==
+    /// .distance` to swap Target's and Protected's own rendered positions --
+    /// "macOS packed the helpers in the wrong order" (H5's own misorder
+    /// fixture).
+    let forceHelperMisorder: Bool
+    /// Amendment v9, "Sort-key values": whether the dedicated stale-value
+    /// owner item (`staleOwnerKey`, minX `staleOwnerMinX`) is on the bar,
+    /// its own domain pre-seeded with `staleOwnerRecordedValue`.
+    let staleOwnerPresent: Bool
+    /// Amendment v9: marks the templated owner item's own bundle id
+    /// (`ownerKey.namespace`) unreadable in `ownerMatchingValues` -- the
+    /// "an on-bar owner's own scan is unreadable, refuse before any
+    /// launch" fixture (H5).
+    let ownerPreferenceUnreadable: Bool
     /// Amendment v8a: when set, one additional on-bar owner item (always
     /// visible, ungated) appears at this minX, close enough to the bar's
     /// own left edge that no helper width/margin combination could ever
@@ -216,7 +314,10 @@ final class FakeBarWorld: @unchecked Sendable {
         templatedOwnerPresent: Bool = true,
         untemplatedOwnerCount: Int = 0,
         ownerItemsLeftOfHelpersCount: Int = 0,
-        honoursPreferredPosition: Bool = false,
+        placementHonoring: PlacementHonoring = .ignored,
+        forceHelperMisorder: Bool = false,
+        staleOwnerPresent: Bool = false,
+        ownerPreferenceUnreadable: Bool = false,
         noRoomOwnerMinX: Double? = nil,
         dynamicTemplatedOwnerAtBaseline: Bool = false,
         injectPrepareRejection: Bool = false,
@@ -229,13 +330,32 @@ final class FakeBarWorld: @unchecked Sendable {
         self.templatedOwnerPresent = templatedOwnerPresent
         self.untemplatedOwnerCount = untemplatedOwnerCount
         self.ownerItemsLeftOfHelpersCount = ownerItemsLeftOfHelpersCount
-        self.honoursPreferredPosition = honoursPreferredPosition
+        self.placementHonoring = placementHonoring
+        self.forceHelperMisorder = forceHelperMisorder
+        self.staleOwnerPresent = staleOwnerPresent
+        self.ownerPreferenceUnreadable = ownerPreferenceUnreadable
         self.noRoomOwnerMinX = noRoomOwnerMinX
         self.dynamicTemplatedOwnerAtBaseline = dynamicTemplatedOwnerAtBaseline
         self.injectPrepareRejection = injectPrepareRejection
         self.unreadableFoldAfterAbort = unreadableFoldAfterAbort
         self.hangDurationSeconds = hangDurationSeconds
         self.discoverySecondsOverride = discoverySecondsOverride
+        // Amendment v9: every owner-family domain this world can render
+        // starts out legible by default -- a normal, "already positioned
+        // at some point" bar -- pre-seeded directly, never through
+        // `defaultsWrite` (never logged as something this run itself
+        // wrote). Every value here is far below `PlacementPlan
+        // .historicalMaximumStoredValue` (5772), so it never raises the
+        // floor in a scenario that is not itself testing that.
+        // `ownerPreferenceUnreadable`/the stale-owner fixture override
+        // this per domain (`ownerMatchingValues`, `staleOwnerPresent`
+        // below).
+        defaultsDomains[Self.ownerKey.namespace] = [PreferredPositionKey.scanPrefix + "Item-0": 100.0]
+        defaultsDomains[Self.ownerLeftKey(0).namespace] = [PreferredPositionKey.scanPrefix + "Item-0": 50.0]
+        defaultsDomains[Self.noRoomOwnerKey.namespace] = [PreferredPositionKey.scanPrefix + "Item-0": 10.0]
+        if staleOwnerPresent {
+            defaultsDomains[Self.staleOwnerKey.namespace] = [PreferredPositionKey.scanPrefix + "Item-0": Self.staleOwnerRecordedValue]
+        }
     }
 
     func setTargetNeverHides(_ value: Bool) {
@@ -425,7 +545,7 @@ final class FakeBarWorld: @unchecked Sendable {
     }
 
     private func targetXLocked() -> Double {
-        let restX = resolvedXLocked(bundleID: C1HelperRole.target, autosaveName: C1AutosaveName.target, fallback: Self.targetRestX)
+        let restX = helperRenderXLocked(role: .target, fallback: Self.targetRestX)
         if targetNeverHides { return restX }
         switch spacerState {
         case .rest: return restX
@@ -447,7 +567,7 @@ final class FakeBarWorld: @unchecked Sendable {
             var g: [(shape: [String], atPt: Double)] = []
             if targetUp { g.append((Self.shapeTarget, targetXLocked())) }
             if spacerUp { g.append((Self.shapeSpacer, spacerRenderXLocked())) }
-            if protectedVisibleLocked() { g.append((Self.shapeProtected, resolvedXLocked(bundleID: C1HelperRole.protected, autosaveName: C1AutosaveName.protected, fallback: Self.protectedX))) }
+            if protectedVisibleLocked() { g.append((Self.shapeProtected, helperRenderXLocked(role: .protected, fallback: Self.protectedX))) }
             if templatedOwnerVisibleLocked() { g.append((templatedOwnerShapeLocked(), Self.ownerX)) }
             for i in 0..<untemplatedOwnerCount where extraVisibleLocked(i) {
                 g.append((Self.shapeOwner, extraXLocked(i)))
@@ -457,6 +577,9 @@ final class FakeBarWorld: @unchecked Sendable {
             }
             if let noRoomOwnerMinX {
                 g.append((Self.shapeOwner, noRoomOwnerMinX + 1))
+            }
+            if staleOwnerPresent {
+                g.append((Self.shapeOwner, Self.staleOwnerMinX))
             }
             if foldGhostPresentLocked() {
                 g.append((Self.shapeFoldGhost, Self.foldGhostX))
@@ -629,7 +752,7 @@ final class FakeBarWorld: @unchecked Sendable {
                 result.append((Self.spacerKey.encoded, (Self.spacerKey, Self.spacerPID, Self.frame(atPt: spacerRenderXLocked()), .onBar)))
             }
             if protectedVisibleLocked() {
-                let x = resolvedXLocked(bundleID: C1HelperRole.protected, autosaveName: C1AutosaveName.protected, fallback: Self.protectedX)
+                let x = helperRenderXLocked(role: .protected, fallback: Self.protectedX)
                 result.append((Self.protectedKey.encoded, (Self.protectedKey, Self.protectedPID, Self.frame(atPt: x), .onBar)))
             }
             if templatedOwnerVisibleLocked() {
@@ -653,6 +776,13 @@ final class FakeBarWorld: @unchecked Sendable {
             if let noRoomOwnerMinX {
                 let key = Self.noRoomOwnerKey
                 result.append((key.encoded, (key, Self.noRoomOwnerPID, Self.frame(atPt: noRoomOwnerMinX + 1), .onBar)))
+            }
+            // Amendment v9, "Sort-key values": the dedicated stale-value
+            // owner item -- always on-bar when present, its own domain
+            // pre-seeded in `init`, never gated by any fault knob or mode.
+            if staleOwnerPresent {
+                let key = Self.staleOwnerKey
+                result.append((key.encoded, (key, Self.staleOwnerPID, Self.frame(atPt: Self.staleOwnerMinX), .onBar)))
             }
             // Amendment v8 (parked items): the owner's own bar always
             // lists 2-3 of them (frames below the bar) -- fixed, always

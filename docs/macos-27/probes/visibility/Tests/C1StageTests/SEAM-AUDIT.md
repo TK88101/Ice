@@ -294,6 +294,95 @@ below -- only file:line and counts, per the brief's hard rule.
   own notch-refusal branch is covered only by `PlacementPlanTests`
   (C1Core, pure), not by I7. Noted as a gap, not fixed.
 
+## Amendment v9 -- sort-key placement values, real pitch, gate, signal precedence (rework #9)
+
+- **New primary reading, still unverified**: a fifth cross-check
+  (crosscheck-rework8.json #0/#4) found the owner's own recorded stored
+  `NSStatusItem Preferred Position` values contradict the old
+  right-edge-distance reading and instead follow the items' own
+  left-to-right order (`~/IceReverse-evidence/20260925-092244-icerun/before/app-statusitem-keys.txt`).
+  `PlacementPlan` now treats the values primarily as **sort keys**: each
+  helper's own value is `floor + step` (`sortKeyStepPt`, 100.0), where
+  `floor` is the largest of `historicalMaximumStoredValue` (5772.0) and
+  every on-bar owner's own scanned stored value. This is still a plan, not
+  a promise -- `step2bPlacementGate`'s own post-launch read decides either
+  way.
+- **C1Core (pure, 100% covered)**: `PlacementValueScan` (new;
+  `Sources/C1Core/PlacementValueScan.swift`) classifies one on-bar owner's
+  own raw scan into numeric values or one of four issues (`unreadable`,
+  `nonNumeric`, `missing`, `attributionUnclear`); `PlacementPlan.plan`'s
+  own signature changed to take `[PlacementValueScan.Classified]` plus
+  each helper's own real *occupied* pitch (`targetOccupiedPt`/
+  `spacerOccupiedPt`/`protectedOccupiedPt` -- 28/32/28,
+  `C1HelperWidth.occupiedPitchPt`/`.spacerOccupiedPitchPt`,
+  crosscheck-rework8.json #1) rather than nominal AX widths, and returns
+  `PlacementPlan.Outcome` (`.planned`/`.refused`) instead of `Result?`, so
+  a scan-uncertain refusal and a no-room refusal are distinguishable.
+  `PlacementGate.check` now takes a `Reading` (each helper's own minX,
+  `nil` when off the bar or folded) and requires the internal order
+  (`Target < spacer < Protected`) explicitly, returning one of three
+  distinct `FailureReason`s; `PlacementGate.materiallyAgree` is the new
+  two-consecutive-reads check. `PlacementValueScanTests`/`PlacementPlanTests`/
+  `PlacementGateTests` cover all of this, including the sort-key floor
+  math, every scan issue (deterministic leftmost-first when several
+  owners have one), and `materiallyAgree`'s own tolerance/owner-order
+  handling.
+- **StageC1 (`StageC1Placement.swift`, rewritten)**: `step1bPlacementPlan`
+  now also reads each on-bar owner's own bundle id
+  (`item.process.bundleID`) through the new
+  `environment.ownerPreferenceScanner` (`C1OwnerPreferenceScanning`,
+  `C1StageEnvironment.swift`) before calling `PlacementPlan.plan`, and
+  records the on-bar owner minXs and the floor used. `step2bPlacementGate`
+  now loops discovery reads (bounded by `placementGateAgreementBoundSeconds`,
+  5.0) until two consecutive ones `materiallyAgree`, recording every pass
+  (`placement.gateRead`) before deciding (`placement.gateFailed`, with a
+  reason distinct per `FailureReason` case).
+- **Live scanner (new)**: `LiveOwnerPreferenceScanner`
+  (`Sources/vizprobe/StageC1Live.swift`) -- `defaults export <bundleID> -`,
+  read-only, with a 2 s timeout (`DispatchGroup.wait`, `process.terminate()`
+  on timeout) and a `maxMatchingKeys` (16) cap on how many matching keys
+  it returns -- the "bounded in time and count" the hard rules ask for.
+  Never exercised live (the hard rules forbid it); exercised only through
+  `FakeOwnerPreferenceScanner` in I7.
+- **Signal precedence (`StageC1.swift`)**: `run()`'s first step loop now
+  re-checks `safetyStop` after a step's own `.abort`, not only before the
+  next step begins -- `step1bPlacementPlan` was the first pre-launch step
+  whose own body could turn a terminal state into a plain abort
+  (crosscheck-rework8.json #5), which used to report a re-runnable
+  INCONCLUSIVE (exit 2) over a recorded safety-stop-needing-attention
+  (exit 3).
+- **Fake**: `FakeBarWorld.honoursPreferredPosition: Bool` became
+  `placementHonoring: PlacementHonoring` (`.ignored`/`.distance`/
+  `.sortKey`) -- `.distance` is the old inversion (kept only for the
+  dedicated misorder fixture below; its own render numbers are no longer
+  physically sensible once `PlacementPlan` writes sort-key-shaped
+  magnitudes, so the two pre-existing "honoured" I7AmendmentV7Tests cases
+  moved to `.sortKey`, the reading Codex round 9b ruled primary).
+  `.sortKey` ranks a helper's own written value against the other
+  helpers' and the dedicated stale-owner fixture's own fixed value
+  (`sortKeyPackedXLocked`), packing at `sortKeyPitchPt` (28, the real
+  measured pitch) from `sortKeyAnchorX` (45 -- picked to clear
+  `IceCore.RoomGuard.minimumFreeRoom`, 41 pt, once the AX-frame
+  convention's own 1 pt trim is subtracted). `staleOwnerPresent` adds the
+  dedicated on-bar owner item pre-seeded with the recorded 5703;
+  `ownerPreferenceUnreadable` marks the templated owner's own domain
+  unreadable; `forceHelperMisorder` (only effective with `.distance`)
+  swaps Target's and Protected's own rendered positions, for the
+  dedicated misorder fixture. Every owner-family domain
+  (`ownerKey`/`ownerLeftKey`/`noRoomOwnerKey`'s own namespaces) is now
+  pre-seeded with a small, legible default stored value in `init` (never
+  through `defaultsWrite`, so it never shows up as something a run itself
+  wrote) -- without this, every existing I7 scenario's own templated/
+  untemplated/no-room owner items would make `step1bPlacementPlan` refuse
+  as `missing` before ever reaching the code each of those scenarios
+  actually means to test.
+- **New I7 coverage (`I7AmendmentV9Tests.swift`)**: the sort-key mode with
+  a stale on-bar owner value still reaching PASS at the 28-pt pitch, a
+  forced misorder ending INCONCLUSIVE with its own distinct reason, an
+  unreadable owner scan refusing before any launch, and a signal during
+  step1b's own discovery ending SAFETY STOP NEEDING ATTENTION rather than
+  a re-runnable INCONCLUSIVE.
+
 ## `pump`
 
 - **Live**: `LivePump` -- `Pump.run`/`Pump.blocking` (a real run-loop

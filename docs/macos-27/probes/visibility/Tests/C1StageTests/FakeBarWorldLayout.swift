@@ -83,6 +83,33 @@ extension FakeBarWorld {
     static let noRoomOwnerPID: pid_t = 800
     static let noRoomOwnerKey = key("noRoomOwner", pid: noRoomOwnerPID, identifier: "owner.noRoom")
 
+    /// Amendment v9, "Sort-key values": the dedicated on-bar owner item
+    /// carrying its own stale stored preferred-position value (H5's own
+    /// "one on-bar owner item with a large stale value" fixture) -- fixed
+    /// far enough right that `.sortKey` mode's packed helper slots
+    /// (`sortKeyAnchorX` + up to 2 x `sortKeyPitchPt`) never reach it.
+    static let staleOwnerPID: pid_t = 801
+    static let staleOwnerKey = key("staleOwner", pid: staleOwnerPID, identifier: "owner.stale")
+    static let staleOwnerMinX = 280.0
+    /// The recorded stale value itself
+    /// (`~/IceReverse-evidence/20260925-092244-icerun/before/app-statusitem-keys.txt`)
+    /// -- well below `PlacementPlan.historicalMaximumStoredValue` (5772),
+    /// so the plan's own floor never comes from this fixture; it exists to
+    /// prove the plan still lands the helpers left of it regardless.
+    static let staleOwnerRecordedValue = 5703.0
+
+    /// Amendment v9, ".sortKey" mode: where the three helpers pack, left to
+    /// right, once their own written values outrank the stale owner's
+    /// (always true: the plan's own floor is at least `historicalMaximumStoredValue`,
+    /// always above `staleOwnerRecordedValue`). The pitch matches the real,
+    /// measured 28 pt (crosscheck-rework8.json #1) -- H5's own "28-pt
+    /// pitch" fixture. The anchor itself clears `IceCore.RoomGuard
+    /// .minimumFreeRoom` (41 pt free right of a `0`-wide fake notch) with a
+    /// few points to spare, once the AX-frame convention's own 1 pt trim
+    /// (`Self.frame(atPt:)`) is subtracted.
+    static let sortKeyAnchorX = 45.0
+    static let sortKeyPitchPt = 28.0
+
     // MARK: - Identity
 
     static let protectedPID: pid_t = 9001

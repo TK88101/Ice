@@ -5,6 +5,7 @@
 // nothing else in this file runs the protocol itself.
 import AppKit
 import ApplicationServices
+import C1Core
 import C1Stage
 import Foundation
 import IceCore
@@ -39,6 +40,50 @@ struct LiveHelperDefaults: C1HelperDefaultsProviding {
     func forget(_ bundleID: String) -> Bool { HelperDefaults.forget(bundleID) }
     func keys(_ bundleID: String) -> [String]? { HelperDefaults.keys(bundleID) }
     func write(_ bundleID: String, key: String, value: Double) -> Bool { HelperDefaults.write(bundleID, key: key, value: value) }
+}
+
+/// Amendment v9, "Sort-key values": the one read against an *owner's* own
+/// preference domain this whole probe ever makes -- read-only (`defaults
+/// export`, never `write`/`delete`), bounded in time (a fixed timeout; a
+/// domain that does not answer in time reads as unreadable, same as one
+/// `defaults export` itself failed on) and in count (at most
+/// `maxMatchingKeys` matching keys, sorted, so a pathological domain cannot
+/// make this scan do unbounded work). Never touches a helper's own domain
+/// (`LiveHelperDefaults` above is that, unconditionally the write side).
+struct LiveOwnerPreferenceScanner: C1OwnerPreferenceScanning {
+    static let timeoutSeconds = 2.0
+    static let maxMatchingKeys = 16
+
+    func matchingValues(bundleID: String) -> [String]? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+        process.arguments = ["export", bundleID, "-"]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+
+        let exitedInTime = DispatchGroup()
+        exitedInTime.enter()
+        DispatchQueue.global(qos: .utility).async {
+            process.waitUntilExit()
+            exitedInTime.leave()
+        }
+        guard exitedInTime.wait(timeout: .now() + Self.timeoutSeconds) == .success else {
+            process.terminate()
+            return nil
+        }
+
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        guard process.terminationStatus == 0 else { return nil }
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return nil }
+
+        return plist
+            .filter { $0.key.hasPrefix(PreferredPositionKey.scanPrefix) }
+            .keys.sorted()
+            .prefix(Self.maxMatchingKeys)
+            .map { "\(plist[$0]!)" }
+    }
 }
 
 /// Wraps `Pump.run`/`Pump.blocking` (`Pump.swift`) -- the main-run-loop pump
@@ -125,6 +170,7 @@ enum C1LiveWiring {
             },
             helperLauncher: LiveHelperLauncher(),
             helperDefaults: LiveHelperDefaults(),
+            ownerPreferenceScanner: LiveOwnerPreferenceScanner(),
             pump: LivePump(),
             caffeinate: LiveCaffeinate(),
             evidenceFactory: LiveEvidenceFactory(),

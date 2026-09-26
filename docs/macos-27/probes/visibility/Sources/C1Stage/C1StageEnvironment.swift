@@ -81,6 +81,29 @@ public protocol C1HelperDefaultsProviding: Sendable {
     func write(_ bundleID: String, key: String, value: Double) -> Bool
 }
 
+/// Amendment v9, "Sort-key values": the bounded, read-only scan of one
+/// on-bar owner item's own preference domain, before any helper ever
+/// launches -- never the helper domains (`C1HelperDefaultsProviding`
+/// above is the write side, always a helper's own bundle id;
+/// this is the read side, always an *owner's* own bundle id). The owner's
+/// own recorded stored "NSStatusItem Preferred Position" values do not fit
+/// a right-edge-distance reading (crosscheck-rework8.json #0/#4), so
+/// `step1bPlacementPlan` reads them to set a floor rather than guess.
+public protocol C1OwnerPreferenceScanning: Sendable {
+    /// Every value, as a raw string, of every key in `bundleID`'s own
+    /// domain whose name begins with `PreferredPositionKey.scanPrefix`
+    /// ("NSStatusItem Preferred Position ") -- bounded in count (the live
+    /// implementation reads at most a fixed number of matching keys) and
+    /// in time (a fixed timeout; a domain that does not answer in time
+    /// reads as unreadable, same as one that could not be read at all).
+    /// `nil` when the domain itself could not be read at all (a process
+    /// failure, a timeout, or output that did not parse as a property
+    /// list) -- `PlacementValueScan.classify` then refuses the whole plan
+    /// rather than guess; `[]` when the domain read fine but had no
+    /// matching key.
+    func matchingValues(bundleID: String) -> [String]?
+}
+
 /// `caffeinate -d[ -w <pid>]` for the run's duration (section 2 / item 7).
 public protocol C1CaffeinateLaunching: Sendable {
     /// Starts the process. `nil` on success; an error description to
@@ -179,6 +202,10 @@ public struct C1StageEnvironment: Sendable {
     public var extrasScanner: @Sendable () -> [C1ExtrasItem]
     public var helperLauncher: any C1HelperLaunching
     public var helperDefaults: any C1HelperDefaultsProviding
+    /// Amendment v9: the pre-launch, read-only owner-domain scan
+    /// (`C1OwnerPreferenceScanning`) `step1bPlacementPlan` reads before
+    /// computing `PlacementPlan`'s own floor.
+    public var ownerPreferenceScanner: any C1OwnerPreferenceScanning
     public var pump: any C1Pump
     public var caffeinate: any C1CaffeinateLaunching
     public var evidenceFactory: any C1EvidenceFactory
@@ -203,6 +230,7 @@ public struct C1StageEnvironment: Sendable {
         extrasScanner: @escaping @Sendable () -> [C1ExtrasItem],
         helperLauncher: any C1HelperLaunching,
         helperDefaults: any C1HelperDefaultsProviding,
+        ownerPreferenceScanner: any C1OwnerPreferenceScanning,
         pump: any C1Pump,
         caffeinate: any C1CaffeinateLaunching,
         evidenceFactory: any C1EvidenceFactory,
@@ -217,6 +245,7 @@ public struct C1StageEnvironment: Sendable {
         self.extrasScanner = extrasScanner
         self.helperLauncher = helperLauncher
         self.helperDefaults = helperDefaults
+        self.ownerPreferenceScanner = ownerPreferenceScanner
         self.pump = pump
         self.caffeinate = caffeinate
         self.evidenceFactory = evidenceFactory

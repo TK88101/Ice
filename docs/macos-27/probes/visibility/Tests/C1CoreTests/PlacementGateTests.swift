@@ -1,52 +1,112 @@
 import Testing
 @testable import C1Core
 
-/// Amendment v8, "Placement gate" (first bullet's own companion piece):
-/// section 2's premise -- "each new item lands at the left end" -- is false
-/// on the owner's bar (a fourth cross-check found 1-3 owner items drawn left
-/// of the helpers in every recorded run). Right after the launches, before
-/// any baseline and before any `length`, discovery must show Target, the
-/// spacer and Protected each left of every on-bar owner item; otherwise the
-/// run ends INCONCLUSIVE with the count of owner items still found left of
-/// them, never a safety stop. This is the pure decision -- `helperMinXs`/
-/// `onBarOwnerMinXs` are already-filtered (`.onBar` only, per the parked-item
-/// fix) minX readings; the stage (`StageC1`) supplies them from one
-/// discovery pass and reaps/records/aborts around this answer.
+/// Amendment v9, "Gate": the pure decision behind the post-launch placement
+/// gate. `check` now requires the internal order Target < spacer <
+/// Protected as well as every on-bar owner item right of Protected
+/// (crosscheck-rework8.json #1: the old gate only ever compared the
+/// rightmost helper, so a misordered layout -- Target packed between the
+/// spacer and Protected -- could pass the gate and fail later with a
+/// generic, unexplained reason); a helper missing a frame (off the bar, or
+/// folded) is its own distinct reason too, never lumped into "owner items
+/// left." `materiallyAgree` is the two-consecutive-reads check Amendment v9
+/// also requires before the gate decides at all.
 @Suite("PlacementGate")
 struct PlacementGateTests {
+    private func reading(target: Double?, spacer: Double?, protected: Double?, owners: [Double]) -> PlacementGate.Reading {
+        .init(targetMinX: target, spacerMinX: spacer, protectedMinX: protected, onBarOwnerMinXs: owners)
+    }
+
+    // MARK: - check
+
     @Test("no on-bar owner items at all -> passes (nil)")
     func noOwnerItems() {
-        #expect(PlacementGate.check(helperMinXs: [150, 190, 230], onBarOwnerMinXs: []) == nil)
+        #expect(PlacementGate.check(reading(target: 150, spacer: 190, protected: 230, owners: [])) == nil)
     }
 
-    @Test("every on-bar owner item right of every helper -> passes (nil)")
+    @Test("every on-bar owner item right of Protected -> passes (nil)")
     func ownersAllRight() {
-        #expect(PlacementGate.check(helperMinXs: [150, 190, 230], onBarOwnerMinXs: [250, 270]) == nil)
+        #expect(PlacementGate.check(reading(target: 150, spacer: 190, protected: 230, owners: [250, 270])) == nil)
     }
 
-    @Test("one owner item left of the rightmost helper -> fails with count 1")
+    @Test("one owner item left of Protected -> fails with ownerItemsLeft(count: 1)")
     func oneOwnerLeft() {
-        #expect(PlacementGate.check(helperMinXs: [150, 190, 230], onBarOwnerMinXs: [100, 250]) == 1)
+        #expect(PlacementGate.check(reading(target: 150, spacer: 190, protected: 230, owners: [100, 250])) == .ownerItemsLeft(count: 1))
     }
 
-    @Test("three owner items left of the rightmost helper -> fails with count 3 (the recorded live case)")
+    @Test("three owner items left of Protected -> fails with ownerItemsLeft(count: 3) (the recorded live case)")
     func threeOwnersLeft() {
-        #expect(PlacementGate.check(helperMinXs: [1220.5, 1200.0, 1247.0], onBarOwnerMinXs: [1050.5, 1084.0, 1114.5]) == 3)
+        #expect(PlacementGate.check(reading(target: 1200.0, spacer: 1220.5, protected: 1247.0, owners: [1050.5, 1084.0, 1114.5])) == .ownerItemsLeft(count: 3))
     }
 
-    @Test("an owner item exactly at the rightmost helper's minX (a tie) does not count as left of it")
+    @Test("an owner item exactly at Protected's own minX (a tie) does not count as left of it")
     func tieDoesNotCount() {
-        #expect(PlacementGate.check(helperMinXs: [150, 190, 230], onBarOwnerMinXs: [230, 250]) == nil)
+        #expect(PlacementGate.check(reading(target: 150, spacer: 190, protected: 230, owners: [230, 250])) == nil)
     }
 
-    @Test("only owner items left of the rightmost helper are counted -- one left, one right")
+    @Test("only owner items left of Protected are counted -- one left, one right")
     func mixedLeftAndRight() {
-        #expect(PlacementGate.check(helperMinXs: [150, 190, 230], onBarOwnerMinXs: [100, 250]) == 1)
+        #expect(PlacementGate.check(reading(target: 150, spacer: 190, protected: 230, owners: [100, 250])) == .ownerItemsLeft(count: 1))
     }
 
-    @Test("no helpers at all (none launched or none with a frame) -- every on-bar owner item counts as left, fail closed")
-    func noHelpers() {
-        #expect(PlacementGate.check(helperMinXs: [], onBarOwnerMinXs: [100, 250]) == 2)
-        #expect(PlacementGate.check(helperMinXs: [], onBarOwnerMinXs: []) == nil)
+    @Test("any helper missing a frame (off the bar or folded) fails closed with helperOffBarOrFolded, distinct from owner order")
+    func missingHelperFrame() {
+        #expect(PlacementGate.check(reading(target: nil, spacer: 190, protected: 230, owners: [])) == .helperOffBarOrFolded)
+        #expect(PlacementGate.check(reading(target: 150, spacer: nil, protected: 230, owners: [])) == .helperOffBarOrFolded)
+        #expect(PlacementGate.check(reading(target: 150, spacer: 190, protected: nil, owners: [100])) == .helperOffBarOrFolded)
+        #expect(PlacementGate.check(reading(target: nil, spacer: nil, protected: nil, owners: [])) == .helperOffBarOrFolded)
+    }
+
+    @Test("Target packed between the spacer and Protected is a misorder, distinct from owner order (crosscheck-rework8.json #1)")
+    func targetBetweenSpacerAndProtectedIsMisorder() {
+        #expect(PlacementGate.check(reading(target: 200, spacer: 190, protected: 230, owners: [])) == .misorder(targetMinX: 200, spacerMinX: 190, protectedMinX: 230))
+    }
+
+    @Test("spacer at or right of Protected is a misorder")
+    func spacerNotLeftOfProtectedIsMisorder() {
+        #expect(PlacementGate.check(reading(target: 150, spacer: 230, protected: 230, owners: [])) == .misorder(targetMinX: 150, spacerMinX: 230, protectedMinX: 230))
+    }
+
+    // MARK: - materiallyAgree
+
+    @Test("two identical readings agree")
+    func identicalReadingsAgree() {
+        let a = reading(target: 150, spacer: 190, protected: 230, owners: [270, 300])
+        #expect(PlacementGate.materiallyAgree(a, a))
+    }
+
+    @Test("readings within tolerance agree, regardless of the owner minXs' own order")
+    func withinToleranceAgreesRegardlessOfOwnerOrder() {
+        let a = reading(target: 150.0, spacer: 190.2, protected: 230.0, owners: [300.0, 270.4])
+        let b = reading(target: 150.4, spacer: 190.0, protected: 229.6, owners: [270.0, 300.3])
+        #expect(PlacementGate.materiallyAgree(a, b, tolerancePt: 1.0))
+    }
+
+    @Test("a helper minX difference past tolerance disagrees")
+    func helperPastToleranceDisagrees() {
+        let a = reading(target: 150, spacer: 190, protected: 230, owners: [])
+        let b = reading(target: 155, spacer: 190, protected: 230, owners: [])
+        #expect(!PlacementGate.materiallyAgree(a, b, tolerancePt: 1.0))
+    }
+
+    @Test("a differing owner-item count disagrees")
+    func differingOwnerCountDisagrees() {
+        let a = reading(target: 150, spacer: 190, protected: 230, owners: [270])
+        let b = reading(target: 150, spacer: 190, protected: 230, owners: [270, 300])
+        #expect(!PlacementGate.materiallyAgree(a, b))
+    }
+
+    @Test("one reading missing a helper frame while the other has it disagrees")
+    func oneMissingHelperDisagrees() {
+        let a = reading(target: nil, spacer: 190, protected: 230, owners: [])
+        let b = reading(target: 150, spacer: 190, protected: 230, owners: [])
+        #expect(!PlacementGate.materiallyAgree(a, b))
+    }
+
+    @Test("both readings missing the same helper frame agrees")
+    func bothMissingSameHelperAgrees() {
+        let a = reading(target: nil, spacer: 190, protected: 230, owners: [])
+        let b = reading(target: nil, spacer: 190, protected: 230, owners: [])
+        #expect(PlacementGate.materiallyAgree(a, b))
     }
 }

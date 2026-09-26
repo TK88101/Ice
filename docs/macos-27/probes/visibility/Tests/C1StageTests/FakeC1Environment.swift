@@ -108,6 +108,14 @@ struct FakeHelperDefaults: C1HelperDefaultsProviding {
     func write(_ bundleID: String, key: String, value: Double) -> Bool { world.defaultsWrite(bundleID, key: key, value: value) }
 }
 
+/// Amendment v9: forwards every pre-launch owner-domain scan to the
+/// world's own `ownerMatchingValues` -- the fake half of
+/// `C1OwnerPreferenceScanning`.
+struct FakeOwnerPreferenceScanner: C1OwnerPreferenceScanning {
+    let world: FakeBarWorld
+    func matchingValues(bundleID: String) -> [String]? { world.ownerMatchingValues(bundleID: bundleID) }
+}
+
 /// `caffeinate`, when supplied, records whether it was still "running" at
 /// the moment of every capture this world's own capturer takes -- G5's own
 /// audit ("the fake caffeinate is still running during every teardown
@@ -136,7 +144,21 @@ struct FakeAXReader: MenuBarAXReading {
 /// its own bug.
 struct FakeDiscoverer: Discovering {
     let world: FakeBarWorld
+    /// Amendment v9, H5's "signal during step1b" fixture: fires
+    /// synchronously right before the very *first* discovery pass this
+    /// discoverer ever serves -- `step1bPlacementPlan` is the first step
+    /// in `StageC1.run()` whose own body calls `discover(previous:)` at
+    /// all (before it, `step0Bundles`/`step1Setup` make no discovery
+    /// call), so "the first call" and "step1b's own discovery pass" are
+    /// the same event, with no change to any file outside this test
+    /// target.
+    let onFirstDiscovery: (@Sendable () -> Void)?
+    private let firstCallFired = FirstCallGate()
+
     func discover(previous: DiscoveredItemSet?) async -> DiscoveryResult? {
+        if firstCallFired.fireIfFirst() {
+            onFirstDiscovery?()
+        }
         if world.shouldHangDiscovery() {
             // G7: `world.hangDurationSeconds` (default 3.5 s, past the
             // live default's real 3.0 s bound) -- a test pairs this with a
@@ -144,6 +166,25 @@ struct FakeDiscoverer: Discovering {
             try? await Task.sleep(nanoseconds: UInt64(max(0, world.hangDurationSeconds) * 1_000_000_000))
         }
         return world.discoveryResult()
+    }
+}
+
+/// A one-shot latch, `@unchecked Sendable` for the same reason every other
+/// lock-guarded fake state in this file is: `FakeDiscoverer` is a `struct`
+/// (value semantics per call site), but this gate's own "exactly once"
+/// promise must hold across every copy that shares one `FakeDiscoverer`
+/// value.
+private final class FirstCallGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+
+    /// `true` exactly once, on the first call across every copy of the
+    /// `FakeDiscoverer` this instance backs; `false` every call after.
+    func fireIfFirst() -> Bool {
+        lock.withLock {
+            defer { fired = true }
+            return !fired
+        }
     }
 }
 
@@ -275,11 +316,12 @@ enum FakeC1EnvironmentFactory {
         evidence: FakeEvidence,
         caffeinate: FakeCaffeinate = FakeCaffeinate(),
         onHelperLaunch: (@Sendable (String) -> Void)? = nil,
+        onFirstDiscovery: (@Sendable () -> Void)? = nil,
         discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds
     ) -> C1StageEnvironment {
         C1StageEnvironment(
             capturer: FakeStripCapturer(world: world, caffeinate: caffeinate),
-            discoverer: FakeDiscoverer(world: world),
+            discoverer: FakeDiscoverer(world: world, onFirstDiscovery: onFirstDiscovery),
             ownerAXReaderFactory: { _ in FakeAXReader(world: world) },
             verificationAXReaderFactory: { _ in FakeAXReader(world: world) },
             geometryProvider: { FakeBarWorld.geometry },
@@ -288,6 +330,7 @@ enum FakeC1EnvironmentFactory {
             },
             helperLauncher: FakeHelperLauncher(world: world, onLaunch: onHelperLaunch),
             helperDefaults: FakeHelperDefaults(world: world),
+            ownerPreferenceScanner: FakeOwnerPreferenceScanner(world: world),
             pump: FakePump(clock: world.clock),
             caffeinate: caffeinate,
             evidenceFactory: FakeEvidenceFactory(evidence: evidence),
