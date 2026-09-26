@@ -53,6 +53,7 @@ final class FakeC1HelperChannel: C1HelperChannel, @unchecked Sendable {
         case length(Double)
         case rest
         case quitAll
+        case quitProtected
     }
 
     private let lock = NSLock()
@@ -70,6 +71,12 @@ final class FakeC1HelperChannel: C1HelperChannel, @unchecked Sendable {
 
     func quitAll() {
         lock.withLock { recorded.append(.quitAll) }
+    }
+
+    /// F2: never called by I3's own tests (the trip-response contract is
+    /// unchanged) -- present only so this fake still conforms.
+    func quitProtected() {
+        lock.withLock { recorded.append(.quitProtected) }
     }
 }
 

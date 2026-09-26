@@ -20,10 +20,17 @@ import MenuBarDiscovery
 
 extension StageC1 {
     func step3Baseline() -> StepResult {
+        // F5: checked before this step's own work begins -- no baseline
+        // work starts after a stop.
+        guard !isTerminal else { return .abort("terminal before step 3") }
         guard let targetKey, let spacerKey, let protectedKey else { return .abort("helpers not launched") }
-        guard let pass = environment.pump.blocking({ await self.discoverer.discover(previous: nil) }) else {
+        // F6 (Amendment v6, crosscheck #8/#11): through `timedDiscoverer`,
+        // not the raw `discoverer` -- every discovery pass after the
+        // helpers exist goes through the one bounded executor.
+        guard let pass = environment.pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }) else {
             return .abort("step 3: discovery failed")
         }
+        guard !isTerminal else { return .abort("terminal during step 3's own discovery") }
         let origin = pass.origin
 
         // Every owner item plus the three helpers, id -> pid (section 2:
@@ -81,7 +88,11 @@ extension StageC1 {
         let capturedAXExecutor = axExecutor
         let capturedLatchingCapturer = latchingCapturer!
         verification = HidingVerification(
-            discoverer: C1Discoverer(base: discoverer, targetKey: targetKey, spacerKey: spacerKey, protectedKey: protectedKey),
+            // F6: `timedDiscoverer`, not the raw `discoverer` -- so
+            // `HidingVerification.prepare()`'s own internal discovery call
+            // (and every re-prepare, F3) is bounded like every other
+            // post-launch discovery read.
+            discoverer: C1Discoverer(base: timedDiscoverer, targetKey: targetKey, spacerKey: spacerKey, protectedKey: protectedKey),
             capturer: latchingCapturer,
             // Round 3 item 2: the reader backing `HidingVerification`'s
             // own internal Sampler shares the one stage-wide
@@ -146,10 +157,12 @@ extension StageC1 {
     /// generic "owner item" (only its own explicit `protectedMissing`
     /// condition watches it) -- previously only Target/the spacer were
     /// subtracted, so Protected tripped `missingOwnerItems` too, on top of
-    /// `protectedMissing`. And once `helpersTornDown()` (set right before
-    /// cleanup quits the helpers), `protectedMissing` stops being watched
-    /// at all: Protected disappearing is expected and correct once the
-    /// helpers are being quit on purpose, not a credible disappearance --
+    /// `protectedMissing`. And once `markProtectedTornDown()` has run (F2:
+    /// the staged teardown's own stage 3, right before it quits Protected
+    /// -- Target and the spacer are quit far earlier, at stage 1, but
+    /// were never part of this gate), `protectedMissing` stops being
+    /// watched at all: Protected disappearing is expected and correct
+    /// once it is being quit on purpose, not a credible disappearance --
     /// the owner's own templated and keyed (untemplated) checks are
     /// unaffected either way.
     func assessLatch(image: StripImage) -> Latch.Observation {
@@ -166,7 +179,7 @@ extension StageC1 {
         let helperIDs = [targetKey?.encoded, spacerKey?.encoded, protectedKey.encoded].compactMap { $0 }
         let ownerOnlyIDs = Set(ownerItemIDs.keys).subtracting(helperIDs)
         let missingOwners = ownerOnlyIDs.filter(missing).sorted()
-        let protectedMissing = isHelpersTornDown ? false : missing(protectedKey.encoded)
+        let protectedMissing = isProtectedTornDown ? false : missing(protectedKey.encoded)
         let templated = Latch.Observation(missingOwnerItems: missingOwners, protectedMissing: protectedMissing)
 
         guard !untemplatedOwnerBaseline.isEmpty else { return templated }

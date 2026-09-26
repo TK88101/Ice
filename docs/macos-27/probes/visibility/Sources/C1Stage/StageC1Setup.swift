@@ -105,18 +105,23 @@ extension StageC1 {
             self?.assessLatch(image: image) ?? .init(captureFailed: true)
         }
 
-        guard let protected = launchAndDiscover(label: "protected", app: apps.protected, bundleID: C1HelperRole.protected, role: "reference", identifier: "vz-reference", channel: channel) else {
+        // F5 (Amendment v6, crosscheck #4-#6/#9/#10/#12): checked before
+        // every launch -- no launch after a stop.
+        guard !isTerminal else { return .abort("terminal before launching Protected") }
+        guard let protected = launchAndDiscover(label: "protected", app: apps.protected, bundleID: C1HelperRole.protected, role: "reference", identifier: "vz-reference", channel: channel, isProtected: true) else {
             return .abort("could not launch or discover Protected")
         }
         protectedHelper = protected.helper
         protectedKey = protected.key
 
+        guard !isTerminal else { return .abort("terminal before launching the spacer") }
         guard let spacer = launchAndDiscover(label: "spacer", app: apps.spacer, bundleID: C1HelperRole.protected, role: "spacer", identifier: SpacerIdentifier.value, channel: channel, isSpacer: true) else {
             return .abort("could not launch or discover the spacer")
         }
         spacerHelper = spacer.helper
         spacerKey = spacer.key
 
+        guard !isTerminal else { return .abort("terminal before launching Target") }
         guard let target = launchAndDiscover(label: "target", app: apps.target, bundleID: C1HelperRole.target, role: "target", identifier: "vz-target", channel: channel) else {
             return .abort("could not launch or discover Target")
         }
@@ -133,7 +138,7 @@ extension StageC1 {
     /// identifier (P0-1). `nil` on any failure -- the caller aborts the
     /// whole launch sequence rather than continue with a partial roster,
     /// but the helper (if it got that far) stays registered for cleanup.
-    func launchAndDiscover(label: String, app: URL, bundleID: String, role: String, identifier: String, channel: HelperControlChannel, isSpacer: Bool = false) -> (helper: any C1HelperControlling, key: ItemKey)? {
+    func launchAndDiscover(label: String, app: URL, bundleID: String, role: String, identifier: String, channel: HelperControlChannel, isSpacer: Bool = false, isProtected: Bool = false) -> (helper: any C1HelperControlling, key: ItemKey)? {
         // Neither vzhelper role here ever sets `--autosave`, so this never
         // has data to lose even when Protected and the spacer share a
         // bundle id and this runs while Protected is already up (P0-1) --
@@ -144,11 +149,26 @@ extension StageC1 {
             evidence?.record("helper.launchRefused", ["label": label, "reason": "the \(bundleID) domain is not verifiably empty"])
             return nil
         }
+        // F5: a signal (or any other terminal event) that lands exactly
+        // here must stop this launch from ever starting.
+        guard !isTerminal else {
+            evidence?.record("helper.launchRefused", ["label": label, "reason": "terminal before launch"])
+            return nil
+        }
         guard let helper = environment.helperLauncher.launch(appURL: app, bundleID: bundleID, role: role, arguments: ["--role", role, "--lifetime", "900"], controllerPID: getpid()) else {
             evidence?.record("helper.launchFailed", ["label": label])
             return nil
         }
-        channel.register(helper, isSpacer: isSpacer)
+        channel.register(helper, isSpacer: isSpacer, isProtected: isProtected)
+        // F5: a terminal event can also land *during* `launch(...)` itself
+        // (e.g. a signal fired synchronously from within it) -- caught
+        // here, right after registering, so this helper is quit at once
+        // rather than left running past the stop.
+        guard !isTerminal else {
+            helper.quit()
+            evidence?.record("helper.launchedAfterTerminal", ["label": label])
+            return nil
+        }
         guard helper.awaitReply("up", timeout: 5) != nil else {
             helper.quit()
             evidence?.record("helper.noUp", ["label": label])
@@ -164,11 +184,19 @@ extension StageC1 {
 
     /// The one `.declared` item of `pid` with `identifier`, from a fresh
     /// discovery pass that read `pid` conclusively, within 5 s.
+    ///
+    /// F6 (Amendment v6, crosscheck #8/#11): through `timedDiscoverer`,
+    /// not the raw `discoverer` -- this runs once a helper exists (after
+    /// `channel`/`latchingCapturer` are built in `step2Launch`), so a hung
+    /// pass here must trip like every other post-launch discovery read,
+    /// not block indefinitely on `MenuBarDiscoverer`'s own shared serial
+    /// queue.
     func discoverDeclared(pid: pid_t, identifier: String) -> DiscoveredItem? {
         let deadline = environment.pump.now() + 5
         repeat {
+            guard !isTerminal else { return nil }
             environment.pump.run(0.1)
-            if let result = environment.pump.blocking({ await self.discoverer.discover(previous: nil) }) {
+            if let result = environment.pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }) {
                 let status = result.status(of: pid)
                 if status.enumerated, !status.failed, !status.quarantined, !status.permissionDenied,
                    let item = result.set.items.first(where: { $0.key.pid == pid && $0.key.identifier == identifier && $0.basis == .declared }) {
@@ -180,32 +208,64 @@ extension StageC1 {
         return nil
     }
 
-    /// P0-6: a discovery-confirmed reap, retried within `seconds`. Rests
-    /// the spacer, quits every helper, then re-discovers until a pass
-    /// lists none of their pids (`C1ReapCheck`) or the deadline passes. A
-    /// failed discovery pass is inconclusive, never confirmed.
+    /// P0-6: a discovery-confirmed reap of *all three* helpers, retried
+    /// within `seconds` -- used only by a mid-run relaunch (section 2:
+    /// "a relaunch first rests the spacer, quits and reaps all three
+    /// helpers"), which really does start over with three fresh ones. F2
+    /// (Amendment v6): the generic one-shot cleanup and the staged
+    /// teardown never call this -- see `confirmNonProtectedReap()`/
+    /// `confirmProtectedReap()` below, which keep Protected running until
+    /// the staged fold read has passed. A failed discovery pass is
+    /// inconclusive, never confirmed.
     @discardableResult
     func confirmReap(within seconds: Double = 5) -> Bool {
         expansionDriver?.collapse()
         channel?.quitAll()
+        channel?.quitProtected()
         environment.pump.run(0.5)
         let helperPIDs: Set<pid_t> = Set([targetHelper, spacerHelper, protectedHelper].compactMap { $0?.pid })
+        return waitForReap(of: helperPIDs, within: seconds, recordPrefix: "reap")
+    }
+
+    /// F2: the staged teardown's first stage -- Target and the spacer
+    /// only. Protected is left running so the staged fold read still has
+    /// a live reference.
+    @discardableResult
+    func confirmNonProtectedReap(within seconds: Double = 5) -> Bool {
+        expansionDriver?.collapse()
+        channel?.quitAll()
+        environment.pump.run(0.5)
+        let helperPIDs: Set<pid_t> = Set([targetHelper, spacerHelper].compactMap { $0?.pid })
+        return waitForReap(of: helperPIDs, within: seconds, recordPrefix: "reap.nonProtected")
+    }
+
+    /// F2: the staged teardown's last helper-quit stage -- Protected
+    /// alone, only once the settled fold read (with Protected as the sole
+    /// reference) has confirmed absent.
+    @discardableResult
+    func confirmProtectedReap(within seconds: Double = 5) -> Bool {
+        channel?.quitProtected()
+        environment.pump.run(0.5)
+        let helperPIDs: Set<pid_t> = Set([protectedHelper].compactMap { $0?.pid })
+        return waitForReap(of: helperPIDs, within: seconds, recordPrefix: "reap.protected")
+    }
+
+    /// Shared retry loop behind the three reap variants above: re-discover
+    /// (through `timedDiscoverer` -- round 4 item 3/F6: each attempt is
+    /// bounded, so one hung pass cannot swallow the whole budget) until a
+    /// pass lists none of `helperPIDs`, or the deadline passes.
+    private func waitForReap(of helperPIDs: Set<pid_t>, within seconds: Double, recordPrefix: String) -> Bool {
         guard !helperPIDs.isEmpty else { return true }
         let deadline = environment.pump.now() + seconds
         repeat {
-            // Round 4 item 3: through `timedDiscoverer`, not the raw
-            // `discoverer` -- each attempt in this retry loop is bounded,
-            // so a single hung pass cannot swallow the whole `seconds`
-            // budget (or, called from `emergencyStop()`, block the
-            // watchdog's own synchronous cleanup indefinitely).
             let listed: Set<pid_t>? = environment.pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }).map { Set($0.set.items.map(\.key.pid)) }
             if C1ReapCheck.confirmed(listedPIDs: listed, helperPIDs: helperPIDs) {
-                evidence?.record("reap.confirmed", [:])
+                evidence?.record("\(recordPrefix).confirmed", [:])
                 return true
             }
             environment.pump.run(0.2)
         } while environment.pump.now() < deadline
-        evidence?.record("reap.notConfirmed", [:])
+        evidence?.record("\(recordPrefix).notConfirmed", [:])
         return false
     }
 

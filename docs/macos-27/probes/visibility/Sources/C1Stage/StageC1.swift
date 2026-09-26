@@ -95,16 +95,18 @@ public final class HelperControlChannel: C1HelperChannel, @unchecked Sendable {
     private let lock = NSLock()
     private var helpers: [any C1HelperControlling] = []
     private var spacerHelperRef: (any C1HelperControlling)?
+    private var protectedHelperRef: (any C1HelperControlling)?
 
     public init() {}
 
     /// Registers a helper the instant its process starts (P0-2/item 2),
     /// before this run waits for its `up` reply or discovers its item --
     /// so a launch failure right after this still has a way to quit it.
-    public func register(_ helper: any C1HelperControlling, isSpacer: Bool = false) {
+    public func register(_ helper: any C1HelperControlling, isSpacer: Bool = false, isProtected: Bool = false) {
         lock.withLock {
             helpers.append(helper)
             if isSpacer { spacerHelperRef = helper }
+            if isProtected { protectedHelperRef = helper }
         }
     }
 
@@ -116,20 +118,46 @@ public final class HelperControlChannel: C1HelperChannel, @unchecked Sendable {
         (lock.withLock { spacerHelperRef })?.send("rest")
     }
 
-    /// Quits every helper this channel knows about. Not itself a
-    /// discovery-verified reap (section 2's "quits and reaps all three
-    /// helpers and confirms none of their items is listed" is
-    /// `StageC1.confirmReap()`, which calls this and then re-discovers,
-    /// checked against `C1ReapCheck` -- P0-6); a trip (I3) only needs the
-    /// commands sent, synchronously, which is all this method promises.
+    /// F2 (Amendment v6, staged teardown): Target and the spacer only --
+    /// Protected is deliberately excluded here (see `quitProtected()`), so
+    /// every cleanup path that reaches this method (a trip's own I3
+    /// response, the machine's one-shot `.quitAllHelpers` action, off-main
+    /// or not) leaves Protected running for the staged fold read. Not
+    /// itself a discovery-verified reap (section 2's "quits and reaps all
+    /// three helpers and confirms none of their items is listed" is
+    /// `StageC1.confirmReap()`/`confirmNonProtectedReap()`, which call
+    /// this and then re-discover, checked against `C1ReapCheck` -- P0-6);
+    /// a trip (I3) only needs the commands sent, synchronously, which is
+    /// all this method promises.
     public func quitAll() {
-        let snapshot: [any C1HelperControlling] = lock.withLock { helpers }
+        let snapshot: [any C1HelperControlling] = lock.withLock {
+            helpers.filter { $0 !== protectedHelperRef }
+        }
         for helper in snapshot { helper.quit() }
+    }
+
+    /// F2: Protected's own quit, kept separate so no path reaches it
+    /// through `quitAll()`.
+    public func quitProtected() {
+        (lock.withLock { protectedHelperRef })?.quit()
     }
 }
 
 public final class StageC1 {
     public static let watchdogMinutes = 15.0
+    /// F3 (Amendment v6): a conservative first estimate of one cycle's own
+    /// wall time, used only before any cycle has completed (nothing
+    /// measured yet). The recorded evidence from 20260925-145233-vzverify
+    /// puts one verify at 7-9 s, and a full cycle (two verifies, the
+    /// preflight, rest confirmation, the reset check, and every capture's
+    /// own keyed-discovery overhead) at roughly 25-40 s -- this constant
+    /// is deliberately larger than that measured range, never presented as
+    /// measured itself.
+    public static let initialCycleDurationEstimateSeconds = 90.0
+    /// F3: the safety margin subtracted from `BaselineReuse.maxAge` before
+    /// deciding whether to re-prepare -- larger than one worst-case cycle,
+    /// per Codex's own correction to F3.
+    public static let baselineRefreshMarginSeconds = 120.0
 
     let apps: C1Apps
     let dry: Bool
@@ -211,6 +239,11 @@ public final class StageC1 {
 
     var verification: HidingVerification!
     var prepared: PreparedVerification!
+    /// F3 (Amendment v6, crosscheck #2/#7): the previous cycle's own
+    /// measured wall time, used to predict the next cycle's -- `nil`
+    /// until the first cycle completes, when `maybeRefreshVerificationBaseline`
+    /// falls back to `initialCycleDurationEstimate`.
+    var lastCycleDurationSeconds: Double?
 
     var latchingCapturer: LatchingCapturer!
     var channel: HelperControlChannel!
@@ -223,12 +256,23 @@ public final class StageC1 {
 
     private let lock = NSLock()
     private var machine = C1StageMachine()
-    /// Item 3: set right before cleanup quits the helpers (`perform(_:)`'s
-    /// `.quitAllHelpers` case) -- `assessLatch` reads it to stop watching
-    /// Protected (and to keep treating Target/the spacer as it always has)
-    /// once their disappearance is expected, not credible.
-    private var helpersTornDown = false
-    var isHelpersTornDown: Bool { lock.withLock { helpersTornDown } }
+    /// Item 3 / F2 (Amendment v6, staged teardown): set right before the
+    /// staged teardown quits Protected (`runTeardownAndDecide`'s own
+    /// stage 3, `confirmProtectedReap()`) -- `assessLatch` reads it to
+    /// stop watching Protected once its disappearance is expected, not
+    /// credible. Target and the spacer are quit much earlier (stage 1)
+    /// but were never part of this gate -- `assessLatch`'s own
+    /// `ownerOnlyIDs` already excludes all three helper ids from
+    /// `missingOwnerItems`, so only Protected's separate one-miss
+    /// condition ever needed a "this is expected now" flag.
+    private var protectedTornDown = false
+    var isProtectedTornDown: Bool { lock.withLock { protectedTornDown } }
+
+    /// F2: called only by the staged teardown, right before it quits
+    /// Protected.
+    func markProtectedTornDown() {
+        lock.withLock { protectedTornDown = true }
+    }
 
     public init(environment: C1StageEnvironment, apps: C1Apps, dry: Bool) {
         self.environment = environment
@@ -240,20 +284,36 @@ public final class StageC1 {
     // MARK: - Run
 
     public func run() -> Int32 {
+        // F5 (Amendment v6, crosscheck #4-#6/#9/#10/#12): no helper exists
+        // yet -- a terminal event here (a signal before setup even
+        // starts) has nothing to tear down, so it is reported straight
+        // from `safetyStop`, never a re-runnable INCONCLUSIVE.
         for step in [("step0.bundles", step0Bundles), ("step1.setup", step1Setup)] {
             evidence?.record("step.begin", ["step": step.0])
+            if let stop = safetyStop {
+                return finish(stop == .needingAttention ? .safetyStopNeedingAttention : .safetyStop)
+            }
             if case .abort(let reason) = step.1() {
+                evidence?.record("step.abort", ["step": step.0, "reason": reason])
                 return finish(.inconclusive("setup: \(step.0): \(reason)"))
             }
         }
 
-        // Past this point a helper may be running -- P0-5: every exit
-        // funnels through the one idempotent cleanup.
+        // Past this point a helper may be running -- F5: every exit,
+        // terminal or a plain step abort, now funnels through the one
+        // authoritative `runTeardownAndDecide()` (main-thread confirmReap,
+        // the domain check, baseline-equivalence) rather than the bare
+        // `runCleanup(); finish(.inconclusive(...))` that used to drop a
+        // recorded safety stop and skip the reap/equivalence checks
+        // entirely.
         for step in [("step2.launch", step2Launch), ("step3.baseline", step3Baseline)] {
             evidence?.record("step.begin", ["step": step.0])
+            if isTerminal {
+                return finish(runTeardownAndDecide(scan: [], smoke: [], smokeChecks: []))
+            }
             if case .abort(let reason) = step.1() {
-                runCleanup()
-                return finish(.inconclusive("setup: \(step.0): \(reason)"))
+                evidence?.record("step.abort", ["step": step.0, "reason": reason])
+                return finish(runTeardownAndDecide(scan: [], smoke: [], smokeChecks: []))
             }
         }
 
@@ -343,7 +403,13 @@ public final class StageC1 {
             expansionDriver.collapse()
             let (restConfirmed, fold) = confirmRestSettled()
             let actions = lock.withLock { machine.endExpansion(restConfirmed: restConfirmed) }
-            perform(actions)
+            // Evidence gap (crosscheck, I7 3h): `perform(actions)` alone
+            // runs the cleanup but never records *why* -- only
+            // `handleTerminal` writes the `"terminal"` evidence record, and
+            // every other terminal path already goes through it. An
+            // unconfirmed rest is itself a terminal event (`restNotConfirmed`)
+            // and must be recorded the same way.
+            handleTerminal(actions)
             if restConfirmed, let fold { watchFold(fold, label: "collapse.rest") }
         }
         return body()
@@ -468,9 +534,7 @@ public final class StageC1 {
             // wait, never `RunLoop.main`) are thread-safe from any thread
             // as they already stood.
             case .sendRest: expansionDriver?.collapse()
-            case .quitAllHelpers:
-                lock.withLock { helpersTornDown = true }
-                channel?.quitAll()
+            case .quitAllHelpers: channel?.quitAll()
             case .reapHelpers:
                 // Item 9 (r5b item 9, P0): `confirmReap()` pumps
                 // `RunLoop.main` (`environment.pump.run`/`.blocking`) --
@@ -488,7 +552,10 @@ public final class StageC1 {
                 // and the watchdog/signal backstop covers the case where
                 // the owner thread never gets there at all.
                 guard Thread.isMainThread else { break }
-                _ = confirmReap()
+                // F2: the generic one-shot cleanup only ever reaps Target
+                // and the spacer -- Protected is reaped separately, only
+                // by the staged teardown, once its own fold read passed.
+                _ = confirmNonProtectedReap()
             case .stopCaffeinate: stopCaffeinate()
             }
         }

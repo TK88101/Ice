@@ -29,6 +29,15 @@ extension StageC1 {
     /// (P0-3: the caller's scan/smoke loop stops on the next check of
     /// `isTerminal`).
     func runCycle(length: Double, label: String) -> C1CycleResult? {
+        let cycleStart = environment.pump.now()
+        defer { lastCycleDurationSeconds = environment.pump.now() - cycleStart }
+
+        // F3 (Amendment v6, crosscheck #2/#7): before this cycle's own
+        // preflight, at confirmed rest, re-prepare the verifier's baseline
+        // whenever it would otherwise go stale before this cycle's own
+        // verifies run.
+        guard maybeRefreshVerificationBaseline(label: label) else { return nil }
+
         guard performPreflight(label: label) else {
             capturesStayedUnreadable = capturesStayedUnreadable || !preflightEverPassed
             return nil
@@ -53,6 +62,11 @@ extension StageC1 {
         environment.pump.run(1.0)
         guard let restoredCheck = verifyOnce() else { return nil }
         guard !isTerminal else { return nil }
+        // F3 (#7): a `.skipped` restored-check result (a stale baseline, a
+        // failed capture, cancellation) means the verifier itself did not
+        // run this pass -- not a real "Target stayed drawn or not" answer
+        // `otherChecksPassed` can average out. Abort this cycle instead.
+        guard !recordIfSkipped(restoredCheck[targetKey!], label: "\(label).restored") else { return nil }
         let restored = classify(restoredCheck[targetKey!], expected: .stillDrawn) == .expected
 
         let protectedAndOwnersDrawn = readOwnerAndProtectedDrawn(label: "\(label).drawn")
@@ -81,9 +95,15 @@ extension StageC1 {
 
     /// Reads Target's own `Hiding` through the C1-discoverer-backed
     /// verification (I4), mapped to C1Core's `TargetReading`.
+    ///
+    /// F3 (#7): a `.skipped` result (`.checked`'s sibling, meaning the
+    /// verifier itself did not run this pass) is not folded into
+    /// `.refused` any more -- see `recordIfSkipped`.
     private func readTarget(label: String) -> TargetReading? {
         guard let results = verifyOnce(), let targetKey else { return nil }
-        guard case .checked(let hiding)? = results[targetKey] else { return .refused }
+        let check = results[targetKey]
+        guard !recordIfSkipped(check, label: label) else { return nil }
+        guard case .checked(let hiding)? = check else { return .refused }
         switch hiding {
         case .hidden(let folded): return .hidden(folded: folded)
         case .stillDrawn: return .stillDrawn
@@ -91,9 +111,54 @@ extension StageC1 {
         }
     }
 
+    /// F3 (#7): `true`, and recorded, only for `.skipped(reason)` -- the
+    /// infrastructure-level "this pass did not run at all" outcome
+    /// (`baselineStale`, `captureFailed`, `cancelled`, ...), never
+    /// `.refusedAtBaseline` (a genuine, if unfavourable, reading of
+    /// Target itself, which stays an ordinary `.refused`).
+    private func recordIfSkipped(_ check: SectionItemCheck?, label: String) -> Bool {
+        guard case .skipped(let reason)? = check else { return false }
+        evidence?.record("verify.skipped", ["label": label, "reason": "\(reason)"])
+        return true
+    }
+
     private func verifyOnce() -> [ItemKey: SectionItemCheck]? {
         guard let prepared else { return nil }
+        // F3: recorded right before every verify, so a margin
+        // miscalculation in `maybeRefreshVerificationBaseline` is visible
+        // in evidence rather than silently producing `.skipped(.baselineStale)`.
+        evidence?.record("verify.age", ["age": environment.pump.now() - prepared.createdAt])
         return environment.pump.blocking { await self.verification.verify(prepared) }
+    }
+
+    /// F3 (Amendment v6, crosscheck #2/#7): before this cycle's own
+    /// preflight, at confirmed rest, re-prepares the verifier's baseline
+    /// (`reusing: nil`) whenever its age plus a conservative estimate of
+    /// *this* cycle's own duration would pass `BaselineReuse.maxAge`
+    /// (600 s) less a safety margin -- `initialCycleDurationEstimateSeconds`
+    /// for the very first cycle (nothing measured yet), then 1.5x the
+    /// previous cycle's own measured wall time. The prediction is recorded
+    /// in evidence either way. A failed re-prepare (never `.ready`) ends
+    /// this cycle (`nil`) -- the caller's scan/smoke loop then falls
+    /// through to teardown, never a smoke refusal that would erode toward
+    /// PROVISIONAL FAIL.
+    private func maybeRefreshVerificationBaseline(label: String) -> Bool {
+        guard let prepared, let targetKey, let protectedKey else { return false }
+        let age = environment.pump.now() - prepared.createdAt
+        let predictedNext = lastCycleDurationSeconds.map { $0 * 1.5 } ?? StageC1.initialCycleDurationEstimateSeconds
+        let shouldRefresh = age + predictedNext > BaselineReuse.maxAge - StageC1.baselineRefreshMarginSeconds
+        evidence?.record("baseline.freshnessCheck", ["label": label, "age": age, "predictedNext": predictedNext, "refreshing": shouldRefresh])
+        guard shouldRefresh else { return true }
+
+        let sectionMap: [TagKey: ItemSection] = [targetKey.tagKey(isSelf: false): .hidden]
+        let refreshed = environment.pump.blocking { await self.verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [protectedKey], reusing: nil) }
+        guard case .ready = refreshed.state else {
+            evidence?.record("baseline.refreshFailed", ["label": label, "state": "\(refreshed.state)"])
+            return false
+        }
+        self.prepared = refreshed
+        evidence?.record("baseline.refreshed", ["label": label, "createdAt": refreshed.createdAt])
+        return true
     }
 
     private func classify(_ check: SectionItemCheck?, expected: Hiding) -> CheckOutcome {
@@ -104,20 +169,39 @@ extension StageC1 {
     private enum CheckOutcome { case expected, unexpected }
 
     /// G-a: one bracketed (capture -> AX -> capture), two-sample settled
-    /// read of `targets`/`references` -- `nil` on a capture/AX failure
-    /// (fed to the latch as an immediate abort) or an unsettled/unstable
-    /// pair.
+    /// read of `targets`/`references` -- `nil` on a capture/AX failure, an
+    /// unsettled/unstable single read, or the two samples disagreeing.
+    ///
+    /// F4 (Amendment v6, crosscheck #3): only an *absent* observation (the
+    /// sampler itself returned nothing -- a real capture or AX failure)
+    /// latches `captureFailed`, an immediate abort. A successful but
+    /// unstable read, or two successful reads that disagree, is recorded
+    /// (`pairedRead.unstable`) and returned as `nil` *without* latching --
+    /// section 4 only makes a failed capture or a late AX read an
+    /// immediate abort; a transient (e.g. the spacer still animating back
+    /// right after a collapse) is exactly what the caller's own retry
+    /// budget (rest confirmation's 10 s deadline, the preflight's 3
+    /// attempts) exists to absorb.
     func settledPairedRead(targets: [String], references: [String]) -> ObservationResult? {
-        guard let first = ownerObserver.observe(baseline: ownerBaseline, targets: targets, references: references, items: ownerItemIDs), first.reading.captureStable else {
+        guard let first = ownerObserver.observe(baseline: ownerBaseline, targets: targets, references: references, items: ownerItemIDs) else {
             latchingCapturer.feed(.init(captureFailed: true))
+            return nil
+        }
+        guard first.reading.captureStable else {
+            evidence?.record("pairedRead.unstable", [:])
             return nil
         }
         environment.pump.run(1.0)
-        guard let second = ownerObserver.observe(baseline: ownerBaseline, targets: targets, references: references, items: ownerItemIDs), second.reading.captureStable else {
+        guard let second = ownerObserver.observe(baseline: ownerBaseline, targets: targets, references: references, items: ownerItemIDs) else {
             latchingCapturer.feed(.init(captureFailed: true))
             return nil
         }
+        guard second.reading.captureStable else {
+            evidence?.record("pairedRead.unstable", [:])
+            return nil
+        }
         guard first.reading.fold == second.reading.fold, targets.allSatisfy({ first.visibility[$0] == second.visibility[$0] }) else {
+            evidence?.record("pairedRead.unstable", [:])
             return nil
         }
         return second
@@ -126,9 +210,32 @@ extension StageC1 {
     /// The fold's plain value (P0-2's bracketed read, via the owner
     /// observer -- its sampler reads through `latchingCapturer`), with no
     /// window gating: used only where the fold is expected to be able to
-    /// go either way (mid-expansion bookkeeping).
+    /// go either way (mid-expansion bookkeeping) and at the reset check.
+    ///
+    /// F1 (Amendment v6, crosscheck #0): references are the *templated*
+    /// ids only -- `helperBaselineReadings` (Target, the spacer, Protected
+    /// -- still alive during cycles) plus `ownerBaselineReadings`
+    /// (templated owner items) -- never the raw `ownerItemIDs` keys, which
+    /// also carry every baseline-rejected (untemplated) owner item.
+    /// `CaptureStability.isStable` requires a template for *every*
+    /// reference, so one untemplated id in that set made the fold
+    /// unreadable on any real bar with at least one rejection (the owner's
+    /// own bar recorded 2-6 every preflight). Every listed item is still
+    /// sampled (`items: ids`) -- only the reference set narrows. Both call
+    /// sites (mid-cycle bookkeeping and the reset check) run only once the
+    /// spacer is confirmed back at rest, so Target is genuinely drawn at
+    /// its baseline x here -- included as a reference is correct, not a
+    /// repeat of the same bug. An empty templated reference set fails
+    /// closed.
     func readFoldValue(label: String) -> Fold? {
-        guard let ids = ownerObserverIDs(), let result = ownerObserver.observe(baseline: ownerBaseline, targets: [], references: Array(ids.keys), items: ids) else {
+        guard let ids = ownerObserverIDs() else {
+            latchingCapturer.feed(.init(captureFailed: true))
+            return nil
+        }
+        let templatedReferenceIDs = helperBaselineReadings.map(\.id) + ownerBaselineReadings.map(\.id)
+        guard !templatedReferenceIDs.isEmpty,
+              let result = ownerObserver.observe(baseline: ownerBaseline, targets: [], references: templatedReferenceIDs, items: ids)
+        else {
             latchingCapturer.feed(.init(captureFailed: true))
             return nil
         }
@@ -301,10 +408,15 @@ extension StageC1 {
         guard failures.isEmpty, untemplatedFailures.isEmpty else { return false }
 
         resetLatchIfNotTerminal()
-        guard let fresh = environment.pump.blocking({ await self.discoverer.discover(previous: nil) }) else {
+        // F6 (Amendment v6, crosscheck #8/#11): through `timedDiscoverer`,
+        // not the raw `discoverer` -- this fresh roster read runs every
+        // cycle with all three helpers on the bar, so a hung pass here
+        // must trip like every other post-launch discovery read.
+        guard let fresh = environment.pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }) else {
             latchingCapturer.feed(.init(captureFailed: true))
             return false
         }
+        guard !isTerminal else { return false }
         let items = fresh.set.listedItems.filter { $0.frame != nil }.sorted { $0.frame!.minX < $1.frame!.minX }.map(\.key.encoded)
         rosterSnapshot = RosterSnapshot(items: items, indicatorFrame: detectIndicatorFrame())
         return true

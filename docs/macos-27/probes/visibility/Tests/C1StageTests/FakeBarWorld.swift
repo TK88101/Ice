@@ -64,6 +64,16 @@ enum FaultKnob {
     /// offset): see its own doc comment on why the *magnitude*, not a
     /// separate case, is what tells the two scenarios apart.
     case spacerStuckOffset(pt: Double)
+    /// F4 (Amendment v6, crosscheck #3; I7 scenario 1c): the spacer reads
+    /// back at a small, transient offset from its own rest baseline for
+    /// `transientWindowSeconds` of virtual time after the *first* `rest`
+    /// command this world ever sees, then genuinely settles for every
+    /// collapse after that -- "the spacer was still animating back when
+    /// the first post-collapse sample was taken." Distinct from
+    /// `.spacerStuckOffset` (which never settles): this one is a
+    /// disagreement between paired samples the run must retry through,
+    /// never a latch trip.
+    case transientUnstableRestOnce
 }
 
 /// A run's elapsed time, advanced only by what the real stage actually asks
@@ -236,6 +246,14 @@ final class FakeBarWorld: @unchecked Sendable {
     /// Captures since the phase gate opened -- only meaningful for a knob
     /// that "returns after N captures" (scenario 3a's control case).
     private var capturesSinceArmed = 0
+    /// F4 / scenario 1c: virtual-clock time of the *first* `rest` command
+    /// this world has ever seen -- `nil` before that.
+    private var firstRestSeenAt: Double?
+    /// F4 / scenario 1c: `true` until `.transientUnstableRestOnce`'s own
+    /// window has been read past once, after which it never offsets the
+    /// spacer again (a one-shot fault, not a lasting one).
+    private var transientRestStillPending = true
+    static let transientRestWindowSeconds = 1.3
 
     private var captureCount = 0
 
@@ -325,6 +343,14 @@ final class FakeBarWorld: @unchecked Sendable {
     /// *owner*-item drift cannot isolate `resetCheckFailed` from a latch
     /// trip -- only the helpers' own zero-tolerance condition can.
     private func spacerRenderXLocked() -> Double {
+        if spacerState == .rest, isArmedLocked(), case .transientUnstableRestOnce = knob, transientRestStillPending {
+            if let firstRestSeenAt, clock.now() - firstRestSeenAt < Self.transientRestWindowSeconds {
+                return Self.spacerX + 3.0
+            }
+            // The window has passed -- consumed for good, never offsets
+            // again (a one-shot transient, not a lasting stuck offset).
+            transientRestStillPending = false
+        }
         guard spacerState == .rest, isArmedLocked(), case .spacerStuckOffset(let pt) = knob else { return Self.spacerX }
         return Self.spacerX + pt
     }
@@ -372,6 +398,7 @@ final class FakeBarWorld: @unchecked Sendable {
             guard role == "spacer" else { return }
             if line == "rest" {
                 spacerState = .rest
+                if firstRestSeenAt == nil { firstRestSeenAt = clock.now() }
             } else if line.hasPrefix("length "), let value = Double(line.dropFirst("length ".count)) {
                 spacerState = .expanded(value)
                 lengthCommandsSeen += 1

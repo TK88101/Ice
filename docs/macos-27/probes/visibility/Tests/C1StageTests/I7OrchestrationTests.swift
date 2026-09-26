@@ -34,7 +34,8 @@ struct I7OrchestrationTests {
         // Always printed, whether or not the run reached PASS -- the RED
         // report reads this to say where (in simulated time) the run
         // actually stopped.
-        print("I7 scenario 1: simulated duration \(elapsedSeconds) s, code \(run.code), verdict \(run.evidence.lastVerdict() ?? "<none>"), first terminal reason \(run.evidence.terminalReasons().first ?? "<none>")")
+        let refreshCount = run.evidence.allRecords().filter { $0.kind == "baseline.refreshed" }.count
+        print("I7 scenario 1: simulated duration \(elapsedSeconds) s, code \(run.code), verdict \(run.evidence.lastVerdict() ?? "<none>"), first terminal reason \(run.evidence.terminalReasons().first ?? "<none>"), F3 re-prepares: \(refreshCount)")
 
         #expect(run.code == 0)
         #expect(run.evidence.lastVerdict() == "pass")
@@ -70,6 +71,28 @@ struct I7OrchestrationTests {
 
         #expect(run.code == 0)
         #expect(run.evidence.lastVerdict() == "pass")
+    }
+
+    // MARK: - Scenario 1c: a transient unstable pair right after a collapse
+
+    /// F4 (Amendment v6, crosscheck #3): `settledPairedRead` used to feed
+    /// `captureFailed` on *any* unstable pair, tripping the latch on a
+    /// transient (e.g. the spacer still animating back right after a
+    /// collapse) that the rest-confirmation retry loop's own 10 s budget
+    /// was meant to absorb. The fix separates an absent observation (a
+    /// real capture/AX failure, still an immediate abort) from a
+    /// successful-but-unstable one, which now only records
+    /// `pairedRead.unstable` and retries.
+    @Test("1c: a transient unstable pair right after a collapse settles before the 10 s deadline -> the run continues and ends PASS")
+    func scenario1c_transientUnstablePairThenStablePass() {
+        let world = FakeBarWorld()
+        world.arm(.transientUnstableRestOnce)
+        let run = I7.run(world: world)
+
+        #expect(run.code == 0)
+        #expect(run.evidence.lastVerdict() == "pass")
+        #expect(run.evidence.terminalReasons().isEmpty)
+        #expect(run.evidence.allRecords().contains { $0.kind == "pairedRead.unstable" })
     }
 
     // MARK: - Scenario 2: Target never hides -> PROVISIONAL FAIL
