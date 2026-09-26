@@ -4,6 +4,7 @@
 // drives the real `StageC1` orchestration exactly like every I7 scenario
 // always has, and the one assertion (section 4 / P0-3: "rest reaches the
 // spacer before any helper is quit") every latch-trigger scenario needs.
+import C1Live
 import C1Stage
 import Foundation
 
@@ -27,7 +28,12 @@ enum I7 {
     /// helper begins launching (`FakeHelperLauncher.onLaunch`), simulating
     /// a signal arriving mid-setup with no change to any file outside this
     /// test target.
-    static func run(world: FakeBarWorld, dry: Bool = false, signalDuringLaunchOfRole: String? = nil) -> Run {
+    static func run(
+        world: FakeBarWorld,
+        dry: Bool = false,
+        signalDuringLaunchOfRole: String? = nil,
+        discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds
+    ) -> Run {
         let evidence = FakeEvidence()
         let caffeinate = FakeCaffeinate()
         let handback = StageHandback()
@@ -38,7 +44,7 @@ enum I7 {
                 handback.stage?.signalReceived()
             }
         }
-        let environment = FakeC1EnvironmentFactory.make(world: world, evidence: evidence, caffeinate: caffeinate, onHelperLaunch: onLaunch)
+        let environment = FakeC1EnvironmentFactory.make(world: world, evidence: evidence, caffeinate: caffeinate, onHelperLaunch: onLaunch, discoveryExecutorBoundSeconds: discoveryExecutorBoundSeconds)
         let stage = StageC1(environment: environment, apps: apps(), dry: dry)
         handback.stage = stage
         let code = stage.run()

@@ -2,6 +2,7 @@
 // protocol `C1StageEnvironment.swift` declares, backed by the same world so
 // the stage's real orchestration code can be driven end to end with no
 // screen, no Accessibility, no real process and no real waiting.
+import C1Live
 import C1Stage
 import Darwin
 import Foundation
@@ -40,6 +41,15 @@ final class FakeHelperControl: C1HelperControlling, @unchecked Sendable {
     func quit(timeout: Double) {
         lock.withLock { running = false }
         world.setDown(role)
+    }
+
+    /// G5: the fake's own non-blocking form -- marks the helper down and
+    /// logs it distinctly (`"\(role).quitRequested"`, not `"\(role).quit"`)
+    /// so an I7 test can tell which quit path the stage actually took,
+    /// without needing a real process to observe blocking on.
+    func requestQuit() {
+        lock.withLock { running = false }
+        world.setDownNonBlocking(role)
     }
 }
 
@@ -120,7 +130,10 @@ struct FakeDiscoverer: Discovering {
     let world: FakeBarWorld
     func discover(previous: DiscoveredItemSet?) async -> DiscoveryResult? {
         if world.shouldHangDiscovery() {
-            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            // G7: `world.hangDurationSeconds` (default 3.5 s, past the
+            // live default's real 3.0 s bound) -- a test pairs this with a
+            // short injected `discoveryExecutorBoundSeconds` instead.
+            try? await Task.sleep(nanoseconds: UInt64(max(0, world.hangDurationSeconds) * 1_000_000_000))
         }
         return world.discoveryResult()
     }
@@ -249,7 +262,13 @@ enum FakeC1EnvironmentFactory {
     /// needs to drive the real `StageC1` orchestration with no live seam
     /// left unfaked. `onHelperLaunch`, when supplied, is scenario 6's own
     /// hook (`FakeHelperLauncher.onLaunch`).
-    static func make(world: FakeBarWorld, evidence: FakeEvidence, caffeinate: FakeCaffeinate = FakeCaffeinate(), onHelperLaunch: (@Sendable (String) -> Void)? = nil) -> C1StageEnvironment {
+    static func make(
+        world: FakeBarWorld,
+        evidence: FakeEvidence,
+        caffeinate: FakeCaffeinate = FakeCaffeinate(),
+        onHelperLaunch: (@Sendable (String) -> Void)? = nil,
+        discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds
+    ) -> C1StageEnvironment {
         C1StageEnvironment(
             capturer: FakeStripCapturer(world: world, caffeinate: caffeinate),
             discoverer: FakeDiscoverer(world: world),
@@ -264,7 +283,8 @@ enum FakeC1EnvironmentFactory {
             pump: FakePump(clock: world.clock),
             caffeinate: caffeinate,
             evidenceFactory: FakeEvidenceFactory(evidence: evidence),
-            isTrusted: { true }
+            isTrusted: { true },
+            discoveryExecutorBoundSeconds: discoveryExecutorBoundSeconds
         )
     }
 }

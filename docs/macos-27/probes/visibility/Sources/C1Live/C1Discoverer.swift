@@ -54,7 +54,15 @@ public struct C1Discoverer: Discovering {
             visibleControlItem: set.visibleControlItem,
             hiddenDivider: dividerReading,
             alwaysHiddenDivider: set.alwaysHiddenDivider,
-            ownRead: set.ownRead,
+            // G1 (Amendment v7): the raw harness's own read is always
+            // `.notRead` (`HarnessProcesses` drops this process's own
+            // `isSelf` read before `ItemCatalog.build` ever sees it) --
+            // that has nothing to do with whether C1's own composed
+            // divider is usable, since C1 supplies it itself from the
+            // spacer's `minX`, not from the harness's own-process read.
+            // Forwarding `set.ownRead` unchanged made `CheckPlan.make`
+            // reject every real composed set as `.skip(.dividerUnavailable)`.
+            ownRead: .ok,
             systemElements: set.systemElements,
             dropped: set.dropped,
             staleProcesses: set.staleProcesses,

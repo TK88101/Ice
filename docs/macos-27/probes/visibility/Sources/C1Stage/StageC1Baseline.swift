@@ -70,6 +70,18 @@ extension StageC1 {
         self.ownerBaseline = ownerBaseline
         evidence?.record("step3.baseline", ["accepted": ownerBaseline.acceptedIDs.count, "rejected": ownerBaseline.rejections.count])
 
+        // G2 (Amendment v7): seeded right after `ownerBaseline` is accepted,
+        // before `verification.prepare()` -- so a benign prepare failure
+        // below still leaves teardown an indicator/owner baseline to check
+        // equivalence against, rather than aborting through
+        // `runTeardownAndDecide` with `baselineIndicatorFrame`/
+        // `ownerBaselineReadings` still empty, which made every iteration of
+        // `waitForTeardownBaselineEquivalence` fail regardless of the bar
+        // and turned a correct INCONCLUSIVE into a wrong SAFETY STOP NEEDING
+        // ATTENTION (crosscheck-rework6.json finding 3).
+        let seeded = seedBaselines(baseline: ownerBaseline, discovery: pass, targetID: targetKey.encoded, spacerID: spacerKey.encoded, protectedID: protectedKey.encoded)
+        guard case .ok = seeded else { return seeded }
+
         // The C1Discoverer-backed verification (I4): Target the only
         // section item, Protected the explicit reference, the divider at
         // the spacer's own minX. P0-2: `latchingCapturer`, not the raw
@@ -126,8 +138,6 @@ extension StageC1 {
         }
         prepared = firstPrepared
 
-        let seeded = seedBaselines(baseline: ownerBaseline, discovery: pass, targetID: targetKey.encoded, spacerID: spacerKey.encoded, protectedID: protectedKey.encoded)
-        guard case .ok = seeded else { return seeded }
         preflightEverPassed = false
         return .ok
     }
@@ -165,21 +175,60 @@ extension StageC1 {
     /// once it is being quit on purpose, not a credible disappearance --
     /// the owner's own templated and keyed (untemplated) checks are
     /// unaffected either way.
+    /// G3 (Amendment v7): one templated owner (or Protected) id's match
+    /// this capture, collapsed to the three outcomes the latch actually
+    /// cares about -- a genuine absence-shaped signal (`.absent`, or
+    /// `.unique` but off its baseline x, since section 4's own wording is
+    /// "read `notDrawn`... or ... off baseline x"), a weak/ambiguous match
+    /// (never a trip by itself -- `MenuBarItemVisibility` never calls
+    /// either of these `notDrawn` either), or `.ok` (drawn, at baseline).
+    /// An id excluded from the pixel population entirely (no template, or
+    /// `dynamicOwnerIDs`) is `.ok` -- it is not this function's job to
+    /// flag; `assessUntemplatedFailures()` watches it instead.
+    private enum OwnerMatchClass { case ok, weakOrAmbiguous, genuineIssue }
+
+    private func classifyOwnerMatch(_ id: String, in map: InkMap) -> OwnerMatchClass {
+        guard let template = ownerBaseline.templates[id], !dynamicOwnerIDs.contains(id) else { return .ok }
+        switch TemplateMatcher.match(template, in: map, geometry: geometry, parameters: parameters) {
+        case .unique(let x, let mismatch):
+            guard mismatch <= parameters.maxMismatch else { return .weakOrAmbiguous }
+            return abs(x - template.originXPt) <= parameters.referenceTolerancePt ? .ok : .genuineIssue
+        case .ambiguous:
+            return .weakOrAmbiguous
+        case .absent:
+            return .genuineIssue
+        }
+    }
+
     func assessLatch(image: StripImage) -> Latch.Observation {
         guard let ownerBaseline, let ink = ownerBaseline.ink, let protectedKey else { return .init() }
         let map = ink.map(image)
-        func missing(_ id: String) -> Bool {
-            guard let template = ownerBaseline.templates[id] else { return false }
-            guard case .unique(let x, let mismatch) = TemplateMatcher.match(template, in: map, geometry: geometry, parameters: parameters),
-                  mismatch <= parameters.maxMismatch,
-                  abs(x - template.originXPt) <= parameters.referenceTolerancePt
-            else { return true }
-            return false
-        }
+
+        // G3 item 2 (crosscheck-rework6.json finding 1): Protected's own
+        // clean match, in this same capture, stands in for "the capture is
+        // stable" -- a single-capture proxy, since `assessLatch` only ever
+        // sees one capture at a time and never the bracketed pair
+        // `CaptureStability` compares elsewhere.
+        let protectedStableThisCapture = classifyOwnerMatch(protectedKey.encoded, in: map) == .ok
+
         let helperIDs = [targetKey?.encoded, spacerKey?.encoded, protectedKey.encoded].compactMap { $0 }
         let ownerOnlyIDs = Set(ownerItemIDs.keys).subtracting(helperIDs)
-        let missingOwners = ownerOnlyIDs.filter(missing).sorted()
-        let protectedMissing = isProtectedTornDown ? false : missing(protectedKey.encoded)
+
+        var currentIssues: Set<String> = []
+        var missingOwners: [String] = []
+        for id in ownerOnlyIDs.sorted() {
+            guard classifyOwnerMatch(id, in: map) == .genuineIssue else { continue }
+            currentIssues.insert(id)
+            // A weak or ambiguous match never reaches `currentIssues` at
+            // all, so it can never be "the same id flagged last time"
+            // either -- it never trips, however many captures in a row.
+            if protectedStableThisCapture || previousCaptureOwnerIssues.contains(id) {
+                missingOwners.append(id)
+            }
+        }
+        previousCaptureOwnerIssues = currentIssues
+
+        let protectedMissing = isProtectedTornDown ? false : (classifyOwnerMatch(protectedKey.encoded, in: map) == .genuineIssue)
         let templated = Latch.Observation(missingOwnerItems: missingOwners, protectedMissing: protectedMissing)
 
         guard !untemplatedOwnerBaseline.isEmpty else { return templated }
@@ -209,18 +258,27 @@ extension StageC1 {
         rosterSnapshot = RosterSnapshot(items: fullRoster, indicatorFrame: indicator)
         baselineIndicatorFrame = indicator
 
+        // G3 (Amendment v7): a dynamic template stays in `baseline.templates`/
+        // `acceptedIDs` (`StripAssessor.baseline` keeps it, only marked),
+        // but it must leave the pixel population entirely -- it is neither
+        // a `ownerBaselineReadings` pixel target nor safe as a
+        // `CaptureStability` reference, since it is expected to disagree
+        // with its own template.
+        dynamicOwnerIDs = Set(baseline.templates.filter(\.value.isDynamic).keys)
         ownerBaselineReadings = baseline.acceptedIDs
-            .filter { $0 != targetID && $0 != spacerID && $0 != protectedID }
+            .filter { $0 != targetID && $0 != spacerID && $0 != protectedID && !dynamicOwnerIDs.contains($0) }
             .compactMap { id in baseline.templates[id].map { .init(id: id, x: $0.originXPt) } }
         helperBaselineReadings = [targetID, spacerID, protectedID].compactMap { id in
             baseline.templates[id].map { .init(id: id, x: $0.originXPt) }
         }
 
         // G-b: every owner item discovery lists but the pixel baseline did
-        // not accept as a template -- watched by AX minX instead.
-        let templatedIDs = Set(baseline.templates.keys)
+        // not accept as a static template -- watched by AX minX instead.
+        // G3: a dynamic template counts as "not static" here too, so it
+        // joins the keyed watch exactly like a baseline-rejected item.
+        let staticTemplatedIDs = Set(baseline.templates.keys).subtracting(dynamicOwnerIDs)
         let untemplatedCandidates = discovery.set.listedItems
-            .filter { ![targetKey, spacerKey, protectedKey].contains($0.key) && !templatedIDs.contains($0.key.encoded) }
+            .filter { ![targetKey, spacerKey, protectedKey].contains($0.key) && !staticTemplatedIDs.contains($0.key.encoded) }
         guard untemplatedCandidates.allSatisfy({ $0.frame != nil }) else {
             let missing = untemplatedCandidates.filter { $0.frame == nil }.map(\.key.encoded)
             evidence?.record("step3.untemplatedNoFrame", ["ids": missing])

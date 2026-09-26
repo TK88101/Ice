@@ -60,7 +60,7 @@ struct C1StageMachineTests {
         #expect(machine.isTerminal)
         #expect(machine.terminalReason == .resetCheckFailed)
         #expect(machine.safetyStop == .stop)
-        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers, .stopCaffeinate])
+        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers])
     }
 
     @Test("safetyStop is nil before any terminal event")
@@ -84,7 +84,7 @@ struct C1StageMachineTests {
         #expect(machine.isTerminal)
         #expect(machine.terminalReason == .teardownMismatch)
         #expect(machine.safetyStop == .needingAttention)
-        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers, .stopCaffeinate])
+        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers])
     }
 
     @Test("rework #5 item 4: a teardown mismatch after an earlier trip escalates safetyStop from .stop to .needingAttention, keeps the trip's own terminalReason, and runs no new cleanup actions")
@@ -121,11 +121,11 @@ struct C1StageMachineTests {
         #expect(machine.safetyStop == .needingAttention)
     }
 
-    @Test("trip() returns the cleanup actions in order: rest, quit, reap, stop caffeinate")
+    @Test("trip() returns the cleanup actions in order: rest, quit, reap (G5, Amendment v7: caffeinate is stopped only by finish()/the watchdog backstop, never by cleanup())")
     func tripReturnsCleanupActions() {
         var machine = C1StageMachine()
         let actions = machine.trip(.protectedMissing)
-        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers, .stopCaffeinate])
+        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers])
     }
 
     @Test("a second trip (or watchdog, or teardown-reap-failed) after the first is a no-op: no new actions, the first reason stands")
@@ -147,7 +147,7 @@ struct C1StageMachineTests {
         let actions = machine.watchdogFired()
         #expect(machine.isTerminal)
         #expect(machine.terminalReason == .watchdog)
-        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers, .stopCaffeinate])
+        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers])
     }
 
     @Test("teardownReapFailed() enters terminal with .teardownReapFailed")
@@ -163,7 +163,7 @@ struct C1StageMachineTests {
         let first = machine.cleanup()
         let second = machine.cleanup()
         let third = machine.cleanup()
-        #expect(first == [.sendRest, .quitAllHelpers, .reapHelpers, .stopCaffeinate])
+        #expect(first == [.sendRest, .quitAllHelpers, .reapHelpers])
         #expect(second == [])
         #expect(third == [])
     }
@@ -221,7 +221,7 @@ struct C1StageMachineTests {
         #expect(machine.isTerminal)
         #expect(machine.terminalReason == .restNotConfirmed)
         #expect(machine.safetyStop == .stop)
-        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers, .stopCaffeinate])
+        #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers])
     }
 
     @Test("endExpansion(restConfirmed: false) after the window was never opened still goes terminal")

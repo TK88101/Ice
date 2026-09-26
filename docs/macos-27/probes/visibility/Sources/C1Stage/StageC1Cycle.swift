@@ -32,6 +32,13 @@ extension StageC1 {
         let cycleStart = environment.pump.now()
         defer { lastCycleDurationSeconds = environment.pump.now() - cycleStart }
 
+        // G8 (Amendment v7, "time budget"): before anything else this
+        // cycle would do, project the rest of the run against the
+        // watchdog -- a run that would overrun ends here, cleanly, through
+        // the normal teardown as INCONCLUSIVE, never the watchdog's own
+        // safety-stop-needing-attention teardown.
+        guard checkTimeBudget(label: label) else { return nil }
+
         // F3 (Amendment v6, crosscheck #2/#7): before this cycle's own
         // preflight, at confirmed rest, re-prepare the verifier's baseline
         // whenever it would otherwise go stale before this cycle's own
@@ -53,11 +60,20 @@ extension StageC1 {
         // closed the window (P0-4) by the time control reaches here,
         // whether `body` returned normally or a trip cut it short.
         guard !isTerminal, let hiddenReading else { return nil }
-        // The fold is allowed here -- an expansion was in progress by
-        // definition -- so this read is PASS-list bookkeeping only, never
-        // fed to the latch (the window was open for the whole of it).
-        let foldAbsentAtExpansion = readFoldValue(label: "\(label).fold") == .absent
+        // G4 (Amendment v7, crosscheck-rework6.json finding 2): by the time
+        // control reaches here, `withExpansionWindow`'s own `defer` has
+        // already collapsed, confirmed rest and closed the expansion
+        // window (`StageC1.withExpansionWindow`/`C1StageMachine.endExpansion`)
+        // -- this is a post-rest read, not a mid-expansion one (the old
+        // comment here was wrong), so a credible `.present` here is a real
+        // safety-stop condition (Amendment v4) and must be fed to the latch
+        // like every other post-window-closed fold read, not merely lower
+        // `otherChecksPassed` (which a scan cycle discards entirely and a
+        // smoke cycle only turns into PROVISIONAL FAIL, never SAFETY STOP).
+        let postRestFold = readFoldValue(label: "\(label).fold")
+        if let postRestFold { watchFold(postRestFold, label: "\(label).fold") }
         guard !isTerminal else { return nil }
+        let foldAbsentAfterRest = postRestFold == .absent
 
         environment.pump.run(1.0)
         guard let restoredCheck = verifyOnce() else { return nil }
@@ -88,8 +104,13 @@ extension StageC1 {
         }
         guard !isTerminal else { return nil }
 
-        let otherChecksPassed = foldAbsentAtExpansion && protectedAndOwnersDrawn && untemplatedFailures.isEmpty && restored
+        let otherChecksPassed = foldAbsentAfterRest && protectedAndOwnersDrawn && untemplatedFailures.isEmpty && restored
         evidence?.record("cycle", ["label": label, "reading": "\(hiddenReading)", "otherChecksPassed": otherChecksPassed, "untemplatedFailures": untemplatedFailures.map { "\($0)" }])
+        // G8: only a cycle that actually completes counts toward "cycles
+        // run so far" -- an aborted one (any of the `nil` returns above)
+        // never reaches here, so it is not double-counted against the
+        // budget guard's own "remaining cycles" the next time it runs.
+        cyclesRunSoFar += 1
         return C1CycleResult(reading: hiddenReading, otherChecksPassed: otherChecksPassed)
     }
 
@@ -122,12 +143,31 @@ extension StageC1 {
         return true
     }
 
+    /// G6 (Amendment v7, "freshness enforced"): `age < BaselineReuse.maxAge`
+    /// is checked immediately before *every* verify call now, not merely
+    /// predicted once at the top of the cycle (`maybeRefreshVerificationBaseline`,
+    /// F3) -- a cycle that runs far longer internally than its own
+    /// prediction (preflight retries, rest-confirm retries, ...) can still
+    /// reach a stale `prepared` by the time it actually verifies, even
+    /// though the proactive check found nothing to refresh at the cycle's
+    /// own start. A stale age here refuses the verify outright (`nil`,
+    /// covering both this method's two call sites -- the hidden read and
+    /// the restored check) rather than handing a known-stale baseline to
+    /// `HidingVerification.verify`; the caller's own `nil` handling already
+    /// ends the run through the normal teardown, and `RunAccounting.decide`
+    /// reports INCONCLUSIVE (an incomplete scan or smoke), never a wrong
+    /// verdict built on stale data.
     private func verifyOnce() -> [ItemKey: SectionItemCheck]? {
         guard let prepared else { return nil }
+        let age = environment.pump.now() - prepared.createdAt
         // F3: recorded right before every verify, so a margin
         // miscalculation in `maybeRefreshVerificationBaseline` is visible
         // in evidence rather than silently producing `.skipped(.baselineStale)`.
-        evidence?.record("verify.age", ["age": environment.pump.now() - prepared.createdAt])
+        evidence?.record("verify.age", ["age": age])
+        guard age < BaselineReuse.maxAge else {
+            evidence?.record("verify.refused.baselineStale", ["age": age])
+            return nil
+        }
         return environment.pump.blocking { await self.verification.verify(prepared) }
     }
 
@@ -142,6 +182,47 @@ extension StageC1 {
     /// this cycle (`nil`) -- the caller's scan/smoke loop then falls
     /// through to teardown, never a smoke refusal that would erode toward
     /// PROVISIONAL FAIL.
+    /// G8 (Amendment v7, "time budget"): projects the rest of the run --
+    /// this cycle plus every remaining scan length/smoke cycle, at the
+    /// last measured cycle duration (or the same conservative initial
+    /// estimate F3 uses, before any cycle has completed), one possible
+    /// re-prepare (F3 can refresh at most once per cycle; the same
+    /// conservative estimate stands in, since prepare's own duration is
+    /// not separately measured here), and a fixed teardown allowance --
+    /// against the watchdog less a safety margin. `false` ends this cycle
+    /// (`nil`) without running any of its own work; the caller's scan/smoke
+    /// loop then falls through to the normal teardown, and
+    /// `RunAccounting.decide` reports INCONCLUSIVE (an incomplete scan or
+    /// smoke) from whatever this run collected so far.
+    private func checkTimeBudget(label: String) -> Bool {
+        // G8: nothing measured yet on the very first cycle -- the same
+        // "nothing to project from" gap F3 has for its own one-cycle-ahead
+        // check. Projecting all 24 cycles from a single, deliberately
+        // pessimistic per-cycle guess (`initialCycleDurationEstimateSeconds`,
+        // sized for F3's narrower one-cycle purpose) would overshoot the
+        // watchdog on paper before any cycle has even run, so the budget
+        // guard starts projecting only once a real per-cycle duration
+        // exists to project from.
+        guard let perCycle = lastCycleDurationSeconds else { return true }
+        let totalCycles = ScanPlanner.lengths.count + RunAccounting.smokeCycleCount
+        let remainingAfterThis = max(0, totalCycles - cyclesRunSoFar - 1)
+        let projectedRemainingWork = perCycle * Double(remainingAfterThis + 1)
+        let possibleRePrepare = StageC1.initialCycleDurationEstimateSeconds
+        let elapsed = environment.pump.now() - runStartAt
+        let projectedTotal = elapsed + projectedRemainingWork + possibleRePrepare + StageC1.budgetTeardownAllowanceSeconds
+        let watchdogSeconds = StageC1.watchdogMinutes * 60
+        let fits = projectedTotal <= watchdogSeconds - StageC1.budgetMarginSeconds
+        evidence?.record("budget.projection", [
+            "label": label, "elapsed": elapsed, "perCycle": perCycle,
+            "remainingAfterThis": remainingAfterThis, "projectedTotal": projectedTotal, "fits": fits,
+        ])
+        guard fits else {
+            evidence?.record("budget.exceeded", ["label": label])
+            return false
+        }
+        return true
+    }
+
     private func maybeRefreshVerificationBaseline(label: String) -> Bool {
         guard let prepared, let targetKey, let protectedKey else { return false }
         let age = environment.pump.now() - prepared.createdAt
@@ -309,7 +390,13 @@ extension StageC1 {
         // P1: pixel order is compared with the AX order projected onto
         // templated items only -- an untemplated item has no pixel
         // position to compare, so it would fail every preflight otherwise.
-        let templatedIDs = Set(ownerBaseline.templates.keys)
+        // G3: a dynamic template is excluded here too, matching
+        // `ownerBaselineReadings` (`seedBaselines`) -- otherwise this
+        // projection and `pixelOrder` below (built from
+        // `ownerBaselineReadings`) disagree on membership alone, and every
+        // preflight attempt fails closed on order for a reason that has
+        // nothing to do with the actual order.
+        let templatedIDs = Set(ownerBaseline.templates.keys).subtracting(dynamicOwnerIDs)
         let axProjected = axOrder.filter { templatedIDs.contains($0) }
 
         let targets = ownerBaselineReadings.map(\.id) + [targetKey.encoded, spacerKey.encoded, protectedKey.encoded]

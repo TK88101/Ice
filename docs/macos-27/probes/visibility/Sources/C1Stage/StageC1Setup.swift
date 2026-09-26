@@ -155,7 +155,14 @@ extension StageC1 {
             evidence?.record("helper.launchRefused", ["label": label, "reason": "terminal before launch"])
             return nil
         }
-        guard let helper = environment.helperLauncher.launch(appURL: app, bundleID: bundleID, role: role, arguments: ["--role", role, "--lifetime", "900"], controllerPID: getpid()) else {
+        // G8 (Amendment v7): derived from the watchdog (`StageC1.effectiveHelperLifetimeSeconds`
+        // = watchdog + backstop + margin), never a bare literal -- a
+        // helper must not self-exit while the watchdog's own staged
+        // teardown could still legitimately be running
+        // (crosscheck-rework6.json's own "Helper --lifetime 900 is fixed
+        // at the watchdog length" finding).
+        let lifetimeArgument = String(Int(StageC1.effectiveHelperLifetimeSeconds))
+        guard let helper = environment.helperLauncher.launch(appURL: app, bundleID: bundleID, role: role, arguments: ["--role", role, "--lifetime", lifetimeArgument], controllerPID: getpid()) else {
             evidence?.record("helper.launchFailed", ["label": label])
             return nil
         }

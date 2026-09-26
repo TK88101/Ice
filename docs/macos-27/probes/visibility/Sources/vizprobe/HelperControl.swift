@@ -123,6 +123,16 @@ final class HelperControl: @unchecked Sendable {
             process.waitUntilExit()
         }
     }
+
+    /// G5 (Amendment v7): the same EOF quit signal as `quit(timeout:)`,
+    /// without the wait or the `terminate()`/`waitUntilExit()` fallback --
+    /// the non-blocking form off-main terminal handling uses. Closing an
+    /// already-closed pipe is a harmless no-op (`try?`), so a later,
+    /// main-thread `quit(timeout:)` on the same helper (the real,
+    /// discovery-confirmed reap) still runs safely afterward.
+    func requestQuit() {
+        try? stdin.fileHandleForWriting.close()
+    }
 }
 
 /// A small blocking queue of reply lines, filled by `HelperControl`'s

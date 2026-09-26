@@ -82,6 +82,38 @@ enum FaultKnob {
     /// which instead makes the item disagree with itself *during* the
     /// baseline window, before any `length` is ever sent.
     case ownerAppearanceChangesLater
+    /// G4 (Amendment v7): a chevron-width agent frame plus real ink
+    /// appears for exactly the 5th and 6th `image()` capture after a
+    /// `rest` command -- timed to land inside `StageC1Cycle.runCycle`'s
+    /// own post-rest `readFoldValue` read (one `observe()` bracket = 2
+    /// captures), which runs right after `confirmRestSettled`'s own
+    /// settled read (2 observes = 4 captures, assuming it settles on the
+    /// first attempt, which it does with no other fault armed) has
+    /// already finished, and long before the reset check's own fold read
+    /// many (simulated) seconds later. This isolates the specific read
+    /// Cycle.swift's own G4 fix feeds to the latch from every other
+    /// post-rest fold read -- `.foldWithoutExpansion` above trips at
+    /// `collapse.rest` instead, a path that was never broken.
+    case foldOnlyAtPostRestRead
+    /// G3 (Amendment v7, "a single weak/ambiguous match... does not trip
+    /// by itself"): the templated owner item reads `shapeOwnerWeak`
+    /// (mismatch 0.07, a weak but still `.unique` match) for exactly the
+    /// 1st capture since arming, then reverts to the normal `shapeOwner`
+    /// for every capture after -- a transient glitch a real static badge
+    /// or icon redraw might cause, distinct from `.ownerAppearanceChangesLater`
+    /// (which never recovers).
+    case ownerWeakMatchOnce
+    /// G6 (Amendment v7, "freshness enforced"): a one-time, large virtual
+    /// clock jump on the very first capture since arming -- simulating a
+    /// cycle that unexpectedly takes far longer internally (preflight
+    /// retries, rest-confirm retries) than the proactive per-cycle
+    /// prediction (`maybeRefreshVerificationBaseline`, already run and
+    /// satisfied *before* this cycle's own captures start) ever accounted
+    /// for. By the time this same cycle reaches its own verify call, the
+    /// prepared baseline is stale despite the proactive check having found
+    /// nothing to refresh -- only the newly enforced per-verify guard can
+    /// still catch it.
+    case hugeAgeJumpBeforeVerify(seconds: Double)
 }
 
 /// A run's elapsed time, advanced only by what the real stage actually asks
@@ -254,6 +286,20 @@ final class FakeBarWorld: @unchecked Sendable {
     /// A solid block, wide enough to clear `foldClusterMinPx` (16 px) many
     /// times over -- the "fold without expansion" knob's own ink.
     static let shapeFoldGhost: [String] = Array(repeating: "##########", count: 10)
+    /// G3 (Amendment v7): `shapeOwner` with 16 cells flipped (rows 3-4).
+    /// The baseline template's own cared region is 14x14 = 196 cells (a
+    /// 2 pt margin around this 10x10 glyph, consistently background in
+    /// every baseline sample, cared like the ink itself) -- empirically
+    /// confirmed by printing `ItemTemplate.caredCount` -- so 16/196 = 0.082
+    /// mismatch, inside `(DetectorParameters.maxMismatch (0.05),
+    /// weakThreshold (0.12)]`. `TemplateMatcher.match` returns `.unique`
+    /// with a mismatch *above* `maxMismatch` (a weak match), never
+    /// `.absent` or `.ambiguous` -- `.ownerWeakMatchOnce`'s own
+    /// single-capture glitch.
+    static let shapeOwnerWeak: [String] = [
+        "........##", "........##", "........##", "..........", "......####",
+        "##########", "##########", "##........", "##........", "##........",
+    ]
 
     private let lock = NSLock()
     private var spacerState: FakeSpacerState = .rest
@@ -283,6 +329,21 @@ final class FakeBarWorld: @unchecked Sendable {
     /// disagrees across samples," which `StripAssessor.baseline` accepts
     /// and marks `template.markedDynamic()` rather than rejecting.
     private let dynamicTemplatedOwnerAtBaseline: Bool
+    /// G2 (Amendment v7): makes `HidingVerification.prepare()`'s own
+    /// internal (`C1Discoverer`-wrapped) discovery pass -- and only that
+    /// pass, never `step3Baseline`'s own raw roster pass that seeds
+    /// `ownerItemIDs`/`untemplatedOwnerBaseline` -- reject its composition
+    /// once, before any `length` command is ever sent. Models a benign,
+    /// one-off "prepare comes back not ready" defect that has nothing to
+    /// do with G1 (this world's `discoveryResult()` already reads
+    /// `ownRead: .notRead` honestly, like the live seam): a discovery-only
+    /// phantom item, further left than Target, that never appears for
+    /// pixels or AX, so it can never pollute the owner baseline built from
+    /// the earlier, unaffected roster pass.
+    private let injectPrepareRejection: Bool
+    private var discoveryCallCount = 0
+    private var hasFiredPrepareRejectionOnce = false
+    static let phantomKey = key("phantom", pid: 599, identifier: "phantom.prepare-reject")
 
     /// A run's virtual clock -- shared with the `FakePump` this world's
     /// environment is built with (`FakeC1EnvironmentFactory.make`), so
@@ -306,14 +367,42 @@ final class FakeBarWorld: @unchecked Sendable {
     /// spacer again (a one-shot fault, not a lasting one).
     private var transientRestStillPending = true
     static let transientRestWindowSeconds = 1.3
+    /// G4: captures since the most recently seen `rest` command (reset to
+    /// 0 on every one, unlike `capturesSinceArmed`, which never resets) --
+    /// `.foldOnlyAtPostRestRead`'s own precise capture-index gate.
+    private var capturesSinceLastRest = 0
 
     private var captureCount = 0
 
-    init(templatedOwnerPresent: Bool = true, untemplatedOwnerCount: Int = 0, dynamicTemplatedOwnerAtBaseline: Bool = false) {
+    /// G7 (Amendment v7): `.discoveryHang`'s own real wall-clock sleep --
+    /// configurable so a test can pair a short injected
+    /// `C1DiscoveryExecutor` bound with a correspondingly short hang,
+    /// instead of every discovery-timeout scenario paying the live
+    /// default's real 3.0 s+ (`FakeDiscoverer.discover`, `FakeC1Environment.swift`).
+    let hangDurationSeconds: Double
+    /// G8 (Amendment v7, "time budget"): the virtual-clock cost every
+    /// discovery pass charges (`SimulatedLatency.discoverySeconds`, 36.5 ms,
+    /// by default) -- overridable per world so a test can simulate a
+    /// slower bar (FINDINGS.md's own "~290 ms with a stuck accessory
+    /// process") without changing the shared constant every other scenario
+    /// also calibrates against.
+    let discoverySecondsOverride: Double
+
+    init(
+        templatedOwnerPresent: Bool = true,
+        untemplatedOwnerCount: Int = 0,
+        dynamicTemplatedOwnerAtBaseline: Bool = false,
+        injectPrepareRejection: Bool = false,
+        hangDurationSeconds: Double = 3.5,
+        discoverySecondsOverride: Double = SimulatedLatency.discoverySeconds
+    ) {
         precondition(untemplatedOwnerCount >= 0 && untemplatedOwnerCount <= 4, "the cluster must stay clear of Protected and the templated owner")
         self.templatedOwnerPresent = templatedOwnerPresent
         self.untemplatedOwnerCount = untemplatedOwnerCount
         self.dynamicTemplatedOwnerAtBaseline = dynamicTemplatedOwnerAtBaseline
+        self.injectPrepareRejection = injectPrepareRejection
+        self.hangDurationSeconds = hangDurationSeconds
+        self.discoverySecondsOverride = discoverySecondsOverride
     }
 
     func setTargetNeverHides(_ value: Bool) {
@@ -372,8 +461,9 @@ final class FakeBarWorld: @unchecked Sendable {
         if dynamicTemplatedOwnerAtBaseline {
             return captureCount % 2 == 0 ? Self.shapeOwner : Self.shapeOwnerAlt
         }
-        guard isArmedLocked(), case .ownerAppearanceChangesLater = knob else { return Self.shapeOwner }
-        return Self.shapeOwnerAlt
+        if isArmedLocked(), case .ownerAppearanceChangesLater = knob { return Self.shapeOwnerAlt }
+        if isArmedLocked(), case .ownerWeakMatchOnce = knob, capturesSinceArmed == 1 { return Self.shapeOwnerWeak }
+        return Self.shapeOwner
     }
 
     private func extraVisibleLocked(_ i: Int) -> Bool {
@@ -428,9 +518,14 @@ final class FakeBarWorld: @unchecked Sendable {
     /// keeping it from ever appearing during the mid-expansion verifier
     /// read (which tolerates no fold either way, so this would only ever
     /// have added noise there, never a meaningful assertion).
+    ///
+    /// G4: `.foldOnlyAtPostRestRead` is a second, independent gate -- a
+    /// precise capture-index window after the most recent `rest`, not
+    /// "for as long as resting" -- see its own doc comment.
     private func foldGhostPresentLocked() -> Bool {
-        guard spacerState == .rest, isArmedLocked(), case .foldWithoutExpansion = knob else { return false }
-        return true
+        if spacerState == .rest, isArmedLocked(), case .foldWithoutExpansion = knob { return true }
+        if isArmedLocked(), case .foldOnlyAtPostRestRead = knob, (9...12).contains(capturesSinceLastRest) { return true }
+        return false
     }
 
     func setUp(_ role: String) {
@@ -447,12 +542,28 @@ final class FakeBarWorld: @unchecked Sendable {
     func setDown(_ role: String) {
         lock.withLock {
             log.append("\(role).quit")
-            switch role {
-            case "protected": protectedUp = false
-            case "spacer": spacerUp = false
-            case "target": targetUp = false
-            default: break
-            }
+            markDownLocked(role)
+        }
+    }
+
+    /// G5: the non-blocking `requestQuit()`'s own effect -- logged as
+    /// `"\(role).quitRequested"`, distinct from the blocking path's
+    /// `"\(role).quit"`, so a test can tell which one the stage actually
+    /// took; otherwise identical (this fake models no real async delay
+    /// between a closed stdin and the helper actually exiting).
+    func setDownNonBlocking(_ role: String) {
+        lock.withLock {
+            log.append("\(role).quitRequested")
+            markDownLocked(role)
+        }
+    }
+
+    private func markDownLocked(_ role: String) {
+        switch role {
+        case "protected": protectedUp = false
+        case "spacer": spacerUp = false
+        case "target": targetUp = false
+        default: break
         }
     }
 
@@ -467,6 +578,7 @@ final class FakeBarWorld: @unchecked Sendable {
             if line == "rest" {
                 spacerState = .rest
                 if firstRestSeenAt == nil { firstRestSeenAt = clock.now() }
+                capturesSinceLastRest = 0
             } else if line.hasPrefix("length "), let value = Double(line.dropFirst("length ".count)) {
                 spacerState = .expanded(value)
                 lengthCommandsSeen += 1
@@ -490,6 +602,7 @@ final class FakeBarWorld: @unchecked Sendable {
     func image() -> StripImage? {
         let (glyphs, shouldFail): ([(shape: [String], atPt: Double)], Bool) = lock.withLock {
             captureCount += 1
+            capturesSinceLastRest += 1
             if isArmedLocked() { capturesSinceArmed += 1 }
             if captureShouldFailLocked() { return ([], true) }
             var g: [(shape: [String], atPt: Double)] = []
@@ -502,6 +615,12 @@ final class FakeBarWorld: @unchecked Sendable {
             }
             if foldGhostPresentLocked() {
                 g.append((Self.shapeFoldGhost, Self.foldGhostX))
+            }
+            // G6: the one-time jump, on this same first post-arm capture,
+            // before any pixel work below (order does not matter to the
+            // clock, only that it happens exactly once).
+            if isArmedLocked(), case .hugeAgeJumpBeforeVerify(let seconds) = knob, capturesSinceArmed == 1 {
+                clock.advance(seconds)
             }
             return (g, false)
         }
@@ -568,14 +687,44 @@ final class FakeBarWorld: @unchecked Sendable {
     }
 
     func discoveryResult() -> DiscoveryResult {
+        // G2: reject exactly `verification.prepare()`'s own single internal
+        // discovery call (through `C1Discoverer`), never `step3Baseline`'s
+        // own raw roster pass (whose `ids`/`untemplatedOwnerBaseline`
+        // seeding must stay clean) nor any of step2Launch's three
+        // per-helper discovery calls, nor a later teardown discovery
+        // (`confirmReap`/`waitForTeardownBaselineEquivalence`) after this
+        // aborts. All of those, like `prepare()`'s own call, run with
+        // `lengthCommandsSeen == 0` (no `length` command is ever sent once
+        // step 3 aborts), so that alone cannot tell them apart -- but only
+        // `prepare()`'s call happens after the owner rest baseline's own
+        // capture loop (`step3Baseline`'s `ownerObserver.baseline(...)`,
+        // itself after the 24-capture warm-up), so `captureCount > 24` is
+        // true only there. `hasFiredPrepareRejectionOnce` then keeps this
+        // one-shot: prepare() is called exactly once by `step3Baseline`, so
+        // failing anything after this first hit would wrongly poison the
+        // later teardown's own discovery calls too.
+        let shouldBreakComposition: Bool = lock.withLock {
+            discoveryCallCount += 1
+            guard injectPrepareRejection, !hasFiredPrepareRejectionOnce, lengthCommandsSeen == 0, captureCount > 24 else { return false }
+            hasFiredPrepareRejectionOnce = true
+            return true
+        }
         let entries = liveEntries()
-        let items = entries.map { id, entry in
+        var items = entries.map { id, entry in
             DiscoveredItem(
                 key: entry.key, basis: .declared,
                 process: ProcessInfoRecord(pid: entry.pid, bundleID: entry.key.namespace, localizedName: nil, executableName: nil, launchTime: 10, isSelf: false),
                 frame: entry.frame, position: .onBar,
                 title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
             )
+        }
+        if shouldBreakComposition {
+            items.append(DiscoveredItem(
+                key: Self.phantomKey, basis: .declared,
+                process: ProcessInfoRecord(pid: 599, bundleID: Self.phantomKey.namespace, localizedName: nil, executableName: nil, launchTime: 10, isSelf: false),
+                frame: Self.frame(atPt: Self.targetRestX - 50), position: .onBar,
+                title: nil, description: nil, help: nil, carriedPasses: 0, lastConfirmedAt: 0
+            ))
         }
         let set = DiscoveredItemSet(
             items: items, visibleControlItem: nil, hiddenDivider: nil, alwaysHiddenDivider: nil,
@@ -598,10 +747,12 @@ final class FakeBarWorld: @unchecked Sendable {
             // `C1LiveTests.C1DiscovererTests` case this fix is paired with.
             ownRead: .notRead, systemElements: [], dropped: [], staleProcesses: [:], completeness: .complete
         )
-        clock.advance(SimulatedLatency.discoverySeconds)
+        clock.advance(discoverySecondsOverride)
+        var enumeratedPIDs = Set(entries.map { $0.entry.pid })
+        if shouldBreakComposition { enumeratedPIDs.insert(599) }
         return DiscoveryResult(
             set: set, duration: 0, origin: DiscoveryOrigin(x: 0, y: 0), bounds: Self.bounds,
-            nextCursor: 0, quarantined: [], enumeratedPIDs: Set(entries.map { $0.entry.pid })
+            nextCursor: 0, quarantined: [], enumeratedPIDs: enumeratedPIDs
         )
     }
 

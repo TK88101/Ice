@@ -34,21 +34,22 @@ below -- only file:line and counts, per the brief's hard rule.
   `.incomplete(failedPIDs:)` whenever any real AX read timed out (:167).
 - **Fake (before this rework)**: `FakeDiscoverer(world:)` ->
   `world.discoveryResult()` hard-coded `ownRead: .ok, completeness: .complete`.
-- **G1 -- fixed by this rework**: `discoveryResult()` now returns
-  `ownRead: .notRead`, matching the live harness exactly. This is the
-  defect the whole rework is about: `C1Discoverer.discover`
-  (`Sources/C1Live/C1Discoverer.swift:57`) copies `ownRead: set.ownRead`
+- **G1 -- fixed by rework #7a (honest fake) and rework #7b (the source
+  fix)**: `discoveryResult()` returns `ownRead: .notRead`, matching the
+  live harness exactly. `C1Discoverer.discover`
+  (`Sources/C1Live/C1Discoverer.swift`) used to copy `ownRead: set.ownRead`
   unchanged into the set it composes, so a live run's composed set also
-  carries `.notRead`. `HidingVerification.prepare` runs `CheckPlan.make` on
-  that composed set (`Packages/MenuBarDiscovery/Sources/MenuBarDetectorFeed/HidingVerification.swift:131`),
-  whose first guard is `set.ownRead == .ok`
-  (`Packages/IceCore/Sources/IceCore/CheckPlan.swift:25`) -- otherwise
-  `.skip(.dividerUnavailable)`. Step 3 can therefore never reach `.ready`
-  on a live run. With the fake now honest, every existing I7 scenario now
-  fails the same way (see the worker report); the fix -- `C1Discoverer`
-  composing `ownRead: .ok` -- is a one-line source change, left to the
-  next worker, and pinned by the new `C1LiveTests.C1DiscovererTests
-  .ownReadNotReadStillPassesCheckPlan` case.
+  carried `.notRead`, and `HidingVerification.prepare`'s own `CheckPlan.make`
+  (whose first guard is `set.ownRead == .ok`,
+  `Packages/IceCore/Sources/IceCore/CheckPlan.swift:25`) always returned
+  `.skip(.dividerUnavailable)` -- step 3 could never reach `.ready` on a
+  live run. Rework #7b's fix: `C1Discoverer` now composes `ownRead: .ok`
+  unconditionally (it supplies its own divider from the spacer's `minX`,
+  so the raw harness's self-filtered read is irrelevant to whether the
+  composed set can be checked at all), pinned by
+  `C1LiveTests.C1DiscovererTests.ownReadNotReadStillPassesCheckPlan` (now
+  green) and every I7 scenario (which now reaches step 3's own cycles
+  instead of aborting there on every run).
 - **Difference, acceptable, not fixed**: `completeness` is always
   `.complete` in the fake (no per-pid AX-read timeout is modelled at the
   `ItemCatalog` layer -- capture/AX-read failures are modelled separately,
@@ -142,6 +143,19 @@ below -- only file:line and counts, per the brief's hard rule.
   (a setup precondition, not an orchestration concern); Accessibility
   trust is a one-time OS grant, not something a live run can lose mid-run
   without the whole process losing all its other AX reads too.
+
+## `discoveryExecutorBoundSeconds` (G7, rework #7b)
+
+- **Live**: defaults to `C1DiscoveryExecutor.boundSeconds` (3.0 s, live
+  default unchanged) -- `C1StageEnvironment`'s own default parameter value,
+  so `C1LiveWiring.make()` needs no change to keep it.
+- **Fake**: `FakeC1EnvironmentFactory.make(...)`/`I7.run(world:...)` both
+  default the same way, but a test can now pass a genuinely short bound
+  (`discoveryHang`'s own scenario, 3g, pairs a 0.05 s bound with a 0.2 s
+  fake hang instead of paying the live default's real 3.0 s+).
+- **Difference, acceptable, intentional**: exactly the point of making
+  this injectable -- I7 no longer needs to pay real wall-clock time past
+  a hard-coded live bound to exercise a discovery timeout.
 
 ## Calibration mapping (G8)
 

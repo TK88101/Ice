@@ -141,10 +141,22 @@ public final class HelperControlChannel: C1HelperChannel, @unchecked Sendable {
     public func quitProtected() {
         (lock.withLock { protectedHelperRef })?.quit()
     }
+
+    /// G5 (Amendment v7): `quitAll()`'s own reach (Target and the spacer),
+    /// through each helper's non-blocking `requestQuit()` instead.
+    public func quitAllNonBlocking() {
+        let snapshot: [any C1HelperControlling] = lock.withLock {
+            helpers.filter { $0 !== protectedHelperRef }
+        }
+        for helper in snapshot { helper.requestQuit() }
+    }
 }
 
 public final class StageC1 {
-    public static let watchdogMinutes = 15.0
+    /// G8 (Amendment v7): raised from 15 to 20 minutes, together with the
+    /// helper lifetime derivation below -- both now derive from this one
+    /// setting ("one effective configuration in main.swift/StageC1Live").
+    public static let watchdogMinutes = 20.0
     /// F3 (Amendment v6): a conservative first estimate of one cycle's own
     /// wall time, used only before any cycle has completed (nothing
     /// measured yet). The recorded evidence from 20260925-145233-vzverify
@@ -158,6 +170,38 @@ public final class StageC1 {
     /// deciding whether to re-prepare -- larger than one worst-case cycle,
     /// per Codex's own correction to F3.
     public static let baselineRefreshMarginSeconds = 120.0
+    /// G8 (Amendment v7, "time budget"): the fixed allowance the budget
+    /// guard reserves for the staged teardown (reap, the Protected-only
+    /// fold read up to 10 s, the 30 s owner-population equivalence loop,
+    /// preference domains) -- deliberately larger than section 5 step 4's
+    /// own nominal cost (crosscheck-rework6.json's own duration note puts
+    /// teardown at about 6 s nominal).
+    public static let budgetTeardownAllowanceSeconds = 45.0
+    /// G8: the safety margin the budget guard subtracts from the watchdog
+    /// before deciding whether the rest of the run still fits -- distinct
+    /// from `baselineRefreshMarginSeconds` (F3's own, narrower margin
+    /// against `BaselineReuse.maxAge`, not the watchdog).
+    public static let budgetMarginSeconds = 60.0
+    /// G8: the 120 s watchdog/signal backstop (`vizprobe/main.swift`'s own
+    /// `asyncAfter(deadline: .now() + 120)`), restated here (like
+    /// `SpacerIdentifier`/`C1HelperRole`) so the helper lifetime below can
+    /// derive from the *same* number that file schedules the backstop
+    /// with, without this library depending on that executable target.
+    public static let watchdogBackstopSeconds = 120.0
+    /// G8: a comfortable margin beyond watchdog + backstop, so a helper
+    /// never self-exits (`vzhelper`'s own `--lifetime`) while the
+    /// watchdog's own staged teardown could still legitimately be running.
+    public static let helperLifetimeMarginSeconds = 180.0
+    /// G8 ("the helpers' lifetime cap is derived from the same setting
+    /// [the watchdog]: watchdog + backstop + margin"; crosscheck-rework6.json's
+    /// own "Helper --lifetime 900 is fixed..." finding) -- replaces the old
+    /// hard-coded `"900"` in `step2Launch`'s launch arguments. Capped at
+    /// `vzhelper`'s own maximum (1800 s, `Sources/vzhelper/main.swift`) so
+    /// a future watchdog raise cannot silently ask for more than a helper
+    /// will ever accept.
+    public static var effectiveHelperLifetimeSeconds: Double {
+        min(1800, watchdogMinutes * 60 + watchdogBackstopSeconds + helperLifetimeMarginSeconds)
+    }
 
     let apps: C1Apps
     let dry: Bool
@@ -187,7 +231,7 @@ public final class StageC1 {
     /// keyed/reap read fails at once -- and latches `captureFailed`
     /// synchronously (rest, then quit), recorded via the same `onStuck`
     /// this property already wired for `TimedDiscoverer`.
-    lazy var timedDiscoverer: any Discovering = C1DiscoveryExecutor(wrapping: discoverer, onStuck: { [weak self] in
+    lazy var timedDiscoverer: any Discovering = C1DiscoveryExecutor(wrapping: discoverer, bound: environment.discoveryExecutorBoundSeconds, onStuck: { [weak self] in
         self?.evidence?.record("discovery.stuck", [:])
         self?.latchingCapturer?.feed(.init(captureFailed: true))
     })
@@ -232,6 +276,23 @@ public final class StageC1 {
     var helperBaselineReadings: [BaselineEquivalence.Reading] = []
     var untemplatedOwnerBaseline: [UntemplatedOwnerWatch.Reading] = []
     var baselineIndicatorFrame: BarFrame?
+    /// G3 (Amendment v7, crosscheck-rework6.json finding 1): owner ids
+    /// `StripAssessor.baseline` accepted but marked dynamic (its own
+    /// baseline samples disagreed) -- left out of `ownerBaselineReadings`
+    /// and every pixel check that reads it (`assessLatch`, `readFoldValue`'s
+    /// references, the preflight/drawn targets, the reset check's `x()`),
+    /// and watched through the keyed AX condition instead
+    /// (`untemplatedOwnerBaseline`), like a baseline-rejected item.
+    var dynamicOwnerIDs: Set<String> = []
+    /// G3 (per-item "two consecutive agreeing captures" gate): the owner
+    /// ids `assessLatch` found genuinely absent or uniquely off their
+    /// baseline x in the *previous* capture -- an owner template trips only
+    /// when the capture is stable against Protected or the same id was
+    /// also flagged last time (crosscheck-rework6.json finding 1's
+    /// corrected fix, item 2). A weak or ambiguous match never reaches
+    /// this set at all; it never trips by itself, however many captures in
+    /// a row.
+    var previousCaptureOwnerIssues: Set<String> = []
 
     var ownerBaseline: BaselineResult!
     var ownerObserver: VisibilityObserver!
@@ -244,6 +305,16 @@ public final class StageC1 {
     /// until the first cycle completes, when `maybeRefreshVerificationBaseline`
     /// falls back to `initialCycleDurationEstimate`.
     var lastCycleDurationSeconds: Double?
+    /// G8 (Amendment v7, "time budget"): `environment.pump.now()` at the
+    /// very start of `run()` -- the budget guard's own "elapsed so far,"
+    /// since the watchdog itself is armed at process start
+    /// (`vizprobe/main.swift`), not at `step1Setup`'s own later point.
+    var runStartAt: Double = 0
+    /// G8: how many scan/smoke cycles have completed so far -- the budget
+    /// guard's own "remaining cycles" (`ScanPlanner.lengths.count +
+    /// RunAccounting.smokeCycleCount`, minus this, minus the one about to
+    /// run).
+    var cyclesRunSoFar = 0
 
     var latchingCapturer: LatchingCapturer!
     var channel: HelperControlChannel!
@@ -284,6 +355,10 @@ public final class StageC1 {
     // MARK: - Run
 
     public func run() -> Int32 {
+        // G8: the budget guard's own "elapsed so far" baseline -- as close
+        // to the watchdog's own real arming point (process start) as this
+        // method ever gets.
+        runStartAt = environment.pump.now()
         // F5 (Amendment v6, crosscheck #4-#6/#9/#10/#12): no helper exists
         // yet -- a terminal event here (a signal before setup even
         // starts) has nothing to tear down, so it is reported straight
@@ -525,16 +600,28 @@ public final class StageC1 {
     }
 
     /// P0-5's action executor. Order matches `C1StageMachine.cleanup()`'s
-    /// own: rest, quit, reap, stop caffeinate.
+    /// own: rest, quit, reap.
     private func perform(_ actions: [C1StageAction]) {
         for action in actions {
             switch action {
             // Item 9: `.sendRest` (a stdin write via `HelperControl.send`)
-            // and `.quitAllHelpers` (a stdin close plus a `Thread.sleep`
-            // wait, never `RunLoop.main`) are thread-safe from any thread
-            // as they already stood.
+            // is thread-safe from any thread as it already stood.
             case .sendRest: expansionDriver?.collapse()
-            case .quitAllHelpers: channel?.quitAll()
+            // G5 (Amendment v7): off the main thread (a trip on
+            // `HidingVerification`'s own queue, the watchdog/signal global
+            // queue), only a non-blocking quit request is safe -- the
+            // ordinary `quit()` this reaches through `quitAll()` may wait
+            // up to 2 s per helper (`HelperControl.quit(timeout:)`), which
+            // is not this stage's own thread-safe-only budget for off-main
+            // terminal handling. On the main thread, the ordinary blocking
+            // `quitAll()` still runs directly (it already stood, and the
+            // main thread owns waiting on it).
+            case .quitAllHelpers:
+                if Thread.isMainThread {
+                    channel?.quitAll()
+                } else {
+                    channel?.quitAllNonBlocking()
+                }
             case .reapHelpers:
                 // Item 9 (r5b item 9, P0): `confirmReap()` pumps
                 // `RunLoop.main` (`environment.pump.run`/`.blocking`) --
@@ -556,12 +643,19 @@ public final class StageC1 {
                 // and the spacer -- Protected is reaped separately, only
                 // by the staged teardown, once its own fold read passed.
                 _ = confirmNonProtectedReap()
-            case .stopCaffeinate: stopCaffeinate()
             }
         }
     }
 
+    /// G5 (Amendment v7): stops `caffeinate` exactly once here -- after
+    /// every verdict-deciding read on every exit path (`finish(_:)` is the
+    /// very last thing `run()` calls, on the normal path and on every
+    /// setup-abort path alike) -- and in the watchdog/signal backstop
+    /// (`recordWatchdogBackstopVerdict()`); never in `cleanup()`, which
+    /// used to stop it the instant any terminal event fired, before the
+    /// staged teardown's own screen reads had run.
     private func finish(_ verdict: Verdict) -> Int32 {
+        stopCaffeinate()
         summary["verdict"] = "\(verdict)"
         evidence?.record("run.verdict", ["verdict": "\(verdict)"])
         evidence?.record("summary", summary)

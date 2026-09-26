@@ -116,7 +116,7 @@ if arguments.first == "c1" {
             // own thread never got a chance to reach `finish(...)`.
             // `exit(stage.run())` below still reports the real exit code
             // once that thread notices `isTerminal` and completes.
-            DispatchQueue.global().asyncAfter(deadline: .now() + 120) {
+            DispatchQueue.global().asyncAfter(deadline: .now() + StageC1.watchdogBackstopSeconds) {
                 FileHandle.standardError.write(Data("vizprobe c1: signal teardown did not finish within 2 min -- forcing exit\n".utf8))
                 stage.recordWatchdogBackstopVerdict()
                 exit(3)
@@ -146,7 +146,7 @@ if arguments.first == "c1" {
         // (as part of its cleanup actions), whose discovery could hang;
         // arming the backstop first means that hang is still covered,
         // instead of the backstop never being scheduled at all.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 120) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + StageC1.watchdogBackstopSeconds) {
             FileHandle.standardError.write(Data("vizprobe c1: WATCHDOG teardown did not finish within 2 min of firing -- forcing exit\n".utf8))
             // Round 3 item 4: synchronously write the recorded terminal
             // verdict to evidence before any raw exit -- the run must

@@ -10,7 +10,6 @@ public enum C1StageAction: Equatable, Sendable {
     case sendRest
     case quitAllHelpers
     case reapHelpers
-    case stopCaffeinate
 }
 
 /// Why the run became terminal (P0-3).
@@ -195,15 +194,27 @@ public struct C1StageMachine: Sendable {
     }
 
     /// P0-5: the one idempotent emergency cleanup for every exit after
-    /// setup starts -- rest, quit and reap the helpers, stop
-    /// `caffeinate`. Fires its actions only the first time it is called;
-    /// every later call (from any exit path, or a second terminal event)
-    /// returns `[]`.
+    /// setup starts -- rest, quit and reap the helpers. Fires its actions
+    /// only the first time it is called; every later call (from any exit
+    /// path, or a second terminal event) returns `[]`.
+    ///
+    /// G5 (Amendment v7, crosscheck-rework6.json finding 3/5): `caffeinate`
+    /// is deliberately not one of these actions any more -- it used to
+    /// stop here, the instant *any* terminal event fired (a trip, the
+    /// watchdog, a signal, a teardown mismatch), which is before every
+    /// screen read that still has to run and decide the verdict (the
+    /// staged teardown's Protected-only fold read, the 30 s owner-population
+    /// equivalence loop). Section 2 says caffeinate exists so "the display
+    /// does not sleep mid-run," and those teardown reads are still part of
+    /// the run. It is now stopped exactly once, in `StageC1.finish(_:)`
+    /// (after every verdict-deciding read, on every exit path) and in the
+    /// watchdog/signal backstop (`recordWatchdogBackstopVerdict()`), never
+    /// here.
     @discardableResult
     public mutating func cleanup() -> [C1StageAction] {
         guard !cleanupRan else { return [] }
         cleanupRan = true
-        return [.sendRest, .quitAllHelpers, .reapHelpers, .stopCaffeinate]
+        return [.sendRest, .quitAllHelpers, .reapHelpers]
     }
 
     /// Items 1/9/7: `isTerminal`, `terminalReason` and `safetyStop` are set

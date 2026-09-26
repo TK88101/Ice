@@ -134,6 +134,6 @@ let package = Package(
             // are still fully usable from a Swift 6 test target either way.
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
-        .testTarget(name: "C1StageTests", dependencies: ["C1Stage"]),
+        .testTarget(name: "C1StageTests", dependencies: ["C1Stage", "C1Live"]),
     ]
 )

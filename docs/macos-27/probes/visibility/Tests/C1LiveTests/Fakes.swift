@@ -54,6 +54,7 @@ final class FakeC1HelperChannel: C1HelperChannel, @unchecked Sendable {
         case rest
         case quitAll
         case quitProtected
+        case quitAllNonBlocking
     }
 
     private let lock = NSLock()
@@ -77,6 +78,13 @@ final class FakeC1HelperChannel: C1HelperChannel, @unchecked Sendable {
     /// unchanged) -- present only so this fake still conforms.
     func quitProtected() {
         lock.withLock { recorded.append(.quitProtected) }
+    }
+
+    /// G5: present only so this fake still conforms; not exercised by
+    /// I3's own tests (those drive the machine/latch directly, never
+    /// through a real off-main thread).
+    func quitAllNonBlocking() {
+        lock.withLock { recorded.append(.quitAllNonBlocking) }
     }
 }
 

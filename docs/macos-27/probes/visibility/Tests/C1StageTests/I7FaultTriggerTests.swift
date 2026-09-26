@@ -141,20 +141,16 @@ struct I7FaultTriggerTests {
     /// discovery pass -- including teardown's own untemplated-item check
     /// and roster read -- also fails at once, escalating the stop.
     ///
-    /// G7 also asks for "a genuinely bounded injected executor" here, so
-    /// this test would not need to pay a real ~3.5 s wall-clock sleep.
-    /// Deferred: the only bound `StageC1.timedDiscoverer` ever uses is
-    /// `C1DiscoveryExecutor`'s own hard-coded default
-    /// (`Sources/C1Stage/StageC1.swift:190`), and making it injectable
-    /// needs a consumer-side change in `StageC1.swift` itself, not only a
-    /// new `C1StageEnvironment` field -- outside this brief's one-file
-    /// source-seam exception. Reported rather than done; see the worker
-    /// report and `SEAM-AUDIT.md`.
+    /// G7 (Amendment v7): now uses a genuinely bounded injected executor
+    /// (`discoveryExecutorBoundSeconds`, `C1StageEnvironment`/`StageC1.timedDiscoverer`)
+    /// paired with a correspondingly short `hangDurationSeconds`, so this
+    /// test pays a fraction of a second of real wall-clock time instead of
+    /// the live default's real 3.0 s+.
     @Test("3g: discovery blocks past the executor's bound -> SAFETY STOP NEEDING ATTENTION (captureFailed)")
     func scenario3g_discoveryTimeout() {
-        let world = FakeBarWorld()
+        let world = FakeBarWorld(hangDurationSeconds: 0.2)
         world.arm(.discoveryHang, afterNthLength: 2)
-        let run = I7.run(world: world)
+        let run = I7.run(world: world, discoveryExecutorBoundSeconds: 0.05)
 
         #expect(run.code == 3)
         #expect(run.evidence.terminalReasons().first?.contains("captureFailed") == true)

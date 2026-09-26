@@ -5,6 +5,7 @@
 // AppKit nor ApplicationServices; `vizprobe` builds the one real
 // `C1StageEnvironment` (see `Sources/vizprobe/StageC1Live.swift`) and hands
 // it to `StageC1.init(environment:apps:dry:)`.
+import C1Live
 import Darwin
 import Foundation
 import IceCore
@@ -28,6 +29,15 @@ public protocol C1HelperControlling: AnyObject, Sendable {
     /// Closes the helper's stdin (its own quit signal) and waits up to
     /// `timeout` before forcing the issue.
     func quit(timeout: Double)
+    /// G5 (Amendment v7): closes the helper's stdin (the same EOF quit
+    /// signal `quit(timeout:)` sends) and returns immediately, without
+    /// waiting or forcing the issue -- the only quit request safe to issue
+    /// off the main thread, where a thread-safe rest and a *non-blocking*
+    /// quit request are the only cleanup this stage may do (`perform(_:)`,
+    /// `StageC1.swift`). The main-thread teardown's own confirmed reap
+    /// (`confirmNonProtectedReap()`/`confirmProtectedReap()`) always
+    /// re-issues the real, discovery-confirmed quit afterward regardless.
+    func requestQuit()
 }
 
 extension C1HelperControlling {
@@ -165,6 +175,12 @@ public struct C1StageEnvironment: Sendable {
     /// than left to that function's `{ AXIsProcessTrusted() }` default, so a
     /// test never depends on this process's real Accessibility permission.
     public var isTrusted: @Sendable () -> Bool
+    /// G7 (Amendment v7): `C1DiscoveryExecutor`'s own bound
+    /// (`timedDiscoverer`, `StageC1.swift`), injectable so a test can use a
+    /// genuinely short one instead of paying real wall-clock time past the
+    /// live default's 3.0 s to exercise a discovery timeout. The live
+    /// default is unchanged (`C1DiscoveryExecutor.boundSeconds`).
+    public var discoveryExecutorBoundSeconds: Double
 
     public init(
         capturer: any StripCapturing,
@@ -178,7 +194,8 @@ public struct C1StageEnvironment: Sendable {
         pump: any C1Pump,
         caffeinate: any C1CaffeinateLaunching,
         evidenceFactory: any C1EvidenceFactory,
-        isTrusted: @escaping @Sendable () -> Bool
+        isTrusted: @escaping @Sendable () -> Bool,
+        discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds
     ) {
         self.capturer = capturer
         self.discoverer = discoverer
@@ -192,5 +209,6 @@ public struct C1StageEnvironment: Sendable {
         self.caffeinate = caffeinate
         self.evidenceFactory = evidenceFactory
         self.isTrusted = isTrusted
+        self.discoveryExecutorBoundSeconds = discoveryExecutorBoundSeconds
     }
 }

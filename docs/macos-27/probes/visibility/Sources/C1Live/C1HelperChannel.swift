@@ -19,4 +19,11 @@ public protocol C1HelperChannel: Sendable {
     /// has passed (or by a full relaunch's own reap, which really does
     /// want every helper gone).
     func quitProtected()
+    /// G5 (Amendment v7): the same reach as `quitAll()` (Target and the
+    /// spacer, never Protected), but each helper's non-blocking
+    /// `requestQuit()` instead of its blocking `quit()` -- the only quit
+    /// this stage's off-main terminal handling (a trip on
+    /// `HidingVerification`'s own queue, the watchdog/signal global queue)
+    /// may issue.
+    func quitAllNonBlocking()
 }
