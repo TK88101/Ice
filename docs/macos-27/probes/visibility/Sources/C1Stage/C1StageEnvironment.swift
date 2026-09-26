@@ -67,6 +67,18 @@ public protocol C1HelperDefaultsProviding: Sendable {
     /// `nil` when the domain could not be read at all (teardown then fails
     /// closed, per Amendment v4 P1).
     func keys(_ bundleID: String) -> [String]?
+    /// Amendment v8, "Placement by the helpers' own preferred position"
+    /// (option A): writes one `NSStatusItem Preferred Position
+    /// <autosaveName>`-shaped key (`C1Core.PreferredPositionKey`) into
+    /// `bundleID`'s own domain, before that helper's process ever launches
+    /// -- so AppKit reads it back the moment the item is created
+    /// (`vzhelper`'s own `--autosave`). Called only with a bundle id from
+    /// `C1HelperRole.all`, never the owner's own domain. `true` on
+    /// success; a failure here is recorded but does not itself abort the
+    /// launch -- `step2bPlacementGate`, after the real launch, is the
+    /// authoritative check either way.
+    @discardableResult
+    func write(_ bundleID: String, key: String, value: Double) -> Bool
 }
 
 /// `caffeinate -d[ -w <pid>]` for the run's duration (section 2 / item 7).

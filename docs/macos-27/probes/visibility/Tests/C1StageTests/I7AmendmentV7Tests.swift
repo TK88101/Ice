@@ -253,13 +253,23 @@ struct I7AmendmentV7Tests {
     /// before any `length`, with the exact count of owner items still
     /// found left of the helpers, all three helpers reaped and their
     /// domains empty. Never a safety stop.
+    ///
+    /// Rework #8a: this world's default `honoursPreferredPosition: false`
+    /// keeps macOS "ignoring" whatever `step1bPlacementPlan`/`launchAndDiscover`
+    /// now write -- the helpers still render at their old fixed positions,
+    /// so the post-launch gate still fails exactly as before. Amendment
+    /// v8a's own top-level-reason fix now also makes that reason the
+    /// verdict itself, verbatim, not only step evidence -- and the
+    /// dedicated write/forget log (`world.defaultsLog`) confirms the new
+    /// pre-launch write happened, only into the two helper domains, and
+    /// was forgotten again at teardown.
     @Test("Amendment v8: helpers land right of 2 owner items -> INCONCLUSIVE helpers-not-leftmost, no length sent, all three helpers reaped, domains empty")
     func helpersRightOfOwnersEndsInconclusiveBeforeAnyLength() {
         let world = FakeBarWorld(ownerItemsLeftOfHelpersCount: 2)
         let run = I7.run(world: world)
 
         #expect(run.code == 2)
-        #expect(run.evidence.lastVerdict()?.hasPrefix("inconclusive") == true)
+        #expect(run.evidence.lastVerdict() == "inconclusive(\"helpers not leftmost: 2 owner items left\")")
         #expect(run.evidence.lastVerdict() != "safetyStop")
         #expect(run.evidence.lastVerdict() != "safetyStopNeedingAttention")
         let placementRecord = run.evidence.allRecords().first { $0.kind == "placement.notLeftmost" }
@@ -269,6 +279,22 @@ struct I7AmendmentV7Tests {
         #expect(world.commandLog.contains("protected.quit"))
         #expect(world.commandLog.contains("spacer.quit"))
         #expect(world.commandLog.contains("target.quit"))
+
+        // Amendment v8a: a plan was still found and written (the room
+        // exists; only the render is "ignored"), only ever into the two
+        // helper bundle ids, and forgotten again at teardown.
+        #expect(world.defaultsLog.contains { $0.hasPrefix("write \(C1HelperRole.target) ") })
+        let protectedDomainWrites = world.defaultsLog.filter { $0.hasPrefix("write \(C1HelperRole.protected) ") }
+        // Protected and the spacer share this one bundle id -- exactly two
+        // writes land here (one per role), under two different keys (their
+        // own unique autosave names), never the same key twice.
+        #expect(protectedDomainWrites.count == 2)
+        #expect(Set(protectedDomainWrites).count == 2)
+        #expect(protectedDomainWrites.contains { $0.contains(C1AutosaveName.spacer) })
+        #expect(protectedDomainWrites.contains { $0.contains(C1AutosaveName.protected) })
+        #expect(world.defaultsLog.allSatisfy { $0.contains(C1HelperRole.target) || $0.contains(C1HelperRole.protected) })
+        #expect(world.defaultsKeys(C1HelperRole.target)?.isEmpty == true)
+        #expect(world.defaultsKeys(C1HelperRole.protected)?.isEmpty == true)
     }
 
     // MARK: - Amendment v8: teardown fold rule
@@ -299,5 +325,80 @@ struct I7AmendmentV7Tests {
         #expect(world.commandLog.contains("protected.quit"))
         #expect(world.commandLog.contains("spacer.quit"))
         #expect(world.commandLog.contains("target.quit"))
+    }
+
+    // MARK: - Amendment v8a: placement by the helpers' own preferred position
+
+    /// Amendment v8a's own new pre-launch step: on the "default realistic
+    /// layout" (owner items sit left of where the helpers would land
+    /// unplaced, `ownerItemsLeftOfHelpersCount: 2`), if macOS 27 honours
+    /// the written `NSStatusItem Preferred Position` the helpers land
+    /// where `PlacementPlan` asked -- left of every on-bar owner item --
+    /// so the placement gate passes and the run reaches the same PASS
+    /// `scenario1_realisticCleanBarPass` (`I7OrchestrationTests.swift`)
+    /// already proves once the gate is clean. This is the wiring's own
+    /// end-to-end proof: the plan, the write, the honoured render and the
+    /// post-launch gate all agree.
+    @Test("Amendment v8a: honoured -> the realistic layout still reaches PASS (calibrated duration reported)")
+    func honouredPreferredPositionOnRealisticLayoutPasses() {
+        let world = FakeBarWorld(templatedOwnerPresent: true, untemplatedOwnerCount: 4, ownerItemsLeftOfHelpersCount: 2, honoursPreferredPosition: true)
+        let start = world.clock.now()
+        let run = I7.run(world: world)
+        let elapsedSeconds = world.clock.now() - start
+        print("I7 Amendment v8a (honoured): simulated duration \(elapsedSeconds) s, code \(run.code), verdict \(run.evidence.lastVerdict() ?? "<none>")")
+
+        #expect(run.code == 0)
+        #expect(run.evidence.lastVerdict() == "pass")
+        #expect(elapsedSeconds <= 17 * 60)
+        #expect(!run.evidence.allRecords().contains { $0.kind == "placement.notLeftmost" })
+        let planRecord = run.evidence.allRecords().first { $0.kind == "placement.plan" }
+        #expect(planRecord != nil)
+        #expect(world.commandLog.contains { $0.hasPrefix("spacer.length ") })
+        #expect(world.commandLog.contains("protected.quit"))
+        #expect(world.commandLog.contains("spacer.quit"))
+        #expect(world.commandLog.contains("target.quit"))
+        // Written only into the two helper domains, forgotten at teardown.
+        #expect(world.defaultsLog.allSatisfy { $0.contains(C1HelperRole.target) || $0.contains(C1HelperRole.protected) })
+        #expect(world.defaultsKeys(C1HelperRole.target)?.isEmpty == true)
+        #expect(world.defaultsKeys(C1HelperRole.protected)?.isEmpty == true)
+    }
+
+    /// Amendment v8a's own "unproven" bullet, the other outcome: `--dry`
+    /// honoured still ends PROVISIONAL FAIL (no `length` is ever sent
+    /// under `--dry`, per Amendment v7's own scenario 5), but gate-clean --
+    /// no setup abort, no safety stop, an equivalent teardown -- proving
+    /// the placement wiring itself does not depend on `--dry` at all.
+    @Test("Amendment v8a: --dry honoured -> PROVISIONAL FAIL, gate-clean (no setup abort, no safety stop, an equivalent teardown)")
+    func dryHonouredPreferredPositionIsGateClean() {
+        let world = FakeBarWorld(ownerItemsLeftOfHelpersCount: 2, honoursPreferredPosition: true)
+        let run = I7.run(world: world, dry: true)
+
+        #expect(!world.commandLog.contains { $0.hasPrefix("spacer.length ") })
+        #expect(run.evidence.lastVerdict()?.hasPrefix("provisionalFail") == true)
+        #expect(!run.evidence.allRecords().contains { $0.kind == "step.abort" })
+        #expect(!run.evidence.allRecords().contains { $0.kind == "placement.notLeftmost" })
+        #expect(run.evidence.lastVerdict() != "safetyStop")
+        #expect(run.evidence.lastVerdict() != "safetyStopNeedingAttention")
+        #expect(run.evidence.allRecords().contains { $0.kind == "teardown.baselineEquivalent" && ($0.fields["matched"] as? Bool) == true })
+    }
+
+    /// Amendment v8a's own pre-launch room check: an owner item close
+    /// enough to the bar's own left edge that no helper width/margin
+    /// combination could ever fit left of it -- refused before any helper
+    /// ever launches (this outcome, of the two Amendment v8a names, "no
+    /// room -> INCONCLUSIVE before any launch or right after"), so there
+    /// is nothing to reap and no helper command is ever logged at all.
+    @Test("Amendment v8a: no room for the helpers -> INCONCLUSIVE before any launch, nothing to reap")
+    func noRoomForPlacementEndsInconclusiveBeforeAnyLaunch() {
+        let world = FakeBarWorld(noRoomOwnerMinX: 10.0)
+        let run = I7.run(world: world)
+
+        #expect(run.code == 2)
+        #expect(run.evidence.lastVerdict()?.hasPrefix("inconclusive") == true)
+        #expect(run.evidence.lastVerdict() != "safetyStop")
+        #expect(run.evidence.lastVerdict() != "safetyStopNeedingAttention")
+        #expect(run.evidence.allRecords().contains { $0.kind == "placement.noRoom" })
+        #expect(world.commandLog.isEmpty)
+        #expect(world.defaultsLog.isEmpty)
     }
 }

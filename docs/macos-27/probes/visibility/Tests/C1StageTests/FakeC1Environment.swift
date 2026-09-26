@@ -94,10 +94,18 @@ final class StageHandback: @unchecked Sendable {
     weak var stage: StageC1?
 }
 
-/// Every helper domain reads back empty -- I7 never touches `defaults`.
+/// Amendment v8a: forwards every write/forget/keys call to the world's own
+/// defaults-domain model (`FakeBarWorld.defaultsWrite`/`defaultsForget`/
+/// `defaultsKeys`), so a "honoured" scenario can read back exactly what
+/// the real `StageC1` wrote, and so `world.defaultsLog` records every call
+/// for the "written only in the helper domains, forgotten at teardown"
+/// assertions. `FakeBarWorld` is itself `@unchecked Sendable`, so a struct
+/// holding only a reference to it is safely `Sendable` too.
 struct FakeHelperDefaults: C1HelperDefaultsProviding {
-    func forget(_ bundleID: String) -> Bool { true }
-    func keys(_ bundleID: String) -> [String]? { [] }
+    let world: FakeBarWorld
+    func forget(_ bundleID: String) -> Bool { world.defaultsForget(bundleID) }
+    func keys(_ bundleID: String) -> [String]? { world.defaultsKeys(bundleID) }
+    func write(_ bundleID: String, key: String, value: Double) -> Bool { world.defaultsWrite(bundleID, key: key, value: value) }
 }
 
 /// `caffeinate`, when supplied, records whether it was still "running" at
@@ -279,7 +287,7 @@ enum FakeC1EnvironmentFactory {
                 [C1ExtrasItem(bundleID: "com.apple.MenuBarAgent", minX: FakeBarWorld.indicatorX, minY: 0, width: FakeBarWorld.indicatorWidth, height: Double(FakeBarWorld.heightPt))]
             },
             helperLauncher: FakeHelperLauncher(world: world, onLaunch: onHelperLaunch),
-            helperDefaults: FakeHelperDefaults(),
+            helperDefaults: FakeHelperDefaults(world: world),
             pump: FakePump(clock: world.clock),
             caffeinate: caffeinate,
             evidenceFactory: FakeEvidenceFactory(evidence: evidence),

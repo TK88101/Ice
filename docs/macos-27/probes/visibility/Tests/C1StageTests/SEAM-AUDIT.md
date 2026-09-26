@@ -1,4 +1,4 @@
-# SEAM-AUDIT -- rework #7a (G1, G7), amended by rework #8 (parked items, placement gate, teardown fold rule)
+# SEAM-AUDIT -- rework #7a (G1, G7), amended by rework #8 (parked items, placement gate, teardown fold rule) and rework #8a (placement by the helpers' own preferred position)
 
 For every field `C1StageEnvironment` declares (`Sources/C1Stage/C1StageEnvironment.swift`):
 the live composition (`Sources/vizprobe/StageC1Live.swift`, `C1LiveWiring.make()`)
@@ -162,12 +162,137 @@ below -- only file:line and counts, per the brief's hard rule.
 ## `helperLauncher` / `helperDefaults`
 
 - **Live**: `LiveHelperLauncher` (real bundle validation, `NSWorkspace`,
-  real `Process` spawn) / `LiveHelperDefaults` (`defaults` domain read).
+  real `Process` spawn) / `LiveHelperDefaults` (`defaults` domain
+  read/write; rework #8a adds `write(_:key:value:)` -> `HelperDefaults.write`,
+  `defaults write <bundleID> <key> -float <value>`).
 - **Fake**: `FakeHelperLauncher` (every bundle validates, nothing is ever
-  already running) / `FakeHelperDefaults` (every domain reads back empty).
+  already running) / `FakeHelperDefaults` (rework #8a: now forwards
+  `forget`/`keys`/`write` to `FakeBarWorld`'s own `defaultsDomains` model
+  instead of a stateless "every domain reads back empty" stub, so a
+  "honoured" scenario can read back exactly what `StageC1` wrote, and
+  `world.defaultsLog` records every write/forget call in order).
 - **Difference, acceptable, not exercised**: no scenario models a
   non-empty or unreadable helper preference domain (Amendment v4 P1's own
   teardown-failure path). Noted as a gap, not fixed.
+
+## Amendment v8a -- placement by the helpers' own preferred position (rework #8a)
+
+- **Live premise, unverified**: Ice writes `NSStatusItem Preferred Position
+  <autosaveName>` (a `CGFloat`) into its own domain before creating a
+  control item, with `0`/`1` for its own visible/hidden items
+  (`Ice/MenuBar/ControlItem/ControlItem.swift:645-660`, "added before
+  existing items"). Whether -- and how -- macOS 27 actually honours this
+  key for a freshly created third-party `NSStatusItem` is **unverified**;
+  this rework models it as "the value is points from the bar's own right
+  edge, larger = further left" (the brief's own INFERRED assumption) --
+  never confirmed against a real run. Only a placement-only dry rehearsal
+  on the owner's own bar decides; until then this whole mechanism is
+  modelled, not proven.
+- **C1Core (pure, 100% covered)**: `PlacementPlan.plan(onBarOwnerMinXs:barRightEdge:notchRightEdge:targetWidthPt:spacerWidthPt:protectedWidthPt:)`
+  (`Sources/C1Core/PlacementPlan.swift`) -- Target/spacer/Protected laid
+  out contiguously, left to right, `marginPt` (6.0) left of the nearest
+  on-bar owner item (or the bar's own right edge, when there is none),
+  refusing (`nil`) when that would not clear `notchRightEdge`.
+  `PreferredPositionKey.stringKey(autosaveName:)` (`PreferredPositionKey.swift`)
+  restates Ice's own key format (this package cannot import the `Ice`
+  target). `PlacementGateTests`/`PlacementPlanTests`/`PreferredPositionKeyTests`
+  cover both, including edges (no owner items, exactly-enough room, one
+  point short, a notch consuming the whole bar, non-positive widths).
+- **StageC1 (new pre-launch step)**: `step1bPlacementPlan()`
+  (`Sources/C1Stage/StageC1Placement.swift`), inserted into `run()`'s
+  first step loop (before any helper exists) -- one discovery pass (the
+  same bounded executor every other post-launch read uses), `.onBar`-only
+  filtering (parked already excluded, no helper yet to filter out
+  either), then `PlacementPlan.plan` with `C1HelperWidth.plainItemPt`
+  (12.0, restated from `vzhelper`'s own `itemLengthPt`) for Target/Protected
+  and `parameters.chevronWidthPt` (17.5, IceCore's own measured constant)
+  for the spacer. A refusal ends the run INCONCLUSIVE here, before any
+  process ever launches (`"no room for the helpers left of N owner
+  item(s)"`, `run()`'s own generic first-loop `.abort` handling already
+  promotes this to the top-level verdict, prefixed `"setup:
+  step1b.placementPlan: "`) -- nothing to reap yet.
+- **`launchAndDiscover` (`StageC1Setup.swift`)**: each of the three
+  launches now writes that helper's own key
+  (`C1AutosaveName.target`/`.spacer`/`.protected`, all unique; Protected
+  and the spacer share `C1HelperRole.protected`'s domain, kept apart only
+  by name) into that helper's own domain -- never the owner's -- before
+  the process launches, then passes `--autosave <name>` so `vzhelper` sets
+  `NSStatusItem.autosaveName` the same way
+  `Ice/MenuBar/ControlItem/ControlItem.swift` does, in the same order
+  (name before the AX identifier). `vzhelper --role target|reference|spacer`
+  did not accept `--autosave` at all before this rework (only the older,
+  unrelated `--items` form did); it does now.
+- **Bug found and fixed while implementing this (own reasoning, not a
+  cross-check)**: `launchAndDiscover`'s old, pre-write `forget(bundleID)`
+  step ran unconditionally before every launch (its own comment: "neither
+  role ever sets `--autosave`, so this never has data to lose" -- true
+  before this rework, false now). Protected and the spacer share one
+  domain and launch in that order (Protected, then the spacer,
+  `step2Launch`), so the spacer's own launch was about to `forget()` that
+  *same* domain again, wiping Protected's just-written key before
+  teardown was ever meant to. Harmless to the *live* item itself (a real
+  `NSStatusItem` only reads its stored preferred position once, at its own
+  creation -- Protected's is already resolved, synchronously, before the
+  spacer's process even starts, since launches are sequential and
+  confirmed), but it breaks two things this rework needs: the "forgotten
+  ... at teardown" invariant (a key must not vanish mid-run), and the
+  fake's own honoured-position model, which re-reads the domain on every
+  capture rather than caching a value at "creation." Fixed with a new
+  `forgetDomainFirst` parameter (default `true`; the spacer's own call
+  passes `false`, since Protected's launch, always first, already forgot
+  and verified that shared domain empty this run) -- `launchAndDiscover`
+  now only *adds* the spacer's key alongside Protected's, never wiping it.
+  Caught before any test ran, by tracing the shared-domain write order;
+  confirmed by first reproducing the failure live (the honoured-PASS
+  scenario below came back INCONCLUSIVE "helpers not leftmost" on the
+  unfixed code, exactly as this trace predicted) and then green after the
+  fix.
+- **Top-level reason (Amendment v8a's own fix)**: `step2bPlacementGate()`'s
+  own "not leftmost" abort used to reach `runTeardownAndDecide` ->
+  `RunAccounting.decide` with no way to carry its own reason string --
+  the top-level verdict fell through to the generic "preflight never
+  passed or captures stayed unreadable," and only step evidence
+  (`placement.notLeftmost`) ever saw the real count. `StageC1.placementGateFailureReason`
+  is now threaded into `RunAccounting.Input`, and `decide` returns
+  `.inconclusive(placementGateFailureReason)` verbatim when set (still
+  overridden by a safety stop, itself checked first) -- pinned by two new
+  `RunAccountingTests` cases and `I7AmendmentV7Tests.helpersRightOfOwnersEndsInconclusiveBeforeAnyLength`'s
+  own strengthened exact-string assertion.
+- **Fake**: `FakeBarWorld(honoursPreferredPosition:noRoomOwnerMinX:)`
+  models both outcomes. "Honoured": `resolvedXLocked(bundleID:autosaveName:fallback:)`
+  reads back the exact value this run's own `launchAndDiscover` wrote
+  (`Self.geometry.widthPt - value`, the inverse of `PlacementPlan`'s own
+  conversion) and renders the helper there instead of its old fixed
+  position; `honouredPreferredPositionOnRealisticLayoutPasses` proves the
+  whole pre-launch-plan -> write -> honoured-render -> post-launch-gate
+  chain reaches the same PASS `scenario1_realisticCleanBarPass` already
+  proves once the gate is clean, and `dryHonouredPreferredPositionIsGateClean`
+  proves `--dry` does not change any of that. "Ignored" (the default,
+  `honoursPreferredPosition: false`): every existing scenario keeps
+  rendering at its old fixed position regardless of what gets written,
+  unaffected by this whole rework -- confirmed by every pre-existing I7
+  scenario staying green with no assertion weakened. `noRoomOwnerMinX`
+  is the dedicated "no room" fixture (an owner item at minX 10, too close
+  to the left edge for any helper width/margin combination to clear).
+- **Rebased fixture, not a weakened assertion**: `ownerItemsLeftOfHelpersCount`'s
+  own layout (`FakeBarWorldLayout.ownerLeftOfHelpersBaseX`/`ownerLeftOfHelpersSpacingPt`)
+  moved from `40.0`/`15.0` to `120.0`/`8.0`. At `40.0`, the three helpers'
+  combined width (41.5 pt) alone already exceeded that base X, so
+  `step1bPlacementPlan`'s own new pre-launch check would refuse *before
+  any launch* on that exact fixture -- a real, and arguably more correct,
+  earlier failure mode, but not the one `helpersRightOfOwnersEndsInconclusiveBeforeAnyLength`
+  is testing (the post-launch gate, with helpers actually launched and
+  reaped). `120.0`/`8.0` leaves enough room for a valid pre-launch plan
+  (so that test still reaches the post-launch gate, unchanged in every
+  other respect) while staying left of the helpers' old fixed positions
+  (150/190/230) for the "ignored" render to still trip that same gate.
+  Every assertion in that test still holds, unchanged, plus new ones
+  (the exact top-level reason string, the write/forget log).
+- **Not exercised**: no notch is modelled in the fake bar at all
+  (`geometryProvider`'s own existing gap, above) -- `step1bPlacementPlan`'s
+  own `notchRightEdge` is always `0` in every I7 scenario. `PlacementPlan`'s
+  own notch-refusal branch is covered only by `PlacementPlanTests`
+  (C1Core, pure), not by I7. Noted as a gap, not fixed.
 
 ## `pump`
 

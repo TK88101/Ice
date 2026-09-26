@@ -50,6 +50,12 @@ public enum RunAccounting {
         /// other verdict -- section 1 lists it as its own unconditional
         /// FAIL case.
         public var safetyStop: SafetyStop?
+        /// Amendment v8a: the placement gate's own failure reason (e.g.
+        /// "helpers not leftmost: N owner items left"), when that is why
+        /// the run stopped -- overrides the generic "preflight never
+        /// passed" reason below with the specific one, verbatim, but is
+        /// itself still overridden by a safety stop.
+        public var placementGateFailureReason: String?
 
         public init(
             preflightEverPassed: Bool,
@@ -57,7 +63,8 @@ public enum RunAccounting {
             scanReadings: [TargetReading],
             smokeReadings: [TargetReading],
             smokeChecksPassed: [Bool],
-            safetyStop: SafetyStop?
+            safetyStop: SafetyStop?,
+            placementGateFailureReason: String? = nil
         ) {
             self.preflightEverPassed = preflightEverPassed
             self.capturesStayedUnreadable = capturesStayedUnreadable
@@ -65,12 +72,17 @@ public enum RunAccounting {
             self.smokeReadings = smokeReadings
             self.smokeChecksPassed = smokeChecksPassed
             self.safetyStop = safetyStop
+            self.placementGateFailureReason = placementGateFailureReason
         }
     }
 
     public static func decide(_ input: Input) -> Verdict {
         if let safetyStop = input.safetyStop {
             return safetyStop == .needingAttention ? .safetyStopNeedingAttention : .safetyStop
+        }
+
+        if let placementGateFailureReason = input.placementGateFailureReason {
+            return .inconclusive(placementGateFailureReason)
         }
 
         guard input.preflightEverPassed, !input.capturesStayedUnreadable else {

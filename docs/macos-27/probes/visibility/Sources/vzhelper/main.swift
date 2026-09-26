@@ -88,8 +88,13 @@ func parseConfig() -> Config {
     guard lifetime > 0, lifetime <= 1800 else { usage("--lifetime must be in (0, 1800]") }
 
     if let roleName = option("--role") {
+        // Amendment v8 (C1 protocol, "Placement by the helpers' own
+        // preferred position"): every C1 role now accepts its own
+        // `--autosave <name>`, unlike the 2026-09-19/T8a roles above,
+        // which never carried a stored preferred position at all.
+        let autosave = option("--autosave")
         if roleName == "spacer" {
-            return Config(items: [], mimicNoDivider: false, autosave: nil, lifetime: lifetime, spacer: true)
+            return Config(items: [], mimicNoDivider: false, autosave: autosave, lifetime: lifetime, spacer: true)
         }
         let glyph: Glyph
         switch roleName {
@@ -97,7 +102,7 @@ func parseConfig() -> Config {
         case "reference": glyph = .reference
         default: usage("unknown --role \(roleName)")
         }
-        return Config(items: [ItemSpec(identifier: "vz-\(roleName)", glyph: glyph)], mimicNoDivider: false, autosave: nil, lifetime: lifetime, spacer: false)
+        return Config(items: [ItemSpec(identifier: "vz-\(roleName)", glyph: glyph)], mimicNoDivider: false, autosave: autosave, lifetime: lifetime, spacer: false)
     }
 
     guard let count = option("--items").flatMap(Int.init), (1...2).contains(count) else {
@@ -342,8 +347,15 @@ final class SpacerItem {
 
     private let statusItem: NSStatusItem
 
-    init() {
+    /// Amendment v8: `autosave`, when given, is set right after creation
+    /// (`makePlainItem`'s own order), before the identifier -- so AppKit
+    /// reads back any stored preferred position the same way it would for
+    /// a plain item.
+    init(autosave: String?) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let autosave {
+            statusItem.autosaveName = autosave
+        }
         statusItem.button?.setAccessibilityIdentifier(Self.identifier)
         rest()
     }
@@ -389,7 +401,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !config.spacer else {
-            let item = SpacerItem()
+            let item = SpacerItem(autosave: config.autosave)
             spacer = item
             reply("up", ["pid": Int(getpid()), "items": 1, "spacer": true])
             return

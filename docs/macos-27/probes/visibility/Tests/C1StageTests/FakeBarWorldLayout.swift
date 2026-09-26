@@ -62,10 +62,26 @@ extension FakeBarWorld {
     /// Amendment v8's second bullet (the placement gate): a layout where
     /// 1-3 owner items are drawn *left* of every helper -- the recorded
     /// live placement (section 2's "each new item lands at the left end"
-    /// is false on this bar). Well left of `targetRestX` (150) so they are
-    /// unambiguously left of all three helpers regardless of layout.
-    static let ownerLeftOfHelpersBaseX = 40.0
-    static let ownerLeftOfHelpersSpacingPt = 15.0
+    /// is false on this bar), modelling Amendment v8a's own "default
+    /// realistic layout = owner items left of where helpers would land
+    /// unplaced." Left of `targetRestX` (150, the *unplaced* fixed
+    /// position -- what "ignored" mode keeps rendering) but with enough
+    /// room for `PlacementPlan` to still find a valid pre-launch plan
+    /// (Amendment v8a's own new pre-launch step): rework #8's original
+    /// `40.0` sat closer to the bar's own left edge than the three
+    /// helpers' combined width, so it left no room at all once that
+    /// pre-launch check existed -- moved to `120.0` (rework #8a) so the
+    /// "ignored" scenario still reaches the post-launch gate instead of
+    /// being refused before any launch.
+    static let ownerLeftOfHelpersBaseX = 120.0
+    static let ownerLeftOfHelpersSpacingPt = 8.0
+
+    /// Amendment v8a: the dedicated "no room for the helpers" fixture --
+    /// close enough to the bar's own left edge (well under the three
+    /// helpers' combined width plus `PlacementPlan.marginPt`) that no
+    /// plan can ever fit left of it.
+    static let noRoomOwnerPID: pid_t = 800
+    static let noRoomOwnerKey = key("noRoomOwner", pid: noRoomOwnerPID, identifier: "owner.noRoom")
 
     // MARK: - Identity
 

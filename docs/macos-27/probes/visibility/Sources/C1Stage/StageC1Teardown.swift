@@ -92,7 +92,8 @@ extension StageC1 {
             scanReadings: scan.map(\.reading),
             smokeReadings: smoke,
             smokeChecksPassed: smokeChecks,
-            safetyStop: safetyStop
+            safetyStop: safetyStop,
+            placementGateFailureReason: placementGateFailureReason
         )
         return RunAccounting.decide(input)
     }

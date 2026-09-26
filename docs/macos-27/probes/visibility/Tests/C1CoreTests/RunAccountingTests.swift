@@ -165,4 +165,30 @@ struct RunAccountingTests {
         input.safetyStop = .stop
         #expect(RunAccounting.decide(input) == .safetyStop)
     }
+
+    // MARK: - Amendment v8a: the placement gate's own top-level reason
+
+    /// Rework #8a: the placement gate's failure (or the pre-launch
+    /// placement plan's own "no room" refusal) used to fall through to the
+    /// generic "preflight never passed or captures stayed unreadable"
+    /// reason -- the specific "helpers not leftmost: N owner items left"
+    /// never reached the top-level verdict, only step evidence. A set
+    /// `placementGateFailureReason` is now the INCONCLUSIVE verdict's own
+    /// reason, verbatim.
+    @Test("a placement gate failure reason becomes the INCONCLUSIVE verdict's own reason, verbatim")
+    func placementGateFailureReasonBecomesTheVerdict() {
+        var input = passingInput()
+        input.preflightEverPassed = false
+        input.placementGateFailureReason = "helpers not leftmost: 2 owner items left"
+        #expect(RunAccounting.decide(input) == .inconclusive("helpers not leftmost: 2 owner items left"))
+    }
+
+    @Test("a safety stop still overrides a placement gate failure reason")
+    func safetyStopOverridesPlacementGateFailureReason() {
+        var input = passingInput()
+        input.preflightEverPassed = false
+        input.placementGateFailureReason = "helpers not leftmost: 2 owner items left"
+        input.safetyStop = .needingAttention
+        #expect(RunAccounting.decide(input) == .safetyStopNeedingAttention)
+    }
 }

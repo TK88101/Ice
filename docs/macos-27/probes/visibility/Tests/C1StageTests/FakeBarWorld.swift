@@ -21,6 +21,8 @@
 // `FakeBarWorldLayout.swift` (every fixed position, identity and glyph
 // shape) to stay under the 800-line cap -- this file keeps the world's own
 // state, command handling, and its capture/Accessibility/discovery reads.
+import C1Core
+import C1Stage
 import Darwin
 import Foundation
 import IceCore
@@ -47,6 +49,56 @@ final class FakeBarWorld: @unchecked Sendable {
     private var log: [String] = []
     var commandLog: [String] { lock.withLock { log } }
 
+    /// Amendment v8a: this world's own model of the macOS preferences
+    /// system -- bundle id -> key -> value -- written/read only through
+    /// `defaultsWrite`/`defaultsForget`/`defaultsKeys` (`FakeHelperDefaults`'s
+    /// own forwarding target), so pixels/AX/discovery and "what got
+    /// written to defaults" can never disagree about what actually
+    /// happened, the same single-lock guarantee `liveEntries()`'s own doc
+    /// comment describes for everything else.
+    private var defaultsDomains: [String: [String: Double]] = [:]
+    /// Every `write`/`forget` call this world's own `FakeHelperDefaults`
+    /// seam has recorded, in order -- "the fake defaults store records
+    /// every write/forget" (Amendment v8's own placement-by-preferred-
+    /// position bullet).
+    private var defaultsCallLog: [String] = []
+    var defaultsLog: [String] { lock.withLock { defaultsCallLog } }
+
+    @discardableResult
+    func defaultsForget(_ bundleID: String) -> Bool {
+        lock.withLock {
+            defaultsDomains[bundleID] = [:]
+            defaultsCallLog.append("forget \(bundleID)")
+        }
+        return true
+    }
+
+    func defaultsKeys(_ bundleID: String) -> [String]? {
+        lock.withLock { (defaultsDomains[bundleID] ?? [:]).keys.sorted() }
+    }
+
+    @discardableResult
+    func defaultsWrite(_ bundleID: String, key: String, value: Double) -> Bool {
+        lock.withLock {
+            defaultsDomains[bundleID, default: [:]][key] = value
+            defaultsCallLog.append("write \(bundleID) \(key) \(value)")
+        }
+        return true
+    }
+
+    /// Amendment v8a: the honoured-position read -- `nil` (use `fallback`)
+    /// unless `honoursPreferredPosition` is `true` and this exact
+    /// `bundleID`/`autosaveName` pair already has a written value, in
+    /// which case the render X is the inverse of `PlacementPlan`'s own
+    /// `barRightEdge - minX` conversion (the INFERRED right-edge-distance
+    /// assumption, SEAM-AUDIT.md). Called only while holding `lock`.
+    private func resolvedXLocked(bundleID: String, autosaveName: String, fallback: Double) -> Double {
+        guard honoursPreferredPosition,
+              let value = defaultsDomains[bundleID]?[PreferredPositionKey.stringKey(autosaveName: autosaveName)]
+        else { return fallback }
+        return Self.geometry.widthPt - value
+    }
+
     /// Whether the templated owner item (`ownerKey`, `ownerX`) exists in
     /// this world at all -- `false` models the owner's own bar having no
     /// item the pixel baseline can template (scenario 1b).
@@ -63,6 +115,22 @@ final class FakeBarWorld: @unchecked Sendable {
     /// scenario's own "helpers land leftmost" layout, which Amendment v8's
     /// own work item keeps as the *post-placement* case (scenario 1 etc.).
     let ownerItemsLeftOfHelpersCount: Int
+    /// Amendment v8a: whether this world's own defaults-domain model
+    /// (`defaultsWrite`/`defaultsForget`/`defaultsKeys`) is honoured when
+    /// rendering the helpers' own rest position -- modelling "macOS 27
+    /// honours the stored `NSStatusItem Preferred Position`" (`true`) vs.
+    /// "macOS 27 ignores it" (`false`, the default -- every existing
+    /// scenario's own fixed positions, unaffected by whatever `StageC1`
+    /// now writes). Unproven either way on the real bar (SEAM-AUDIT.md);
+    /// this fake models both outcomes so the wiring is exercised
+    /// regardless of which turns out true.
+    let honoursPreferredPosition: Bool
+    /// Amendment v8a: when set, one additional on-bar owner item (always
+    /// visible, ungated) appears at this minX, close enough to the bar's
+    /// own left edge that no helper width/margin combination could ever
+    /// leave room for the three helpers left of it -- the "no room, refuse
+    /// before any launch" scenario.
+    let noRoomOwnerMinX: Double?
     /// G3 (Amendment v7): the templated owner item alternates between
     /// `shapeOwner` and `shapeOwnerAlt` on every capture from the very
     /// first one -- including every capture inside `step3Baseline`'s own
@@ -148,6 +216,8 @@ final class FakeBarWorld: @unchecked Sendable {
         templatedOwnerPresent: Bool = true,
         untemplatedOwnerCount: Int = 0,
         ownerItemsLeftOfHelpersCount: Int = 0,
+        honoursPreferredPosition: Bool = false,
+        noRoomOwnerMinX: Double? = nil,
         dynamicTemplatedOwnerAtBaseline: Bool = false,
         injectPrepareRejection: Bool = false,
         unreadableFoldAfterAbort: Bool = false,
@@ -159,6 +229,8 @@ final class FakeBarWorld: @unchecked Sendable {
         self.templatedOwnerPresent = templatedOwnerPresent
         self.untemplatedOwnerCount = untemplatedOwnerCount
         self.ownerItemsLeftOfHelpersCount = ownerItemsLeftOfHelpersCount
+        self.honoursPreferredPosition = honoursPreferredPosition
+        self.noRoomOwnerMinX = noRoomOwnerMinX
         self.dynamicTemplatedOwnerAtBaseline = dynamicTemplatedOwnerAtBaseline
         self.injectPrepareRejection = injectPrepareRejection
         self.unreadableFoldAfterAbort = unreadableFoldAfterAbort
@@ -262,16 +334,17 @@ final class FakeBarWorld: @unchecked Sendable {
     /// *owner*-item drift cannot isolate `resetCheckFailed` from a latch
     /// trip -- only the helpers' own zero-tolerance condition can.
     private func spacerRenderXLocked() -> Double {
+        let restX = resolvedXLocked(bundleID: C1HelperRole.protected, autosaveName: C1AutosaveName.spacer, fallback: Self.spacerX)
         if spacerState == .rest, isArmedLocked(), case .transientUnstableRestOnce = knob, transientRestStillPending {
             if let firstRestSeenAt, clock.now() - firstRestSeenAt < Self.transientRestWindowSeconds {
-                return Self.spacerX + 3.0
+                return restX + 3.0
             }
             // The window has passed -- consumed for good, never offsets
             // again (a one-shot transient, not a lasting stuck offset).
             transientRestStillPending = false
         }
-        guard spacerState == .rest, isArmedLocked(), case .spacerStuckOffset(let pt) = knob else { return Self.spacerX }
-        return Self.spacerX + pt
+        guard spacerState == .rest, isArmedLocked(), case .spacerStuckOffset(let pt) = knob else { return restX }
+        return restX + pt
     }
 
     /// Gated on `spacerState == .rest`, not merely "armed": the ghost
@@ -352,9 +425,10 @@ final class FakeBarWorld: @unchecked Sendable {
     }
 
     private func targetXLocked() -> Double {
-        if targetNeverHides { return Self.targetRestX }
+        let restX = resolvedXLocked(bundleID: C1HelperRole.target, autosaveName: C1AutosaveName.target, fallback: Self.targetRestX)
+        if targetNeverHides { return restX }
         switch spacerState {
-        case .rest: return Self.targetRestX
+        case .rest: return restX
         case .expanded: return Self.targetHiddenX
         }
     }
@@ -373,13 +447,16 @@ final class FakeBarWorld: @unchecked Sendable {
             var g: [(shape: [String], atPt: Double)] = []
             if targetUp { g.append((Self.shapeTarget, targetXLocked())) }
             if spacerUp { g.append((Self.shapeSpacer, spacerRenderXLocked())) }
-            if protectedVisibleLocked() { g.append((Self.shapeProtected, Self.protectedX)) }
+            if protectedVisibleLocked() { g.append((Self.shapeProtected, resolvedXLocked(bundleID: C1HelperRole.protected, autosaveName: C1AutosaveName.protected, fallback: Self.protectedX))) }
             if templatedOwnerVisibleLocked() { g.append((templatedOwnerShapeLocked(), Self.ownerX)) }
             for i in 0..<untemplatedOwnerCount where extraVisibleLocked(i) {
                 g.append((Self.shapeOwner, extraXLocked(i)))
             }
             for i in 0..<ownerItemsLeftOfHelpersCount {
                 g.append((Self.shapeOwner, Self.ownerLeftX(i)))
+            }
+            if let noRoomOwnerMinX {
+                g.append((Self.shapeOwner, noRoomOwnerMinX + 1))
             }
             if foldGhostPresentLocked() {
                 g.append((Self.shapeFoldGhost, Self.foldGhostX))
@@ -552,7 +629,8 @@ final class FakeBarWorld: @unchecked Sendable {
                 result.append((Self.spacerKey.encoded, (Self.spacerKey, Self.spacerPID, Self.frame(atPt: spacerRenderXLocked()), .onBar)))
             }
             if protectedVisibleLocked() {
-                result.append((Self.protectedKey.encoded, (Self.protectedKey, Self.protectedPID, Self.frame(atPt: Self.protectedX), .onBar)))
+                let x = resolvedXLocked(bundleID: C1HelperRole.protected, autosaveName: C1AutosaveName.protected, fallback: Self.protectedX)
+                result.append((Self.protectedKey.encoded, (Self.protectedKey, Self.protectedPID, Self.frame(atPt: x), .onBar)))
             }
             if templatedOwnerVisibleLocked() {
                 result.append((Self.ownerKey.encoded, (Self.ownerKey, Self.ownerPID, Self.frame(atPt: Self.ownerX), .onBar)))
@@ -567,6 +645,14 @@ final class FakeBarWorld: @unchecked Sendable {
             for i in 0..<ownerItemsLeftOfHelpersCount {
                 let key = Self.ownerLeftKey(i)
                 result.append((key.encoded, (key, Self.ownerLeftPID(i), Self.frame(atPt: Self.ownerLeftX(i)), .onBar)))
+            }
+            // Amendment v8a: the dedicated "no room for the helpers"
+            // fixture -- one owner item close enough to the bar's own
+            // left edge that `PlacementPlan.plan` must refuse, before any
+            // helper ever launches.
+            if let noRoomOwnerMinX {
+                let key = Self.noRoomOwnerKey
+                result.append((key.encoded, (key, Self.noRoomOwnerPID, Self.frame(atPt: noRoomOwnerMinX + 1), .onBar)))
             }
             // Amendment v8 (parked items): the owner's own bar always
             // lists 2-3 of them (frames below the bar) -- fixed, always

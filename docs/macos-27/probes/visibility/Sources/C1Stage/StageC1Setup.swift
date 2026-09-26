@@ -94,6 +94,13 @@ extension StageC1 {
     /// it -- there is nothing to compare against before then, so silence
     /// is the faithful answer, not a gap.
     func step2Launch() -> StepResult {
+        // Amendment v8, "Placement by the helpers' own preferred
+        // position": `step1bPlacementPlan` always runs before this step
+        // and aborts the whole run if it refuses -- a missing plan here
+        // would mean that guard was bypassed; fail closed rather than
+        // launch unpositioned.
+        guard let plan = placementPlan else { return .abort("no placement plan (step1b did not run)") }
+
         let channel = HelperControlChannel()
         self.channel = channel
         expansionDriver = C1ExpansionDriver(channel: channel, dry: dry)
@@ -108,21 +115,21 @@ extension StageC1 {
         // F5 (Amendment v6, crosscheck #4-#6/#9/#10/#12): checked before
         // every launch -- no launch after a stop.
         guard !isTerminal else { return .abort("terminal before launching Protected") }
-        guard let protected = launchAndDiscover(label: "protected", app: apps.protected, bundleID: C1HelperRole.protected, role: "reference", identifier: "vz-reference", channel: channel, isProtected: true) else {
+        guard let protected = launchAndDiscover(label: "protected", app: apps.protected, bundleID: C1HelperRole.protected, role: "reference", identifier: "vz-reference", channel: channel, isProtected: true, autosaveName: C1AutosaveName.protected, preferredPosition: plan.protectedPreferredPosition) else {
             return .abort("could not launch or discover Protected")
         }
         protectedHelper = protected.helper
         protectedKey = protected.key
 
         guard !isTerminal else { return .abort("terminal before launching the spacer") }
-        guard let spacer = launchAndDiscover(label: "spacer", app: apps.spacer, bundleID: C1HelperRole.protected, role: "spacer", identifier: SpacerIdentifier.value, channel: channel, isSpacer: true) else {
+        guard let spacer = launchAndDiscover(label: "spacer", app: apps.spacer, bundleID: C1HelperRole.protected, role: "spacer", identifier: SpacerIdentifier.value, channel: channel, isSpacer: true, autosaveName: C1AutosaveName.spacer, preferredPosition: plan.spacerPreferredPosition, forgetDomainFirst: false) else {
             return .abort("could not launch or discover the spacer")
         }
         spacerHelper = spacer.helper
         spacerKey = spacer.key
 
         guard !isTerminal else { return .abort("terminal before launching Target") }
-        guard let target = launchAndDiscover(label: "target", app: apps.target, bundleID: C1HelperRole.target, role: "target", identifier: "vz-target", channel: channel) else {
+        guard let target = launchAndDiscover(label: "target", app: apps.target, bundleID: C1HelperRole.target, role: "target", identifier: "vz-target", channel: channel, autosaveName: C1AutosaveName.target, preferredPosition: plan.targetPreferredPosition) else {
             return .abort("could not launch or discover Target")
         }
         targetHelper = target.helper
@@ -138,16 +145,34 @@ extension StageC1 {
     /// identifier (P0-1). `nil` on any failure -- the caller aborts the
     /// whole launch sequence rather than continue with a partial roster,
     /// but the helper (if it got that far) stays registered for cleanup.
-    func launchAndDiscover(label: String, app: URL, bundleID: String, role: String, identifier: String, channel: HelperControlChannel, isSpacer: Bool = false, isProtected: Bool = false) -> (helper: any C1HelperControlling, key: ItemKey)? {
-        // Neither vzhelper role here ever sets `--autosave`, so this never
-        // has data to lose even when Protected and the spacer share a
-        // bundle id and this runs while Protected is already up (P0-1) --
-        // defense in depth against some stray process's leftovers, not a
-        // uniqueness check any more.
-        environment.helperDefaults.forget(bundleID)
-        guard environment.helperDefaults.keys(bundleID) == [] else {
-            evidence?.record("helper.launchRefused", ["label": label, "reason": "the \(bundleID) domain is not verifiably empty"])
-            return nil
+    ///
+    /// Amendment v8, "Placement by the helpers' own preferred position"
+    /// (option A): `autosaveName` (unique per role -- `C1AutosaveName`;
+    /// Protected and the spacer share `bundleID` but never a name) and
+    /// `preferredPosition` (`PlacementPlan`'s own value for this role) are
+    /// written into `bundleID`'s own domain -- never the owner's -- right
+    /// after the domain is confirmed empty and before this helper's own
+    /// process ever launches, then passed to it as `--autosave` so AppKit
+    /// reads the key back the moment the item is created.
+    ///
+    /// `forgetDomainFirst` (default `true`): whether this call forgets and
+    /// re-verifies `bundleID`'s domain empty before writing. Protected and
+    /// the spacer share one domain -- since Protected's own launch (always
+    /// first, `step2Launch`'s own order) already forgot and verified it
+    /// empty this run, the spacer's own call passes `false`, so it only
+    /// adds its own key alongside Protected's rather than wiping it back
+    /// out again before teardown was ever meant to.
+    func launchAndDiscover(label: String, app: URL, bundleID: String, role: String, identifier: String, channel: HelperControlChannel, isSpacer: Bool = false, isProtected: Bool = false, autosaveName: String, preferredPosition: Double, forgetDomainFirst: Bool = true) -> (helper: any C1HelperControlling, key: ItemKey)? {
+        if forgetDomainFirst {
+            // Defense in depth against some stray process's leftovers from
+            // an earlier, unrelated run -- never against a sibling helper
+            // this same run already legitimately wrote to (that is exactly
+            // what `forgetDomainFirst: false` is for).
+            environment.helperDefaults.forget(bundleID)
+            guard environment.helperDefaults.keys(bundleID) == [] else {
+                evidence?.record("helper.launchRefused", ["label": label, "reason": "the \(bundleID) domain is not verifiably empty"])
+                return nil
+            }
         }
         // F5: a signal (or any other terminal event) that lands exactly
         // here must stop this launch from ever starting.
@@ -155,6 +180,11 @@ extension StageC1 {
             evidence?.record("helper.launchRefused", ["label": label, "reason": "terminal before launch"])
             return nil
         }
+
+        let preferredPositionKey = PreferredPositionKey.stringKey(autosaveName: autosaveName)
+        let wroteKey = environment.helperDefaults.write(bundleID, key: preferredPositionKey, value: preferredPosition)
+        evidence?.record("placement.keyWritten", ["label": label, "bundleID": bundleID, "autosaveName": autosaveName, "value": preferredPosition, "wrote": wroteKey])
+
         // G8 (Amendment v7): derived from the watchdog (`StageC1.effectiveHelperLifetimeSeconds`
         // = watchdog + backstop + margin), never a bare literal -- a
         // helper must not self-exit while the watchdog's own staged
@@ -162,7 +192,7 @@ extension StageC1 {
         // (crosscheck-rework6.json's own "Helper --lifetime 900 is fixed
         // at the watchdog length" finding).
         let lifetimeArgument = String(Int(StageC1.effectiveHelperLifetimeSeconds))
-        guard let helper = environment.helperLauncher.launch(appURL: app, bundleID: bundleID, role: role, arguments: ["--role", role, "--lifetime", lifetimeArgument], controllerPID: getpid()) else {
+        guard let helper = environment.helperLauncher.launch(appURL: app, bundleID: bundleID, role: role, arguments: ["--role", role, "--autosave", autosaveName, "--lifetime", lifetimeArgument], controllerPID: getpid()) else {
             evidence?.record("helper.launchFailed", ["label": label])
             return nil
         }

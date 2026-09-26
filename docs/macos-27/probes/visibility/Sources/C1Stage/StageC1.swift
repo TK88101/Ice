@@ -74,6 +74,30 @@ public enum SpacerIdentifier {
     public static let value = "vz-spacer"
 }
 
+/// Amendment v8, "Placement by the helpers' own preferred position"
+/// (option A): one unique autosave name per role -- Protected and the
+/// spacer share one defaults domain (`C1HelperRole.protected`), so their
+/// own names, not the domain, are what keeps their two preferred-position
+/// keys apart (`C1Core.PreferredPositionKey.stringKey(autosaveName:)`).
+public enum C1AutosaveName {
+    public static let target = "vz-c1-target"
+    public static let spacer = "vz-c1-spacer"
+    public static let protected = "vz-c1-protected"
+}
+
+/// Amendment v8's own pre-launch `PlacementPlan` (`step1bPlacementPlan`,
+/// `StageC1Placement.swift`) needs each helper's own on-bar width. Target
+/// and Protected are both plain, fixed-length items (`vzhelper`'s own
+/// `itemLengthPt`, restated here for the same reason `SpacerIdentifier`
+/// is); the spacer at rest draws `DetectorParameters.chevronWidthPt`
+/// (IceCore's own measured chevron width) -- both approximations of the
+/// real rendered width, since the exact figure is not itself load-bearing
+/// here: `PlacementPlan.marginPt` is what absorbs the slack, and
+/// `step2bPlacementGate`'s own post-launch read is what actually decides.
+public enum C1HelperWidth {
+    public static let plainItemPt = 12.0
+}
+
 /// I5's channel: every command this stage sends a helper goes through here,
 /// so `C1Live`'s tested pieces (`LatchingCapturer`, `C1ExpansionDriver`,
 /// `C1StageMachine`) can drive the same real helpers the launch steps
@@ -261,6 +285,20 @@ public final class StageC1 {
     var spacerKey: ItemKey?
     var protectedKey: ItemKey?
 
+    /// Amendment v8, "Placement by the helpers' own preferred position":
+    /// the plan one pre-launch discovery pass computed
+    /// (`step1bPlacementPlan`) -- `nil` until that step runs, and forever
+    /// if it refused (no room, which itself ends the run before this ever
+    /// matters). Read by `step2Launch` right before each helper's own
+    /// launch, to write that helper's own key.
+    var placementPlan: PlacementPlan.Result?
+    /// Amendment v8a: the placement gate's own failure reason (or the
+    /// pre-launch plan's "no room" refusal), threaded into
+    /// `RunAccounting.Input` so it becomes the top-level verdict's own
+    /// reason, verbatim, instead of the generic "preflight never passed"
+    /// fallback.
+    var placementGateFailureReason: String?
+
     /// Section 3's roster snapshot: the fresh full AX roster, taken only
     /// after a passing reset (Amendment v4/P1) -- or, before the first
     /// preflight, at the end of the baseline. A missing snapshot fails
@@ -370,7 +408,7 @@ public final class StageC1 {
         // yet -- a terminal event here (a signal before setup even
         // starts) has nothing to tear down, so it is reported straight
         // from `safetyStop`, never a re-runnable INCONCLUSIVE.
-        for step in [("step0.bundles", step0Bundles), ("step1.setup", step1Setup)] {
+        for step in [("step0.bundles", step0Bundles), ("step1.setup", step1Setup), ("step1b.placementPlan", step1bPlacementPlan)] {
             evidence?.record("step.begin", ["step": step.0])
             if let stop = safetyStop {
                 return finish(stop == .needingAttention ? .safetyStopNeedingAttention : .safetyStop)

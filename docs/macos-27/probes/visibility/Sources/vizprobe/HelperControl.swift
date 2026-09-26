@@ -202,4 +202,21 @@ enum HelperDefaults {
         guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return nil }
         return plist.keys.sorted()
     }
+
+    /// Amendment v8, "Placement by the helpers' own preferred position"
+    /// (option A): `defaults write <bundleID> <key> -float <value>`, run
+    /// before that helper's own process ever launches -- the one write
+    /// this whole enum makes (`forget`/`keys` only ever delete or read).
+    /// `true` when the write process exited 0.
+    @discardableResult
+    static func write(_ bundleID: String, key: String, value: Double) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+        process.arguments = ["write", bundleID, key, "-float", String(value)]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return false }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    }
 }

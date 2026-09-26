@@ -38,6 +38,7 @@ struct LiveHelperLauncher: C1HelperLaunching {
 struct LiveHelperDefaults: C1HelperDefaultsProviding {
     func forget(_ bundleID: String) -> Bool { HelperDefaults.forget(bundleID) }
     func keys(_ bundleID: String) -> [String]? { HelperDefaults.keys(bundleID) }
+    func write(_ bundleID: String, key: String, value: Double) -> Bool { HelperDefaults.write(bundleID, key: key, value: value) }
 }
 
 /// Wraps `Pump.run`/`Pump.blocking` (`Pump.swift`) -- the main-run-loop pump
