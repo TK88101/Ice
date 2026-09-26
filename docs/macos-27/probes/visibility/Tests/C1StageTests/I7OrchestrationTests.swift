@@ -25,6 +25,17 @@ struct I7OrchestrationTests {
     /// check (scan.600) reports `foldNotAbsent` -> `resetCheckFailed` ->
     /// SAFETY STOP, not PASS. This scenario asserts the spec's own PASS --
     /// it is expected to fail today for exactly that reason.
+    ///
+    /// Rework #7a (G1, G8): today the run cannot even reach that #0 defect.
+    /// `FakeBarWorld.discoveryResult()` now honestly reads `ownRead:
+    /// .notRead` (the raw live seam), and `C1Discoverer` forwards it
+    /// unchanged (`Sources/C1Live/C1Discoverer.swift:57`), so step 3's
+    /// `prepare()` returns `.skip(.dividerUnavailable)` and the run aborts
+    /// there, long before the scan -- see `SEAM-AUDIT.md` and the worker
+    /// report. This scenario still asserts the spec's own PASS and the
+    /// v7-calibrated duration bound, unchanged: both remain the desired
+    /// end state once rework #7b's `C1Discoverer` fix (and its own G2
+    /// teardown fix) land.
     @Test("1: a realistic clean bar (1 templated + 4 untemplated owner items) -> PASS, no baselineStale, duration under the watchdog")
     func scenario1_realisticCleanBarPass() {
         let world = FakeBarWorld(templatedOwnerPresent: true, untemplatedOwnerCount: 4)
@@ -33,16 +44,22 @@ struct I7OrchestrationTests {
         let elapsedSeconds = world.clock.now() - start
         // Always printed, whether or not the run reached PASS -- the RED
         // report reads this to say where (in simulated time) the run
-        // actually stopped.
+        // actually stopped. Per G8's own calibration (captureSeconds 0.03 s,
+        // discoverySeconds 0.0365 s -- see `SimulatedLatency`'s own doc
+        // comment), a *completed* run should print roughly 11 min; today,
+        // blocked by G1/G2 at step 3, it prints only the setup's own cost.
         let refreshCount = run.evidence.allRecords().filter { $0.kind == "baseline.refreshed" }.count
         print("I7 scenario 1: simulated duration \(elapsedSeconds) s, code \(run.code), verdict \(run.evidence.lastVerdict() ?? "<none>"), first terminal reason \(run.evidence.terminalReasons().first ?? "<none>"), F3 re-prepares: \(refreshCount)")
 
         #expect(run.code == 0)
         #expect(run.evidence.lastVerdict() == "pass")
         #expect(!run.evidence.terminalReasons().contains { $0.contains("baselineStale") })
-        // Amendment v6's own run-time bullet: the watchdog is 15 min, with
-        // an explicit 3 min margin.
-        #expect(elapsedSeconds <= 12 * 60)
+        // Amendment v7's own run-time bullet: the watchdog is 20 min
+        // (`StageC1.watchdogMinutes` is still the pre-v7 15.0 in source --
+        // that raise, paired with deriving the helper `--lifetime` from it
+        // per G8, is one of rework #7b's own source fixes, not a test-only
+        // change), with an explicit 3 min margin.
+        #expect(elapsedSeconds <= 17 * 60)
         // Scenario 6 (Amendment v5): the fake's own helper lifecycle and
         // Protected reference were actually exercised, not bypassed -- all
         // three helpers launched (their commands appear) and were quit at
@@ -116,6 +133,16 @@ struct I7OrchestrationTests {
     // MARK: - Scenario 5: --dry sends no length, never PASS
 
     /// Also kept on the plain bar for the same reason as scenario 2.
+    ///
+    /// Rework #7a (Q-dry, the "dry rehearsal" the owner is asked to run
+    /// immediately before the real one): Codex round 7b's own ruling
+    /// recommends it, precisely because it exercises real owner-bar wiring
+    /// a fake can miss -- G1 is exactly such a miss. This scenario now also
+    /// asserts the dry-rehearsal gate's own three conditions (protocol
+    /// Amendment v7's last bullet): no setup abort, no safety stop, an
+    /// equivalent teardown. Blocked by G1/G2 today: the run aborts at step
+    /// 3 and the teardown equivalence check can never pass (see
+    /// `SEAM-AUDIT.md`), so all three new assertions are expected RED.
     @Test("5: --dry sends no length and, on a clean bar, ends PROVISIONAL FAIL -- never PASS")
     func scenario5_dryRunSendsNoLengthNeverPasses() {
         let world = FakeBarWorld()
@@ -125,5 +152,14 @@ struct I7OrchestrationTests {
         #expect(run.code != 0)
         #expect(run.evidence.lastVerdict() != "pass")
         #expect(run.evidence.lastVerdict()?.hasPrefix("provisionalFail") == true)
+
+        // Q-dry's own gate: no setup abort (`step.abort`, the step0-step2
+        // pre-launch failure path -- distinct from a step-3 prepare
+        // failure, which is expected and does not block the gate), no
+        // safety stop of either kind, and a teardown that actually matched.
+        #expect(!run.evidence.allRecords().contains { $0.kind == "step.abort" })
+        #expect(run.evidence.lastVerdict() != "safetyStop")
+        #expect(run.evidence.lastVerdict() != "safetyStopNeedingAttention")
+        #expect(run.evidence.allRecords().contains { $0.kind == "teardown.baselineEquivalent" && ($0.fields["matched"] as? Bool) == true })
     }
 }

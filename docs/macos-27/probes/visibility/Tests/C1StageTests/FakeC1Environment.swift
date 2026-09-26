@@ -90,9 +90,18 @@ struct FakeHelperDefaults: C1HelperDefaultsProviding {
     func keys(_ bundleID: String) -> [String]? { [] }
 }
 
+/// `caffeinate`, when supplied, records whether it was still "running" at
+/// the moment of every capture this world's own capturer takes -- G5's own
+/// audit ("the fake caffeinate is still running during every teardown
+/// capture and stopped exactly once before exit"). `nil` for any test that
+/// does not care (every existing scenario before rework #7a).
 struct FakeStripCapturer: StripCapturing {
     let world: FakeBarWorld
-    func capture() -> StripImage? { world.image() }
+    var caffeinate: FakeCaffeinate?
+    func capture() -> StripImage? {
+        caffeinate?.recordCapture()
+        return world.image()
+    }
 }
 
 struct FakeAXReader: MenuBarAXReading {
@@ -162,18 +171,33 @@ private final class FakePumpResultBox<T>: @unchecked Sendable {
 }
 
 /// Records start/stop -- I7 never launches a real `caffeinate`.
+///
+/// Rework #7a (G5 audit): also tracks whether it is currently "running,"
+/// and (via `FakeStripCapturer.capture()`, when wired to it) logs that
+/// state at the moment of every capture the stage takes -- amendment v7's
+/// own requirement that `caffeinate` stop only "after every
+/// verdict-deciding read... never by cleanup."
 final class FakeCaffeinate: C1CaffeinateLaunching, @unchecked Sendable {
     private let lock = NSLock()
     private(set) var startCount = 0
     private(set) var stopCount = 0
+    private var running = false
+    /// One entry per capture this world's `FakeStripCapturer` took (only
+    /// when built with a reference to this instance), in order: `true`
+    /// when `start()` had run and `stop()` had not, at that moment.
+    private(set) var captureRunningLog: [Bool] = []
 
     func start() -> String? {
-        lock.withLock { startCount += 1 }
+        lock.withLock { startCount += 1; running = true }
         return nil
     }
 
     func stop() {
-        lock.withLock { stopCount += 1 }
+        lock.withLock { stopCount += 1; running = false }
+    }
+
+    func recordCapture() {
+        lock.withLock { captureRunningLog.append(running) }
     }
 }
 
@@ -227,7 +251,7 @@ enum FakeC1EnvironmentFactory {
     /// hook (`FakeHelperLauncher.onLaunch`).
     static func make(world: FakeBarWorld, evidence: FakeEvidence, caffeinate: FakeCaffeinate = FakeCaffeinate(), onHelperLaunch: (@Sendable (String) -> Void)? = nil) -> C1StageEnvironment {
         C1StageEnvironment(
-            capturer: FakeStripCapturer(world: world),
+            capturer: FakeStripCapturer(world: world, caffeinate: caffeinate),
             discoverer: FakeDiscoverer(world: world),
             ownerAXReaderFactory: { _ in FakeAXReader(world: world) },
             verificationAXReaderFactory: { _ in FakeAXReader(world: world) },

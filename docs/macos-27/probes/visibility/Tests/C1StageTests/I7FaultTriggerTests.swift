@@ -39,7 +39,12 @@ struct I7FaultTriggerTests {
 
     // MARK: - 3b: Protected disappears
 
-    @Test("3b: Protected disappears -> SAFETY STOP (protectedMissing)")
+    /// G7: Protected stays gone (no "returns" variant exists for this
+    /// knob), so it is still missing at the staged teardown fold read --
+    /// the settled read cannot even find a reference, stage 2 fails, and
+    /// the stop escalates to needing attention (crosscheck-rework6.json's
+    /// own corrected fix table).
+    @Test("3b: Protected disappears -> SAFETY STOP NEEDING ATTENTION (protectedMissing)")
     func scenario3b_protectedVanishes() {
         let world = FakeBarWorld()
         world.arm(.vanishProtected)
@@ -47,6 +52,7 @@ struct I7FaultTriggerTests {
 
         #expect(run.code == 3)
         #expect(run.evidence.terminalReasons().first?.contains("protectedMissing") == true)
+        #expect(run.evidence.lastVerdict() == "safetyStopNeedingAttention")
         #expect(I7.restPrecedesFirstQuitAfterLastLength(world))
     }
 
@@ -55,7 +61,10 @@ struct I7FaultTriggerTests {
     /// G-b's own keyed watch (`UntemplatedOwnerWatch`/`LatchObservationMerge`):
     /// a missing untemplated item is folded into `missingOwnerItems`, the
     /// same trip reason a templated miss produces.
-    @Test("3c: an untemplated owner item disappears (pixels + AX + discovery) -> SAFETY STOP")
+    /// G7: the item stays gone (no "returns" variant), so teardown's own
+    /// untemplated-item check (`waitForTeardownBaselineEquivalence`'s
+    /// `UntemplatedOwnerWatch.check`) still fails it, escalating the stop.
+    @Test("3c: an untemplated owner item disappears (pixels + AX + discovery) -> SAFETY STOP NEEDING ATTENTION")
     func scenario3c_untemplatedItemVanishes() {
         let world = FakeBarWorld(untemplatedOwnerCount: 2)
         world.arm(.vanishExtra(index: 0))
@@ -63,12 +72,15 @@ struct I7FaultTriggerTests {
 
         #expect(run.code == 3)
         #expect(run.evidence.terminalReasons().first?.contains("ownerItemMissing") == true)
+        #expect(run.evidence.lastVerdict() == "safetyStopNeedingAttention")
         #expect(I7.restPrecedesFirstQuitAfterLastLength(world))
     }
 
     // MARK: - 3d: an untemplated owner item shifts
 
-    @Test("3d: an untemplated owner item shifts more than 2 pt -> SAFETY STOP")
+    /// G7: the shift persists, so it is still off by more than 2 pt at
+    /// teardown's own untemplated-item check, escalating the stop.
+    @Test("3d: an untemplated owner item shifts more than 2 pt -> SAFETY STOP NEEDING ATTENTION")
     func scenario3d_untemplatedItemShifts() {
         let world = FakeBarWorld(untemplatedOwnerCount: 2)
         world.arm(.shiftExtra(index: 0, byPt: 5))
@@ -76,12 +88,18 @@ struct I7FaultTriggerTests {
 
         #expect(run.code == 3)
         #expect(run.evidence.terminalReasons().first?.contains("ownerItemMissing") == true)
+        #expect(run.evidence.lastVerdict() == "safetyStopNeedingAttention")
         #expect(I7.restPrecedesFirstQuitAfterLastLength(world))
     }
 
     // MARK: - 3e: a fold appears while at rest, no expansion in progress
 
-    @Test("3e: a fold appears while the spacer is at rest -> SAFETY STOP (foldAppeared)")
+    /// G7: the knob is gated on `spacerState == .rest` (its own doc
+    /// comment), which teardown's own staged fold read (Protected as sole
+    /// reference, before Protected itself quits) still satisfies, so the
+    /// ghost is still there and `teardown.protectedFold` still fails,
+    /// escalating the stop.
+    @Test("3e: a fold appears while the spacer is at rest -> SAFETY STOP NEEDING ATTENTION (foldAppeared)")
     func scenario3e_foldWithoutExpansion() {
         let world = FakeBarWorld()
         world.arm(.foldWithoutExpansion)
@@ -89,12 +107,16 @@ struct I7FaultTriggerTests {
 
         #expect(run.code == 3)
         #expect(run.evidence.terminalReasons().first?.contains("foldAppeared") == true)
+        #expect(run.evidence.lastVerdict() == "safetyStopNeedingAttention")
         #expect(I7.restPrecedesFirstQuitAfterLastLength(world))
     }
 
     // MARK: - 3f: capture returns nil
 
-    @Test("3f: capture returns nil -> SAFETY STOP (captureFailed)")
+    /// G7: the knob stays armed (no "returns" variant), so every later
+    /// capture -- including teardown's own staged fold read and
+    /// equivalence loop -- also fails, escalating the stop.
+    @Test("3f: capture returns nil -> SAFETY STOP NEEDING ATTENTION (captureFailed)")
     func scenario3f_captureFailure() {
         let world = FakeBarWorld()
         world.arm(.captureFailure)
@@ -102,6 +124,7 @@ struct I7FaultTriggerTests {
 
         #expect(run.code == 3)
         #expect(run.evidence.terminalReasons().first?.contains("captureFailed") == true)
+        #expect(run.evidence.lastVerdict() == "safetyStopNeedingAttention")
         #expect(I7.restPrecedesFirstQuitAfterLastLength(world))
     }
 
@@ -113,7 +136,21 @@ struct I7FaultTriggerTests {
     /// bound is real wall-clock time (3.0 s), not this world's virtual
     /// clock (see `FaultKnob.discoveryHang`'s own doc comment) -- this test
     /// pays that real ~3 s.
-    @Test("3g: discovery blocks past the executor's bound -> SAFETY STOP (captureFailed)")
+    /// G7: `C1DiscoveryExecutor` marks itself permanently stuck the first
+    /// time it times out (its own doc comment), so every later keyed
+    /// discovery pass -- including teardown's own untemplated-item check
+    /// and roster read -- also fails at once, escalating the stop.
+    ///
+    /// G7 also asks for "a genuinely bounded injected executor" here, so
+    /// this test would not need to pay a real ~3.5 s wall-clock sleep.
+    /// Deferred: the only bound `StageC1.timedDiscoverer` ever uses is
+    /// `C1DiscoveryExecutor`'s own hard-coded default
+    /// (`Sources/C1Stage/StageC1.swift:190`), and making it injectable
+    /// needs a consumer-side change in `StageC1.swift` itself, not only a
+    /// new `C1StageEnvironment` field -- outside this brief's one-file
+    /// source-seam exception. Reported rather than done; see the worker
+    /// report and `SEAM-AUDIT.md`.
+    @Test("3g: discovery blocks past the executor's bound -> SAFETY STOP NEEDING ATTENTION (captureFailed)")
     func scenario3g_discoveryTimeout() {
         let world = FakeBarWorld()
         world.arm(.discoveryHang, afterNthLength: 2)
@@ -121,6 +158,7 @@ struct I7FaultTriggerTests {
 
         #expect(run.code == 3)
         #expect(run.evidence.terminalReasons().first?.contains("captureFailed") == true)
+        #expect(run.evidence.lastVerdict() == "safetyStopNeedingAttention")
         #expect(I7.restPrecedesFirstQuitAfterLastLength(world))
     }
 
@@ -146,6 +184,10 @@ struct I7FaultTriggerTests {
     /// written, so `evidence.terminalReasons()` -- and the real run's own
     /// evidence file -- never says why. Not one of crosscheck #0-#18; kept
     /// asserting the spec-correct expectation so this stays visible.
+    /// G7: the bar itself is otherwise intact (only the spacer's own rest
+    /// position is off, and teardown's own checks do not re-examine the
+    /// spacer's rest position the way the cycle's own rest confirmation
+    /// did) -- teardown finds nothing wrong, so the stop is not escalated.
     @Test("3h: the spacer does not actually return to rest after collapse -> SAFETY STOP (restNotConfirmed)")
     func scenario3h_unconfirmedRest() {
         let world = FakeBarWorld()
@@ -154,6 +196,7 @@ struct I7FaultTriggerTests {
 
         #expect(run.code == 3)
         #expect(run.evidence.terminalReasons().first?.contains("restNotConfirmed") == true)
+        #expect(run.evidence.lastVerdict() == "safetyStop")
         #expect(I7.restPrecedesFirstQuitAfterLastLength(world))
     }
 
@@ -168,6 +211,8 @@ struct I7FaultTriggerTests {
     /// still confirms the rest (within its own 1 pt tolerance), but the
     /// reset check's own helper condition (exact equality, no tolerance)
     /// then fails it.
+    /// G7: same reasoning as 3h -- the bar itself is otherwise intact, so
+    /// teardown does not escalate this stop either.
     @Test("3i: the spacer rests 0.5 pt off its own baseline between cycles -> SAFETY STOP (resetCheckFailed)")
     func scenario3i_resetCheckFailsOnAnExactHelperMismatch() {
         let world = FakeBarWorld()
@@ -176,6 +221,7 @@ struct I7FaultTriggerTests {
 
         #expect(run.code == 3)
         #expect(run.evidence.terminalReasons().first == "resetCheckFailed")
+        #expect(run.evidence.lastVerdict() == "safetyStop")
         #expect(I7.restPrecedesFirstQuitAfterLastLength(world))
     }
 

@@ -74,6 +74,14 @@ enum FaultKnob {
     /// disagreement between paired samples the run must retry through,
     /// never a latch trip.
     case transientUnstableRestOnce
+    /// G3 (Amendment v7): the templated owner item's own drawn content
+    /// changes once a cycle is under way -- still listed, still drawn, at
+    /// the same x, just a different glyph (`shapeOwnerAlt`) -- so a
+    /// baseline that read it as *static* now disagrees with its own
+    /// template. Distinct from `dynamicTemplatedOwnerAtBaseline` (below),
+    /// which instead makes the item disagree with itself *during* the
+    /// baseline window, before any `length` is ever sent.
+    case ownerAppearanceChangesLater
 }
 
 /// A run's elapsed time, advanced only by what the real stage actually asks
@@ -99,16 +107,40 @@ final class VirtualClock: @unchecked Sendable {
 /// passes/AX reads the stage actually makes, not a guess. Sources named
 /// where a number comes from measurement; the rest are conservative
 /// estimates (flagged in the worker report, never presented as measured).
+///
+/// Rework #7a (G8): rework #6a charged `captureSeconds` from
+/// `LiveStripCapturer`'s own *screen-capture* wall time alone (5-9 ms),
+/// which is not what a "capture" costs a caller of `Sampler`/
+/// `VisibilityObserver` on the owner's own 1728x32 pt strip -- that number
+/// never included the pixel work (`Ink`/`TemplateMatcher`/`StripAssessor`)
+/// every real sample also pays. Codex round 7's own duration lens
+/// (crosscheck-rework6.json `notes.duration`) backs into that whole-sample
+/// cost from measured wall stamps instead: removing the warm-up's 24 x
+/// 0.25 s explicit sleep from a measured ~7.2 s `verify` leaves ~30 ms per
+/// capture. That single number, fed through the *existing* real IceCore/
+/// MenuBarCapture call counts and sleeps (nothing here adds a new sleep --
+/// `VisibilityObserver.observe`'s 2 samples x (capture, AX, capture) +
+/// `minSampleSpacing` already comes to ~0.43-0.44 s; `HidingVerification`'s
+/// 24-capture warm-up (`warmUpSpacing` 0.25 s) + a 4-sample, `baselineMinSpan`
+/// 3 s `baseline()` already comes to ~10.5 s), reproduces the brief's own
+/// per-operation figures (observe ~0.43 s, verify ~7.2 s, prepare ~11.5 s)
+/// without this world charging any of those totals a second time -- see
+/// `Tests/C1StageTests/SEAM-AUDIT.md` for the full worked reconciliation.
 enum SimulatedLatency {
-    /// `LiveStripCapturer.swift:14-16`'s own measurement (5-9 ms); the
-    /// lower end, since this world's strip is far smaller than a real bar.
-    static let captureSeconds = 0.006
+    /// Rework #7a: ~30 ms, the residual per-capture cost the duration
+    /// lens backs into after removing modelled sleeps from a measured
+    /// `verify` (see the type's own doc comment) -- not
+    /// `LiveStripCapturer`'s screen-capture-only 5-9 ms, which undercounts
+    /// the pixel work every real sample also pays.
+    static let captureSeconds = 0.03
     /// Not separately measured in the cited evidence -- a conservative
     /// estimate, the same order as a capture.
     static let axReadSeconds = 0.01
-    /// `STATUS.md:20`'s measured median keyed-discovery pass (36.5 ms),
-    /// rounded down slightly for a clean bar with few items to enumerate.
-    static let discoverySeconds = 0.03
+    /// `STATUS.md:20`'s measured median keyed-discovery pass, unrounded
+    /// (rework #6a rounded it down to 0.03; G8 asks for the owner-bar
+    /// figure itself, since C1 charges this once per latched capture --
+    /// about 2,160 times in a full run -- so the rounding was not free).
+    static let discoverySeconds = 0.0365
 }
 
 /// One synthesized bar: Target, the spacer, Protected, one templated owner
@@ -208,6 +240,17 @@ final class FakeBarWorld: @unchecked Sendable {
         "........##", "........##", "........##", "##########", "##########",
         "##########", "##########", "##........", "##........", "##........",
     ]
+    /// G3 (Amendment v7): a second, still-asymmetric owner glyph -- `shapeOwner`
+    /// read top-to-bottom in reverse -- for the two "owner content changes"
+    /// knobs below. It shares `shapeOwner`'s width and ink coverage (so a
+    /// mismatch reads as a *content* change, not a vacated slot), but
+    /// disagrees with it row-for-row, which is what makes
+    /// `StripAssessor.baseline` (IceCore, frozen) refuse to call the two
+    /// samples the same static template.
+    static let shapeOwnerAlt: [String] = [
+        "##........", "##........", "##........", "##########", "##########",
+        "##########", "##########", "........##", "........##", "........##",
+    ]
     /// A solid block, wide enough to clear `foldClusterMinPx` (16 px) many
     /// times over -- the "fold without expansion" knob's own ink.
     static let shapeFoldGhost: [String] = Array(repeating: "##########", count: 10)
@@ -231,6 +274,15 @@ final class FakeBarWorld: @unchecked Sendable {
     /// How many untemplated (baseline-rejected) owner items this world
     /// also carries, left of `ownerX` (0...4).
     let untemplatedOwnerCount: Int
+    /// G3 (Amendment v7): the templated owner item alternates between
+    /// `shapeOwner` and `shapeOwnerAlt` on every capture from the very
+    /// first one -- including every capture inside `step3Baseline`'s own
+    /// `ownerObserver.baseline()` call, which happens before any `length`
+    /// is ever sent and so cannot be gated on `FaultKnob`'s own
+    /// after-the-Nth-length phase gate. Models "the owner baseline itself
+    /// disagrees across samples," which `StripAssessor.baseline` accepts
+    /// and marks `template.markedDynamic()` rather than rejecting.
+    private let dynamicTemplatedOwnerAtBaseline: Bool
 
     /// A run's virtual clock -- shared with the `FakePump` this world's
     /// environment is built with (`FakeC1EnvironmentFactory.make`), so
@@ -257,10 +309,11 @@ final class FakeBarWorld: @unchecked Sendable {
 
     private var captureCount = 0
 
-    init(templatedOwnerPresent: Bool = true, untemplatedOwnerCount: Int = 0) {
+    init(templatedOwnerPresent: Bool = true, untemplatedOwnerCount: Int = 0, dynamicTemplatedOwnerAtBaseline: Bool = false) {
         precondition(untemplatedOwnerCount >= 0 && untemplatedOwnerCount <= 4, "the cluster must stay clear of Protected and the templated owner")
         self.templatedOwnerPresent = templatedOwnerPresent
         self.untemplatedOwnerCount = untemplatedOwnerCount
+        self.dynamicTemplatedOwnerAtBaseline = dynamicTemplatedOwnerAtBaseline
     }
 
     func setTargetNeverHides(_ value: Bool) {
@@ -306,6 +359,21 @@ final class FakeBarWorld: @unchecked Sendable {
             return false
         }
         return true
+    }
+
+    /// G3: which glyph the templated owner item draws this capture --
+    /// `shapeOwner` unless one of the two "content changes" knobs says
+    /// otherwise. `captureCount` (already incremented by the caller before
+    /// this runs, `image()` below) alternates the baseline-time knob every
+    /// other capture, so consecutive baseline samples disagree with each
+    /// other rather than every sample being simply a different, but still
+    /// internally self-consistent, glyph.
+    private func templatedOwnerShapeLocked() -> [String] {
+        if dynamicTemplatedOwnerAtBaseline {
+            return captureCount % 2 == 0 ? Self.shapeOwner : Self.shapeOwnerAlt
+        }
+        guard isArmedLocked(), case .ownerAppearanceChangesLater = knob else { return Self.shapeOwner }
+        return Self.shapeOwnerAlt
     }
 
     private func extraVisibleLocked(_ i: Int) -> Bool {
@@ -428,7 +496,7 @@ final class FakeBarWorld: @unchecked Sendable {
             if targetUp { g.append((Self.shapeTarget, targetXLocked())) }
             if spacerUp { g.append((Self.shapeSpacer, spacerRenderXLocked())) }
             if protectedVisibleLocked() { g.append((Self.shapeProtected, Self.protectedX)) }
-            if templatedOwnerVisibleLocked() { g.append((Self.shapeOwner, Self.ownerX)) }
+            if templatedOwnerVisibleLocked() { g.append((templatedOwnerShapeLocked(), Self.ownerX)) }
             for i in 0..<untemplatedOwnerCount where extraVisibleLocked(i) {
                 g.append((Self.shapeOwner, extraXLocked(i)))
             }
@@ -511,7 +579,24 @@ final class FakeBarWorld: @unchecked Sendable {
         }
         let set = DiscoveredItemSet(
             items: items, visibleControlItem: nil, hiddenDivider: nil, alwaysHiddenDivider: nil,
-            ownRead: .ok, systemElements: [], dropped: [], staleProcesses: [:], completeness: .complete
+            // Rework #7a (G1, G7 audit): the *raw* live discoverer
+            // (`MenuBarDiscoverer` over `HarnessProcesses`, `StageC1Live.swift`)
+            // never reads `.ok` here -- `HarnessProcesses` drops this
+            // process's own `isSelf` read before `ItemCatalog.build` ever
+            // sees it (`vizprobe/StageRun.swift:32`), so `ownRead` stays at
+            // its initial `.notRead` (`ItemCatalog.swift:86`; neither the
+            // `.failed` branch at :99 nor the `.ok`/`.identifiersMissing`
+            // branch at :119 can ever run for a pid that was filtered out
+            // before the loop). This world used to hard-code `.ok`, which
+            // hid exactly the live defect G1 describes: `C1Discoverer`
+            // forwards `set.ownRead` unchanged
+            // (`Sources/C1Live/C1Discoverer.swift:57`), so a live run's own
+            // composed set also carries `.notRead`, and `CheckPlan.make`
+            // (`Packages/IceCore/Sources/IceCore/CheckPlan.swift:25`) then
+            // always returns `.skip(.dividerUnavailable)` -- step 3 can
+            // never reach `.ready`. See `SEAM-AUDIT.md` and the new
+            // `C1LiveTests.C1DiscovererTests` case this fix is paired with.
+            ownRead: .notRead, systemElements: [], dropped: [], staleProcesses: [:], completeness: .complete
         )
         clock.advance(SimulatedLatency.discoverySeconds)
         return DiscoveryResult(

@@ -90,4 +90,47 @@ struct C1DiscovererTests {
         let result = await discovery.discover(previous: nil)
         #expect(result == nil)
     }
+
+    // MARK: - G1 (Amendment v7)
+
+    /// G1: the live raw discoverer (`MenuBarDiscoverer` over
+    /// `HarnessProcesses`, `Sources/vizprobe/StageC1Live.swift`) never
+    /// reads `ownRead: .ok` -- `HarnessProcesses` drops this process's own
+    /// `isSelf` read before `ItemCatalog.build` ever sees it
+    /// (`vizprobe/StageRun.swift:32`), so `ownRead` stays at its initial
+    /// `.notRead` (`Packages/IceCore/Sources/IceCore/ItemCatalog.swift:86`).
+    /// This discoverer supplies its own divider from the spacer's `minX`
+    /// (I4/section 2), so the harness's own (self-filtered, always
+    /// negative) own-process read is irrelevant to whether the composed
+    /// set can be checked at all -- it must compose `ownRead: .ok`, not
+    /// forward the base's `.notRead` unchanged.
+    ///
+    /// Today's `C1Discoverer.discover` (`Sources/C1Live/C1Discoverer.swift:57`)
+    /// does forward it unchanged, so `CheckPlan.make`
+    /// (`Packages/IceCore/Sources/IceCore/CheckPlan.swift:25`, whose own
+    /// first guard is `set.ownRead == .ok`) returns
+    /// `.skip(.dividerUnavailable)` here, not `.observe` -- expected RED,
+    /// the one C1LiveTests case rework #7a's brief asks for. The fix
+    /// (`ownRead: .ok` in the composed set) is a one-line source change
+    /// left to the next worker.
+    @Test("G1: a base set with ownRead .notRead (the harness self-filtering) still composes a usable divider, and the composed set must pass CheckPlan.make as .observe")
+    func ownReadNotReadStillPassesCheckPlan() async {
+        let items = [target(10), spacer(30), protected(50)]
+        let discovery = discoverer([fixtureDiscovery(set: fixtureSet(items: items, ownRead: .notRead))])
+        let result = await discovery.discover(previous: nil)
+
+        guard let composed = result?.set else {
+            Issue.record("expected the composition to succeed (Target alone left of the spacer, Protected right of it) regardless of ownRead")
+            return
+        }
+        #expect(composed.hiddenDivider?.isUsable == true)
+
+        let plan = CheckPlan.make(sections: [.hidden], set: composed, sectionMap: [:], explicitCandidates: nil)
+        switch plan {
+        case .observe:
+            break
+        case .skip(let reason):
+            Issue.record("G1: expected .observe, got .skip(\(reason)) -- C1Discoverer must compose ownRead: .ok (it supplies its own divider) instead of forwarding the raw harness's .notRead")
+        }
+    }
 }
