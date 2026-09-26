@@ -244,4 +244,60 @@ struct I7AmendmentV7Tests {
         // teardown) -- no off-main path may quit it early.
         #expect(!log.contains("protected.quitRequested"))
     }
+
+    // MARK: - Amendment v8: placement gate
+
+    /// Amendment v8's second bullet: on the recorded live placement --
+    /// owner items drawn left of every helper -- the run must end
+    /// INCONCLUSIVE right after the launches, before any baseline and
+    /// before any `length`, with the exact count of owner items still
+    /// found left of the helpers, all three helpers reaped and their
+    /// domains empty. Never a safety stop.
+    @Test("Amendment v8: helpers land right of 2 owner items -> INCONCLUSIVE helpers-not-leftmost, no length sent, all three helpers reaped, domains empty")
+    func helpersRightOfOwnersEndsInconclusiveBeforeAnyLength() {
+        let world = FakeBarWorld(ownerItemsLeftOfHelpersCount: 2)
+        let run = I7.run(world: world)
+
+        #expect(run.code == 2)
+        #expect(run.evidence.lastVerdict()?.hasPrefix("inconclusive") == true)
+        #expect(run.evidence.lastVerdict() != "safetyStop")
+        #expect(run.evidence.lastVerdict() != "safetyStopNeedingAttention")
+        let placementRecord = run.evidence.allRecords().first { $0.kind == "placement.notLeftmost" }
+        #expect(placementRecord != nil)
+        #expect(placementRecord?.fields["count"] as? Int == 2)
+        #expect(!world.commandLog.contains { $0.hasPrefix("spacer.length ") })
+        #expect(world.commandLog.contains("protected.quit"))
+        #expect(world.commandLog.contains("spacer.quit"))
+        #expect(world.commandLog.contains("target.quit"))
+    }
+
+    // MARK: - Amendment v8: teardown fold rule
+
+    /// Amendment v8's third bullet: an abort before any `length` was ever
+    /// sent, on a layout where the staged teardown's own Protected-only
+    /// fold read comes back unreadable (here: a fold appears at rest,
+    /// discovered only once the next real capture runs, which is exactly
+    /// that read) -- recorded, but must not itself become a teardown
+    /// mismatch; the run still ends INCONCLUSIVE, never a safety stop.
+    /// Composed with `injectPrepareRejection` (G2's own scenario): its
+    /// phantom fires only after the rest baseline's own capture loop has
+    /// already finished clean, so no `length` is ever sent and the fold
+    /// ghost cannot contaminate that earlier, unrelated baseline.
+    @Test("Amendment v8: a fold read that comes back unreadable before any length was sent is recorded, not a teardown mismatch -> INCONCLUSIVE")
+    func unreadableFoldBeforeAnyLengthIsNotATeardownMismatch() {
+        let world = FakeBarWorld(injectPrepareRejection: true, unreadableFoldAfterAbort: true)
+        let run = I7.run(world: world)
+
+        #expect(run.evidence.allRecords().contains { $0.kind == "step3.prepareFailed" })
+        #expect(!world.commandLog.contains { $0.hasPrefix("spacer.length ") })
+        let mismatchRecord = run.evidence.allRecords().first { $0.kind == "teardown.protectedFold.mismatch" }
+        #expect(mismatchRecord != nil)
+        #expect(mismatchRecord?.fields["lengthEverSent"] as? Bool == false)
+        #expect(run.evidence.lastVerdict()?.hasPrefix("inconclusive") == true)
+        #expect(run.evidence.lastVerdict() != "safetyStop")
+        #expect(run.evidence.lastVerdict() != "safetyStopNeedingAttention")
+        #expect(world.commandLog.contains("protected.quit"))
+        #expect(world.commandLog.contains("spacer.quit"))
+        #expect(world.commandLog.contains("target.quit"))
+    }
 }

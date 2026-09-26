@@ -42,8 +42,17 @@ extension StageC1 {
 
         // Stage 2: Protected is still up -- the staged fold read, while
         // it is the sole reference and so the leftmost item on the bar.
+        // Amendment v8, "Teardown fold rule": the placement gate (step
+        // 2b) already guarantees the helpers were leftmost before any
+        // `length` was ever sent, so this read applies once one has been.
+        // If none ever was, C1 cannot have caused a fold -- a failure here
+        // is recorded, but baseline-equivalence (stage 4) stays the
+        // authoritative check, not this one.
         if !confirmFoldAbsentBeforeProtectedQuits() {
-            markTeardownMismatch()
+            evidence?.record("teardown.protectedFold.mismatch", ["lengthEverSent": lengthEverSent])
+            if lengthEverSent {
+                markTeardownMismatch()
+            }
         }
 
         // Stage 3: Protected's own quit and reap, only now. Marked as

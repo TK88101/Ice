@@ -1,4 +1,4 @@
-# SEAM-AUDIT -- rework #7a (G1, G7)
+# SEAM-AUDIT -- rework #7a (G1, G7), amended by rework #8 (parked items, placement gate, teardown fold rule)
 
 For every field `C1StageEnvironment` declares (`Sources/C1Stage/C1StageEnvironment.swift`):
 the live composition (`Sources/vizprobe/StageC1Live.swift`, `C1LiveWiring.make()`)
@@ -55,10 +55,74 @@ below -- only file:line and counts, per the brief's hard rule.
   `ItemCatalog` layer -- capture/AX-read failures are modelled separately,
   at the `Sampler`/`StripCapturer`/`MenuBarAXReading` layer, via the
   `.captureFailure`/`.discoveryHang` knobs). `staleProcesses`/`dropped`/
-  `systemElements` are always empty. Every fake item is `.declared`/
-  `.onBar` (never `.parked`/`.stacked`/`.positional`) -- those states are
-  I1's own scope (`C1CoreTests`, already 100% covered pure logic), not
-  I7's.
+  `systemElements` are always empty. Every fake item is still `.declared`
+  (never `.positional`) and every drawn item is `.onBar` (never
+  `.stacked`) -- those two remain I1's own scope (`C1CoreTests`, already
+  100% covered pure logic), not I7's.
+- **G0 (Amendment v8) -- fixed, was wrong**: this section used to say every
+  fake item was `.parked`-free too, "those states are I1's own scope, not
+  I7's." That was wrong: `C1Discoverer` and `StageC1Baseline` (both
+  `C1Live`/`C1Stage`, not I1) read `.parked` directly, and the owner's own
+  bar always lists 2-3 parked items (frames below the bar) in every
+  recorded census -- a live seam I7 must model, not I1's pure-logic scope.
+  `C1Discoverer.discover` counted a parked item as "left of the divider"
+  (its own count, not a position filter), which rejected every real
+  composed set on the owner's bar (crosscheck-rework7.json finding #0).
+  `FakeBarWorld` now lists 3 fixed parked items (`FakeBarWorldLayout.
+  parkedMinXs`/`parkedMinYs`, matching the recorded frames -- numbers
+  only, per the hard rule) in every scenario's discovery and AX reads,
+  always present, never drawn (a parked item's frame sits below the bar,
+  so it contributes no ink); `C1DiscovererTests` and `C1CoreTests.
+  PlacementGateTests` cover the pure decision, and every I7 scenario now
+  exercises `C1Discoverer`'s parked-item filter and `StageC1Baseline`'s
+  parked exclusion from `ownerItemIDs`/the untemplated candidates on every
+  run, not only a dedicated case.
+
+## Amendment v8's placement gate and teardown fold rule (new, rework #8)
+
+- **Live premise, was false**: section 2 says "each new item lands at the
+  left end"; a fourth cross-check (crosscheck-rework7.json finding #1)
+  found 1-3 owner items drawn left of the helpers in every recorded run
+  on the owner's bar instead. `StageC1.step2bPlacementGate()` (new,
+  `Sources/C1Stage/StageC1Placement.swift`) now runs right after the
+  launches, before `step3Baseline` and before any `length`: one discovery
+  pass, `C1Core.PlacementGate.check(helperMinXs:onBarOwnerMinXs:)` (pure,
+  100% covered by `C1CoreTests.PlacementGateTests`) decides whether every
+  on-bar owner item sits right of every helper. A failure reaps all three
+  helpers, records `placement.notLeftmost` (count only), and ends
+  INCONCLUSIVE ("helpers not leftmost: N owner items left") through the
+  ordinary `.abort` -> `runTeardownAndDecide` path -- never a safety stop,
+  since no trip ever fires.
+- **Fake**: `FakeBarWorld(ownerItemsLeftOfHelpersCount:)` (0...3, default
+  0) draws that many owner items well left of every helper, always
+  visible, never gated by a fault knob (`FakeBarWorldLayout.
+  ownerLeftOfHelpersBaseX`/`ownerLeftKey`/`ownerLeftX`) -- the recorded
+  live placement. The default (`0`) keeps every existing scenario's own
+  "helpers land leftmost" layout as Amendment v8's own *post-placement*
+  case (scenario 1 etc.); `I7AmendmentV7Tests.
+  helpersRightOfOwnersEndsInconclusiveBeforeAnyLength` exercises the new
+  layout.
+- **Teardown fold rule**: the staged teardown's Protected-only fold read
+  (F2, Amendment v6) assumed nothing is ever left of Protected once Target
+  and the spacer are gone -- true once the placement gate has passed, but
+  not proof against everything (e.g. a fold appearing at rest for reasons
+  unrelated to C1). `StageC1Teardown.runTeardownAndDecide` now records a
+  failing read (`teardown.protectedFold.mismatch`, with `lengthEverSent`)
+  but only escalates it to a teardown mismatch once `StageC1.lengthEverSent`
+  is `true` -- tracked in `withExpansionWindow`, mirroring
+  `C1ExpansionDriver.expand(to:)`'s own `!dry` guard exactly. Modelled by
+  `FakeBarWorld(injectPrepareRejection: true, unreadableFoldAfterAbort:
+  true)`: the fold ghost only starts appearing once the (harmless,
+  G2-style) prepare rejection has already fired, i.e. after the rest
+  baseline's own capture loop finished clean and before any `length` --
+  see `I7AmendmentV7Tests.unreadableFoldBeforeAnyLengthIsNotATeardownMismatch`.
+- **Split**: `FakeBarWorld.swift` was at 796 lines before this rework;
+  split into `FakeBarWorld.swift` (state, command handling, capture/AX/
+  discovery), `FakeBarWorldSupport.swift` (`FakeSpacerState`, `FaultKnob`,
+  `VirtualClock`, `SimulatedLatency`) and `FakeBarWorldLayout.swift`
+  (every fixed position/identity/shape, as a `static` extension of
+  `FakeBarWorld` -- not a new type) to stay under the 800-line cap with
+  room for the additions above.
 
 ## `ownerAXReaderFactory` / `verificationAXReaderFactory`
 

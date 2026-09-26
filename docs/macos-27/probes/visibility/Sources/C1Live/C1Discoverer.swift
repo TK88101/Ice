@@ -33,12 +33,21 @@ public struct C1Discoverer: Discovering {
         guard let result = await base.discover(previous: previous) else { return nil }
         let set = result.set
 
-        guard let spacerFrame = set.items.first(where: { $0.key == spacerKey })?.frame else { return nil }
-        guard let protectedFrame = set.items.first(where: { $0.key == protectedKey })?.frame else { return nil }
-        guard set.items.contains(where: { $0.key == targetKey }) else { return nil }
+        // Amendment v8 (crosscheck-rework7.json finding #0): a parked item
+        // (frames below the bar; the owner's own bar always lists 2-3 of
+        // them) cannot anchor Target, the spacer or Protected -- its own
+        // frame is not really "on the bar" at all, whatever its minX says.
+        guard let targetItem = set.items.first(where: { $0.key == targetKey }), targetItem.position != .parked else { return nil }
+        guard let spacerItem = set.items.first(where: { $0.key == spacerKey }), spacerItem.position != .parked, let spacerFrame = spacerItem.frame else { return nil }
+        guard let protectedItem = set.items.first(where: { $0.key == protectedKey }), protectedItem.position != .parked, let protectedFrame = protectedItem.frame else { return nil }
 
         let divider = spacerFrame.minX
-        let leftOfDivider = set.items.filter { ($0.frame?.minX ?? .infinity) < divider }
+        // A parked item is not "left of the divider" for this count --
+        // out of the divider count (Amendment v8's own wording); a
+        // `.stacked` or frameless item still counts, so a real obstruction
+        // is still rejected (`.infinity` for a missing frame never reads
+        // as left of anything real).
+        let leftOfDivider = set.items.filter { $0.position != .parked && ($0.frame?.minX ?? .infinity) < divider }
         guard leftOfDivider.count == 1, leftOfDivider[0].key == targetKey else { return nil }
         guard protectedFrame.minX >= divider else { return nil }
 

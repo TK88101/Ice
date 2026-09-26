@@ -320,6 +320,13 @@ public final class StageC1 {
     var channel: HelperControlChannel!
     var expansionDriver: C1ExpansionDriver!
 
+    /// Amendment v8, "Teardown fold rule": whether `length` was ever sent
+    /// to the spacer this run (never under `--dry`, which sends none at
+    /// all -- `C1ExpansionDriver.expand(to:)`'s own guard). Read by the
+    /// staged teardown's Protected-only fold read: a failure there before
+    /// any `length` is recorded but is not a mismatch, since C1 cannot
+    /// have caused a fold it never had the chance to move the bar for.
+    var lengthEverSent = false
     var caffeinateStarted = false
     var summary = [String: Any]()
     var preflightEverPassed = false
@@ -381,7 +388,7 @@ public final class StageC1 {
         // `runCleanup(); finish(.inconclusive(...))` that used to drop a
         // recorded safety stop and skip the reap/equivalence checks
         // entirely.
-        for step in [("step2.launch", step2Launch), ("step3.baseline", step3Baseline)] {
+        for step in [("step2.launch", step2Launch), ("step2b.placement", step2bPlacementGate), ("step3.baseline", step3Baseline)] {
             evidence?.record("step.begin", ["step": step.0])
             if isTerminal {
                 return finish(runTeardownAndDecide(scan: [], smoke: [], smokeChecks: []))
@@ -473,6 +480,11 @@ public final class StageC1 {
     /// be silently ignored as "still mid-expansion").
     func withExpansionWindow<T>(to lengthPt: Double, _ body: () -> T) -> T {
         lock.withLock { machine.beginExpansion() }
+        // Amendment v8: recorded before the (possibly dry) expand call --
+        // mirrors `C1ExpansionDriver.expand(to:)`'s own `!dry` guard
+        // exactly, so this is `true` only when a real `length` command was
+        // actually sent.
+        if !dry { lengthEverSent = true }
         expansionDriver.expand(to: lengthPt)
         defer {
             expansionDriver.collapse()

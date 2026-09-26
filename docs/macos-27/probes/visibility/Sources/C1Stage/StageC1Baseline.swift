@@ -41,7 +41,12 @@ extension StageC1 {
             spacerKey.encoded: spacerKey.pid,
             protectedKey.encoded: protectedKey.pid,
         ]
-        for item in pass.set.items where ![targetKey, spacerKey, protectedKey].contains(item.key) {
+        // Amendment v8 (crosscheck-rework7.json finding #0): a parked item
+        // (frames below the bar; the owner's own bar always lists 2-3 of
+        // them) is not an owner item -- left out of the owner AX snapshot
+        // and the untemplated candidates below, so a parked frame never
+        // reaches the fold region or the keyed watch.
+        for item in pass.set.items where ![targetKey, spacerKey, protectedKey].contains(item.key) && item.position != .parked {
             ids[item.key.encoded] = item.key.pid
         }
         ownerItemIDs = ids
@@ -277,8 +282,11 @@ extension StageC1 {
         // G3: a dynamic template counts as "not static" here too, so it
         // joins the keyed watch exactly like a baseline-rejected item.
         let staticTemplatedIDs = Set(baseline.templates.keys).subtracting(dynamicOwnerIDs)
+        // Amendment v8: a parked item is never an untemplated *candidate*
+        // either -- it is not an owner item at all, not merely one the
+        // pixel baseline happened to reject.
         let untemplatedCandidates = discovery.set.listedItems
-            .filter { ![targetKey, spacerKey, protectedKey].contains($0.key) && !staticTemplatedIDs.contains($0.key.encoded) }
+            .filter { ![targetKey, spacerKey, protectedKey].contains($0.key) && $0.position != .parked && !staticTemplatedIDs.contains($0.key.encoded) }
         guard untemplatedCandidates.allSatisfy({ $0.frame != nil }) else {
             let missing = untemplatedCandidates.filter { $0.frame == nil }.map(\.key.encoded)
             evidence?.record("step3.untemplatedNoFrame", ["ids": missing])
