@@ -1,5 +1,5 @@
 // I5: `vizprobe c1` -- the C1 protocol (docs/plans/2026-09-26-c1-protocol.md,
-// sections 2-5, Amendment v4) as its own stage, independent of
+// sections 2-5, Amendment v4/v5) as its own stage, independent of
 // `StageRun`/`LiveRun` (the 2026-09-19/2026-09-23 plans' two-helper
 // protocols): C1 launches three helpers in a fixed order (Protected, the
 // spacer, Target), and every decision -- the scan plan, the preflight
@@ -9,7 +9,13 @@
 // `C1StageMachine` state machine the Codex review's P0s asked for). This
 // file holds setup, launch and the run driver; the scan and smoke cycle is
 // `StageC1Cycle.swift`, teardown and accounting are `StageC1Teardown.swift`.
-import AppKit
+//
+// Rework #5, step A: moved out of `Sources/vizprobe` into this library
+// target so a test target can drive it (I7). Every live/AppKit/Accessibility
+// dependency the old `Sources/vizprobe/StageC1.swift` had directly is now a
+// field of `C1StageEnvironment`; `vizprobe c1` builds the one real
+// environment (`Sources/vizprobe/StageC1Live.swift`) and constructs this
+// type with it. No behaviour changed in this step.
 import C1Core
 import C1Live
 import Foundation
@@ -25,18 +31,47 @@ import MenuBarDiscovery
 /// system's menu bar settings) -- so every role below is identified by the
 /// pid `HelperControl` hands back and the AX identifier discovery reads,
 /// never by bundle id.
-struct C1Apps {
-    let target: URL
-    let protected: URL
-    let spacer: URL
+public struct C1Apps: Sendable {
+    public let target: URL
+    public let protected: URL
+    public let spacer: URL
+
+    public init(target: URL, protected: URL, spacer: URL) {
+        self.target = target
+        self.protected = protected
+        self.spacer = spacer
+    }
 }
 
-enum C1HelperRole {
-    static let target = HelperRole.target
+/// Restated from `Sources/vizprobe/LiveRunTypes.swift`'s `HelperRole`
+/// (internal to a different, executable target this library cannot depend
+/// on) -- these two bundle ids must never drift from build.sh's own, and
+/// build.sh is the single other place either string is spelled out.
+public enum C1HelperRole {
+    /// Reused from probes/safewidth's own swhelper on purpose: T13's DoD is
+    /// that no new bundle id appears in the menu bar settings for the
+    /// target or the reference (Opus P2-13).
+    public static let target = "com.icespike4.target"
     /// The spacer (`build.sh`'s `Spacer.app`) carries this same id --
     /// P0-1. `all` is therefore only two distinct ids, not three.
-    static let protected = HelperRole.reference
-    static let all = [target, protected]
+    public static let protected = "com.icespike4.protected"
+    public static let all = [target, protected]
+}
+
+/// A step's own verdict: continue, or the reason the whole run stops here.
+/// Restated from `Sources/vizprobe/LiveRunTypes.swift` (internal to a
+/// different, executable target) rather than imported.
+enum StepResult {
+    case ok
+    case abort(String)
+}
+
+/// The spacer's own AX identifier (`SpacerItem.identifier` in
+/// `Sources/vzhelper/main.swift`), restated here rather than imported: the
+/// `vzhelper` executable target is not a library another target can
+/// depend on.
+public enum SpacerIdentifier {
+    public static let value = "vz-spacer"
 }
 
 /// I5's channel: every command this stage sends a helper goes through here,
@@ -52,26 +87,32 @@ enum C1HelperRole {
 /// or Protected and the spacer); the old constructor-based channel had no
 /// way to reach a helper that started but whose launch step had not yet
 /// returned.
-final class HelperControlChannel: C1HelperChannel, @unchecked Sendable {
+///
+/// Step A: generalised to `any C1HelperControlling` (was the concrete
+/// `HelperControl`), so a fake helper can register here exactly like a real
+/// one.
+public final class HelperControlChannel: C1HelperChannel, @unchecked Sendable {
     private let lock = NSLock()
-    private var helpers: [HelperControl] = []
-    private var spacerHelperRef: HelperControl?
+    private var helpers: [any C1HelperControlling] = []
+    private var spacerHelperRef: (any C1HelperControlling)?
+
+    public init() {}
 
     /// Registers a helper the instant its process starts (P0-2/item 2),
     /// before this run waits for its `up` reply or discovers its item --
     /// so a launch failure right after this still has a way to quit it.
-    func register(_ helper: HelperControl, isSpacer: Bool = false) {
+    public func register(_ helper: any C1HelperControlling, isSpacer: Bool = false) {
         lock.withLock {
             helpers.append(helper)
             if isSpacer { spacerHelperRef = helper }
         }
     }
 
-    func sendLength(_ pt: Double) {
+    public func sendLength(_ pt: Double) {
         (lock.withLock { spacerHelperRef })?.send("length \(pt)")
     }
 
-    func sendRest() {
+    public func sendRest() {
         (lock.withLock { spacerHelperRef })?.send("rest")
     }
 
@@ -81,40 +122,45 @@ final class HelperControlChannel: C1HelperChannel, @unchecked Sendable {
     /// `StageC1.confirmReap()`, which calls this and then re-discovers,
     /// checked against `C1ReapCheck` -- P0-6); a trip (I3) only needs the
     /// commands sent, synchronously, which is all this method promises.
-    func quitAll() {
-        let snapshot: [HelperControl] = lock.withLock { helpers }
+    public func quitAll() {
+        let snapshot: [any C1HelperControlling] = lock.withLock { helpers }
         for helper in snapshot { helper.quit() }
     }
 }
 
-final class StageC1 {
-    static let watchdogMinutes = 15.0
+public final class StageC1 {
+    public static let watchdogMinutes = 15.0
 
     let apps: C1Apps
     let dry: Bool
-    /// The one real screen capturer. Never read directly once
-    /// `latchingCapturer` exists (P0-2: every post-channel capture goes
-    /// through the latch first) -- everything downstream reads through
-    /// `latchingCapturer` instead.
-    let capturer = CGWindowListStripCapturer()
+    let environment: C1StageEnvironment
+    /// Never read directly once `latchingCapturer` exists (P0-2: every
+    /// post-channel capture goes through the latch first) -- everything
+    /// downstream reads through `latchingCapturer` instead.
+    var capturer: any StripCapturing { environment.capturer }
     let parameters = DetectorParameters.preRegistered
-    let decision = MenuBarItemVisibility(maxMismatch: DetectorParameters.preRegistered.maxMismatch)
-    let discoverer = MenuBarDiscoverer(
-        apps: HarnessProcesses(base: LiveRunningApps()),
-        reader: LiveExtrasReader(),
-        display: LiveDisplay(),
-        isTrusted: { AXIsProcessTrusted() },
-        ownIdentifiers: StageRun.ownIdentifiers,
-        now: { ProcessInfo.processInfo.systemUptime }
-    )
+    let decision: MenuBarItemVisibility
+    var discoverer: any Discovering { environment.discoverer }
     /// Item 8: "same bound for the keyed discovery reads used by the
     /// untemplated watch and preflight" -- `currentUntemplatedReadings()`
     /// and `passesPreflightOnce()`'s AX order fetch use this, never
-    /// `discoverer` directly. Launch-time and reap discovery keep using
-    /// `discoverer` unbounded -- item 8 names only these two reads.
-    /// Round 3 item 3: bounded by elapsed time after `discover` returns,
-    /// not a task-group race.
-    lazy var timedDiscoverer: any Discovering = TimedDiscoverer(wrapping: discoverer, onLate: { [weak self] in
+    /// `discoverer` directly. Launch-time discovery keeps using
+    /// `discoverer` unbounded -- item 8 names only the keyed reads.
+    ///
+    /// Item 6 (rework #5, r5b item 6, P0): a single-flight,
+    /// deadline-bounded `C1DiscoveryExecutor`, replacing `TimedDiscoverer`'s
+    /// after-the-fact timing (it always awaited the real call to
+    /// completion first, which was never a real bound at all) and
+    /// `blockingDiscover`'s own unbounded wait (bounded transitively now,
+    /// since what it awaits can no longer hang past this executor's own
+    /// bound). The reap (`confirmReap()`) already goes through this same
+    /// property, so item 6's "the reap uses it too" holds by construction.
+    /// A timeout marks the executor permanently stuck -- every later
+    /// keyed/reap read fails at once -- and latches `captureFailed`
+    /// synchronously (rest, then quit), recorded via the same `onStuck`
+    /// this property already wired for `TimedDiscoverer`.
+    lazy var timedDiscoverer: any Discovering = C1DiscoveryExecutor(wrapping: discoverer, onStuck: { [weak self] in
+        self?.evidence?.record("discovery.stuck", [:])
         self?.latchingCapturer?.feed(.init(captureFailed: true))
     })
 
@@ -134,11 +180,11 @@ final class StageC1 {
     })
 
     var geometry: BarGeometry!
-    var evidence: LiveEvidence!
+    var evidence: (any C1EvidenceRecording)?
 
-    var targetHelper: HelperControl?
-    var spacerHelper: HelperControl?
-    var protectedHelper: HelperControl?
+    var targetHelper: (any C1HelperControlling)?
+    var spacerHelper: (any C1HelperControlling)?
+    var protectedHelper: (any C1HelperControlling)?
     var targetKey: ItemKey?
     var spacerKey: ItemKey?
     var protectedKey: ItemKey?
@@ -170,22 +216,30 @@ final class StageC1 {
     var channel: HelperControlChannel!
     var expansionDriver: C1ExpansionDriver!
 
-    var caffeinate: Process?
+    var caffeinateStarted = false
     var summary = [String: Any]()
     var preflightEverPassed = false
     var capturesStayedUnreadable = false
 
     private let lock = NSLock()
     private var machine = C1StageMachine()
+    /// Item 3: set right before cleanup quits the helpers (`perform(_:)`'s
+    /// `.quitAllHelpers` case) -- `assessLatch` reads it to stop watching
+    /// Protected (and to keep treating Target/the spacer as it always has)
+    /// once their disappearance is expected, not credible.
+    private var helpersTornDown = false
+    var isHelpersTornDown: Bool { lock.withLock { helpersTornDown } }
 
-    init(apps: C1Apps, dry: Bool) {
+    public init(environment: C1StageEnvironment, apps: C1Apps, dry: Bool) {
+        self.environment = environment
         self.apps = apps
         self.dry = dry
+        self.decision = MenuBarItemVisibility(maxMismatch: DetectorParameters.preRegistered.maxMismatch)
     }
 
     // MARK: - Run
 
-    func run() -> Int32 {
+    public func run() -> Int32 {
         for step in [("step0.bundles", step0Bundles), ("step1.setup", step1Setup)] {
             evidence?.record("step.begin", ["step": step.0])
             if case .abort(let reason) = step.1() {
@@ -210,7 +264,7 @@ final class StageC1 {
         guard let midpoint = ScanPlanner.midpointOfWidestHiddenRun(scanReadings.map { .init(length: $0.length, hidden: $0.reading == .hidden(folded: false)) }) else {
             return finish(runTeardownAndDecide(scan: scanReadings, smoke: [], smokeChecks: []))
         }
-        evidence.record("scan.midpoint", ["length": midpoint])
+        evidence?.record("scan.midpoint", ["length": midpoint])
         summary["midpoint"] = midpoint
 
         var smokeReadings = [TargetReading]()
@@ -242,8 +296,15 @@ final class StageC1 {
     /// watchdog enters the same terminal safety teardown a trip does --
     /// rest first, via `machine`'s own ordering, then reap, then report
     /// needing attention).
-    func emergencyStop() {
+    public func emergencyStop() {
         handleTerminal(lock.withLock { machine.watchdogFired() })
+    }
+
+    /// Item 8: a signal's own entry point -- its own terminal reason
+    /// (`.signal`, needing attention), distinct from the watchdog's,
+    /// though the immediate cleanup this triggers is the same shape.
+    public func signalReceived() {
+        handleTerminal(lock.withLock { machine.signalReceived() })
     }
 
     var isTerminal: Bool { lock.withLock { machine.isTerminal } }
@@ -288,22 +349,38 @@ final class StageC1 {
         return body()
     }
 
-    /// G-a / round 4 item 1: the spacer's own settled, bracketed read
-    /// after `rest` was sent. "Confirmed" means the read itself succeeded
-    /// and settled (`settledPairedRead`, which already fed
-    /// `.captureFailed` to the latch on any capture/AX failure) *and* the
-    /// spacer reads back `.drawn` -- matched against its own rest-baseline
-    /// template, so an expanded or otherwise misplaced spacer would not
-    /// match and correctly reads as unconfirmed.
+    /// G-a / round 4 item 1 / rework #5 item 1 (r5b item 1, P0): the
+    /// spacer's own settled, bracketed read after `rest` was sent, fixed
+    /// per the round-5b ruling:
+    ///  - Protected is the reference (`settledPairedRead`'s own
+    ///    `CaptureStability` check needs a non-empty reference set to ever
+    ///    report stable at all -- an empty one was never stable, which is
+    ///    exactly what made this unreachable before);
+    ///  - the first sample is not taken until >= 1 s after `rest` was sent;
+    ///  - up to 10 s is spent retrying for two stable captures (each
+    ///    `settledPairedRead` call is itself already a two-sample bracket
+    ///    >= 1 s apart) that also show the spacer `.drawn` within
+    ///    `referenceTolerancePt` of its own rest-baseline x -- not merely
+    ///    `.drawn` at any x, which an expanded or otherwise misplaced
+    ///    spacer could also satisfy.
     private func confirmRestSettled() -> (restConfirmed: Bool, fold: Fold?) {
-        guard let spacerKey else { return (false, nil) }
-        guard let settled = settledPairedRead(targets: [spacerKey.encoded], references: []) else {
-            return (false, nil)
-        }
-        guard case .drawn? = settled.visibility[spacerKey.encoded] else {
-            return (false, settled.reading.fold)
-        }
-        return (true, settled.reading.fold)
+        guard let spacerKey, let protectedKey else { return (false, nil) }
+        let restBaselineX = helperBaselineReadings.first(where: { $0.id == spacerKey.encoded })?.x
+        environment.pump.sleep(1.0)
+        let deadline = environment.pump.now() + 10
+        var lastFold: Fold?
+        repeat {
+            guard let settled = settledPairedRead(targets: [spacerKey.encoded], references: [protectedKey.encoded]) else {
+                guard !isTerminal else { break }
+                continue
+            }
+            lastFold = settled.reading.fold
+            if case .drawn(let x)? = settled.visibility[spacerKey.encoded],
+               let restBaselineX, abs(x - restBaselineX) <= parameters.referenceTolerancePt {
+                return (true, settled.reading.fold)
+            }
+        } while !isTerminal && environment.pump.now() < deadline
+        return (false, lastFold)
     }
 
     var expansionWindowOpen: Bool { lock.withLock { machine.expansionWindowOpen } }
@@ -357,7 +434,13 @@ final class StageC1 {
     /// a verdict this method cannot safely wait on `run()`'s own thread
     /// to produce, which is exactly the situation that put the backstop
     /// on the table.
-    func recordWatchdogBackstopVerdict() {
+    public func recordWatchdogBackstopVerdict() {
+        // Item 7: the backstop also stops caffeinate -- unconditionally,
+        // ahead of the `evidence` guard below (a backstop this early in
+        // setup, before `evidence` exists, still has a `caffeinate` to
+        // stop if `step1Setup` got that far); `stop()` is a no-op if it
+        // never started.
+        environment.caffeinate.stop()
         guard let evidence else { return }
         evidence.record("terminal", ["reason": "watchdog backstop"])
         evidence.record("run.verdict", ["verdict": "\(Verdict.safetyStopNeedingAttention)"])
@@ -380,9 +463,32 @@ final class StageC1 {
     private func perform(_ actions: [C1StageAction]) {
         for action in actions {
             switch action {
+            // Item 9: `.sendRest` (a stdin write via `HelperControl.send`)
+            // and `.quitAllHelpers` (a stdin close plus a `Thread.sleep`
+            // wait, never `RunLoop.main`) are thread-safe from any thread
+            // as they already stood.
             case .sendRest: expansionDriver?.collapse()
-            case .quitAllHelpers: channel?.quitAll()
-            case .reapHelpers: _ = confirmReap()
+            case .quitAllHelpers:
+                lock.withLock { helpersTornDown = true }
+                channel?.quitAll()
+            case .reapHelpers:
+                // Item 9 (r5b item 9, P0): `confirmReap()` pumps
+                // `RunLoop.main` (`environment.pump.run`/`.blocking`) --
+                // running that from a thread that is not the stage's own
+                // owner (main) thread, while the owner thread might
+                // itself be concurrently pumping the very same run loop
+                // inside its own `Pump.blocking` wait, is undefined
+                // (`RunLoop` is not thread-safe). A trip's `onTrip`
+                // callback can fire from `HidingVerification`'s own
+                // internal queue thread, and the watchdog/signal paths
+                // fire from a global-queue thread -- neither is the owner
+                // thread. Off that thread, this action is a no-op: the
+                // owner thread's own `runTeardownAndDecide()` always makes
+                // its own authoritative `confirmReap()` call regardless,
+                // and the watchdog/signal backstop covers the case where
+                // the owner thread never gets there at all.
+                guard Thread.isMainThread else { break }
+                _ = confirmReap()
             case .stopCaffeinate: stopCaffeinate()
             }
         }
@@ -406,10 +512,11 @@ final class StageC1 {
     }
 
     func stopCaffeinate() {
-        let process: Process? = lock.withLock {
-            defer { caffeinate = nil }
-            return caffeinate
+        let shouldStop: Bool = lock.withLock {
+            defer { caffeinateStarted = false }
+            return caffeinateStarted
         }
-        process?.terminate()
+        guard shouldStop else { return }
+        environment.caffeinate.stop()
     }
 }

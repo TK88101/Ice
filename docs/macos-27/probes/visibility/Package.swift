@@ -29,6 +29,14 @@ import PackageDescription
 //             sequencing) -- the live protocol pieces that need
 //             MenuBarCapture/MenuBarDetectorFeed to state their contracts
 //             but must still be reachable from a test target with fakes.
+//   C1Stage   rework #5, step A: the C1 stage orchestration itself
+//             (`StageC1*.swift`) moved out of the `vizprobe` executable so a
+//             test target can reach it. Driven entirely through
+//             `C1StageEnvironment` (capturer, discoverer, AX reader
+//             factories, geometry, helper launcher, helper defaults, pump,
+//             caffeinate, evidence sink, trust check) -- no AppKit, no
+//             concrete live process/screen types. `vizprobe c1` builds the
+//             one real `C1StageEnvironment` and hands it to `StageC1`.
 let package = Package(
     name: "vzreplay",
     platforms: [
@@ -71,6 +79,7 @@ let package = Package(
                 "VZGlyphs",
                 "C1Core",
                 "C1Live",
+                "C1Stage",
                 .product(name: "IceCore", package: "IceCore"),
                 .product(name: "MenuBarCapture", package: "MenuBarCapture"),
                 .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),
@@ -104,5 +113,27 @@ let package = Package(
             ]
         ),
         .testTarget(name: "C1LiveTests", dependencies: ["C1Live"]),
+        // C1 protocol rework #5, step A: the stage orchestration itself,
+        // moved out of `vizprobe` so `C1StageTests` can drive the real code
+        // (I7) through a fake `C1StageEnvironment`.
+        .target(
+            name: "C1Stage",
+            dependencies: [
+                "C1Core",
+                "C1Live",
+                .product(name: "IceCore", package: "IceCore"),
+                .product(name: "MenuBarCapture", package: "MenuBarCapture"),
+                .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),
+                .product(name: "MenuBarDetectorFeed", package: "MenuBarDiscovery"),
+            ],
+            // This is a verbatim migration of code written under
+            // `vizprobe`'s own v5 mode (Sendable was never enforced at
+            // those call sites) -- v5 here too, so step A stays a pure
+            // move with no incidental Sendable-conformance changes to
+            // `StageC1`'s own types. `C1StageEnvironment`'s seam protocols
+            // are still fully usable from a Swift 6 test target either way.
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(name: "C1StageTests", dependencies: ["C1Stage"]),
     ]
 )

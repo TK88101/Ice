@@ -87,6 +87,40 @@ struct C1StageMachineTests {
         #expect(actions == [.sendRest, .quitAllHelpers, .reapHelpers, .stopCaffeinate])
     }
 
+    @Test("rework #5 item 4: a teardown mismatch after an earlier trip escalates safetyStop from .stop to .needingAttention, keeps the trip's own terminalReason, and runs no new cleanup actions")
+    func teardownMismatchAfterATripEscalates() {
+        var machine = C1StageMachine()
+        _ = machine.trip(.protectedMissing)
+        #expect(machine.safetyStop == .stop)
+
+        let actions = machine.teardownMismatch()
+        #expect(actions == [])
+        #expect(machine.terminalReason == .latchTrip(.protectedMissing))
+        #expect(machine.safetyStop == .needingAttention)
+    }
+
+    @Test("rework #5 item 4: a teardown reap failure after an earlier reset-check failure escalates the same way")
+    func teardownReapFailedAfterAResetCheckFailureEscalates() {
+        var machine = C1StageMachine()
+        _ = machine.resetCheckFailed()
+        #expect(machine.safetyStop == .stop)
+
+        let actions = machine.teardownReapFailed()
+        #expect(actions == [])
+        #expect(machine.terminalReason == .resetCheckFailed)
+        #expect(machine.safetyStop == .needingAttention)
+    }
+
+    @Test("rework #5 item 4: a teardown mismatch after the watchdog (already .needingAttention) changes nothing further")
+    func teardownMismatchAfterWatchdogStaysNeedingAttention() {
+        var machine = C1StageMachine()
+        _ = machine.watchdogFired()
+        let actions = machine.teardownMismatch()
+        #expect(actions == [])
+        #expect(machine.terminalReason == .watchdog)
+        #expect(machine.safetyStop == .needingAttention)
+    }
+
     @Test("trip() returns the cleanup actions in order: rest, quit, reap, stop caffeinate")
     func tripReturnsCleanupActions() {
         var machine = C1StageMachine()

@@ -33,6 +33,12 @@ public enum C1TerminalReason: Equatable, Sendable {
     /// closed, immediately, rather than closing the window and letting
     /// the next cycle continue on an unconfirmed premise.
     case restNotConfirmed
+    /// Rework #5 item 8 (r5b item 8, P0): Ctrl-C, `kill` or a closed
+    /// terminal -- its own terminal reason, distinct from `.watchdog`
+    /// (the two are different events, however similar their cleanup), and
+    /// itself needing the owner's attention like a watchdog fire, never a
+    /// plain `.stop`.
+    case signal
 }
 
 /// The stage's own control-flow state (Amendment v4 / Codex review round
@@ -72,11 +78,25 @@ public struct C1StageMachine: Sendable {
         enterTerminal(.watchdog)
     }
 
+    /// Item 8: a signal is its own terminal event too, ending in the same
+    /// terminal safety teardown a trip or the watchdog does.
+    @discardableResult
+    public mutating func signalReceived() -> [C1StageAction] {
+        enterTerminal(.signal)
+    }
+
     /// P0-6: a teardown reap that never confirms is a safety stop needing
-    /// the owner's attention, not a silent PASS.
+    /// the owner's attention, not a silent PASS. Rework #5 item 4 (r5b item
+    /// 4, P0): if a trip or another safety stop already made this run
+    /// terminal, this raises `safetyStop` from `.stop` to
+    /// `.needingAttention` instead of being silently swallowed by
+    /// `enterTerminal`'s own "already terminal" guard -- the first
+    /// `terminalReason` still stands, and cleanup does not run twice.
     @discardableResult
     public mutating func teardownReapFailed() -> [C1StageAction] {
-        enterTerminal(.teardownReapFailed)
+        guard isTerminal else { return enterTerminal(.teardownReapFailed) }
+        escalateToNeedingAttentionIfStopped()
+        return []
     }
 
     /// Item 7: a reset-check (baseline-equivalence) failure is itself an
@@ -88,10 +108,24 @@ public struct C1StageMachine: Sendable {
     }
 
     /// Item 1: teardown's own mismatch (a non-empty/unreadable helper
-    /// domain, or the bar not baseline-equivalent within 30 s).
+    /// domain, or the bar not baseline-equivalent within 30 s). Item 4:
+    /// escalates like `teardownReapFailed()` above when this run already
+    /// stopped for another reason.
     @discardableResult
     public mutating func teardownMismatch() -> [C1StageAction] {
-        enterTerminal(.teardownMismatch)
+        guard isTerminal else { return enterTerminal(.teardownMismatch) }
+        escalateToNeedingAttentionIfStopped()
+        return []
+    }
+
+    /// Item 4: a teardown mismatch or failed reap discovered after an
+    /// earlier `.stop` is itself a reason the owner needs to look --
+    /// escalation only ever raises severity, never lowers it, and never
+    /// touches `terminalReason` (the first trip/failure that actually
+    /// caused this run to stop is still what gets reported).
+    private mutating func escalateToNeedingAttentionIfStopped() {
+        guard safetyStop == .stop else { return }
+        safetyStop = .needingAttention
     }
 
     /// Section 4 / P0-3: "forbids any later reset" -- once terminal, the
@@ -187,7 +221,7 @@ public struct C1StageMachine: Sendable {
         switch reason {
         case .latchTrip, .resetCheckFailed, .restNotConfirmed:
             return .stop
-        case .watchdog, .teardownReapFailed, .teardownMismatch:
+        case .watchdog, .teardownReapFailed, .teardownMismatch, .signal:
             return .needingAttention
         }
     }

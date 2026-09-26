@@ -5,7 +5,11 @@
 // through `latchingCapturer` (built in `step2Launch`), never the raw
 // capturer. G-b: untemplated owner items get their own AX-keyed baseline
 // alongside the pixel one.
-import AppKit
+//
+// Rework #5, step A: geometry, the owner/verification AX readers and the
+// trust check now come from `environment` (`C1StageEnvironment`) instead of
+// `NSScreen`/`LiveMenuBarAXReader`/`DiscoveredFrameReader`/
+// `AXIsProcessTrusted` directly.
 import C1Core
 import C1Live
 import Foundation
@@ -17,7 +21,7 @@ import MenuBarDiscovery
 extension StageC1 {
     func step3Baseline() -> StepResult {
         guard let targetKey, let spacerKey, let protectedKey else { return .abort("helpers not launched") }
-        guard let pass = Pump.blocking({ await self.discoverer.discover(previous: nil) }) else {
+        guard let pass = environment.pump.blocking({ await self.discoverer.discover(previous: nil) }) else {
             return .abort("step 3: discovery failed")
         }
         let origin = pass.origin
@@ -41,9 +45,10 @@ extension StageC1 {
         // baseline exists, which is exactly this call). Round 3 item 2:
         // the AX half of the sampler's bracket reads through the one
         // stage-wide `axExecutor`, not a private timed queue of its own.
-        let reader = C1ExecutedAXReader(executor: axExecutor, wrapping: LiveMenuBarAXReader(origin: CGPoint(x: origin.x, y: origin.y)))
-        let sampler = Sampler(capturer: latchingCapturer, axReader: reader)
-        ownerObserver = VisibilityObserver(sampler: sampler, parameters: parameters)
+        let reader = C1ExecutedAXReader(executor: axExecutor, wrapping: environment.ownerAXReaderFactory(origin))
+        let pump = environment.pump
+        let sampler = Sampler(capturer: latchingCapturer, axReader: reader, now: { pump.now() })
+        ownerObserver = VisibilityObserver(sampler: sampler, parameters: parameters, sleep: { pump.sleep($0) })
 
         var lastBaseline: BaselineResult?
         for attempt in 0..<5 {
@@ -51,18 +56,30 @@ extension StageC1 {
                 lastBaseline = result
                 if result.foldAtBaseline == .absent { break }
             }
-            if attempt < 4 { Pump.run(1.0) }
+            if attempt < 4 { environment.pump.run(1.0) }
         }
         guard let ownerBaseline = lastBaseline else { return .abort("step 3: the rest baseline failed") }
         guard ownerBaseline.foldAtBaseline == .absent else { return .abort("step 3: the fold is not absent at the rest baseline") }
         self.ownerBaseline = ownerBaseline
-        evidence.record("step3.baseline", ["accepted": ownerBaseline.acceptedIDs.count, "rejected": ownerBaseline.rejections.count])
+        evidence?.record("step3.baseline", ["accepted": ownerBaseline.acceptedIDs.count, "rejected": ownerBaseline.rejections.count])
 
         // The C1Discoverer-backed verification (I4): Target the only
         // section item, Protected the explicit reference, the divider at
         // the spacer's own minX. P0-2: `latchingCapturer`, not the raw
         // capturer.
+        //
+        // `capturedEnvironment` (a value type -- see `C1StageEnvironment`),
+        // `capturedAXExecutor` and `capturedLatchingCapturer` are all
+        // captured by value/strong-reference here, not `self` -- so these
+        // closures cannot form a retain cycle through `verification` (both
+        // objects are already owned directly by `self` too, and neither
+        // one references `self` or `verification` back), and never need a
+        // "self/executor already gone" fallback the way a `[weak self]`
+        // capture would.
         let liveOrigin = origin
+        let capturedEnvironment = environment
+        let capturedAXExecutor = axExecutor
+        let capturedLatchingCapturer = latchingCapturer!
         verification = HidingVerification(
             discoverer: C1Discoverer(base: discoverer, targetKey: targetKey, spacerKey: spacerKey, protectedKey: protectedKey),
             capturer: latchingCapturer,
@@ -74,24 +91,26 @@ extension StageC1 {
             // makes (that was exactly how a timed-out read here used to
             // become a quiet `.skipped(.captureFailed)`/`.refused`
             // instead of aborting the whole run).
-            readerFactory: { [weak self] readerOrigin in
-                let real = DiscoveredFrameReader(extras: LiveExtrasReader(), apps: LiveRunningApps(), origin: readerOrigin)
-                guard let executor = self?.axExecutor else { return real }
-                return C1ExecutedAXReader(executor: executor, wrapping: real)
+            readerFactory: { readerOrigin in
+                C1ExecutedAXReader(executor: capturedAXExecutor, wrapping: capturedEnvironment.verificationAXReaderFactory(readerOrigin))
             },
-            geometry: { NSScreen.main.flatMap { BarGeometry(screen: $0) } },
-            preflight: { [weak self] in
-                guard let self, let screen = NSScreen.main, let geometry = BarGeometry(screen: screen) else {
+            geometry: { capturedEnvironment.geometryProvider() },
+            preflight: {
+                guard let geometry = capturedEnvironment.geometryProvider() else {
                     return .unavailable(.captureUnavailable)
                 }
-                let reader = C1ExecutedAXReader(executor: self.axExecutor, wrapping: DiscoveredFrameReader(extras: LiveExtrasReader(), apps: LiveRunningApps(), origin: liveOrigin))
-                return Preflight.run(capturer: self.latchingCapturer, axReader: reader, geometry: geometry)
-            }
+                let reader = C1ExecutedAXReader(executor: capturedAXExecutor, wrapping: capturedEnvironment.verificationAXReaderFactory(liveOrigin))
+                // Item 10 (trust check): threaded explicitly, never
+                // `Preflight.run`'s own `{ AXIsProcessTrusted() }` default.
+                return Preflight.run(capturer: capturedLatchingCapturer, axReader: reader, geometry: geometry, isTrusted: capturedEnvironment.isTrusted)
+            },
+            sleep: { capturedEnvironment.pump.sleep($0) },
+            now: { capturedEnvironment.pump.now() }
         )
         let sectionMap: [TagKey: ItemSection] = [targetKey.tagKey(isSelf: false): .hidden]
-        let firstPrepared = Pump.blocking { await self.verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [protectedKey], reusing: nil) }
+        let firstPrepared = environment.pump.blocking { await self.verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [protectedKey], reusing: nil) }
         guard case .ready = firstPrepared.state else {
-            evidence.record("step3.prepareFailed", ["state": "\(firstPrepared.state)"])
+            evidence?.record("step3.prepareFailed", ["state": "\(firstPrepared.state)"])
             return .abort("step 3: Target/Protected composition was not accepted by the C1 discoverer")
         }
         prepared = firstPrepared
@@ -123,6 +142,16 @@ extension StageC1 {
     /// preflight/reset/teardown for their own bookkeeping). This makes
     /// every single capture the run takes watch the full owner
     /// population, matching Amendment v4's "used in every latch read."
+    /// Rework #5 item 3 (r5b item 3, P0): Protected is never counted as a
+    /// generic "owner item" (only its own explicit `protectedMissing`
+    /// condition watches it) -- previously only Target/the spacer were
+    /// subtracted, so Protected tripped `missingOwnerItems` too, on top of
+    /// `protectedMissing`. And once `helpersTornDown()` (set right before
+    /// cleanup quits the helpers), `protectedMissing` stops being watched
+    /// at all: Protected disappearing is expected and correct once the
+    /// helpers are being quit on purpose, not a credible disappearance --
+    /// the owner's own templated and keyed (untemplated) checks are
+    /// unaffected either way.
     func assessLatch(image: StripImage) -> Latch.Observation {
         guard let ownerBaseline, let ink = ownerBaseline.ink, let protectedKey else { return .init() }
         let map = ink.map(image)
@@ -134,9 +163,11 @@ extension StageC1 {
             else { return true }
             return false
         }
-        let ownerOnlyIDs = Set(ownerItemIDs.keys).subtracting([targetKey?.encoded, spacerKey?.encoded].compactMap { $0 })
+        let helperIDs = [targetKey?.encoded, spacerKey?.encoded, protectedKey.encoded].compactMap { $0 }
+        let ownerOnlyIDs = Set(ownerItemIDs.keys).subtracting(helperIDs)
         let missingOwners = ownerOnlyIDs.filter(missing).sorted()
-        let templated = Latch.Observation(missingOwnerItems: missingOwners, protectedMissing: missing(protectedKey.encoded))
+        let protectedMissing = isHelpersTornDown ? false : missing(protectedKey.encoded)
+        let templated = Latch.Observation(missingOwnerItems: missingOwners, protectedMissing: protectedMissing)
 
         guard !untemplatedOwnerBaseline.isEmpty else { return templated }
         let untemplatedFailures = assessUntemplatedFailures()
@@ -179,21 +210,23 @@ extension StageC1 {
             .filter { ![targetKey, spacerKey, protectedKey].contains($0.key) && !templatedIDs.contains($0.key.encoded) }
         guard untemplatedCandidates.allSatisfy({ $0.frame != nil }) else {
             let missing = untemplatedCandidates.filter { $0.frame == nil }.map(\.key.encoded)
-            evidence.record("step3.untemplatedNoFrame", ["ids": missing])
+            evidence?.record("step3.untemplatedNoFrame", ["ids": missing])
             return .abort("step 3: an untemplated owner item (\(missing.joined(separator: ", "))) has no AX frame at baseline -- G-b fails closed")
         }
         untemplatedOwnerBaseline = untemplatedCandidates.map { UntemplatedOwnerWatch.Reading(id: $0.key.encoded, minX: $0.frame!.minX) }
         return .ok
     }
 
-    /// The capture indicator: a `MenuBarAgent` frame in
-    /// `StageRun.captureIndicatorWidthPt`, that is neither the chevron nor
-    /// a privacy pill (the same rule `StageRun.readBar` uses).
+    /// The capture indicator: an extras-menu-bar item in
+    /// `captureIndicatorWidthPt`, that is neither the chevron nor a
+    /// privacy pill (the same rule `StageRun.readBar` uses -- restated as
+    /// `C1CaptureIndicator`, like `C1HelperRole`/`SpacerIdentifier`,
+    /// rather than imported from that internal executable-target file).
     func detectIndicatorFrame() -> BarFrame? {
-        let onBar = BarScan.items().filter { $0.minY >= 0 && $0.minY < geometry.heightPt && $0.bundleID == BarScan.menuBarAgentBundleID }
-        let asFrame = { (item: BarItem) in AgentFrame(minX: item.minX, minY: item.minY, width: item.width) }
+        let onBar = environment.extrasScanner().filter { $0.minY >= 0 && $0.minY < geometry.heightPt && $0.bundleID == C1CaptureIndicator.menuBarAgentBundleID }
+        let asFrame = { (item: C1ExtrasItem) in AgentFrame(minX: item.minX, minY: item.minY, width: item.width) }
         let indicator = onBar.first {
-            StageRun.captureIndicatorWidthPt.contains($0.width)
+            C1CaptureIndicator.widthPt.contains($0.width)
                 && !FoldWitness.isChevron(asFrame($0), parameters: parameters)
                 && !FoldWitness.isPill(asFrame($0), parameters: parameters)
         }
@@ -209,7 +242,7 @@ extension StageC1 {
     /// fails closed on.
     func currentUntemplatedReadings() -> [String: UntemplatedOwnerWatch.Reading?] {
         guard !untemplatedOwnerBaseline.isEmpty else { return [:] }
-        guard let discovery = Pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }) else {
+        guard let discovery = environment.pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }) else {
             latchingCapturer.feed(.init(captureFailed: true))
             return Dictionary(uniqueKeysWithValues: untemplatedOwnerBaseline.map { ($0.id, Optional<UntemplatedOwnerWatch.Reading>.none) })
         }
@@ -231,7 +264,7 @@ extension StageC1 {
 
     /// One thread-safe (no `RunLoop.main`) blocking bridge for the one
     /// discovery call `assessLatch` needs -- `Task.detached` plus a
-    /// semaphore, not `Pump.blocking`.
+    /// semaphore, not `environment.pump.blocking`.
     private func blockingDiscover(_ discoverer: any Discovering) -> DiscoveryResult? {
         let box = DiscoveryResultBox()
         let semaphore = DispatchSemaphore(value: 0)
@@ -260,6 +293,13 @@ extension StageC1 {
         }
         return result
     }
+}
+
+/// Restated from `Sources/vizprobe/StageRun.swift`/`BarScan.swift`
+/// (internal to a different, executable target) rather than imported.
+enum C1CaptureIndicator {
+    static let menuBarAgentBundleID = "com.apple.MenuBarAgent"
+    static let widthPt = 14.0...30.0
 }
 
 /// A thread-safe mutable box for `blockingDiscover`'s `Task.detached` to

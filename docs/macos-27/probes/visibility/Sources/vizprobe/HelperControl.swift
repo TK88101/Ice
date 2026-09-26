@@ -15,7 +15,12 @@ enum HelperControlError: Error {
     case launchFailed(String)
 }
 
-final class HelperControl {
+// Step A: `@unchecked Sendable` so `extension HelperControl: C1HelperControlling`
+// (`StageC1Live.swift`) does not need a retroactive conformance in a
+// different file (a hard error under Swift 6 mode) -- not a behaviour
+// change: every method here already only ever touches its own state
+// through `process`'s own thread-safety or `LineQueue`'s internal lock.
+final class HelperControl: @unchecked Sendable {
     let role: String
     let bundleID: String
     private let process: Process

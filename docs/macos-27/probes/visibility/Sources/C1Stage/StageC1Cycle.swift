@@ -37,7 +37,7 @@ extension StageC1 {
         preflightEverPassed = true
 
         let hiddenReading: TargetReading? = withExpansionWindow(to: length) {
-            Pump.run(1.0)
+            environment.pump.run(1.0)
             return readTarget(label: "\(label).hidden")
         }
         // `withExpansionWindow`'s own `defer` has already sent `rest` and
@@ -50,13 +50,18 @@ extension StageC1 {
         let foldAbsentAtExpansion = readFoldValue(label: "\(label).fold") == .absent
         guard !isTerminal else { return nil }
 
-        Pump.run(1.0)
+        environment.pump.run(1.0)
         guard let restoredCheck = verifyOnce() else { return nil }
         guard !isTerminal else { return nil }
         let restored = classify(restoredCheck[targetKey!], expected: .stillDrawn) == .expected
 
         let protectedAndOwnersDrawn = readOwnerAndProtectedDrawn(label: "\(label).drawn")
         let untemplatedFailures = UntemplatedOwnerWatch.check(current: currentUntemplatedReadings(), baseline: untemplatedOwnerBaseline)
+        // Item 5: this cycle checkpoint's own keyed-check failure feeds
+        // the latch at once -- an observed untemplated owner disappearance
+        // must be a credible trip here, not only bookkeeping that lowers
+        // `otherChecksPassed`.
+        feedUntemplatedFailuresToLatch(untemplatedFailures)
         guard !isTerminal else { return nil }
 
         // Item 7: a reset-check (baseline-equivalence) failure is itself
@@ -70,7 +75,7 @@ extension StageC1 {
         guard !isTerminal else { return nil }
 
         let otherChecksPassed = foldAbsentAtExpansion && protectedAndOwnersDrawn && untemplatedFailures.isEmpty && restored
-        evidence.record("cycle", ["label": label, "reading": "\(hiddenReading)", "otherChecksPassed": otherChecksPassed, "untemplatedFailures": untemplatedFailures.map { "\($0)" }])
+        evidence?.record("cycle", ["label": label, "reading": "\(hiddenReading)", "otherChecksPassed": otherChecksPassed, "untemplatedFailures": untemplatedFailures.map { "\($0)" }])
         return C1CycleResult(reading: hiddenReading, otherChecksPassed: otherChecksPassed)
     }
 
@@ -88,7 +93,7 @@ extension StageC1 {
 
     private func verifyOnce() -> [ItemKey: SectionItemCheck]? {
         guard let prepared else { return nil }
-        return Pump.blocking { await self.verification.verify(prepared) }
+        return environment.pump.blocking { await self.verification.verify(prepared) }
     }
 
     private func classify(_ check: SectionItemCheck?, expected: Hiding) -> CheckOutcome {
@@ -107,7 +112,7 @@ extension StageC1 {
             latchingCapturer.feed(.init(captureFailed: true))
             return nil
         }
-        Pump.run(1.0)
+        environment.pump.run(1.0)
         guard let second = ownerObserver.observe(baseline: ownerBaseline, targets: targets, references: references, items: ownerItemIDs), second.reading.captureStable else {
             latchingCapturer.feed(.init(captureFailed: true))
             return nil
@@ -136,8 +141,16 @@ extension StageC1 {
     /// fold going up there is expected, not a violation).
     func watchFold(_ fold: Fold, label: String) {
         guard fold == .present, !expansionWindowOpen else { return }
-        evidence.record("fold.appearedWithoutExpansion", ["label": label])
+        evidence?.record("fold.appearedWithoutExpansion", ["label": label])
         latchingCapturer.feed(.init(foldAppearedWithoutExpansion: true))
+    }
+
+    /// Item 5: any keyed (untemplated) check failure feeds the latch
+    /// immediately, from every checkpoint that runs one -- a no-op when
+    /// there is nothing to report.
+    func feedUntemplatedFailuresToLatch(_ failures: [UntemplatedOwnerWatch.Failure]) {
+        guard !failures.isEmpty else { return }
+        latchingCapturer.feed(LatchObservationMerge.merge(templated: .init(), untemplated: failures))
     }
 
     private func ownerObserverIDs() -> [String: pid_t]? {
@@ -152,15 +165,15 @@ extension StageC1 {
     /// relaunches the helpers once (section 3), after a
     /// discovery-confirmed reap (P0-6).
     func performPreflight(label: String) -> Bool {
-        let deadline = Date().addingTimeInterval(10)
+        let deadline = environment.pump.now() + 10
         var attempt = 0
-        while attempt < 3, Date() < deadline {
+        while attempt < 3, environment.pump.now() < deadline {
             attempt += 1
             if passesPreflightOnce(label: "\(label).\(attempt)") { return true }
             guard !isTerminal else { return false }
         }
         guard !preflightEverPassed, !isTerminal else { return false }
-        evidence.record("preflight.relaunchOnce", ["label": label])
+        evidence?.record("preflight.relaunchOnce", ["label": label])
         guard confirmReap() else { return false }
         guard case .ok = step2Launch(), case .ok = step3Baseline() else { return false }
         for retryAttempt in 1...3 {
@@ -177,7 +190,7 @@ extension StageC1 {
     private func passesPreflightOnce(label: String) -> Bool {
         guard let targetKey, let spacerKey, let protectedKey else { return false }
         // Item 8: bounded, like the untemplated watch's own discovery read.
-        guard let fresh = Pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }) else {
+        guard let fresh = environment.pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }) else {
             latchingCapturer.feed(.init(captureFailed: true))
             return false
         }
@@ -194,7 +207,7 @@ extension StageC1 {
 
         let targets = ownerBaselineReadings.map(\.id) + [targetKey.encoded, spacerKey.encoded, protectedKey.encoded]
         guard let settled = settledPairedRead(targets: targets, references: [protectedKey.encoded]) else {
-            evidence.record("preflight.notSettled", ["label": label])
+            evidence?.record("preflight.notSettled", ["label": label])
             return false
         }
 
@@ -207,33 +220,37 @@ extension StageC1 {
         guard !isTerminal else { return false }
 
         guard PreflightOrderCheck.check(axOrder: axProjected, pixelOrder: pixelOrder, target: targetKey.encoded, spacer: spacerKey.encoded) == nil else {
-            evidence.record("preflight.orderFailed", ["label": label, "axProjected": axProjected, "pixel": pixelOrder])
+            evidence?.record("preflight.orderFailed", ["label": label, "axProjected": axProjected, "pixel": pixelOrder])
             return false
         }
         guard settled.reading.fold == .absent else {
-            evidence.record("preflight.foldNotAbsent", ["label": label])
+            evidence?.record("preflight.foldNotAbsent", ["label": label])
             return false
         }
         guard targets.allSatisfy({ if case .drawn? = settled.visibility[$0] { return true }; return false }) else {
-            evidence.record("preflight.notAllDrawn", ["label": label])
+            evidence?.record("preflight.notAllDrawn", ["label": label])
             return false
         }
 
         let untemplatedFailures = UntemplatedOwnerWatch.check(current: currentUntemplatedReadings(), baseline: untemplatedOwnerBaseline)
+        // Item 5: a preflight's own keyed-check failure feeds the latch at
+        // once too -- previously this only failed one preflight attempt,
+        // which the caller simply retried.
+        feedUntemplatedFailuresToLatch(untemplatedFailures)
         guard untemplatedFailures.isEmpty else {
-            evidence.record("preflight.untemplatedFailed", ["label": label, "failures": untemplatedFailures.map { "\($0)" }])
+            evidence?.record("preflight.untemplatedFailed", ["label": label, "failures": untemplatedFailures.map { "\($0)" }])
             return false
         }
 
         let indicator = detectIndicatorFrame()
         guard indicator == baselineIndicatorFrame else {
-            evidence.record("preflight.indicatorMoved", ["label": label])
+            evidence?.record("preflight.indicatorMoved", ["label": label])
             return false
         }
 
         let snapshot = RosterSnapshot(items: axOrder, indicatorFrame: indicator)
         guard RosterSnapshotCheck.compare(current: snapshot, previous: rosterSnapshot) == .equal else {
-            evidence.record("preflight.rosterChanged", ["label": label])
+            evidence?.record("preflight.rosterChanged", ["label": label])
             return false
         }
         return true
@@ -274,11 +291,17 @@ extension StageC1 {
         )
         let failures = BaselineEquivalence.check(input)
         let untemplatedFailures = UntemplatedOwnerWatch.check(current: currentUntemplatedReadings(), baseline: untemplatedOwnerBaseline)
-        evidence.record("resetCheck", ["label": label, "failures": failures.map { "\($0)" }, "untemplatedFailures": untemplatedFailures.map { "\($0)" }])
+        // Item 5: the reset check's own keyed-check failure feeds the
+        // latch at once too, same as the other two checkpoints -- on top
+        // of `markResetCheckFailed()` (item 7), which the caller still
+        // calls when this returns `false`; whichever reaches the machine
+        // first is recorded, and either way the run stops here.
+        feedUntemplatedFailuresToLatch(untemplatedFailures)
+        evidence?.record("resetCheck", ["label": label, "failures": failures.map { "\($0)" }, "untemplatedFailures": untemplatedFailures.map { "\($0)" }])
         guard failures.isEmpty, untemplatedFailures.isEmpty else { return false }
 
         resetLatchIfNotTerminal()
-        guard let fresh = Pump.blocking({ await self.discoverer.discover(previous: nil) }) else {
+        guard let fresh = environment.pump.blocking({ await self.discoverer.discover(previous: nil) }) else {
             latchingCapturer.feed(.init(captureFailed: true))
             return false
         }
@@ -289,10 +312,17 @@ extension StageC1 {
 
     /// `.protected` and every templated owner item drawn (section 3
     /// condition 2 / section 1's PASS list).
+    /// Rework #5 item 2 (r5b item 2, P0): Protected is the reference (an
+    /// empty reference set was never stable, so `otherChecksPassed` could
+    /// never be true -- the same class of bug as item 1); an unstable
+    /// capture, same as a failed one, fails this check closed rather than
+    /// silently reporting every target undrawn.
     func readOwnerAndProtectedDrawn(label: String) -> Bool {
         guard let ids = ownerObserverIDs(), let protectedKey else { return false }
         let targets = ownerBaselineReadings.map(\.id) + [protectedKey.encoded]
-        guard let result = ownerObserver.observe(baseline: ownerBaseline, targets: targets, references: [], items: ids) else { return false }
+        guard let result = ownerObserver.observe(baseline: ownerBaseline, targets: targets, references: [protectedKey.encoded], items: ids),
+              result.reading.captureStable
+        else { return false }
         return targets.allSatisfy {
             if case .drawn? = result.visibility[$0] { return true }
             return false

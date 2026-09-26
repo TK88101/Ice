@@ -13,7 +13,12 @@ import CryptoKit
 import Foundation
 import IceCore
 
-final class LiveEvidence {
+// Step A: `@unchecked Sendable` so `extension LiveEvidence: C1EvidenceRecording`
+// (`StageC1Live.swift`) does not need a retroactive conformance in a
+// different file (a hard error under Swift 6 mode) -- not a behaviour
+// change: this type was already only ever driven synchronously, from
+// `StageC1`'s own call sequence, one call at a time, same as before.
+final class LiveEvidence: @unchecked Sendable {
     let runId: String
     let directory: URL
     private let samples: FileHandle

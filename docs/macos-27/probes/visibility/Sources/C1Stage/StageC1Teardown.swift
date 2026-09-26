@@ -23,9 +23,9 @@ extension StageC1 {
             markTeardownReapFailed()
         }
 
-        for bundleID in C1HelperRole.all { HelperDefaults.forget(bundleID) }
-        let domainsEmpty = C1HelperRole.all.allSatisfy { HelperDefaults.keys($0)?.isEmpty == true }
-        evidence.record("teardown.helperDomains", ["empty": domainsEmpty])
+        for bundleID in C1HelperRole.all { environment.helperDefaults.forget(bundleID) }
+        let domainsEmpty = C1HelperRole.all.allSatisfy { environment.helperDefaults.keys($0)?.isEmpty == true }
+        evidence?.record("teardown.helperDomains", ["empty": domainsEmpty])
         // P1: a non-empty or unreadable helper preference domain fails
         // teardown -- a safety stop needing attention, not a plain PASS.
         // Item 1: routed through the machine (`markTeardownMismatch`),
@@ -33,7 +33,7 @@ extension StageC1 {
         // is set.
         if !domainsEmpty {
             markTeardownMismatch()
-            evidence.record("teardown.domainsNotEmpty", [:])
+            evidence?.record("teardown.domainsNotEmpty", [:])
         }
 
         let teardownEquivalent = waitForTeardownBaselineEquivalence()
@@ -59,10 +59,10 @@ extension StageC1 {
     /// untemplated owner check.
     private func waitForTeardownBaselineEquivalence() -> Bool {
         guard ownerBaseline != nil else { return true } // never reached baseline: nothing to compare
-        let deadline = Date().addingTimeInterval(30)
+        let deadline = environment.pump.now() + 30
         repeat {
             guard let capture = latchingCapturer.capture(), let ink = ownerBaseline.ink else {
-                Pump.run(1.0)
+                environment.pump.run(1.0)
                 continue
             }
             let map = ink.map(capture)
@@ -87,12 +87,12 @@ extension StageC1 {
             )
             let untemplatedFailures = UntemplatedOwnerWatch.check(current: currentUntemplatedReadings(), baseline: untemplatedOwnerBaseline)
             if BaselineEquivalence.check(input).isEmpty, untemplatedFailures.isEmpty {
-                evidence.record("teardown.baselineEquivalent", ["matched": true])
+                evidence?.record("teardown.baselineEquivalent", ["matched": true])
                 return true
             }
-            Pump.run(1.0)
-        } while Date() < deadline
-        evidence.record("teardown.baselineEquivalent", ["matched": false])
+            environment.pump.run(1.0)
+        } while environment.pump.now() < deadline
+        evidence?.record("teardown.baselineEquivalent", ["matched": false])
         return false
     }
 
@@ -104,9 +104,19 @@ extension StageC1 {
         latchingCapturer.feed(.init(foldAppearedWithoutExpansion: true))
     }
 
+    /// Item 3's own fix, applied here too: by the time teardown reads the
+    /// fold, the three helpers are already torn down on purpose (`perform(
+    /// _:)`'s `.quitAllHelpers` ran before this), so they can never be
+    /// credible `CaptureStability` references any more -- using the whole
+    /// of `ownerItemIDs` (which still carries their now-stale ids) here
+    /// made every teardown reading unstable, and so unreadable, without
+    /// exception (a composition defect I7 caught directly: real owner
+    /// items only, matching the readings `ownerBaselineReadings` already
+    /// keeps for exactly this purpose).
     private func readFoldForTeardown() -> FoldState {
-        guard !ownerItemIDs.isEmpty,
-              let result = ownerObserver.observe(baseline: ownerBaseline, targets: [], references: Array(ownerItemIDs.keys), items: ownerItemIDs)
+        let genuineOwnerIDs = ownerBaselineReadings.map(\.id)
+        guard !genuineOwnerIDs.isEmpty,
+              let result = ownerObserver.observe(baseline: ownerBaseline, targets: [], references: genuineOwnerIDs, items: ownerItemIDs)
         else { return .unreadable }
         switch result.reading.fold {
         case .present: return .present

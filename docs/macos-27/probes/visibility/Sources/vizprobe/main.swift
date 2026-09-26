@@ -13,6 +13,7 @@
 // This tool never launches anything, adds a menu bar item, or posts an
 // event except inside `live`, and never on `--dry-run`.
 import AppKit
+import C1Stage
 import Foundation
 
 func option(_ name: String, in arguments: [String]) -> String? {
@@ -98,15 +99,29 @@ if arguments.first == "c1" {
         spacer: URL(fileURLWithPath: spacerPath)
     )
     let dry = arguments.contains("--dry")
-    let stage = StageC1(apps: c1Apps, dry: dry)
+    let stage = StageC1(environment: C1LiveWiring.make(), apps: c1Apps, dry: dry)
     signal(SIGPIPE, SIG_IGN)
     for number in [SIGINT, SIGTERM, SIGHUP] {
         signal(number, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
         source.setEventHandler {
-            FileHandle.standardError.write(Data("vizprobe c1: signal \(number) -- quitting helpers and exiting\n".utf8))
-            stage.emergencyStop()
-            exit(3)
+            FileHandle.standardError.write(Data("vizprobe c1: signal \(number) -- entering the terminal safety teardown\n".utf8))
+            // Item 8: its own terminal reason (`signalReceived()`, needing
+            // attention -- never `emergencyStop()`'s `.watchdog`), the
+            // same pre-armed recorded backstop the watchdog uses below
+            // (armed before the signal's own cleanup runs, for the same
+            // reason: that cleanup's own `confirmReap()` could hang), and
+            // no bare `exit(3)` here any more -- that used to leave the
+            // run with no recorded verdict at all, since `stage.run()`'s
+            // own thread never got a chance to reach `finish(...)`.
+            // `exit(stage.run())` below still reports the real exit code
+            // once that thread notices `isTerminal` and completes.
+            DispatchQueue.global().asyncAfter(deadline: .now() + 120) {
+                FileHandle.standardError.write(Data("vizprobe c1: signal teardown did not finish within 2 min -- forcing exit\n".utf8))
+                stage.recordWatchdogBackstopVerdict()
+                exit(3)
+            }
+            stage.signalReceived()
         }
         source.resume()
     }

@@ -4,7 +4,10 @@
 // confirming each one before the next helper starts, and the
 // discovery-confirmed reap P0-6 requires before any relaunch or at
 // teardown.
-import AppKit
+//
+// Rework #5, step A: every live/AppKit call the original
+// `Sources/vizprobe/StageC1Setup.swift` made directly now goes through
+// `environment` (`C1StageEnvironment`) instead.
 import C1Core
 import C1Live
 import Foundation
@@ -13,23 +16,25 @@ import MenuBarCapture
 import MenuBarDetectorFeed
 import MenuBarDiscovery
 
+/// Restated from `Sources/vizprobe/PreflightCheck.swift` (internal to a
+/// different, executable target) rather than imported.
+enum C1WarmUp {
+    static let captures = 24
+    static let interval = 0.25
+}
+
 extension StageC1 {
     /// Existing bundle ids only (Target's and Protected's -- the spacer
     /// carries Protected's, P0-1), executables inside their bundles, and
     /// no helper under either already running.
     func step0Bundles() -> StepResult {
         for (url, expected) in [(apps.target, C1HelperRole.target), (apps.protected, C1HelperRole.protected), (apps.spacer, C1HelperRole.protected)] {
-            let actual = Bundle(url: url)?.bundleIdentifier
-            guard actual == expected else {
-                return .abort("\(url.lastPathComponent) has bundle id \(actual ?? "none"), expected \(expected)")
-            }
-            let executable = url.appendingPathComponent("Contents/MacOS/vzhelper").resolvingSymlinksInPath().path
-            guard executable.hasPrefix(url.resolvingSymlinksInPath().path + "/"), FileManager.default.isExecutableFile(atPath: executable) else {
-                return .abort("\(url.lastPathComponent)'s executable is missing or outside the bundle")
+            guard environment.helperLauncher.validateBundle(at: url, expectedBundleID: expected) else {
+                return .abort("\(url.lastPathComponent) is not a valid \(expected) bundle with an executable vzhelper inside it")
             }
         }
-        Pump.run(0.2)
-        let running = NSWorkspace.shared.runningApplications.filter { C1HelperRole.all.contains($0.bundleIdentifier ?? "") }
+        environment.pump.run(0.2)
+        let running = environment.helperLauncher.runningBundleIDs(among: C1HelperRole.all)
         guard running.isEmpty else { return .abort("\(running.count) helper(s) under a C1 bundle id already running") }
         return .ok
     }
@@ -37,13 +42,13 @@ extension StageC1 {
     /// Section 5 step 1's "dry minute" setup half: geometry, the warm-up,
     /// evidence, and `caffeinate -d` for the run's duration only.
     func step1Setup() -> StepResult {
-        guard let screen = NSScreen.main, let geometry = BarGeometry(screen: screen) else {
+        guard let geometry = environment.geometryProvider() else {
             return .abort("no bar geometry (NSScreen.main unavailable)")
         }
         self.geometry = geometry
 
         do {
-            evidence = try LiveEvidence(binaryURLs: c1BinaryURLs(), arguments: CommandLine.arguments, geometry: geometry, parameters: parameters, suffix: dry ? "vzc1dry" : "vzc1")
+            evidence = try environment.evidenceFactory.makeEvidence(binaryURLs: c1BinaryURLs(), arguments: CommandLine.arguments, geometry: geometry, parameters: parameters, suffix: dry ? "vzc1dry" : "vzc1")
         } catch {
             return .abort("could not create the evidence directory: \(error)")
         }
@@ -51,16 +56,10 @@ extension StageC1 {
         // caffeinate -d, ended by teardown or emergencyStop -- never left
         // running past this process's own life either, since it is a
         // child process this process owns.
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
-        process.arguments = ["-d"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            caffeinate = process
-        } catch {
-            evidence.record("caffeinate.failed", ["error": "\(error)"])
+        if let failure = environment.caffeinate.start() {
+            evidence?.record("caffeinate.failed", ["error": failure])
+        } else {
+            caffeinateStarted = true
         }
 
         warmUpOnce()
@@ -70,11 +69,15 @@ extension StageC1 {
     /// Section 2: "warmed up once at the start (24 captures, 0.25 s
     /// apart)." Before any helper exists -- pre-channel, so the raw
     /// capturer is the right one here (P0-2 only requires
-    /// `latchingCapturer` for post-channel captures).
+    /// `latchingCapturer` for post-channel captures). The counts match
+    /// `Sources/vizprobe/PreflightCheck.swift`'s own
+    /// `warmUpCaptures`/`warmUpInterval` -- restated here rather than
+    /// imported, like `SpacerIdentifier`: that file is internal to the
+    /// `vizprobe` executable target, which this library cannot depend on.
     func warmUpOnce() {
-        for _ in 0..<PreflightCheck.warmUpCaptures {
+        for _ in 0..<C1WarmUp.captures {
             _ = capturer.capture()
-            Pump.run(PreflightCheck.warmUpInterval)
+            environment.pump.run(C1WarmUp.interval)
         }
     }
 
@@ -120,7 +123,7 @@ extension StageC1 {
         targetHelper = target.helper
         targetKey = target.key
 
-        evidence.record("step2.launched", ["protected": describeKey(protected.key), "spacer": describeKey(spacer.key), "target": describeKey(target.key)])
+        evidence?.record("step2.launched", ["protected": describeKey(protected.key), "spacer": describeKey(spacer.key), "target": describeKey(target.key)])
         return .ok
     }
 
@@ -130,30 +133,30 @@ extension StageC1 {
     /// identifier (P0-1). `nil` on any failure -- the caller aborts the
     /// whole launch sequence rather than continue with a partial roster,
     /// but the helper (if it got that far) stays registered for cleanup.
-    func launchAndDiscover(label: String, app: URL, bundleID: String, role: String, identifier: String, channel: HelperControlChannel, isSpacer: Bool = false) -> (helper: HelperControl, key: ItemKey)? {
+    func launchAndDiscover(label: String, app: URL, bundleID: String, role: String, identifier: String, channel: HelperControlChannel, isSpacer: Bool = false) -> (helper: any C1HelperControlling, key: ItemKey)? {
         // Neither vzhelper role here ever sets `--autosave`, so this never
         // has data to lose even when Protected and the spacer share a
         // bundle id and this runs while Protected is already up (P0-1) --
         // defense in depth against some stray process's leftovers, not a
         // uniqueness check any more.
-        HelperDefaults.forget(bundleID)
-        guard HelperDefaults.keys(bundleID) == [] else {
-            evidence.record("helper.launchRefused", ["label": label, "reason": "the \(bundleID) domain is not verifiably empty"])
+        environment.helperDefaults.forget(bundleID)
+        guard environment.helperDefaults.keys(bundleID) == [] else {
+            evidence?.record("helper.launchRefused", ["label": label, "reason": "the \(bundleID) domain is not verifiably empty"])
             return nil
         }
-        guard let helper = try? HelperControl(appURL: app, bundleID: bundleID, role: role, arguments: ["--role", role, "--lifetime", "900"], controllerPID: getpid()) else {
-            evidence.record("helper.launchFailed", ["label": label])
+        guard let helper = environment.helperLauncher.launch(appURL: app, bundleID: bundleID, role: role, arguments: ["--role", role, "--lifetime", "900"], controllerPID: getpid()) else {
+            evidence?.record("helper.launchFailed", ["label": label])
             return nil
         }
         channel.register(helper, isSpacer: isSpacer)
         guard helper.awaitReply("up", timeout: 5) != nil else {
             helper.quit()
-            evidence.record("helper.noUp", ["label": label])
+            evidence?.record("helper.noUp", ["label": label])
             return nil
         }
         guard let item = discoverDeclared(pid: helper.pid, identifier: identifier) else {
             helper.quit()
-            evidence.record("helper.notDiscovered", ["label": label])
+            evidence?.record("helper.notDiscovered", ["label": label])
             return nil
         }
         return (helper, item.key)
@@ -162,18 +165,18 @@ extension StageC1 {
     /// The one `.declared` item of `pid` with `identifier`, from a fresh
     /// discovery pass that read `pid` conclusively, within 5 s.
     func discoverDeclared(pid: pid_t, identifier: String) -> DiscoveredItem? {
-        let deadline = Date().addingTimeInterval(5)
+        let deadline = environment.pump.now() + 5
         repeat {
-            Pump.run(0.1)
-            if let result = Pump.blocking({ await self.discoverer.discover(previous: nil) }) {
+            environment.pump.run(0.1)
+            if let result = environment.pump.blocking({ await self.discoverer.discover(previous: nil) }) {
                 let status = result.status(of: pid)
                 if status.enumerated, !status.failed, !status.quarantined, !status.permissionDenied,
                    let item = result.set.items.first(where: { $0.key.pid == pid && $0.key.identifier == identifier && $0.basis == .declared }) {
                     return item
                 }
             }
-            Pump.run(0.2)
-        } while Date() < deadline
+            environment.pump.run(0.2)
+        } while environment.pump.now() < deadline
         return nil
     }
 
@@ -185,23 +188,23 @@ extension StageC1 {
     func confirmReap(within seconds: Double = 5) -> Bool {
         expansionDriver?.collapse()
         channel?.quitAll()
-        Pump.run(0.5)
+        environment.pump.run(0.5)
         let helperPIDs: Set<pid_t> = Set([targetHelper, spacerHelper, protectedHelper].compactMap { $0?.pid })
         guard !helperPIDs.isEmpty else { return true }
-        let deadline = Date().addingTimeInterval(seconds)
+        let deadline = environment.pump.now() + seconds
         repeat {
             // Round 4 item 3: through `timedDiscoverer`, not the raw
             // `discoverer` -- each attempt in this retry loop is bounded,
             // so a single hung pass cannot swallow the whole `seconds`
             // budget (or, called from `emergencyStop()`, block the
             // watchdog's own synchronous cleanup indefinitely).
-            let listed: Set<pid_t>? = Pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }).map { Set($0.set.items.map(\.key.pid)) }
+            let listed: Set<pid_t>? = environment.pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }).map { Set($0.set.items.map(\.key.pid)) }
             if C1ReapCheck.confirmed(listedPIDs: listed, helperPIDs: helperPIDs) {
                 evidence?.record("reap.confirmed", [:])
                 return true
             }
-            Pump.run(0.2)
-        } while Date() < deadline
+            environment.pump.run(0.2)
+        } while environment.pump.now() < deadline
         evidence?.record("reap.notConfirmed", [:])
         return false
     }
@@ -218,12 +221,4 @@ extension StageC1 {
             "vzhelper.spacer": apps.spacer.appendingPathComponent("Contents/MacOS/vzhelper"),
         ]
     }
-}
-
-/// The spacer's own AX identifier (`SpacerItem.identifier` in
-/// `Sources/vzhelper/main.swift`), restated here rather than imported: the
-/// `vzhelper` executable target is not a library another target can
-/// depend on.
-enum SpacerIdentifier {
-    static let value = "vz-spacer"
 }
