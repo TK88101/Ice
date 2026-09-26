@@ -1,12 +1,20 @@
 // I7: a synthesized fake bar for the orchestration test
-// (`I7OrchestrationTests.swift`). Shaped after, but not copied verbatim
-// from, `Packages/MenuBarDiscovery/Tests/MenuBarDetectorFeedTests/TestBar.swift`
+// (`I7OrchestrationTests.swift`, `I7FaultTriggerTests.swift`). Shaped after,
+// but not copied verbatim from, `Packages/MenuBarDiscovery/Tests/MenuBarDetectorFeedTests/TestBar.swift`
 // and `Scenario.swift` (frozen test targets this one cannot import) --
 // enough real drawing to give IceCore's own ink/template rules an actual
 // glyph to accept and match, real Accessibility-shaped frames, and a real
 // `DiscoveredItemSet`/`DiscoveryResult`, all driven from one small, lockable
 // world model so the fake capturer, the fake AX readers and the fake
 // discoverer always agree with each other.
+//
+// Rework #6a: the world now also carries a realistic owner population (one
+// templated owner item plus, optionally, several the pixel baseline rejects
+// -- overlapping AX frames, the same reason the owner's own bar rejects 2-6
+// items every recorded preflight) and one *phase-armed* fault knob
+// (`FaultKnob`, below) -- never a raw capture count (crosscheck #13-#16):
+// every knob engages only once the spacer has received its Nth `length`
+// command, which cannot happen before `step3Baseline` has already run.
 import Darwin
 import Foundation
 import IceCore
@@ -24,7 +32,77 @@ enum FakeSpacerState: Equatable {
     case expanded(Double)
 }
 
-/// One synthesized bar: Target, the spacer, Protected and one owner item,
+/// One synthesized bar's single active fault, armed only once the phase
+/// gate opens (`FakeBarWorld.arm(_:afterNthLength:)`) -- never by raw
+/// capture count (Amendment v6 / crosscheck #13-#16). A test configures at
+/// most one of these before `run()`.
+enum FaultKnob {
+    /// The templated owner item disappears (pixels, AX and discovery
+    /// together). `returnsAfterCaptures`: `nil` models "stays gone through
+    /// teardown" (scenario 4's escalation); a small number models "comes
+    /// back before teardown" (scenario 3a's control case, proving the
+    /// escalation itself -- not a first-time mismatch -- produced scenario
+    /// 4's verdict).
+    case vanishTemplatedOwner(returnsAfterCaptures: Int?)
+    case vanishProtected
+    /// `index` into the untemplated cluster (0..<untemplatedOwnerCount).
+    case vanishExtra(index: Int)
+    case shiftExtra(index: Int, byPt: Double)
+    /// A chevron-width agent frame plus real ink appears once the spacer
+    /// is back at rest -- "a fold appears while at rest," never during an
+    /// expansion (gated on `spacerState == .rest`, so it cannot confuse
+    /// the mid-expansion verifier read, which is expected to see no fold
+    /// either way).
+    case foldWithoutExpansion
+    case captureFailure
+    /// The discoverer blocks past `C1DiscoveryExecutor`'s own (real,
+    /// 3.0 s) bound -- this world cannot inject a shorter one without a
+    /// source seam outside the tests-only brief, so the test pays the real
+    /// 3 s instead.
+    case discoveryHang
+    /// Also scenario 3i's own knob (a small, sub-`referenceTolerancePt`
+    /// offset): see its own doc comment on why the *magnitude*, not a
+    /// separate case, is what tells the two scenarios apart.
+    case spacerStuckOffset(pt: Double)
+}
+
+/// A run's elapsed time, advanced only by what the real stage actually asks
+/// for: an explicit `sleep`/`run`, or one of this world's own per-operation
+/// latencies (`SimulatedLatency`) -- never by a bare `now()` read. Shared
+/// between `FakePump` (which callers see as the clock) and this world
+/// (which callers cannot see advancing it), so a scenario's own `clock.now()`
+/// before and after `stage.run()` is the simulated wall time that run took.
+final class VirtualClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var t: Double = 1_000
+
+    func advance(_ seconds: Double) {
+        guard seconds > 0 else { return }
+        lock.withLock { t += seconds }
+    }
+
+    func now() -> Double { lock.withLock { t } }
+}
+
+/// Per-operation latencies the world charges the virtual clock with, so a
+/// run's simulated duration reflects the real number of captures/discovery
+/// passes/AX reads the stage actually makes, not a guess. Sources named
+/// where a number comes from measurement; the rest are conservative
+/// estimates (flagged in the worker report, never presented as measured).
+enum SimulatedLatency {
+    /// `LiveStripCapturer.swift:14-16`'s own measurement (5-9 ms); the
+    /// lower end, since this world's strip is far smaller than a real bar.
+    static let captureSeconds = 0.006
+    /// Not separately measured in the cited evidence -- a conservative
+    /// estimate, the same order as a capture.
+    static let axReadSeconds = 0.01
+    /// `STATUS.md:20`'s measured median keyed-discovery pass (36.5 ms),
+    /// rounded down slightly for a clean bar with few items to enumerate.
+    static let discoverySeconds = 0.03
+}
+
+/// One synthesized bar: Target, the spacer, Protected, one templated owner
+/// item and, optionally, a small cluster of *untemplated* owner items --
 /// each a fixed, asymmetric glyph shape so the ink/template rules can find
 /// and tell them apart; the capture indicator lives only in the AX-only
 /// extras scan, matching the real `detectIndicatorFrame()`'s own seam. All
@@ -48,7 +126,20 @@ final class FakeBarWorld: @unchecked Sendable {
     static let targetRestX = 150.0
     static let spacerX = 190.0
     static let protectedX = 230.0
+    /// The one owner item the pixel baseline accepts as a template.
     static let ownerX = 270.0
+    /// Left of `ownerX` (Amendment v6: "at least one untemplated item LEFT
+    /// of the leftmost templated one"), each 3 pt apart so every pair's AX
+    /// frame (7 pt wide) overlaps its neighbour -- the same
+    /// `overlapsAnotherItem` rejection the owner's own bar hits
+    /// (`StripAssessor.baseline`, line ~136), never a shape the ink/template
+    /// rules would simply fail to cut.
+    static let extraBaseX = 250.0
+    static let extraSpacingPt = 3.0
+    /// Clear of everything else on the strip (Target's rest position is
+    /// 150), for the "fold without expansion" knob's own chevron-width
+    /// agent frame and ink.
+    static let foldGhostX = 50.0
     /// Far enough off the left edge (`widthPt` starts at 0) that none of
     /// the glyph's pixels ever land inside the rendered strip -- "pushed
     /// into the undrawn band," not merely covered.
@@ -77,6 +168,12 @@ final class FakeBarWorld: @unchecked Sendable {
     static let targetKey = key("target", pid: targetPID, identifier: targetIdentifier)
     static let ownerKey = key("owner", pid: ownerPID, identifier: ownerIdentifier)
 
+    /// Never a real third-party app name (the hard rule): neutral,
+    /// numbered ids, like `ownerIdentifier` above.
+    static func extraPID(_ i: Int) -> pid_t { pid_t(502 + i) }
+    static func extraKey(_ i: Int) -> ItemKey { key("owner", pid: extraPID(i), identifier: "owner.b\(i)") }
+    static func extraX(_ i: Int) -> Double { extraBaseX + Double(i) * extraSpacingPt }
+
     // MARK: - Shapes (10 px wide at scale 2 = 5 pt -- clears minTemplateWidthPt)
 
     static let shapeTarget: [String] = [
@@ -94,10 +191,16 @@ final class FakeBarWorld: @unchecked Sendable {
     /// Asymmetric and non-periodic horizontally (unlike a checkered pattern,
     /// which can self-match at a shifted offset and read `.ambiguous`) --
     /// the owner's own item, distinct from the three helper shapes above.
+    /// Reused for the untemplated cluster too: their shape is irrelevant
+    /// (the baseline rejects them for overlapping, before any per-id ink
+    /// cut is even attempted), only their AX frame and position matter.
     static let shapeOwner: [String] = [
         "........##", "........##", "........##", "##########", "##########",
         "##########", "##########", "##........", "##........", "##........",
     ]
+    /// A solid block, wide enough to clear `foldClusterMinPx` (16 px) many
+    /// times over -- the "fold without expansion" knob's own ink.
+    static let shapeFoldGhost: [String] = Array(repeating: "##########", count: 10)
 
     private let lock = NSLock()
     private var spacerState: FakeSpacerState = .rest
@@ -111,39 +214,129 @@ final class FakeBarWorld: @unchecked Sendable {
     private var log: [String] = []
     var commandLog: [String] { lock.withLock { log } }
 
-    /// Scenario 3: after this many `image()` captures, the owner's own item
-    /// stops existing at all (in the pixels, the AX read and discovery
-    /// alike) -- a credible, permanent disappearance for the latch to catch.
-    private var vanishOwnerAfterCaptures: Int?
+    /// Whether the templated owner item (`ownerKey`, `ownerX`) exists in
+    /// this world at all -- `false` models the owner's own bar having no
+    /// item the pixel baseline can template (scenario 1b).
+    private let templatedOwnerPresent: Bool
+    /// How many untemplated (baseline-rejected) owner items this world
+    /// also carries, left of `ownerX` (0...4).
+    let untemplatedOwnerCount: Int
+
+    /// A run's virtual clock -- shared with the `FakePump` this world's
+    /// environment is built with (`FakeC1EnvironmentFactory.make`), so
+    /// `sleep`/`run` and this world's own per-operation latencies
+    /// (`SimulatedLatency`) advance the same timeline.
+    let clock = VirtualClock()
+
+    /// Section 4's own trigger, engaged only by phase (never a raw capture
+    /// count) -- see the fault-knob effect methods below.
+    private var knob: FaultKnob?
+    private var armAfterNthLength = 1
+    private var lengthCommandsSeen = 0
+    /// Captures since the phase gate opened -- only meaningful for a knob
+    /// that "returns after N captures" (scenario 3a's control case).
+    private var capturesSinceArmed = 0
+
     private var captureCount = 0
 
-    /// Scenario 3b: once armed, the spacer's rendered position no longer
-    /// returns to its own rest baseline after a `rest` command (it stays
-    /// offset by this many points) -- "the collapse was sent, but the
-    /// spacer did not actually come back," for `confirmRestSettled`'s
-    /// position-tolerance check (item 1) to catch.
-    private var spacerStuckOffsetPt: Double?
+    init(templatedOwnerPresent: Bool = true, untemplatedOwnerCount: Int = 0) {
+        precondition(untemplatedOwnerCount >= 0 && untemplatedOwnerCount <= 4, "the cluster must stay clear of Protected and the templated owner")
+        self.templatedOwnerPresent = templatedOwnerPresent
+        self.untemplatedOwnerCount = untemplatedOwnerCount
+    }
 
     func setTargetNeverHides(_ value: Bool) {
         lock.withLock { targetNeverHides = value }
     }
 
-    func setVanishOwnerAfterCaptures(_ n: Int) {
-        lock.withLock { vanishOwnerAfterCaptures = n }
+    /// Arms `knob`, engaged once the spacer has received its `afterNthLength`-th
+    /// `length` command -- e.g. `1` for "as soon as the first cycle
+    /// expands" (most triggers), `2` for "only from the second cycle on"
+    /// (the reset-check drift case, which needs the first cycle's own
+    /// reset check to pass clean).
+    func arm(_ knob: FaultKnob, afterNthLength: Int = 1) {
+        lock.withLock {
+            self.knob = knob
+            self.armAfterNthLength = afterNthLength
+        }
     }
 
-    func setSpacerStuckOffsetPt(_ pt: Double) {
-        lock.withLock { spacerStuckOffsetPt = pt }
+    // MARK: - Phase gate (called only while holding `lock`)
+
+    private func isArmedLocked() -> Bool {
+        knob != nil && lengthCommandsSeen >= armAfterNthLength
     }
 
-    private func ownerIsGone() -> Bool {
-        guard let threshold = vanishOwnerAfterCaptures else { return false }
-        return captureCount > threshold
+    // MARK: - Fault-knob effects (called only while holding `lock`)
+
+    private func captureShouldFailLocked() -> Bool {
+        guard isArmedLocked(), case .captureFailure = knob else { return false }
+        return true
     }
 
-    private func spacerRenderX() -> Double {
-        guard let offset = spacerStuckOffsetPt, spacerState == .rest else { return Self.spacerX }
-        return Self.spacerX + offset
+    private func protectedVisibleLocked() -> Bool {
+        guard protectedUp else { return false }
+        guard isArmedLocked(), case .vanishProtected = knob else { return true }
+        return false
+    }
+
+    private func templatedOwnerVisibleLocked() -> Bool {
+        guard templatedOwnerPresent else { return false }
+        guard isArmedLocked() else { return true }
+        if case .vanishTemplatedOwner(let returns) = knob {
+            if let returns { return capturesSinceArmed > returns }
+            return false
+        }
+        return true
+    }
+
+    private func extraVisibleLocked(_ i: Int) -> Bool {
+        guard isArmedLocked(), case .vanishExtra(let index) = knob, index == i else { return true }
+        return false
+    }
+
+    private func extraXLocked(_ i: Int) -> Double {
+        let base = Self.extraX(i)
+        guard isArmedLocked(), case .shiftExtra(let index, let byPt) = knob, index == i else { return base }
+        return base + byPt
+    }
+
+    /// The spacer's own rendered position: unaffected by expansion (I7
+    /// never needs the exact real-world magnitude -- see `FakeSpacerState`),
+    /// but offset while at rest once `.spacerStuckOffset` is armed --
+    /// "the collapse was sent, but the spacer did not actually come back."
+    /// Armed only after the first `length` command (Amendment v6 /
+    /// crosscheck #15): the baseline, taken before any `length` is ever
+    /// sent, records the *true* rest position, so only a rest *after* an
+    /// expansion is offset -- never the rest baseline itself.
+    ///
+    /// The magnitude is what tells 3h and 3i apart, not a separate knob:
+    /// `confirmRestSettled`'s own position check tolerates
+    /// `referenceTolerancePt` (1 pt), but `performResetCheck`'s helper
+    /// condition demands *exact* equality (section 5: "no stated tolerance
+    /// for them"). A large offset (30 pt) fails the first check ->
+    /// `restNotConfirmed` (3h). A small, sub-1-pt offset (0.5 pt) passes
+    /// it -- rest is confirmed -- but is still nonzero, so the reset
+    /// check's own exact-match condition fails it next ->
+    /// `resetCheckFailed` (3i). A drift big enough to fail the reset
+    /// check's *owner*-item 2 pt tolerance is necessarily also big enough
+    /// to fail `assessLatch`'s own 1-pt-tolerance per-capture check first
+    /// (it runs on every capture, including the reset check's own), so an
+    /// *owner*-item drift cannot isolate `resetCheckFailed` from a latch
+    /// trip -- only the helpers' own zero-tolerance condition can.
+    private func spacerRenderXLocked() -> Double {
+        guard spacerState == .rest, isArmedLocked(), case .spacerStuckOffset(let pt) = knob else { return Self.spacerX }
+        return Self.spacerX + pt
+    }
+
+    /// Gated on `spacerState == .rest`, not merely "armed": the ghost
+    /// exists only while at rest, matching the trigger's own name and
+    /// keeping it from ever appearing during the mid-expansion verifier
+    /// read (which tolerates no fold either way, so this would only ever
+    /// have added noise there, never a meaningful assertion).
+    private func foldGhostPresentLocked() -> Bool {
+        guard spacerState == .rest, isArmedLocked(), case .foldWithoutExpansion = knob else { return false }
+        return true
     }
 
     func setUp(_ role: String) {
@@ -170,7 +363,9 @@ final class FakeBarWorld: @unchecked Sendable {
     }
 
     /// A helper's own `send(_:)` -- only the spacer's `length <pt>`/`rest`
-    /// commands change this world's state; every command is logged.
+    /// commands change this world's state; every command is logged. Every
+    /// `length` the spacer receives also advances the phase gate
+    /// (`lengthCommandsSeen`) -- the one thing every fault knob arms on.
     func handleCommand(_ line: String, role: String) {
         lock.withLock {
             log.append("\(role).\(line)")
@@ -179,11 +374,12 @@ final class FakeBarWorld: @unchecked Sendable {
                 spacerState = .rest
             } else if line.hasPrefix("length "), let value = Double(line.dropFirst("length ".count)) {
                 spacerState = .expanded(value)
+                lengthCommandsSeen += 1
             }
         }
     }
 
-    private func targetX() -> Double {
+    private func targetXLocked() -> Double {
         if targetNeverHides { return Self.targetRestX }
         switch spacerState {
         case .rest: return Self.targetRestX
@@ -193,16 +389,29 @@ final class FakeBarWorld: @unchecked Sendable {
 
     // MARK: - Capture (pixels)
 
-    func image() -> StripImage {
-        var glyphs: [(shape: [String], atPt: Double)] = []
-        let (targetUp, spacerUp, protectedUp, ownerGone) = lock.withLock {
+    /// `nil` models a failed capture (the "capture returns nil" knob) --
+    /// itself an immediate abort in the real stage (`LatchingCapturer.
+    /// capture()`), never merely "nothing drawn."
+    func image() -> StripImage? {
+        let (glyphs, shouldFail): ([(shape: [String], atPt: Double)], Bool) = lock.withLock {
             captureCount += 1
-            return (self.targetUp, self.spacerUp, self.protectedUp, self.ownerIsGone())
+            if isArmedLocked() { capturesSinceArmed += 1 }
+            if captureShouldFailLocked() { return ([], true) }
+            var g: [(shape: [String], atPt: Double)] = []
+            if targetUp { g.append((Self.shapeTarget, targetXLocked())) }
+            if spacerUp { g.append((Self.shapeSpacer, spacerRenderXLocked())) }
+            if protectedVisibleLocked() { g.append((Self.shapeProtected, Self.protectedX)) }
+            if templatedOwnerVisibleLocked() { g.append((Self.shapeOwner, Self.ownerX)) }
+            for i in 0..<untemplatedOwnerCount where extraVisibleLocked(i) {
+                g.append((Self.shapeOwner, extraXLocked(i)))
+            }
+            if foldGhostPresentLocked() {
+                g.append((Self.shapeFoldGhost, Self.foldGhostX))
+            }
+            return (g, false)
         }
-        if targetUp { glyphs.append((Self.shapeTarget, targetX())) }
-        if spacerUp { glyphs.append((Self.shapeSpacer, spacerRenderX())) }
-        if protectedUp { glyphs.append((Self.shapeProtected, Self.protectedX)) }
-        if !ownerGone { glyphs.append((Self.shapeOwner, Self.ownerX)) }
+        guard !shouldFail else { return nil }
+        clock.advance(SimulatedLatency.captureSeconds)
         return Self.render(glyphs)
     }
 
@@ -255,7 +464,12 @@ final class FakeBarWorld: @unchecked Sendable {
             guard let entry = live[id], entry.pid == pid else { continue }
             itemFrames[id] = ItemFrame(id: id, minX: entry.frame.minX, minY: entry.frame.minY, width: entry.frame.width, height: entry.frame.height)
         }
-        return MenuBarAXSnapshot(itemFrames: itemFrames, agentFrames: [AgentFrame(minX: Self.indicatorX, minY: 0, width: Self.indicatorWidth)])
+        var agentFrames = [AgentFrame(minX: Self.indicatorX, minY: 0, width: Self.indicatorWidth)]
+        if lock.withLock({ foldGhostPresentLocked() }) {
+            agentFrames.append(AgentFrame(minX: Self.foldGhostX, minY: 0, width: 17.5))
+        }
+        clock.advance(SimulatedLatency.axReadSeconds)
+        return MenuBarAXSnapshot(itemFrames: itemFrames, agentFrames: agentFrames)
     }
 
     func discoveryResult() -> DiscoveryResult {
@@ -272,10 +486,22 @@ final class FakeBarWorld: @unchecked Sendable {
             items: items, visibleControlItem: nil, hiddenDivider: nil, alwaysHiddenDivider: nil,
             ownRead: .ok, systemElements: [], dropped: [], staleProcesses: [:], completeness: .complete
         )
+        clock.advance(SimulatedLatency.discoverySeconds)
         return DiscoveryResult(
             set: set, duration: 0, origin: DiscoveryOrigin(x: 0, y: 0), bounds: Self.bounds,
             nextCursor: 0, quarantined: [], enumeratedPIDs: Set(entries.map { $0.entry.pid })
         )
+    }
+
+    /// Whether the discoverer should block past `C1DiscoveryExecutor`'s own
+    /// (real, wall-clock) bound -- the "discovery timeout" knob, which no
+    /// per-operation clock advance can model (the executor's own deadline
+    /// is real time, not this world's virtual one).
+    func shouldHangDiscovery() -> Bool {
+        lock.withLock {
+            guard isArmedLocked(), case .discoveryHang = knob else { return false }
+            return true
+        }
     }
 
     /// Every item currently "up," keyed by its encoded `ItemKey` -- the
@@ -286,16 +512,20 @@ final class FakeBarWorld: @unchecked Sendable {
         lock.withLock {
             var result = [(id: String, entry: (key: ItemKey, pid: pid_t, frame: BarRect))]()
             if targetUp {
-                result.append((Self.targetKey.encoded, (Self.targetKey, Self.targetPID, Self.frame(atPt: targetX()))))
+                result.append((Self.targetKey.encoded, (Self.targetKey, Self.targetPID, Self.frame(atPt: targetXLocked()))))
             }
             if spacerUp {
-                result.append((Self.spacerKey.encoded, (Self.spacerKey, Self.spacerPID, Self.frame(atPt: spacerRenderX()))))
+                result.append((Self.spacerKey.encoded, (Self.spacerKey, Self.spacerPID, Self.frame(atPt: spacerRenderXLocked()))))
             }
-            if protectedUp {
+            if protectedVisibleLocked() {
                 result.append((Self.protectedKey.encoded, (Self.protectedKey, Self.protectedPID, Self.frame(atPt: Self.protectedX))))
             }
-            if !ownerIsGone() {
+            if templatedOwnerVisibleLocked() {
                 result.append((Self.ownerKey.encoded, (Self.ownerKey, Self.ownerPID, Self.frame(atPt: Self.ownerX))))
+            }
+            for i in 0..<untemplatedOwnerCount where extraVisibleLocked(i) {
+                let key = Self.extraKey(i)
+                result.append((key.encoded, (key, Self.extraPID(i), Self.frame(atPt: extraXLocked(i)))))
             }
             return result
         }

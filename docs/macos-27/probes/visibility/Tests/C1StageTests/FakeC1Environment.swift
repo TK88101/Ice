@@ -45,13 +45,20 @@ final class FakeHelperControl: C1HelperControlling, @unchecked Sendable {
 
 /// Every bundle validates and nothing is ever "already running" -- I7 never
 /// touches a real bundle or `NSWorkspace`.
+///
+/// `onLaunch`, when supplied, fires synchronously right before this launch
+/// does its own work -- scenario 6's own seam for "a signal during setup":
+/// the closure calls the stage's own `signalReceived()` mid-launch, with no
+/// change to any file outside this test target.
 struct FakeHelperLauncher: C1HelperLaunching {
     let world: FakeBarWorld
+    var onLaunch: (@Sendable (String) -> Void)?
 
     func validateBundle(at url: URL, expectedBundleID: String) -> Bool { true }
     func runningBundleIDs(among candidates: [String]) -> [String] { [] }
 
     func launch(appURL: URL, bundleID: String, role: String, arguments: [String], controllerPID: pid_t) -> (any C1HelperControlling)? {
+        onLaunch?(role)
         let pid: pid_t
         switch role {
         case "reference": pid = FakeBarWorld.protectedPID
@@ -66,6 +73,15 @@ struct FakeHelperLauncher: C1HelperLaunching {
         world.setUp(worldRole)
         return FakeHelperControl(role: worldRole, pid: pid, world: world)
     }
+}
+
+/// A mutable, weak hand-back to the `StageC1` an environment drives --
+/// built before the stage exists (the environment is one of the stage's own
+/// constructor arguments), filled in right after, so `FakeHelperLauncher`'s
+/// `onLaunch` hook can call back into it. Weak: the box never keeps the
+/// stage alive past the test's own reference to it.
+final class StageHandback: @unchecked Sendable {
+    weak var stage: StageC1?
 }
 
 /// Every helper domain reads back empty -- I7 never touches `defaults`.
@@ -84,33 +100,50 @@ struct FakeAXReader: MenuBarAXReading {
     func read(items: [String: pid_t]) -> MenuBarAXSnapshot? { world.axSnapshot(items: items) }
 }
 
+/// Rework #6a: sleeps a real, wall-clock 3.5 s -- past `C1DiscoveryExecutor`'s
+/// own hard-coded 3.0 s bound -- once the "discovery timeout" knob is armed
+/// (`FakeBarWorld.shouldHangDiscovery()`), so the executor's own real timeout
+/// actually fires (see the knob's own doc comment: no source seam exists to
+/// inject a shorter one). `Task.sleep`, not `Thread.sleep`: this is an
+/// `async` function, and blocking a cooperative-pool thread here would be
+/// its own bug.
 struct FakeDiscoverer: Discovering {
     let world: FakeBarWorld
-    func discover(previous: DiscoveredItemSet?) async -> DiscoveryResult? { world.discoveryResult() }
+    func discover(previous: DiscoveredItemSet?) async -> DiscoveryResult? {
+        if world.shouldHangDiscovery() {
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+        }
+        return world.discoveryResult()
+    }
 }
 
-/// A shared virtual clock (`now()` advances by exactly 1 s every call,
-/// matching `MenuBarDetectorFeedTests/Scenario.swift`'s own `FakeClock` --
-/// enough to satisfy `DetectorParameters.preRegistered`'s
-/// `baselineMinSamples`/`baselineMinSpan`/`minSampleSpacing` in the fewest
-/// samples) and a no-op `sleep`/`run` -- nothing in I7 ever waits in real
-/// time. `blocking` bridges into `Discovering`'s `async` calls with a plain
-/// semaphore, never `RunLoop.main` (no test here runs on the main thread
-/// with a run loop to pump).
+/// A shared virtual clock (rework #6a: `VirtualClock`, owned by the
+/// `FakeBarWorld` this pump's environment is built with -- see
+/// `FakeC1EnvironmentFactory.make`): `sleep`/`run` advance it by exactly the
+/// seconds asked for, and the world's own `image()`/`axSnapshot()`/
+/// `discoveryResult()` advance it by their own measured/estimated latencies
+/// (`SimulatedLatency`) -- so a scenario's simulated duration
+/// (`clock.now()` before and after `stage.run()`) reflects the real number
+/// of sleeps, captures, AX reads and discovery passes the stage actually
+/// made, not a guess. `now()` itself never advances the clock (the old
+/// per-call `+= 1` hack is gone): every real caller already sleeps between
+/// samples (`Sampler`/`VisibilityObserver`, `IceReverse`'s own
+/// `minSampleSpacing`), so nothing here needs it to. `blocking` bridges
+/// into `Discovering`'s `async` calls with a plain semaphore, never
+/// `RunLoop.main` (no test here runs on the main thread with a run loop to
+/// pump).
 final class FakePump: C1Pump, @unchecked Sendable {
-    private let lock = NSLock()
-    private var t: Double = 1000
+    let clock: VirtualClock
 
-    func run(_ seconds: Double) {}
-
-    func sleep(_ seconds: Double) {}
-
-    func now() -> Double {
-        lock.withLock {
-            defer { t += 1 }
-            return t
-        }
+    init(clock: VirtualClock) {
+        self.clock = clock
     }
+
+    func run(_ seconds: Double) { clock.advance(seconds) }
+
+    func sleep(_ seconds: Double) { clock.advance(seconds) }
+
+    func now() -> Double { clock.now() }
 
     func blocking<T>(_ body: @escaping @Sendable () async -> T) -> T {
         let box = FakePumpResultBox<T>()
@@ -190,8 +223,9 @@ enum FakeC1EnvironmentFactory {
     /// One real `C1StageEnvironment`, entirely backed by `world` and a
     /// fresh `FakePump`/`FakeCaffeinate`/`FakeEvidence` -- everything I7
     /// needs to drive the real `StageC1` orchestration with no live seam
-    /// left unfaked.
-    static func make(world: FakeBarWorld, evidence: FakeEvidence, caffeinate: FakeCaffeinate = FakeCaffeinate()) -> C1StageEnvironment {
+    /// left unfaked. `onHelperLaunch`, when supplied, is scenario 6's own
+    /// hook (`FakeHelperLauncher.onLaunch`).
+    static func make(world: FakeBarWorld, evidence: FakeEvidence, caffeinate: FakeCaffeinate = FakeCaffeinate(), onHelperLaunch: (@Sendable (String) -> Void)? = nil) -> C1StageEnvironment {
         C1StageEnvironment(
             capturer: FakeStripCapturer(world: world),
             discoverer: FakeDiscoverer(world: world),
@@ -201,9 +235,9 @@ enum FakeC1EnvironmentFactory {
             extrasScanner: {
                 [C1ExtrasItem(bundleID: "com.apple.MenuBarAgent", minX: FakeBarWorld.indicatorX, minY: 0, width: FakeBarWorld.indicatorWidth, height: Double(FakeBarWorld.heightPt))]
             },
-            helperLauncher: FakeHelperLauncher(world: world),
+            helperLauncher: FakeHelperLauncher(world: world, onLaunch: onHelperLaunch),
             helperDefaults: FakeHelperDefaults(),
-            pump: FakePump(),
+            pump: FakePump(clock: world.clock),
             caffeinate: caffeinate,
             evidenceFactory: FakeEvidenceFactory(evidence: evidence),
             isTrusted: { true }
