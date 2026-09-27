@@ -64,7 +64,11 @@ extension StageC1 {
 
         var lastBaseline: BaselineResult?
         for attempt in 0..<5 {
-            if let result = ownerObserver.baseline(items: ids, geometry: geometry) {
+            let result = ownerObserver.baseline(items: ids, geometry: geometry)
+            var diagnostics = result.map { BaselineDiagnostics.fields($0, parameters: parameters) } ?? ["fold": "noResult"]
+            diagnostics["attempt"] = attempt
+            evidence?.record("step3.baselineAttempt", diagnostics)
+            if let result {
                 lastBaseline = result
                 if result.foldAtBaseline == .absent { break }
             }

@@ -106,6 +106,8 @@ struct I7AmendmentV9Tests {
         #expect(!run.evidence.allRecords().contains { $0.kind == "placement.scanUncertain" })
         let planRecord = run.evidence.allRecords().first { $0.kind == "placement.plan" }
         #expect(planRecord?.fields["floorValue"] as? Double == PlacementPlan.historicalMaximumStoredValue)
+        // Evidence-only step 3 diagnostics: the accepted attempt is recorded too.
+        #expect(run.evidence.allRecords().contains { $0.kind == "step3.baselineAttempt" && $0.fields["fold"] as? String == "absent" })
     }
 
     // MARK: - Signal precedence (crosscheck-rework8.json #5)
