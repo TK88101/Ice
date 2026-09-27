@@ -179,7 +179,7 @@ final class FakeBarWorld: @unchecked Sendable {
         lock.withLock {
             if ownerPreferenceUnreadable, bundleID == Self.ownerKey.namespace { return nil }
             let domain = defaultsDomains[bundleID] ?? [:]
-            return domain.filter { $0.key.hasPrefix(PreferredPositionKey.scanPrefix) }.values.map { "\($0)" }
+            return PlacementValueScan.keysToRead(Array(domain.keys)).map { "\(domain[$0]!)" }
         }
     }
 

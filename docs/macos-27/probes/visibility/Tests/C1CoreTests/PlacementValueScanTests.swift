@@ -31,10 +31,40 @@ struct PlacementValueScanTests {
         #expect(result == .init(minX: 100, issue: .unreadable, numericValues: []))
     }
 
-    @Test("an empty rawValues array (read fine, no matching key) is missing")
-    func emptyRawValuesIsMissing() {
+    @Test("an empty rawValues array (no stored value) is clean, with no numbers")
+    func emptyRawValuesIsClean() {
         let result = PlacementValueScan.classify(.init(minX: 100, bundleID: "com.example.app", rawValues: []))
-        #expect(result == .init(minX: 100, issue: .missing, numericValues: []))
+        #expect(result == .init(minX: 100, issue: nil, numericValues: []))
+    }
+
+    @Test("more matching values than the cap is tooManyKeys, even when every one is numeric")
+    func overCapIsTooManyKeys() {
+        let raw = (0...PlacementValueScan.maxMatchingKeys).map { "\($0)" }
+        let result = PlacementValueScan.classify(.init(minX: 100, bundleID: "com.example.app", rawValues: raw))
+        #expect(result == .init(minX: 100, issue: .tooManyKeys, numericValues: []))
+    }
+
+    @Test("exactly the cap of matching values is still classified")
+    func atCapIsClean() {
+        let raw = (1...PlacementValueScan.maxMatchingKeys).map { "\($0)" }
+        let result = PlacementValueScan.classify(.init(minX: 100, bundleID: "com.example.app", rawValues: raw))
+        #expect(result.issue == nil)
+        #expect(result.numericValues.count == PlacementValueScan.maxMatchingKeys)
+    }
+
+    @Test("keysToRead keeps only prefixed keys, sorted, and at most one past the cap")
+    func keysToReadFiltersSortsAndBounds() {
+        let prefix = PreferredPositionKey.scanPrefix
+        #expect(PlacementValueScan.keysToRead(["other", prefix + "b", prefix + "a", "NSStatusItem Visible x"]) == [prefix + "a", prefix + "b"])
+        let many = (10..<50).map { prefix + "\($0)" }
+        let read = PlacementValueScan.keysToRead(many.reversed())
+        #expect(read.count == PlacementValueScan.maxMatchingKeys + 1)
+        #expect(read == Array(many.prefix(PlacementValueScan.maxMatchingKeys + 1)))
+    }
+
+    @Test("keysToRead of an empty key list is empty")
+    func keysToReadEmpty() {
+        #expect(PlacementValueScan.keysToRead([]).isEmpty)
     }
 
     @Test("a non-numeric matching value is nonNumeric, even with a numeric one alongside it")

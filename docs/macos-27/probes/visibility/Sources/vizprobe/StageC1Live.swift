@@ -42,47 +42,28 @@ struct LiveHelperDefaults: C1HelperDefaultsProviding {
     func write(_ bundleID: String, key: String, value: Double) -> Bool { HelperDefaults.write(bundleID, key: key, value: value) }
 }
 
-/// Amendment v9, "Sort-key values": the one read against an *owner's* own
-/// preference domain this whole probe ever makes -- read-only (`defaults
-/// export`, never `write`/`delete`), bounded in time (a fixed timeout; a
-/// domain that does not answer in time reads as unreadable, same as one
-/// `defaults export` itself failed on) and in count (at most
-/// `maxMatchingKeys` matching keys, sorted, so a pathological domain cannot
-/// make this scan do unbounded work). Never touches a helper's own domain
-/// (`LiveHelperDefaults` above is that, unconditionally the write side).
+/// Amendment v9, "Sort-key values" (read shape per Amendment v10): the one
+/// read against an *owner's* own preference domain this whole probe ever
+/// makes -- read-only (`CFPreferencesCopyKeyList`/`CFPreferencesCopyValue`,
+/// never a set), in process (no child process, so nothing to hang on), and
+/// limited to relevant entries: key *names* are listed first, and only the
+/// values of `PlacementValueScan.keysToRead`'s own keys (at most
+/// `maxMatchingKeys + 1`) are ever read. An empty or absent domain lists no
+/// keys and so reads as "no stored value" (`[]`), same as a domain without
+/// a matching key. Never touches a helper's own domain (`LiveHelperDefaults`
+/// above is that, unconditionally the write side).
 struct LiveOwnerPreferenceScanner: C1OwnerPreferenceScanning {
-    static let timeoutSeconds = 2.0
-    static let maxMatchingKeys = 16
-
     func matchingValues(bundleID: String) -> [String]? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        process.arguments = ["export", bundleID, "-"]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { return nil }
-
-        let exitedInTime = DispatchGroup()
-        exitedInTime.enter()
-        DispatchQueue.global(qos: .utility).async {
-            process.waitUntilExit()
-            exitedInTime.leave()
+        let domain = bundleID as CFString
+        let listed = CFPreferencesCopyKeyList(domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? [String] ?? []
+        var values = [String]()
+        for key in PlacementValueScan.keysToRead(listed) {
+            guard let value = CFPreferencesCopyValue(key as CFString, domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) else {
+                return nil
+            }
+            values.append("\(value)")
         }
-        guard exitedInTime.wait(timeout: .now() + Self.timeoutSeconds) == .success else {
-            process.terminate()
-            return nil
-        }
-
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0 else { return nil }
-        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return nil }
-
-        return plist
-            .filter { $0.key.hasPrefix(PreferredPositionKey.scanPrefix) }
-            .keys.sorted()
-            .prefix(Self.maxMatchingKeys)
-            .map { "\(plist[$0]!)" }
+        return values
     }
 }
 

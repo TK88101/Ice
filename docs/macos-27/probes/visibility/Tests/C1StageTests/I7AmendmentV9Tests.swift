@@ -90,6 +90,24 @@ struct I7AmendmentV9Tests {
         #expect(world.defaultsLog.isEmpty)
     }
 
+    // MARK: - An on-bar owner with no stored value -> plans normally (Amendment v10)
+
+    /// Amendment v10: an owner domain with no "NSStatusItem Preferred
+    /// Position " key is "no stored value", not an uncertain scan -- the
+    /// plan proceeds at the historical-maximum floor and the gate decides.
+    @Test("an on-bar owner whose domain has no preferred-position key -> no refusal, floor at the historical maximum, PASS")
+    func ownerWithoutStoredValuePlansAndPasses() {
+        let world = FakeBarWorld(placementHonoring: .sortKey)
+        world.defaultsForget(FakeBarWorld.ownerKey.namespace)
+        let run = I7.run(world: world)
+
+        #expect(run.code == 0)
+        #expect(run.evidence.lastVerdict() == "pass")
+        #expect(!run.evidence.allRecords().contains { $0.kind == "placement.scanUncertain" })
+        let planRecord = run.evidence.allRecords().first { $0.kind == "placement.plan" }
+        #expect(planRecord?.fields["floorValue"] as? Double == PlacementPlan.historicalMaximumStoredValue)
+    }
+
     // MARK: - Signal precedence (crosscheck-rework8.json #5)
 
     /// The F5 comment on `StageC1.run()`'s first step loop promises that a

@@ -90,17 +90,15 @@ public protocol C1HelperDefaultsProviding: Sendable {
 /// a right-edge-distance reading (crosscheck-rework8.json #0/#4), so
 /// `step1bPlacementPlan` reads them to set a floor rather than guess.
 public protocol C1OwnerPreferenceScanning: Sendable {
-    /// Every value, as a raw string, of every key in `bundleID`'s own
+    /// Every value, as a raw string, of the keys in `bundleID`'s own
     /// domain whose name begins with `PreferredPositionKey.scanPrefix`
-    /// ("NSStatusItem Preferred Position ") -- bounded in count (the live
-    /// implementation reads at most a fixed number of matching keys) and
-    /// in time (a fixed timeout; a domain that does not answer in time
-    /// reads as unreadable, same as one that could not be read at all).
-    /// `nil` when the domain itself could not be read at all (a process
-    /// failure, a timeout, or output that did not parse as a property
-    /// list) -- `PlacementValueScan.classify` then refuses the whole plan
-    /// rather than guess; `[]` when the domain read fine but had no
-    /// matching key.
+    /// ("NSStatusItem Preferred Position ") -- only the keys
+    /// `PlacementValueScan.keysToRead` selects (sorted, at most
+    /// `maxMatchingKeys + 1`, so `classify` can see an overflow). `[]` when
+    /// there is no such key (including an empty or absent domain); `nil`
+    /// when a listed key's own value could not be read --
+    /// `PlacementValueScan.classify` then refuses the whole plan rather
+    /// than guess (Amendment v10).
     func matchingValues(bundleID: String) -> [String]?
 }
 

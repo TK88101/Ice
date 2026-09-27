@@ -24,9 +24,23 @@ public enum PlacementValueScan {
         /// Preferred Position " key, but not every one of them could be
         /// parsed as a number.
         case nonNumeric
-        /// The domain was read, but had no "NSStatusItem Preferred
-        /// Position " key at all.
-        case missing
+        /// More than `maxMatchingKeys` matching keys -- refused rather
+        /// than truncated, since a dropped value could be the largest one.
+        case tooManyKeys
+    }
+
+    /// The most matching keys one owner's scan may use; the live scanner
+    /// reads at most one more value than this, just enough to detect
+    /// overflow.
+    public static let maxMatchingKeys = 16
+
+    /// Of `allKeys` (a domain's own key names, no values), only the
+    /// "NSStatusItem Preferred Position " ones, sorted, and at most
+    /// `maxMatchingKeys + 1` of them -- the only keys whose values the
+    /// live scanner ever reads (the owner rule: read only relevant
+    /// entries, bounded).
+    public static func keysToRead(_ allKeys: [String]) -> [String] {
+        Array(allKeys.filter { $0.hasPrefix(PreferredPositionKey.scanPrefix) }.sorted().prefix(maxMatchingKeys + 1))
     }
 
     /// One on-bar owner item's own raw scan, before classification.
@@ -37,9 +51,11 @@ public enum PlacementValueScan {
         /// `rawValues`.
         public let bundleID: String?
         /// Every matching key's own stored value, read as a string
-        /// (`C1OwnerPreferenceScanning`'s own contract) -- `nil` when the
-        /// domain itself could not be read at all, distinct from an empty
-        /// array (the domain read fine but had no matching key).
+        /// (`C1OwnerPreferenceScanning`'s own contract) -- `nil` when a
+        /// listed key's value could not be read; an empty array means no
+        /// stored value (no matching key, or an empty/absent domain -- the
+        /// live scanner cannot tell these apart, and none of them is a
+        /// reason to refuse: the placement gate checks the result).
         public let rawValues: [String]?
 
         public init(minX: Double, bundleID: String?, rawValues: [String]?) {
@@ -53,8 +69,8 @@ public enum PlacementValueScan {
     public struct Classified: Equatable, Sendable {
         public let minX: Double
         /// `nil` when every matching key parsed as a number (`numericValues`
-        /// is then non-empty); the refusal reason otherwise
-        /// (`numericValues` is then always empty).
+        /// may then be empty: no stored value); the refusal reason
+        /// otherwise (`numericValues` is then always empty).
         public let issue: Issue?
         public let numericValues: [Double]
 
@@ -76,8 +92,8 @@ public enum PlacementValueScan {
         guard let rawValues = reading.rawValues else {
             return Classified(minX: reading.minX, issue: .unreadable, numericValues: [])
         }
-        guard !rawValues.isEmpty else {
-            return Classified(minX: reading.minX, issue: .missing, numericValues: [])
+        guard rawValues.count <= maxMatchingKeys else {
+            return Classified(minX: reading.minX, issue: .tooManyKeys, numericValues: [])
         }
         var numbers = [Double]()
         for raw in rawValues {

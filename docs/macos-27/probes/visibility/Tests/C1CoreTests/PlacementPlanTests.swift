@@ -137,7 +137,7 @@ struct PlacementPlanTests {
     @Test("with several owners, the leftmost one's own scan issue is reported, deterministically")
     func leftmostOwnersIssueWinsDeterministically() {
         let owners = [
-            PlacementValueScan.Classified(minX: 270.0, issue: .missing, numericValues: []),
+            PlacementValueScan.Classified(minX: 270.0, issue: .tooManyKeys, numericValues: []),
             PlacementValueScan.Classified(minX: 120.0, issue: .unreadable, numericValues: []),
             PlacementValueScan.Classified(minX: 200.0, issue: .attributionUnclear, numericValues: []),
         ]
@@ -147,9 +147,20 @@ struct PlacementPlanTests {
 
     @Test("a scan issue refuses even when there would otherwise be no room -- the scan is checked first")
     func scanIssueRefusesBeforeRoomCheck() {
-        let issueOwner = PlacementValueScan.Classified(minX: 10.0, issue: .missing, numericValues: [])
+        let issueOwner = PlacementValueScan.Classified(minX: 10.0, issue: .tooManyKeys, numericValues: [])
         let outcome = PlacementPlan.plan(owners: [issueOwner], barRightEdge: 320.0, notchRightEdge: 0.0, targetOccupiedPt: targetOccupied, spacerOccupiedPt: spacerOccupied, protectedOccupiedPt: protectedOccupied)
-        #expect(outcome == .refused(.ownerScanUncertain(minX: 10.0, issue: .missing)))
+        #expect(outcome == .refused(.ownerScanUncertain(minX: 10.0, issue: .tooManyKeys)))
+    }
+
+    @Test("an owner with no stored value plans normally, and the floor stays at the historical maximum")
+    func ownerWithoutStoredValuePlans() throws {
+        let owners = [
+            PlacementValueScan.Classified(minX: 270.0, issue: nil, numericValues: []),
+            PlacementValueScan.Classified(minX: 290.0, issue: nil, numericValues: [100.0]),
+        ]
+        let outcome = PlacementPlan.plan(owners: owners, barRightEdge: 320.0, notchRightEdge: 0.0, targetOccupiedPt: targetOccupied, spacerOccupiedPt: spacerOccupied, protectedOccupiedPt: protectedOccupied)
+        guard case .planned(let plan) = outcome else { throw TestFailure.unexpectedRefusal(outcome) }
+        #expect(plan.floorValue == PlacementPlan.historicalMaximumStoredValue)
     }
 }
 

@@ -310,7 +310,8 @@ below -- only file:line and counts, per the brief's hard rule.
 - **C1Core (pure, 100% covered)**: `PlacementValueScan` (new;
   `Sources/C1Core/PlacementValueScan.swift`) classifies one on-bar owner's
   own raw scan into numeric values or one of four issues (`unreadable`,
-  `nonNumeric`, `missing`, `attributionUnclear`); `PlacementPlan.plan`'s
+  `nonNumeric`, `tooManyKeys`, `attributionUnclear`; Amendment v10 replaced
+  `missing` -- no matching key is now "no stored value"); `PlacementPlan.plan`'s
   own signature changed to take `[PlacementValueScan.Classified]` plus
   each helper's own real *occupied* pitch (`targetOccupiedPt`/
   `spacerOccupiedPt`/`protectedOccupiedPt` -- 28/32/28,
@@ -338,10 +339,12 @@ below -- only file:line and counts, per the brief's hard rule.
   (`placement.gateRead`) before deciding (`placement.gateFailed`, with a
   reason distinct per `FailureReason` case).
 - **Live scanner (new)**: `LiveOwnerPreferenceScanner`
-  (`Sources/vizprobe/StageC1Live.swift`) -- `defaults export <bundleID> -`,
-  read-only, with a 2 s timeout (`DispatchGroup.wait`, `process.terminate()`
-  on timeout) and a `maxMatchingKeys` (16) cap on how many matching keys
-  it returns -- the "bounded in time and count" the hard rules ask for.
+  (`Sources/vizprobe/StageC1Live.swift`) -- Amendment v10: lists key names
+  (`CFPreferencesCopyKeyList`), then reads only the values of
+  `PlacementValueScan.keysToRead`'s keys (`CFPreferencesCopyValue`, at most
+  `maxMatchingKeys + 1` = 17), read-only and in process; `classify` refuses
+  more than 16 as `tooManyKeys` -- the "only relevant entries, bounded" the
+  hard rules ask for.
   Never exercised live (the hard rules forbid it); exercised only through
   `FakeOwnerPreferenceScanner` in I7.
 - **Signal precedence (`StageC1.swift`)**: `run()`'s first step loop now
@@ -373,8 +376,8 @@ below -- only file:line and counts, per the brief's hard rule.
   pre-seeded with a small, legible default stored value in `init` (never
   through `defaultsWrite`, so it never shows up as something a run itself
   wrote) -- without this, every existing I7 scenario's own templated/
-  untemplated/no-room owner items would make `step1bPlacementPlan` refuse
-  as `missing` before ever reaching the code each of those scenarios
+  untemplated/no-room owner items would have made `step1bPlacementPlan` refuse
+  as `missing` (before Amendment v10) before ever reaching the code each of those scenarios
   actually means to test.
 - **New I7 coverage (`I7AmendmentV9Tests.swift`)**: the sort-key mode with
   a stale on-bar owner value still reaching PASS at the 28-pt pitch, a
