@@ -66,6 +66,11 @@ public enum PlacementPlan {
         /// scanned value)` -- recorded so the evidence can show which floor
         /// a plan actually used.
         public let floorValue: Double
+        /// C2 (k > 1): hidden-2...k, left to right, between Target and the
+        /// spacer, and their sort keys (descending left to right). Empty
+        /// for C1.
+        public let extraHiddenMinXs: [Double]
+        public let extraHiddenPreferredPositions: [Double]
 
         public init(
             targetMinX: Double,
@@ -74,8 +79,12 @@ public enum PlacementPlan {
             targetPreferredPosition: Double,
             spacerPreferredPosition: Double,
             protectedPreferredPosition: Double,
-            floorValue: Double
+            floorValue: Double,
+            extraHiddenMinXs: [Double] = [],
+            extraHiddenPreferredPositions: [Double] = []
         ) {
+            self.extraHiddenMinXs = extraHiddenMinXs
+            self.extraHiddenPreferredPositions = extraHiddenPreferredPositions
             self.targetMinX = targetMinX
             self.spacerMinX = spacerMinX
             self.protectedMinX = protectedMinX
@@ -118,9 +127,10 @@ public enum PlacementPlan {
         notchRightEdge: Double,
         targetOccupiedPt: Double,
         spacerOccupiedPt: Double,
-        protectedOccupiedPt: Double
+        protectedOccupiedPt: Double,
+        extraHiddenCount: Int = 0
     ) -> Outcome {
-        guard targetOccupiedPt > 0, spacerOccupiedPt > 0, protectedOccupiedPt > 0, barRightEdge > notchRightEdge else {
+        guard targetOccupiedPt > 0, spacerOccupiedPt > 0, protectedOccupiedPt > 0, barRightEdge > notchRightEdge, extraHiddenCount >= 0 else {
             return .refused(.noRoom(onBarOwnerCount: owners.count))
         }
 
@@ -134,7 +144,9 @@ public enum PlacementPlan {
             }
         }
 
-        let totalOccupied = targetOccupiedPt + spacerOccupiedPt + protectedOccupiedPt
+        // C2: every extra hidden item occupies Target's own pitch.
+        let hiddenCount = extraHiddenCount + 1
+        let totalOccupied = Double(hiddenCount) * targetOccupiedPt + spacerOccupiedPt + protectedOccupiedPt
         let nearestOwnerMinX = owners.map(\.minX).min() ?? barRightEdge
         let groupRightEdge = min(barRightEdge, nearestOwnerMinX - marginPt)
         let groupLeftEdge = groupRightEdge - totalOccupied
@@ -143,7 +155,8 @@ public enum PlacementPlan {
         }
 
         let targetMinX = groupLeftEdge
-        let spacerMinX = targetMinX + targetOccupiedPt
+        let extraHiddenMinXs = (0..<extraHiddenCount).map { targetMinX + Double($0 + 1) * targetOccupiedPt }
+        let spacerMinX = targetMinX + Double(hiddenCount) * targetOccupiedPt
         let protectedMinX = spacerMinX + spacerOccupiedPt
 
         let scannedMax = owners.flatMap(\.numericValues).max()
@@ -153,10 +166,12 @@ public enum PlacementPlan {
             targetMinX: targetMinX,
             spacerMinX: spacerMinX,
             protectedMinX: protectedMinX,
-            targetPreferredPosition: floor + 3 * sortKeyStepPt,
+            targetPreferredPosition: floor + Double(hiddenCount + 2) * sortKeyStepPt,
             spacerPreferredPosition: floor + 2 * sortKeyStepPt,
             protectedPreferredPosition: floor + 1 * sortKeyStepPt,
-            floorValue: floor
+            floorValue: floor,
+            extraHiddenMinXs: extraHiddenMinXs,
+            extraHiddenPreferredPositions: (0..<extraHiddenCount).map { floor + Double(hiddenCount + 1 - $0) * sortKeyStepPt }
         ))
     }
 }

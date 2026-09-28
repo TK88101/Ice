@@ -34,6 +34,10 @@ public enum PlacementGate {
         /// item still sits left of Protected (the rightmost helper, once
         /// the order holds).
         case ownerItemsLeft(count: Int)
+        /// C2 (k > 1): the hidden section is not strictly ordered left of
+        /// the spacer -- `minXs` is Target, each extra hidden item, then the
+        /// spacer.
+        case hiddenMisorder(minXs: [Double])
     }
 
     /// One discovery pass's own reading, as the gate needs it: each
@@ -46,12 +50,15 @@ public enum PlacementGate {
         public let spacerMinX: Double?
         public let protectedMinX: Double?
         public let onBarOwnerMinXs: [Double]
+        /// C2: hidden-2...k, left to right (empty for C1).
+        public let extraHiddenMinXs: [Double?]
 
-        public init(targetMinX: Double?, spacerMinX: Double?, protectedMinX: Double?, onBarOwnerMinXs: [Double]) {
+        public init(targetMinX: Double?, spacerMinX: Double?, protectedMinX: Double?, onBarOwnerMinXs: [Double], extraHiddenMinXs: [Double?] = []) {
             self.targetMinX = targetMinX
             self.spacerMinX = spacerMinX
             self.protectedMinX = protectedMinX
             self.onBarOwnerMinXs = onBarOwnerMinXs
+            self.extraHiddenMinXs = extraHiddenMinXs
         }
     }
 
@@ -72,6 +79,12 @@ public enum PlacementGate {
         guard let targetMinX = reading.targetMinX, let spacerMinX = reading.spacerMinX, let protectedMinX = reading.protectedMinX else {
             return .helperOffBarOrFolded
         }
+        let extras = reading.extraHiddenMinXs.compactMap { $0 }
+        guard extras.count == reading.extraHiddenMinXs.count else { return .helperOffBarOrFolded }
+        if !extras.isEmpty {
+            let section = [targetMinX] + extras + [spacerMinX]
+            guard zip(section, section.dropFirst()).allSatisfy({ $0 < $1 }) else { return .hiddenMisorder(minXs: section) }
+        }
         guard targetMinX < spacerMinX, spacerMinX < protectedMinX else {
             return .misorder(targetMinX: targetMinX, spacerMinX: spacerMinX, protectedMinX: protectedMinX)
         }
@@ -88,7 +101,9 @@ public enum PlacementGate {
     public static func materiallyAgree(_ a: Reading, _ b: Reading, tolerancePt: Double = agreementTolerancePt) -> Bool {
         guard closeOrBothNil(a.targetMinX, b.targetMinX, tolerancePt),
               closeOrBothNil(a.spacerMinX, b.spacerMinX, tolerancePt),
-              closeOrBothNil(a.protectedMinX, b.protectedMinX, tolerancePt)
+              closeOrBothNil(a.protectedMinX, b.protectedMinX, tolerancePt),
+              a.extraHiddenMinXs.count == b.extraHiddenMinXs.count,
+              zip(a.extraHiddenMinXs, b.extraHiddenMinXs).allSatisfy({ closeOrBothNil($0, $1, tolerancePt) })
         else { return false }
         guard a.onBarOwnerMinXs.count == b.onBarOwnerMinXs.count else { return false }
         return zip(a.onBarOwnerMinXs.sorted(), b.onBarOwnerMinXs.sorted()).allSatisfy { abs($0 - $1) <= tolerancePt }

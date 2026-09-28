@@ -12,14 +12,25 @@ public enum PreflightOrderCheck {
         /// Nothing else is left of the spacer -- but that also means the
         /// spacer itself must be found, immediately after Target.
         case targetNotAloneLeftOfSpacer
+        /// C2 (k > 1): Target is leftmost, but the other hidden items are
+        /// not the next ones, in order.
+        case hiddenOutOfOrder
     }
 
     /// `axOrder`/`pixelOrder`: every rendered item's id, left to right, user
     /// and system alike. `nil` when both conditions hold.
     public static func check(axOrder: [String], pixelOrder: [String], target: String, spacer: String) -> Failure? {
+        check(axOrder: axOrder, pixelOrder: pixelOrder, hidden: [target], spacer: spacer)
+    }
+
+    /// C2 (docs/plans/2026-09-28-c2-protocol.md 6.1 item 1): `hidden` is the
+    /// hidden section left to right, Target first; they must be the first
+    /// `hidden.count` items, in order, then the spacer.
+    public static func check(axOrder: [String], pixelOrder: [String], hidden: [String], spacer: String) -> Failure? {
         guard axOrder == pixelOrder else { return .disagree }
-        guard axOrder.first == target else { return .targetNotLeftmost }
-        guard axOrder.count > 1, axOrder[1] == spacer else { return .targetNotAloneLeftOfSpacer }
+        guard let target = hidden.first, axOrder.first == target else { return .targetNotLeftmost }
+        guard Array(axOrder.prefix(hidden.count)) == hidden else { return .hiddenOutOfOrder }
+        guard axOrder.count > hidden.count, axOrder[hidden.count] == spacer else { return .targetNotAloneLeftOfSpacer }
         return nil
     }
 }

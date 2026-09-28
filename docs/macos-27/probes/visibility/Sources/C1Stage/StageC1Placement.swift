@@ -188,6 +188,8 @@ extension StageC1 {
             reason = "a helper is off the bar or folded"
         case .ownerItemsLeft(let count):
             reason = "helpers not leftmost: \(count) owner items left"
+        case .hiddenMisorder(let minXs):
+            reason = "hidden section misordered: \(minXs)"
         }
         evidence?.record("placement.gateFailed", ["reason": reason])
         placementGateFailureReason = reason
