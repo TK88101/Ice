@@ -9,11 +9,13 @@ import C1Stage
 import Foundation
 
 enum I7 {
-    static func apps() -> C1Apps {
+    /// `extraHidden`: C2's hidden-2...(extraHidden + 1) (T3); 0 for C1.
+    static func apps(extraHidden: Int = 0) -> C1Apps {
         C1Apps(
             target: URL(fileURLWithPath: "/tmp/fakebar/Target.app"),
             protected: URL(fileURLWithPath: "/tmp/fakebar/Protected.app"),
-            spacer: URL(fileURLWithPath: "/tmp/fakebar/Spacer.app")
+            spacer: URL(fileURLWithPath: "/tmp/fakebar/Spacer.app"),
+            extraHidden: (0..<extraHidden).map { URL(fileURLWithPath: "/tmp/fakebar/Hidden\($0 + 2).app") }
         )
     }
 
@@ -39,7 +41,8 @@ enum I7 {
         dry: Bool = false,
         signalDuringLaunchOfRole: String? = nil,
         signalDuringStep1bDiscovery: Bool = false,
-        discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds
+        discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds,
+        extraHidden: Int = 0
     ) -> Run {
         let evidence = FakeEvidence()
         let caffeinate = FakeCaffeinate()
@@ -56,7 +59,7 @@ enum I7 {
             onFirstDiscovery = { handback.stage?.signalReceived() }
         }
         let environment = FakeC1EnvironmentFactory.make(world: world, evidence: evidence, caffeinate: caffeinate, onHelperLaunch: onLaunch, onFirstDiscovery: onFirstDiscovery, discoveryExecutorBoundSeconds: discoveryExecutorBoundSeconds)
-        let stage = StageC1(environment: environment, apps: apps(), dry: dry)
+        let stage = StageC1(environment: environment, apps: apps(extraHidden: extraHidden), dry: dry)
         handback.stage = stage
         let code = stage.run()
         return Run(code: code, evidence: evidence, caffeinate: caffeinate)

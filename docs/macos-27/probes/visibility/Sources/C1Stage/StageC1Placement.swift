@@ -70,7 +70,8 @@ extension StageC1 {
             notchRightEdge: notchRightEdge,
             targetOccupiedPt: C1HelperWidth.occupiedPitchPt,
             spacerOccupiedPt: C1HelperWidth.spacerOccupiedPitchPt,
-            protectedOccupiedPt: C1HelperWidth.occupiedPitchPt
+            protectedOccupiedPt: C1HelperWidth.occupiedPitchPt,
+            extraHiddenCount: apps.extraHidden.count
         )
 
         switch outcome {
@@ -96,6 +97,8 @@ extension StageC1 {
                 "protectedPreferredPosition": plan.protectedPreferredPosition,
                 "floorValue": plan.floorValue,
                 "onBarOwnerMinXs": classifiedOwners.map(\.minX),
+                "extraHiddenMinXs": plan.extraHiddenMinXs,
+                "extraHiddenPreferredPositions": plan.extraHiddenPreferredPositions,
             ])
             return .ok
         }
@@ -138,6 +141,7 @@ extension StageC1 {
                 "spacerMinX": current.spacerMinX as Any,
                 "protectedMinX": current.protectedMinX as Any,
                 "onBarOwnerMinXs": current.onBarOwnerMinXs,
+                "extraHiddenMinXs": current.extraHiddenMinXs.map { $0 as Any },
             ])
             if let previous, PlacementGate.materiallyAgree(previous, current) {
                 return decidePlacementGate(current)
@@ -162,14 +166,16 @@ extension StageC1 {
         // this gate's business only insofar as it is genuinely drawn on
         // the bar; `PreflightOrderCheck`/`C1Discoverer` are what actually
         // reject a real obstruction once cycles begin.
+        let helpers = [targetKey, spacerKey, protectedKey] + extraHiddenKeys
         let onBarOwnerMinXs = pass.set.items
-            .filter { $0.position == .onBar && ![targetKey, spacerKey, protectedKey].contains($0.key) }
+            .filter { $0.position == .onBar && !helpers.contains($0.key) }
             .compactMap(\.frame?.minX)
         return PlacementGate.Reading(
             targetMinX: minX(for: targetKey),
             spacerMinX: minX(for: spacerKey),
             protectedMinX: minX(for: protectedKey),
-            onBarOwnerMinXs: onBarOwnerMinXs
+            onBarOwnerMinXs: onBarOwnerMinXs,
+            extraHiddenMinXs: extraHiddenKeys.map { minX(for: $0) }
         )
     }
 

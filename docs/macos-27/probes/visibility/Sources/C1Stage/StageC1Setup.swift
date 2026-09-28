@@ -28,7 +28,8 @@ extension StageC1 {
     /// carries Protected's, P0-1), executables inside their bundles, and
     /// no helper under either already running.
     func step0Bundles() -> StepResult {
-        for (url, expected) in [(apps.target, C1HelperRole.target), (apps.protected, C1HelperRole.protected), (apps.spacer, C1HelperRole.protected)] {
+        let extras = apps.extraHidden.map { ($0, C1HelperRole.target) }
+        for (url, expected) in [(apps.target, C1HelperRole.target), (apps.protected, C1HelperRole.protected), (apps.spacer, C1HelperRole.protected)] + extras {
             guard environment.helperLauncher.validateBundle(at: url, expectedBundleID: expected) else {
                 return .abort("\(url.lastPathComponent) is not a valid \(expected) bundle with an executable vzhelper inside it")
             }
@@ -128,14 +129,28 @@ extension StageC1 {
         spacerHelper = spacer.helper
         spacerKey = spacer.key
 
+        // C2 (6.1 item 3): hidden-k ... hidden-2, then Target, each landing
+        // leftmost. They share the target's domain, so only the first of
+        // them to launch forgets it (C1: Target alone, unchanged).
+        guard plan.extraHiddenPreferredPositions.count == apps.extraHidden.count else { return .abort("placement plan does not cover every hidden item") }
+        for index in apps.extraHidden.indices.reversed() {
+            let number = index + 2
+            guard !isTerminal else { return .abort("terminal before launching hidden-\(number)") }
+            guard let extra = launchAndDiscover(label: "hidden-\(number)", app: apps.extraHidden[index], bundleID: C1HelperRole.target, role: "hidden-\(number)", identifier: "vz-hidden-\(number)", channel: channel, autosaveName: C1AutosaveName.hidden(number), preferredPosition: plan.extraHiddenPreferredPositions[index], forgetDomainFirst: index == apps.extraHidden.count - 1) else {
+                return .abort("could not launch or discover hidden-\(number)")
+            }
+            extraHiddenHelpers.insert(extra.helper, at: 0)
+            extraHiddenKeys.insert(extra.key, at: 0)
+        }
+
         guard !isTerminal else { return .abort("terminal before launching Target") }
-        guard let target = launchAndDiscover(label: "target", app: apps.target, bundleID: C1HelperRole.target, role: "target", identifier: "vz-target", channel: channel, autosaveName: C1AutosaveName.target, preferredPosition: plan.targetPreferredPosition) else {
+        guard let target = launchAndDiscover(label: "target", app: apps.target, bundleID: C1HelperRole.target, role: "target", identifier: "vz-target", channel: channel, autosaveName: C1AutosaveName.target, preferredPosition: plan.targetPreferredPosition, forgetDomainFirst: apps.extraHidden.isEmpty) else {
             return .abort("could not launch or discover Target")
         }
         targetHelper = target.helper
         targetKey = target.key
 
-        evidence?.record("step2.launched", ["protected": describeKey(protected.key), "spacer": describeKey(spacer.key), "target": describeKey(target.key)])
+        evidence?.record("step2.launched", ["protected": describeKey(protected.key), "spacer": describeKey(spacer.key), "target": describeKey(target.key), "extraHidden": extraHiddenKeys.map(describeKey)])
         return .ok
     }
 
@@ -260,7 +275,7 @@ extension StageC1 {
         channel?.quitAll()
         channel?.quitProtected()
         environment.pump.run(0.5)
-        let helperPIDs: Set<pid_t> = Set([targetHelper, spacerHelper, protectedHelper].compactMap { $0?.pid })
+        let helperPIDs: Set<pid_t> = Set(([targetHelper, spacerHelper, protectedHelper].compactMap { $0 } + extraHiddenHelpers).map(\.pid))
         return waitForReap(of: helperPIDs, within: seconds, recordPrefix: "reap")
     }
 
@@ -272,7 +287,7 @@ extension StageC1 {
         expansionDriver?.collapse()
         channel?.quitAll()
         environment.pump.run(0.5)
-        let helperPIDs: Set<pid_t> = Set([targetHelper, spacerHelper].compactMap { $0?.pid })
+        let helperPIDs: Set<pid_t> = Set(([targetHelper, spacerHelper].compactMap { $0 } + extraHiddenHelpers).map(\.pid))
         return waitForReap(of: helperPIDs, within: seconds, recordPrefix: "reap.nonProtected")
     }
 

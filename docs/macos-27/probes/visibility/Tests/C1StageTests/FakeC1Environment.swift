@@ -74,7 +74,9 @@ struct FakeHelperLauncher: C1HelperLaunching {
         case "reference": pid = FakeBarWorld.protectedPID
         case "spacer": pid = FakeBarWorld.spacerPID
         case "target": pid = FakeBarWorld.targetPID
-        default: return nil
+        default:
+            guard let number = FakeBarWorld.hiddenExtraNumber(role: role) else { return nil }
+            pid = FakeBarWorld.hiddenExtraPID(number)
         }
         // vzhelper's own role names ("reference") differ from the world's
         // internal role names ("protected") only for Protected/spacer;

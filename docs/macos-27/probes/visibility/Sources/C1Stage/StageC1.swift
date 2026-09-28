@@ -35,11 +35,16 @@ public struct C1Apps: Sendable {
     public let target: URL
     public let protected: URL
     public let spacer: URL
+    /// C2 (docs/plans/2026-09-28-c2-protocol.md 6.1 item 3): hidden-2...k,
+    /// left to right (`Hidden2.app`...), all under the target's bundle id.
+    /// Empty for C1.
+    public let extraHidden: [URL]
 
-    public init(target: URL, protected: URL, spacer: URL) {
+    public init(target: URL, protected: URL, spacer: URL, extraHidden: [URL] = []) {
         self.target = target
         self.protected = protected
         self.spacer = spacer
+        self.extraHidden = extraHidden
     }
 }
 
@@ -83,6 +88,8 @@ public enum C1AutosaveName {
     public static let target = "vz-c1-target"
     public static let spacer = "vz-c1-spacer"
     public static let protected = "vz-c1-protected"
+    /// C2: hidden-n's own name, in the target's domain (n = 2...4).
+    public static func hidden(_ index: Int) -> String { "vz-c2-hidden-\(index)" }
 }
 
 /// Amendment v8's own pre-launch `PlacementPlan` (`step1bPlacementPlan`,
@@ -299,6 +306,13 @@ public final class StageC1 {
     var targetKey: ItemKey?
     var spacerKey: ItemKey?
     var protectedKey: ItemKey?
+    /// C2 (6.1 item 3): hidden-2...k, left to right, and their helpers.
+    var extraHiddenHelpers: [any C1HelperControlling] = []
+    var extraHiddenKeys: [ItemKey] = []
+    /// The hidden section, Target first; empty until Target is launched.
+    var hiddenKeys: [ItemKey] { targetKey.map { [$0] + extraHiddenKeys } ?? [] }
+    /// Every launched helper's key -- what "not an owner item" means.
+    var helperKeys: [ItemKey] { hiddenKeys + [spacerKey, protectedKey].compactMap { $0 } }
 
     /// Amendment v8, "Placement by the helpers' own preferred position":
     /// the plan one pre-launch discovery pass computed

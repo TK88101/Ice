@@ -82,8 +82,11 @@ extension StageC1 {
         // failed capture, cancellation) means the verifier itself did not
         // run this pass -- not a real "Target stayed drawn or not" answer
         // `otherChecksPassed` can average out. Abort this cycle instead.
-        guard !recordIfSkipped(restoredCheck[targetKey!], label: "\(label).restored") else { return nil }
-        let restored = classify(restoredCheck[targetKey!], expected: .stillDrawn) == .expected
+        // C2 (6.1 item 3): every hidden item must be back.
+        for key in hiddenKeys {
+            guard !recordIfSkipped(restoredCheck[key], label: "\(label).restored") else { return nil }
+        }
+        let restored = !hiddenKeys.isEmpty && hiddenKeys.allSatisfy { classify(restoredCheck[$0], expected: .stillDrawn) == .expected }
 
         let protectedAndOwnersDrawn = readOwnerAndProtectedDrawn(label: "\(label).drawn")
         let untemplatedFailures = UntemplatedOwnerWatch.check(current: currentUntemplatedReadings(), baseline: untemplatedOwnerBaseline)
@@ -121,9 +124,23 @@ extension StageC1 {
     /// verifier itself did not run this pass) is not folded into
     /// `.refused` any more -- see `recordIfSkipped`.
     private func readTarget(label: String) -> TargetReading? {
-        guard let results = verifyOnce(), let targetKey else { return nil }
-        let check = results[targetKey]
-        guard !recordIfSkipped(check, label: label) else { return nil }
+        guard let results = verifyOnce(), !hiddenKeys.isEmpty else { return nil }
+        var readings = [TargetReading]()
+        for key in hiddenKeys {
+            let check = results[key]
+            guard !recordIfSkipped(check, label: label) else { return nil }
+            readings.append(Self.reading(of: check))
+        }
+        // C2 (6.1 item 3): the whole hidden section's reading; Target alone
+        // for C1. Each item's own reading is recorded when there is more
+        // than one, so a refused section says which item refused.
+        if readings.count > 1 {
+            evidence?.record("verify.section", ["label": label, "readings": readings.map { "\($0)" }])
+        }
+        return TargetReading.section(readings)
+    }
+
+    private static func reading(of check: SectionItemCheck?) -> TargetReading {
         guard case .checked(let hiding)? = check else { return .refused }
         switch hiding {
         case .hidden(let folded): return .hidden(folded: folded)
@@ -224,14 +241,14 @@ extension StageC1 {
     }
 
     private func maybeRefreshVerificationBaseline(label: String) -> Bool {
-        guard let prepared, let targetKey, let protectedKey else { return false }
+        guard let prepared, targetKey != nil, let protectedKey else { return false }
         let age = environment.pump.now() - prepared.createdAt
         let predictedNext = lastCycleDurationSeconds.map { $0 * 1.5 } ?? StageC1.initialCycleDurationEstimateSeconds
         let shouldRefresh = age + predictedNext > BaselineReuse.maxAge - StageC1.baselineRefreshMarginSeconds
         evidence?.record("baseline.freshnessCheck", ["label": label, "age": age, "predictedNext": predictedNext, "refreshing": shouldRefresh])
         guard shouldRefresh else { return true }
 
-        let sectionMap: [TagKey: ItemSection] = [targetKey.tagKey(isSelf: false): .hidden]
+        let sectionMap = hiddenSectionMap()
         let refreshed = environment.pump.blocking { await self.verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [protectedKey], reusing: nil) }
         guard case .ready = refreshed.state else {
             evidence?.record("baseline.refreshFailed", ["label": label, "state": "\(refreshed.state)"])
@@ -376,7 +393,7 @@ extension StageC1 {
     /// verifier's own `prepare()`-time preflight, which runs once at
     /// setup and never again.
     private func passesPreflightOnce(label: String) -> Bool {
-        guard let targetKey, let spacerKey, let protectedKey else { return false }
+        guard targetKey != nil, let spacerKey, let protectedKey else { return false }
         // Item 8: bounded, like the untemplated watch's own discovery read.
         guard let fresh = environment.pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }) else {
             latchingCapturer.feed(.init(captureFailed: true))
@@ -399,7 +416,7 @@ extension StageC1 {
         let templatedIDs = Set(ownerBaseline.templates.keys).subtracting(dynamicOwnerIDs)
         let axProjected = axOrder.filter { templatedIDs.contains($0) }
 
-        let targets = ownerBaselineReadings.map(\.id) + [targetKey.encoded, spacerKey.encoded, protectedKey.encoded]
+        let targets = ownerBaselineReadings.map(\.id) + hiddenKeys.map(\.encoded) + [spacerKey.encoded, protectedKey.encoded]
         guard let settled = settledPairedRead(targets: targets, references: [protectedKey.encoded]) else {
             evidence?.record("preflight.notSettled", ["label": label])
             return false
@@ -413,7 +430,7 @@ extension StageC1 {
         watchFold(settled.reading.fold, label: "\(label).fold")
         guard !isTerminal else { return false }
 
-        guard PreflightOrderCheck.check(axOrder: axProjected, pixelOrder: pixelOrder, target: targetKey.encoded, spacer: spacerKey.encoded) == nil else {
+        guard PreflightOrderCheck.check(axOrder: axProjected, pixelOrder: pixelOrder, hidden: hiddenKeys.map(\.encoded), spacer: spacerKey.encoded) == nil else {
             evidence?.record("preflight.orderFailed", ["label": label, "axProjected": axProjected, "pixel": pixelOrder])
             return false
         }

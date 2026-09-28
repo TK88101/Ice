@@ -127,3 +127,14 @@ public enum RunAccounting {
         return .pass
     }
 }
+
+extension TargetReading {
+    /// C2 (docs/plans/2026-09-28-c2-protocol.md 6.1 item 3): the hidden
+    /// section's reading -- every item agreeing gives that reading; any mix
+    /// or refusal is `.refused`, so a partly hidden section never counts as
+    /// hidden. One item is its own reading (C1).
+    public static func section(_ readings: [TargetReading]) -> TargetReading {
+        guard let first = readings.first, readings.allSatisfy({ $0 == first }) else { return .refused }
+        return first
+    }
+}

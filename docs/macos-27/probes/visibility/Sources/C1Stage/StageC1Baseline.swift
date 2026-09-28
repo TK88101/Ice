@@ -41,12 +41,13 @@ extension StageC1 {
             spacerKey.encoded: spacerKey.pid,
             protectedKey.encoded: protectedKey.pid,
         ]
+        for key in extraHiddenKeys { ids[key.encoded] = key.pid }
         // Amendment v8 (crosscheck-rework7.json finding #0): a parked item
         // (frames below the bar; the owner's own bar always lists 2-3 of
         // them) is not an owner item -- left out of the owner AX snapshot
         // and the untemplated candidates below, so a parked frame never
         // reaches the fold region or the keyed watch.
-        for item in pass.set.items where ![targetKey, spacerKey, protectedKey].contains(item.key) && item.position != .parked {
+        for item in pass.set.items where !helperKeys.contains(item.key) && item.position != .parked {
             ids[item.key.encoded] = item.key.pid
         }
         ownerItemIDs = ids
@@ -113,7 +114,7 @@ extension StageC1 {
             // `HidingVerification.prepare()`'s own internal discovery call
             // (and every re-prepare, F3) is bounded like every other
             // post-launch discovery read.
-            discoverer: C1Discoverer(base: timedDiscoverer, targetKey: targetKey, spacerKey: spacerKey, protectedKey: protectedKey),
+            discoverer: C1Discoverer(base: timedDiscoverer, targetKey: targetKey, spacerKey: spacerKey, protectedKey: protectedKey, extraHiddenKeys: extraHiddenKeys),
             capturer: latchingCapturer,
             // Round 3 item 2: the reader backing `HidingVerification`'s
             // own internal Sampler shares the one stage-wide
@@ -139,7 +140,7 @@ extension StageC1 {
             sleep: { capturedEnvironment.pump.sleep($0) },
             now: { capturedEnvironment.pump.now() }
         )
-        let sectionMap: [TagKey: ItemSection] = [targetKey.tagKey(isSelf: false): .hidden]
+        let sectionMap = hiddenSectionMap()
         let firstPrepared = environment.pump.blocking { await self.verification.prepare(sections: [.hidden], sectionMap: sectionMap, explicitCandidates: [protectedKey], reusing: nil) }
         guard case .ready = firstPrepared.state else {
             evidence?.record("step3.prepareFailed", ["state": "\(firstPrepared.state)"])
@@ -220,7 +221,7 @@ extension StageC1 {
         // `CaptureStability` compares elsewhere.
         let protectedStableThisCapture = classifyOwnerMatch(protectedKey.encoded, in: map) == .ok
 
-        let helperIDs = [targetKey?.encoded, spacerKey?.encoded, protectedKey.encoded].compactMap { $0 }
+        let helperIDs = helperKeys.map(\.encoded)
         let ownerOnlyIDs = Set(ownerItemIDs.keys).subtracting(helperIDs)
 
         var currentIssues: Set<String> = []
@@ -274,10 +275,11 @@ extension StageC1 {
         // `CaptureStability` reference, since it is expected to disagree
         // with its own template.
         dynamicOwnerIDs = Set(baseline.templates.filter(\.value.isDynamic).keys)
+        let helperIDs = [targetID, spacerID, protectedID] + extraHiddenKeys.map(\.encoded)
         ownerBaselineReadings = baseline.acceptedIDs
-            .filter { $0 != targetID && $0 != spacerID && $0 != protectedID && !dynamicOwnerIDs.contains($0) }
+            .filter { !helperIDs.contains($0) && !dynamicOwnerIDs.contains($0) }
             .compactMap { id in baseline.templates[id].map { .init(id: id, x: $0.originXPt) } }
-        helperBaselineReadings = [targetID, spacerID, protectedID].compactMap { id in
+        helperBaselineReadings = helperIDs.compactMap { id in
             baseline.templates[id].map { .init(id: id, x: $0.originXPt) }
         }
 
@@ -290,7 +292,7 @@ extension StageC1 {
         // either -- it is not an owner item at all, not merely one the
         // pixel baseline happened to reject.
         let untemplatedCandidates = discovery.set.listedItems
-            .filter { ![targetKey, spacerKey, protectedKey].contains($0.key) && $0.position != .parked && !staticTemplatedIDs.contains($0.key.encoded) }
+            .filter { !helperKeys.contains($0.key) && $0.position != .parked && !staticTemplatedIDs.contains($0.key.encoded) }
         guard untemplatedCandidates.allSatisfy({ $0.frame != nil }) else {
             let missing = untemplatedCandidates.filter { $0.frame == nil }.map(\.key.encoded)
             evidence?.record("step3.untemplatedNoFrame", ["ids": missing])
@@ -389,4 +391,12 @@ enum C1CaptureIndicator {
 /// hand its result back across.
 private final class DiscoveryResultBox: @unchecked Sendable {
     var value: DiscoveryResult?
+}
+
+extension StageC1 {
+    /// C2 (6.1 item 3): every hidden-section item in the verifier's section
+    /// map -- Target alone for C1.
+    func hiddenSectionMap() -> [TagKey: ItemSection] {
+        Dictionary(uniqueKeysWithValues: hiddenKeys.map { ($0.tagKey(isSelf: false), ItemSection.hidden) })
+    }
 }

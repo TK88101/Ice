@@ -21,6 +21,8 @@
 // `FakeBarWorldLayout.swift` (every fixed position, identity and glyph
 // shape) to stay under the 800-line cap -- this file keeps the world's own
 // state, command handling, and its capture/Accessibility/discovery reads.
+// C2 (T3): the pixel renderer moved to `FakeBarWorldRender.swift` for the
+// same reason, and C2's extra hidden items live in `FakeHiddenExtras.swift`.
 import C1Core
 import C1Stage
 import Darwin
@@ -44,6 +46,10 @@ final class FakeBarWorld: @unchecked Sendable {
     private var protectedUp = false
     private var spacerUp = false
     private var targetUp = false
+    /// C2 (T3): which of hidden-2...4 are up (`FakeHiddenExtras.swift`).
+    private var hiddenExtrasUp: Set<Int> = []
+    /// C2 (T3): hidden-n that stay drawn however far the spacer expands.
+    private var hiddenExtrasNeverHide: Set<Int> = []
     /// Every helper command this world has seen, in order -- what the I7
     /// scenarios that assert "rest before quit" read.
     private var log: [String] = []
@@ -139,7 +145,7 @@ final class FakeBarWorld: @unchecked Sendable {
             (C1HelperRole.target, C1AutosaveName.target),
             (C1HelperRole.protected, C1AutosaveName.spacer),
             (C1HelperRole.protected, C1AutosaveName.protected),
-        ] {
+        ] + Self.hiddenExtraNumbers.map({ (C1HelperRole.target, C1AutosaveName.hidden($0)) }) {
             guard let other = defaultsDomains[bundleID]?[PreferredPositionKey.stringKey(autosaveName: autosaveName)], other != value else { continue }
             candidates.append(other)
         }
@@ -362,6 +368,10 @@ final class FakeBarWorld: @unchecked Sendable {
         lock.withLock { targetNeverHides = value }
     }
 
+    func setHiddenExtraNeverHides(_ number: Int) {
+        lock.withLock { _ = hiddenExtrasNeverHide.insert(number) }
+    }
+
     /// Arms `knob`, engaged once the spacer has received its `afterNthLength`-th
     /// `length` command -- e.g. `1` for "as soon as the first cycle
     /// expands" (most triggers), `2` for "only from the second cycle on"
@@ -492,7 +502,7 @@ final class FakeBarWorld: @unchecked Sendable {
             case "protected": protectedUp = true
             case "spacer": spacerUp = true
             case "target": targetUp = true
-            default: break
+            default: if let number = Self.hiddenExtraNumber(role: role) { hiddenExtrasUp.insert(number) }
             }
         }
     }
@@ -521,7 +531,7 @@ final class FakeBarWorld: @unchecked Sendable {
         case "protected": protectedUp = false
         case "spacer": spacerUp = false
         case "target": targetUp = false
-        default: break
+        default: if let number = Self.hiddenExtraNumber(role: role) { hiddenExtrasUp.remove(number) }
         }
     }
 
@@ -542,6 +552,15 @@ final class FakeBarWorld: @unchecked Sendable {
                 lengthCommandsSeen += 1
             }
         }
+    }
+
+    /// C2 (T3): hidden-n's own render X -- its placed rest X, or off the
+    /// strip once the spacer expands (unless `targetNeverHides`).
+    private func hiddenExtraXLocked(_ number: Int) -> Double {
+        let restX = resolvedXLocked(bundleID: C1HelperRole.target, autosaveName: C1AutosaveName.hidden(number), fallback: Self.hiddenExtraRestX(number))
+        if targetNeverHides || hiddenExtrasNeverHide.contains(number) { return restX }
+        if case .expanded = spacerState { return Self.hiddenExtraHiddenX(number) }
+        return restX
     }
 
     private func targetXLocked() -> Double {
@@ -566,6 +585,7 @@ final class FakeBarWorld: @unchecked Sendable {
             if captureShouldFailLocked() { return ([], true) }
             var g: [(shape: [String], atPt: Double)] = []
             if targetUp { g.append((Self.shapeTarget, targetXLocked())) }
+            for number in hiddenExtrasUp.sorted() { g.append((Self.shapeHidden(number), hiddenExtraXLocked(number))) }
             if spacerUp { g.append((Self.shapeSpacer, spacerRenderXLocked())) }
             if protectedVisibleLocked() { g.append((Self.shapeProtected, helperRenderXLocked(role: .protected, fallback: Self.protectedX))) }
             if templatedOwnerVisibleLocked() { g.append((templatedOwnerShapeLocked(), Self.ownerX)) }
@@ -595,42 +615,6 @@ final class FakeBarWorld: @unchecked Sendable {
         guard !shouldFail else { return nil }
         clock.advance(SimulatedLatency.captureSeconds)
         return Self.render(glyphs)
-    }
-
-    private static func render(_ glyphs: [(shape: [String], atPt: Double)]) -> StripImage {
-        let widthPx = widthPt * scale
-        let heightPx = heightPt * scale
-        var bytes = [UInt8](repeating: 0, count: widthPx * heightPx * 4)
-        for i in stride(from: 0, to: bytes.count, by: 4) {
-            bytes[i] = backdrop.r
-            bytes[i + 1] = backdrop.g
-            bytes[i + 2] = backdrop.b
-            bytes[i + 3] = 255
-        }
-        for (shape, xPt) in glyphs {
-            let x0 = Int((xPt * Double(scale)).rounded())
-            let y0 = (heightPx - shape.count) / 2
-            for (dy, row) in shape.enumerated() {
-                for (dx, char) in row.enumerated() where char == "#" {
-                    let x = x0 + dx
-                    let y = y0 + dy
-                    guard x >= 0, x < widthPx, y >= 0, y < heightPx else { continue }
-                    let i = (y * widthPx + x) * 4
-                    bytes[i] = ink.r
-                    bytes[i + 1] = ink.g
-                    bytes[i + 2] = ink.b
-                    bytes[i + 3] = 255
-                }
-            }
-        }
-        return StripImage(width: widthPx, height: heightPx, scale: Double(scale), bytes: bytes)
-    }
-
-    /// The trimmed (detector-facing) AX frame a glyph at `atPt` reads at --
-    /// one point narrower than its own ink on each side, the same
-    /// convention `TestBar.frame` uses.
-    private static func frame(atPt xPt: Double, width: Double = 7) -> BarRect {
-        BarRect(minX: xPt - 1, minY: 0, width: width, height: Double(heightPt))
     }
 
     // MARK: - Accessibility (AX reads and discovery)
@@ -747,6 +731,10 @@ final class FakeBarWorld: @unchecked Sendable {
             var result = [(id: String, entry: (key: ItemKey, pid: pid_t, frame: BarRect, position: ItemPosition))]()
             if targetUp {
                 result.append((Self.targetKey.encoded, (Self.targetKey, Self.targetPID, Self.frame(atPt: targetXLocked()), .onBar)))
+            }
+            for number in hiddenExtrasUp.sorted() {
+                let key = Self.hiddenExtraKey(number)
+                result.append((key.encoded, (key, Self.hiddenExtraPID(number), Self.frame(atPt: hiddenExtraXLocked(number)), .onBar)))
             }
             if spacerUp {
                 result.append((Self.spacerKey.encoded, (Self.spacerKey, Self.spacerPID, Self.frame(atPt: spacerRenderXLocked()), .onBar)))
