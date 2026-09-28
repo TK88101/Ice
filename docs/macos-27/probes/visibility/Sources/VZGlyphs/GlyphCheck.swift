@@ -1,20 +1,23 @@
 // T8a's "glyphs pairwise distinct", checked with IceCore's own baseline
-// rules rather than by eye: the three glyphs are rendered the way the bar
+// rules rather than by eye: every glyph is rendered the way the bar
 // renders a template image (light ink on a dark bar), side by side in one
-// synthetic strip, and `StripAssessor.baseline` must accept all three -- in
+// synthetic strip, and `StripAssessor.baseline` must accept all of them -- in
 // particular none may be `notUniqueAtBaseline`, which is what two glyphs
 // matching each other would produce. Nothing is drawn on screen.
 import AppKit
 import IceCore
-import VZGlyphs
 
-enum GlyphCheck {
+public enum GlyphCheck {
     static let sidePt = 12
     static let scale = 2
     static let heightPt = 24
-    static let widthPt = 120
+    static let widthPt = 220
     typealias Placement = (id: String, glyph: Glyph, xPt: Int)
-    static let distinctLayout: [Placement] = [("target", .target, 20), ("reference", .reference, 50), ("alt", .alt, 80)]
+    /// Every glyph, C2's three hidden-section glyphs included (T2).
+    static let distinctLayout: [Placement] = [
+        ("target", .target, 20), ("reference", .reference, 50), ("alt", .alt, 80),
+        ("hidden2", .hidden2, 110), ("hidden3", .hidden3, 140), ("hidden4", .hidden4, 170),
+    ]
     /// The negative control: the same glyph twice must be refused as not
     /// unique, or the check above proves nothing.
     static let twinLayout: [Placement] = [("target", .target, 20), ("twin", .target, 50), ("reference", .reference, 80)]
@@ -23,7 +26,7 @@ enum GlyphCheck {
 
     /// Passes when the three glyphs are all accepted and the twin control's
     /// two identical glyphs are both refused as not unique.
-    static func run(parameters: DetectorParameters = .preRegistered) -> (passed: Bool, lines: [String]) {
+    public static func run(parameters: DetectorParameters = .preRegistered) -> (passed: Bool, lines: [String]) {
         guard let distinct = baseline(distinctLayout, parameters: parameters),
               let twins = baseline(twinLayout, parameters: parameters)
         else { return (false, ["glyph check: could not render the glyphs"]) }
@@ -51,7 +54,7 @@ enum GlyphCheck {
         // One MenuBarAgent frame right of the glyphs, as on the real bar (the
         // clock): the fold witness reads the fold against the agent's items,
         // and with none at all every baseline reads the fold as not absent.
-        let agent = [AgentFrame(minX: 104, minY: 0, width: 12)]
+        let agent = [AgentFrame(minX: 200, minY: 0, width: 12)]
         let samples = (0..<5).map { ObservationSample(time: Double($0), before: strip, after: strip, agentFrames: agent, itemFrames: frames) }
         return StripAssessor.baseline(samples: samples, geometry: geometry, parameters: parameters)
     }

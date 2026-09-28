@@ -63,13 +63,19 @@ let package = Package(
         // own swhelper/swctl/swfront targets.
         .target(
             name: "VZGlyphs",
+            // GlyphCheck (moved here from vizprobe for C2's T2) checks the
+            // glyphs with IceCore's own baseline rules.
+            dependencies: [.product(name: "IceCore", package: "IceCore")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .testTarget(name: "VZGlyphsTests", dependencies: ["VZGlyphs"]),
         .executableTarget(
             name: "vzhelper",
             // I2: the spacer role's `length <pt>`/`rest` commands are
             // parsed by C1Core's own pure parser, not reimplemented here.
-            dependencies: ["VZGlyphs", "C1Core"],
+            // C2 (T2): the hidden-<n>/menus roles and the `menus <n>`
+            // command are parsed by C2Core, likewise.
+            dependencies: ["VZGlyphs", "C1Core", "C2Core"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         // T13/T14: the live protocol's controller.

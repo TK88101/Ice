@@ -23,6 +23,14 @@ public enum Glyph: String, CaseIterable {
     /// glyph the 2026-09-23 plan's section 6 asks for, so a helper's second
     /// item never collides with the reference (Appendix E).
     case alt
+    /// C2's extra hidden-section items (docs/plans/2026-09-28-c2-protocol.md,
+    /// T2), each a shape none of the others shares: open at the top with an
+    /// accent rising from the bottom bar (alt's mirror) ...
+    case hidden2
+    /// ... an H: two posts and a crossbar ...
+    case hidden3
+    /// ... and an N: two posts joined by a diagonal.
+    case hidden4
 }
 
 public enum Glyphs {
@@ -73,6 +81,25 @@ public enum Glyphs {
             bracket.line(to: NSPoint(x: box.maxX, y: box.minY))
             accent.move(to: NSPoint(x: midX, y: box.maxY - 1))
             accent.line(to: NSPoint(x: midX, y: midY - 1))
+        case .hidden2:
+            bracket.move(to: NSPoint(x: box.minX, y: box.maxY))
+            bracket.line(to: NSPoint(x: box.minX, y: box.minY))
+            bracket.line(to: NSPoint(x: box.maxX, y: box.minY))
+            bracket.line(to: NSPoint(x: box.maxX, y: box.maxY))
+            accent.move(to: NSPoint(x: midX, y: box.minY + 1))
+            accent.line(to: NSPoint(x: midX, y: midY + 1))
+        case .hidden3:
+            bracket.move(to: NSPoint(x: box.minX, y: box.minY))
+            bracket.line(to: NSPoint(x: box.minX, y: box.maxY))
+            bracket.move(to: NSPoint(x: box.maxX, y: box.minY))
+            bracket.line(to: NSPoint(x: box.maxX, y: box.maxY))
+            accent.move(to: NSPoint(x: box.minX, y: midY))
+            accent.line(to: NSPoint(x: box.maxX, y: midY))
+        case .hidden4:
+            bracket.move(to: NSPoint(x: box.minX, y: box.minY))
+            bracket.line(to: NSPoint(x: box.minX, y: box.maxY))
+            bracket.line(to: NSPoint(x: box.maxX, y: box.minY))
+            bracket.line(to: NSPoint(x: box.maxX, y: box.maxY))
         }
         bracket.stroke()
         accent.stroke()

@@ -9,6 +9,7 @@ import Foundation
 import IceCore
 import MenuBarCapture
 import MenuBarDiscovery
+import VZGlyphs
 
 enum StageDryRun {
     static func run(kind: StageKind, apps: HelperApps) -> Int32 {

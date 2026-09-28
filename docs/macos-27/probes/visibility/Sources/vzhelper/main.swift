@@ -52,6 +52,7 @@
 import AppKit
 import ApplicationServices
 import C1Core
+import C2Core
 import VZGlyphs
 
 func option(_ name: String) -> String? {
@@ -81,6 +82,9 @@ struct Config {
     /// irrelevant -- the spacer is neither a glyph item nor a `.noDivider`
     /// stand-in, it is driven by `length`/`rest` alone.
     let spacer: Bool
+    /// C2's menus role (T2): no status item; a regular app whose own title
+    /// menus (`menus <n>`) set the frontmost-menu width.
+    var menus = false
 }
 
 func parseConfig() -> Config {
@@ -95,6 +99,17 @@ func parseConfig() -> Config {
         let autosave = option("--autosave")
         if roleName == "spacer" {
             return Config(items: [], mimicNoDivider: false, autosave: autosave, lifetime: lifetime, spacer: true)
+        }
+        switch C2HelperRole.parse(roleName) {
+        case .menus?:
+            var menusConfig = Config(items: [], mimicNoDivider: false, autosave: nil, lifetime: lifetime, spacer: false)
+            menusConfig.menus = true
+            return menusConfig
+        case .hidden(let index)?:
+            let glyph: Glyph = index == 2 ? .hidden2 : index == 3 ? .hidden3 : .hidden4
+            return Config(items: [ItemSpec(identifier: "vz-\(roleName)", glyph: glyph)], mimicNoDivider: false, autosave: autosave, lifetime: lifetime, spacer: false)
+        case nil:
+            break
         }
         let glyph: Glyph
         switch roleName {
@@ -400,6 +415,11 @@ final class Delegate: NSObject, NSApplicationDelegate {
     var spacer: SpacerItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !config.menus else {
+            MenusRole.show(count: 0)
+            reply("up", ["pid": Int(getpid()), "items": 0, "menus": true])
+            return
+        }
         guard !config.spacer else {
             let item = SpacerItem(autosave: config.autosave)
             spacer = item
@@ -450,7 +470,7 @@ DispatchQueue.main.asyncAfter(deadline: .now() + config.lifetime) { exit(0) }
 let application = NSApplication.shared
 let delegate = Delegate()
 application.delegate = delegate
-application.setActivationPolicy(.accessory)
+application.setActivationPolicy(config.menus ? .regular : .accessory)
 
 let selfReadQueue = DispatchQueue(label: "vzhelper.selfread", qos: .userInitiated)
 
@@ -513,6 +533,14 @@ stdinSource.setEventHandler {
             case .failure(let error):
                 reply("refused", ["command": line, "reason": "\(error)"])
             }
+        case "menus":
+            guard config.menus else { break }
+            guard let count = C2MenusCommand.parse(line) else {
+                reply("refused", ["command": line, "reason": "want menus 0...\(C2MenusCommand.maxMenus)"])
+                break
+            }
+            MenusRole.show(count: count)
+            reply("menus", ["count": count])
         case "quit": exit(0)
         default: break
         }

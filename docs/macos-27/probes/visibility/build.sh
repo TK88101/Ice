@@ -6,7 +6,7 @@
 #
 #   ./build.sh [scratch-dir]      default: /private/tmp/claude-501/visibility-live
 #
-# Output: <scratch>/apps/{Target,Protected,Twin}.app and <scratch>/apps/vizprobe
+# Output: <scratch>/apps/{Target,Protected,Twin,Spacer,Hidden2,Hidden3,Hidden4,Menus}.app and <scratch>/apps/vizprobe
 set -euo pipefail
 
 here=${0:A:h}
@@ -58,6 +58,15 @@ make_app Twin com.icespike4.protected
 # C1's spacer (docs/plans/2026-09-26-c1-protocol.md) reuses the same id for the
 # same reason; `--role spacer`, not the bundle id, makes it the spacer.
 make_app Spacer com.icespike4.protected
+# C2 (docs/plans/2026-09-28-c2-protocol.md, T2) reuses the same two ids:
+# `--role hidden-<n>` (extra hidden-section items, drawn with their own
+# glyphs) under the target's id, and `--role menus` (the frontmost app, no
+# status item; regular activation policy set at runtime) under the
+# protected id.
+make_app Hidden2 com.icespike4.target
+make_app Hidden3 com.icespike4.target
+make_app Hidden4 com.icespike4.target
+make_app Menus com.icespike4.protected
 
 cp "$bin/vizprobe" "$apps/vizprobe"
 codesign --force --sign - "$apps/vizprobe" >/dev/null
