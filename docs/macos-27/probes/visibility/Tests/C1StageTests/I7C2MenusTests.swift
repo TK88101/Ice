@@ -32,6 +32,30 @@ struct I7C2MenusTests {
         #expect(calibrated?.fields["count"] as? Int == 16)
     }
 
+    @Test("titles laid out only while Menus is frontmost: Menus is activated before calibrating, so long still calibrates to 16")
+    func activatesBeforeCalibrating() {
+        let frontmost = FakeFrontmost()
+        frontmost.setTitlesNeedFrontmost()
+        let run = I7.run(world: FakeBarWorld(), lengthPlan: .measure([700]), menus: .long, frontmost: frontmost)
+
+        #expect(!run.evidence.allRecords().contains { $0.kind == "menus.calibrationFailed" })
+        let calibrated = run.evidence.allRecords().first { $0.kind == "menus.calibrated" }
+        #expect(calibrated?.fields["count"] as? Int == 16)
+    }
+
+    @Test("every calibration read is recorded: one per menus <n> sent, with the last title's edge")
+    func recordsCalibrationReads() {
+        let frontmost = FakeFrontmost()
+        let run = I7.run(world: FakeBarWorld(), lengthPlan: .measure([700]), menus: .mid, frontmost: frontmost)
+
+        let reads = run.evidence.allRecords().filter { $0.kind == "menus.calibrationRead" }
+        #expect(reads.count == frontmost.commands.filter { $0.hasPrefix("menus ") }.count)
+        #expect(reads.first?.fields["count"] as? Int == 1)
+        #expect(reads.first?.fields["lastTitleEnd"] as? Double == 110)
+        #expect(reads.last?.fields["count"] as? Int == 11)
+        #expect(reads.last?.fields["lastTitleEnd"] as? Double == 710)
+    }
+
     @Test("something else comes forward after the first length -> that length measured, the next not shown after three attempts, never a hide")
     func frontmostStolen() {
         let frontmost = FakeFrontmost()

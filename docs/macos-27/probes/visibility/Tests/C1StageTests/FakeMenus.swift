@@ -21,9 +21,14 @@ final class FakeFrontmost: C1FrontmostControlling, @unchecked Sendable {
     /// the "something else came forward mid-run" fault.
     private var stealAtRead: Int?
     private var reads = 0
+    /// When set, titles are only laid out while Menus is frontmost; otherwise
+    /// only the app menu reads back -- the 2026-09-29 rehearsal's suspected
+    /// cause (docs/plans/2026-09-29-c2-rehearsal-fixes.md).
+    private var titlesNeedFrontmost = false
     private(set) var commands: [String] = []
 
     func setStealAtRead(_ read: Int) { lock.withLock { stealAtRead = read } }
+    func setTitlesNeedFrontmost() { lock.withLock { titlesNeedFrontmost = true } }
     func up() { lock.withLock { menusUp = true } }
     func down() { lock.withLock { menusUp = false; if frontmost == Self.menusPID { frontmost = Self.otherPID } } }
     func handle(_ line: String) {
@@ -44,6 +49,7 @@ final class FakeFrontmost: C1FrontmostControlling, @unchecked Sendable {
     func menuTitleRightEdges(pid: pid_t) -> [Double]? {
         lock.withLock {
             guard menusUp, pid == Self.menusPID else { return nil }
+            if titlesNeedFrontmost, frontmost != Self.menusPID { return [50] }
             return [50] + (0..<count).map { 50 + 60 * Double($0 + 1) }
         }
     }

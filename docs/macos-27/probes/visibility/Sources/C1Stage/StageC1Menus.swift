@@ -25,13 +25,19 @@ extension StageC1 {
         guard !isTerminal else { return .abort("terminal while launching Menus") }
         guard helper.awaitReply("up", timeout: 5) != nil else { return .abort("Menus never came up") }
 
+        // A background app's titles are not laid out on the bar, so Menus
+        // comes forward before its titles are measured (2026-09-29
+        // rehearsal: calibrating behind Terminal never reached long).
+        _ = environment.frontmost.activate(pid: helper.pid)
         var calibration = C2MenuCalibration(width: menus.width)
         var step = C2MenuCalibration.Step.send(calibration.count)
         while case .send(let count) = step {
             guard !isTerminal else { return .abort("terminal while calibrating Menus") }
             helper.send("menus \(count)")
             environment.pump.run(Self.menuSettleSeconds)
-            step = calibration.next(lastTitleEnd: environment.frontmost.menuTitleRightEdges(pid: helper.pid)?.last)
+            let lastTitleEnd = environment.frontmost.menuTitleRightEdges(pid: helper.pid)?.last
+            evidence?.record("menus.calibrationRead", ["count": count, "lastTitleEnd": lastTitleEnd ?? NSNull()])
+            step = calibration.next(lastTitleEnd: lastTitleEnd)
         }
         guard case .done(let count) = step else {
             if case .failed(let why) = step { evidence?.record("menus.calibrationFailed", ["width": menus.width.rawValue, "reason": why]) }

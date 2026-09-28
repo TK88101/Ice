@@ -27,11 +27,17 @@ enum C2RunCommand {
         guard C2Guards.userAllowed(current: NSUserName(), expected: expectedUser, owner: ownerUser) else {
             fail("c2-run: refused -- this is not the isolated account")
         }
+        guard sessionOnConsole() else { fail("c2-run: refused -- this session is not the one on screen") }
         guard let screen = NSScreen.main, let bar = BarGeometry(screen: screen),
               expectedGeometry.matches(C2Guards.Geometry(widthPt: bar.widthPt, heightPt: bar.heightPt, notchLo: bar.notch?.lo, notchHi: bar.notch?.hi))
         else { fail("c2-run: refused -- the display does not match --expect-geometry") }
-        guard C2Guards.rosterAllowed(bundleIDs: BarScan.items().map(\.bundleID)) else {
-            fail("c2-run: refused -- the bar has an item that is not a system item")
+        let roster = BarScan.items().map(\.bundleID)
+        guard !roster.isEmpty else {
+            fail("c2-run: refused -- no bar items could be read (is Accessibility granted to this Terminal, and was Terminal reopened after granting?)")
+        }
+        guard C2Guards.rosterAllowed(bundleIDs: roster) else {
+            let foreign = Set(roster.filter { !C2Guards.rosterAllowed(bundleIDs: [$0]) }).sorted()
+            fail("c2-run: refused -- the bar has an item that is not a system item: \(foreign.joined(separator: ", "))")
         }
 
         let root = URL(fileURLWithPath: rootPath)
@@ -45,6 +51,7 @@ enum C2RunCommand {
         try? caffeinate.run()
 
         let log = RunnerLog(directory: runDirectory)
+        let started = Date()
         var step = 0
         var bracket = C2BracketSequencer()
         var confirm = C2ConfirmSequencer(length: length ?? 0)
@@ -57,12 +64,25 @@ enum C2RunCommand {
                 exit(exitCode(verdict))
             }
             step += 1
+            // Switching accounts takes the bar away mid-sitting (2026-09-29
+            // rehearsal); stop with that reason rather than a manifest-less
+            // child's anonymous safety stop.
+            guard sessionOnConsole() else {
+                log.record(["event": "sessionOffConsole", "step": step])
+                progress("step \(step) not started -- this session left the screen; stopping", since: started)
+                let verdict = C2Verdict.safetyStop(configuration: configuration.id)
+                log.finish(sitting: sitting, verdict: verdict)
+                caffeinate.terminate()
+                exit(exitCode(verdict))
+            }
             let directory = runDirectory.appendingPathComponent(String(format: "%03d-%@", step, configuration.id))
             let config = C2ConfigArguments(appsPath: apps, configuration: configuration, lengths: lengths, evidencePath: directory.path)
             log.record(["event": "start", "step": step, "configuration": configuration.id, "lengths": lengths])
+            progress("step \(step) \(configuration.id) started (\(lengths.count) lengths)", since: started)
             let code = runChild(config.arguments)
             let result = readBack(directory)
             log.record(["event": "end", "step": step, "exit": Int(code), "status": "\(result.status)", "points": result.points.count])
+            progress("step \(step) \(configuration.id) ended: \(result.status), \(result.points.count) points", since: started)
             if sitting == "A" { bracket.record(result) } else { confirm.record(result) }
         }
         fail("c2-run: sequencer ended without a verdict")
@@ -74,6 +94,22 @@ enum C2RunCommand {
         case .provisionalFail: 1
         case .safetyStop: 3
         }
+    }
+
+    /// Whether this login session is the one on screen (fast user switching
+    /// moves another session to the console).
+    private static func sessionOnConsole() -> Bool {
+        guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+        return session[kCGSessionOnConsoleKey as String] as? Bool ?? false
+    }
+
+    /// One line on the owner's screen per step, so progress is visible
+    /// without touching the Mac.
+    private static func progress(_ message: String, since start: Date) {
+        let elapsed = Int(Date().timeIntervalSince(start))
+        let clock = LiveEvidence.timestamp(Date(), format: "HH:mm:ss")
+        let line = String(format: "c2-run: %@ [%@, elapsed %d:%02d]\n", message, clock, elapsed / 3600, elapsed % 3600 / 60)
+        FileHandle.standardError.write(Data(line.utf8))
     }
 
     private static func runChild(_ arguments: [String]) -> Int32 {
