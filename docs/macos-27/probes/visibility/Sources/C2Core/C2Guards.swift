@@ -44,6 +44,17 @@ public enum C2Guards {
             self.init(widthPt: width, heightPt: height, notchLo: lo, notchHi: hi)
         }
 
+        /// The `--expect-geometry` form `init(spec:)` reads back.
+        public var spec: String {
+            let size = "\(Self.format(widthPt))x\(Self.format(heightPt))"
+            guard let notchLo, let notchHi else { return size }
+            return "\(size):\(Self.format(notchLo))-\(Self.format(notchHi))"
+        }
+
+        private static func format(_ value: Double) -> String {
+            value == value.rounded() ? String(Int(value)) : String(value)
+        }
+
         public func matches(_ other: Geometry) -> Bool {
             close(widthPt, other.widthPt) && close(heightPt, other.heightPt) && close(notchLo, other.notchLo) && close(notchHi, other.notchHi)
         }

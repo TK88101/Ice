@@ -84,6 +84,8 @@ if arguments.contains("--dry-run") {
 // and the sequencer that runs them (`C2Live.swift`, `C2Run.swift`).
 if arguments.first == "c2-config" { C2ConfigCommand.run(arguments) }
 if arguments.first == "c2-run" { C2RunCommand.run(arguments) }
+if arguments.first == "c2-geometry" { C2GeometryCommand.run() }
+if arguments.first == "c2-read" { C2ReadCommand.run(arguments) }
 
 // I5: `vizprobe c1` (docs/plans/2026-09-26-c1-protocol.md, Amendment v4).
 // `--dry` never sends `length` (C1ExpansionDriver, C1Live) -- the one part

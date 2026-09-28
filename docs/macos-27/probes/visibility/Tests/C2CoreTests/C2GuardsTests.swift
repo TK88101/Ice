@@ -18,6 +18,13 @@ struct C2GuardsTests {
         #expect(!C2Guards.rosterAllowed(bundleIDs: []))
     }
 
+    @Test("spec round-trips, with and without a notch")
+    func specRoundTrip() {
+        for spec in ["1728x32:771.5-956.5", "1440x24"] {
+            #expect(C2Guards.Geometry(spec: spec)?.spec == spec)
+        }
+    }
+
     @Test("geometry spec parses with or without a notch, and matches within 0.5 pt")
     func geometry() {
         let notched = C2Guards.Geometry(spec: "1728x32:771.5-956.5")
