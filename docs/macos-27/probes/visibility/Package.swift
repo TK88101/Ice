@@ -101,6 +101,11 @@ let package = Package(
         // C1 protocol (I1): pure decisions only, standard library only.
         .target(name: "C1Core"),
         .testTarget(name: "C1CoreTests", dependencies: ["C1Core"]),
+        // C2 protocol (docs/plans/2026-09-28-c2-protocol.md, T1): bands,
+        // expansion, refinement, intersection, the length, the collar and
+        // the accounting. Standard library only, 100% line coverage.
+        .target(name: "C2Core"),
+        .testTarget(name: "C2CoreTests", dependencies: ["C2Core"]),
         // C1 protocol (I3/I4/I5): the live seams, testable with fakes.
         .target(
             name: "C1Live",
