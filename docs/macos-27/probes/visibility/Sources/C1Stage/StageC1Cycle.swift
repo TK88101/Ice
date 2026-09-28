@@ -381,7 +381,9 @@ extension StageC1 {
         guard !preflightEverPassed, !isTerminal else { return false }
         evidence?.record("preflight.relaunchOnce", ["label": label])
         guard confirmReap() else { return false }
-        guard case .ok = step2Launch(), case .ok = step3Baseline() else { return false }
+        // C2 (Codex review of the instrument, round 1): the relaunched
+        // helpers pass the placement gate again before a new baseline.
+        guard case .ok = step2Launch(), case .ok = step2bPlacementGate(), case .ok = step3Baseline() else { return false }
         for retryAttempt in 1...3 {
             if passesPreflightOnce(label: "\(label).relaunch.\(retryAttempt)") { return true }
             guard !isTerminal else { return false }

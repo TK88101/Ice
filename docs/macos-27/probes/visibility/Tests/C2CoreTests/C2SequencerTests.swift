@@ -22,31 +22,45 @@ struct C2SequencerTests {
         #expect(C2Configuration.all.last?.id == "k4-short")
     }
 
-    @Test("sitting A: coarse, then refinement, then the next configuration; both bracketed -> the length")
+    @Test("sitting A: coarse in batches of 14, then refinement, then the next configuration; both bracketed -> the length")
     func bracketsTwoConfigurations() {
         let configs = Array(C2Configuration.all.prefix(2))
         var sequencer = C2BracketSequencer(configurations: configs)
         for config in configs {
-            guard case .run(let c, let coarse) = sequencer.next() else { Issue.record("expected coarse"); return }
-            #expect(c == config)
-            #expect(coarse == C2BracketSequencer.coarse)
-            sequencer.record(C2ProcessResult(status: .completed, points: points(coarse, bar(610, 842))))
-            guard case .run(_, let refine) = sequencer.next() else { Issue.record("expected refinement"); return }
-            #expect(refine == [604, 608, 612, 844, 848, 852])
-            sequencer.record(C2ProcessResult(status: .completed, points: points(refine, bar(610, 842))))
+            var measured = [Double]()
+            while case .run(let c, let lengths) = sequencer.next(), c == config {
+                #expect(lengths.count <= 14)
+                measured += lengths
+                sequencer.record(C2ProcessResult(status: .completed, points: points(lengths, bar(610, 842))))
+            }
+            #expect(Array(measured.prefix(C2BracketSequencer.coarse.count)) == C2BracketSequencer.coarse)
+            #expect(Array(measured.dropFirst(C2BracketSequencer.coarse.count)) == [604, 608, 612, 844, 848, 852])
         }
         #expect(sequencer.next() == .finished(.length(726, intersection: C2Span(lo: 612, hi: 840))))
     }
 
-    @Test("sitting A: an inconclusive process re-runs only the unmeasured lengths, three processes at most, then not shown")
+    @Test("sitting A: a short process re-runs only its unmeasured lengths; three short processes -> not shown")
     func bracketRetriesThenNotShown() {
         var sequencer = C2BracketSequencer(configurations: [C2Configuration.all[0]])
         let coarse = C2BracketSequencer.coarse
+        #expect(sequencer.next() == .run(C2Configuration.all[0], lengths: Array(coarse.prefix(14))))
         sequencer.record(C2ProcessResult(status: .inconclusive("fold unreadable"), points: points(Array(coarse.prefix(3)), bar(600, 800))))
-        #expect(sequencer.next() == .run(C2Configuration.all[0], lengths: Array(coarse.dropFirst(3))))
+        #expect(sequencer.next() == .run(C2Configuration.all[0], lengths: Array(coarse.dropFirst(3).prefix(14))))
         sequencer.record(C2ProcessResult(status: .inconclusive("fold unreadable"), points: []))
         sequencer.record(C2ProcessResult(status: .inconclusive("fold unreadable"), points: []))
         #expect(sequencer.next() == .finished(.provisionalFail(configuration: "k1-long", reason: "not shown: fold unreadable")))
+    }
+
+    @Test("full batches never count as failures: many complete processes still finish the configuration")
+    func fullBatchesAreNotFailures() {
+        var sequencer = C2BracketSequencer(configurations: [C2Configuration.all[0]])
+        var processes = 0
+        while case .run(_, let lengths) = sequencer.next(), processes < 30 {
+            sequencer.record(C2ProcessResult(status: .completed, points: points(lengths, bar(610, 842))))
+            processes += 1
+        }
+        #expect(processes == 3) // 14 + 14 coarse, then one refinement batch
+        #expect(sequencer.next() == .finished(.length(726, intersection: C2Span(lo: 612, hi: 840))))
     }
 
     @Test("sitting A: no band after the scan reaches 0 and 1000 -> provisional fail, and the later configurations never run")

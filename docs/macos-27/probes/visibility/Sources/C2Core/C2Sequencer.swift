@@ -44,28 +44,40 @@ public enum C2Step: Equatable, Sendable {
 }
 
 /// Shared by both sittings: the pending length list of the current
-/// configuration, re-run without its already-measured lengths when a process
-/// ends inconclusive, at most `C2Retry.maxAttempts` processes per list.
+/// configuration, handed out at most `maxPerProcess` lengths per process (so
+/// every process fits the 20 min watchdog at a real 40 s per cycle -- Codex
+/// review of the instrument, round 1), re-run without its already-measured
+/// lengths when a process falls short; `C2Retry.maxAttempts` short
+/// processes per list, and a process that measured its whole batch never
+/// counts as one.
 struct C2PendingList: Equatable, Sendable {
+    static let maxPerProcess = 14
+
     var lengths: [Double]
-    var processes = 0
+    var failures = 0
 
     init(_ lengths: [Double]) {
         self.lengths = lengths
     }
 
+    var batch: [Double] { Array(lengths.prefix(Self.maxPerProcess)) }
+
     /// Removes what `points` measured; `true` when nothing is left.
-    mutating func absorb(_ points: [C2Point]) -> Bool {
-        processes += 1
+    mutating func absorb(_ points: [C2Point], completed: Bool) -> Bool {
+        let given = batch.count
         var remaining = lengths
+        var measured = 0
         for point in points {
-            if let index = remaining.firstIndex(of: point.length) { remaining.remove(at: index) }
+            guard let index = remaining.firstIndex(of: point.length) else { continue }
+            remaining.remove(at: index)
+            measured += 1
         }
+        if !completed || measured < given { failures += 1 }
         lengths = remaining
         return lengths.isEmpty
     }
 
-    var exhausted: Bool { processes >= C2Retry.maxAttempts }
+    var exhausted: Bool { failures >= C2Retry.maxAttempts }
 }
 
 /// Sitting A: bracket every configuration (coarse, expansion, refinement).
@@ -87,13 +99,13 @@ public struct C2BracketSequencer: Equatable, Sendable {
 
     public func next() -> C2Step {
         if let verdict { return .finished(verdict) }
-        return .run(configurations[index], lengths: pending.lengths)
+        return .run(configurations[index], lengths: pending.batch)
     }
 
     public mutating func record(_ result: C2ProcessResult) {
         guard verdict == nil else { return }
         points += result.points
-        let listDone = pending.absorb(result.points)
+        let listDone = pending.absorb(result.points, completed: result.status == .completed)
         switch result.status {
         case .safetyStop:
             conclude(.safetyStop)
@@ -152,13 +164,13 @@ public struct C2ConfirmSequencer: Equatable, Sendable {
 
     public func next() -> C2Step {
         if let verdict { return .finished(verdict) }
-        return .run(configurations[index], lengths: pending.lengths)
+        return .run(configurations[index], lengths: pending.batch)
     }
 
     public mutating func record(_ result: C2ProcessResult) {
         guard verdict == nil else { return }
         settled += result.points.map { C2Settled(reading: $0.reading) }
-        let listDone = pending.absorb(result.points)
+        let listDone = pending.absorb(result.points, completed: result.status == .completed)
         if result.status == .safetyStop {
             conclude(.safetyStop)
         } else if listDone || pending.exhausted {
