@@ -42,7 +42,8 @@ enum I7 {
         signalDuringLaunchOfRole: String? = nil,
         signalDuringStep1bDiscovery: Bool = false,
         discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds,
-        extraHidden: Int = 0
+        extraHidden: Int = 0,
+        lengthPlan: C1LengthPlan = .c1
     ) -> Run {
         let evidence = FakeEvidence()
         let caffeinate = FakeCaffeinate()
@@ -59,7 +60,7 @@ enum I7 {
             onFirstDiscovery = { handback.stage?.signalReceived() }
         }
         let environment = FakeC1EnvironmentFactory.make(world: world, evidence: evidence, caffeinate: caffeinate, onHelperLaunch: onLaunch, onFirstDiscovery: onFirstDiscovery, discoveryExecutorBoundSeconds: discoveryExecutorBoundSeconds)
-        let stage = StageC1(environment: environment, apps: apps(extraHidden: extraHidden), dry: dry)
+        let stage = StageC1(environment: environment, apps: apps(extraHidden: extraHidden), dry: dry, lengthPlan: lengthPlan)
         handback.stage = stage
         let code = stage.run()
         return Run(code: code, evidence: evidence, caffeinate: caffeinate)

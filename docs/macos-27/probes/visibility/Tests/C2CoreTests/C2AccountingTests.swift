@@ -106,3 +106,24 @@ struct C2AccountingTests {
         #expect(!C2Accounting.shouldContinue(afterB: .safetyStop))
     }
 }
+
+@Suite("C2PointRetry")
+struct C2PointRetryTests {
+    @Test("a point settles on its first reading; nil attempts (inconclusive) retry up to three, then notShown")
+    func settleReading() {
+        #expect(C2Retry.settleReading([]) == nil)
+        #expect(C2Retry.settleReading([nil]) == nil)
+        #expect(C2Retry.settleReading([nil, nil]) == nil)
+        #expect(C2Retry.settleReading([nil, .stillDrawn]) == .stillDrawn)
+        #expect(C2Retry.settleReading([.hiddenNoFold]) == .hiddenNoFold)
+        #expect(C2Retry.settleReading([nil, nil, nil]) == .notShown)
+    }
+
+    @Test("sitting B: only hiddenNoFold passes; notShown stays notShown; anything else fails")
+    func settledFromReading() {
+        #expect(C2Settled(reading: .hiddenNoFold) == .pass)
+        #expect(C2Settled(reading: .notShown) == .notShown)
+        #expect(C2Settled(reading: .hiddenFolded) == .fail)
+        #expect(C2Settled(reading: .stillDrawn) == .fail)
+    }
+}

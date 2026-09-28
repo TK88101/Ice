@@ -251,6 +251,9 @@ public final class StageC1 {
 
     let apps: C1Apps
     let dry: Bool
+    /// C2 (6.1 item 3): C1's own scan + smoke, or C2's measurement of an
+    /// explicit length list (`StageC1Measure.swift`).
+    let lengthPlan: C1LengthPlan
     let environment: C1StageEnvironment
     /// Never read directly once `latchingCapturer` exists (P0-2: every
     /// post-channel capture goes through the latch first) -- everything
@@ -382,6 +385,12 @@ public final class StageC1 {
     /// RunAccounting.smokeCycleCount`, minus this, minus the one about to
     /// run).
     var cyclesRunSoFar = 0
+    /// C2 measurement mode: cycles still planned after the one about to run
+    /// (set by `runMeasurement`); `nil` for C1, whose plan is fixed.
+    var measurementRemainingCycles: Int?
+    /// Set when the budget guard stops a cycle, so a measurement never
+    /// mistakes "out of time" for an inconclusive cycle to retry.
+    var budgetExceeded = false
 
     var latchingCapturer: LatchingCapturer!
     var channel: HelperControlChannel!
@@ -419,10 +428,11 @@ public final class StageC1 {
         lock.withLock { protectedTornDown = true }
     }
 
-    public init(environment: C1StageEnvironment, apps: C1Apps, dry: Bool) {
+    public init(environment: C1StageEnvironment, apps: C1Apps, dry: Bool, lengthPlan: C1LengthPlan = .c1) {
         self.environment = environment
         self.apps = apps
         self.dry = dry
+        self.lengthPlan = lengthPlan
         self.decision = MenuBarItemVisibility(maxMismatch: DetectorParameters.preRegistered.maxMismatch)
     }
 
@@ -478,6 +488,10 @@ public final class StageC1 {
                 evidence?.record("step.abort", ["step": step.0, "reason": reason])
                 return finish(runTeardownAndDecide(scan: [], smoke: [], smokeChecks: []))
             }
+        }
+
+        if case .measure(let lengths) = lengthPlan {
+            return finish(runMeasurement(lengths))
         }
 
         let scanReadings = runScan()

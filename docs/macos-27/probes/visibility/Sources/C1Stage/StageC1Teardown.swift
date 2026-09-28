@@ -29,6 +29,23 @@ extension StageC1 {
     /// mismatch; if Protected is itself already missing here the fold
     /// cannot be read at all -- also a mismatch (fail closed).
     func runTeardownAndDecide(scan: [(length: Double, reading: TargetReading)], smoke: [TargetReading], smokeChecks: [Bool]) -> Verdict {
+        runStagedTeardown()
+        let input = RunAccounting.Input(
+            preflightEverPassed: preflightEverPassed,
+            capturesStayedUnreadable: capturesStayedUnreadable,
+            scanReadings: scan.map(\.reading),
+            smokeReadings: smoke,
+            smokeChecksPassed: smokeChecks,
+            safetyStop: safetyStop,
+            placementGateFailureReason: placementGateFailureReason
+        )
+        return RunAccounting.decide(input)
+    }
+
+    /// The staged teardown alone (C2 T3 split it from the C1 decision so
+    /// the measurement mode, `StageC1Measure.swift`, runs the very same
+    /// one). Every mismatch goes through the machine as before.
+    func runStagedTeardown() {
         // P0-5: idempotent -- a no-op if a trip or the watchdog already
         // ran it. F2: this, and every cleanup path that can run ahead of
         // it (a trip, the watchdog, a signal, an off-main event), only
@@ -85,17 +102,6 @@ extension StageC1 {
         if !teardownEquivalent {
             markTeardownMismatch()
         }
-
-        let input = RunAccounting.Input(
-            preflightEverPassed: preflightEverPassed,
-            capturesStayedUnreadable: capturesStayedUnreadable,
-            scanReadings: scan.map(\.reading),
-            smokeReadings: smoke,
-            smokeChecksPassed: smokeChecks,
-            safetyStop: safetyStop,
-            placementGateFailureReason: placementGateFailureReason
-        )
-        return RunAccounting.decide(input)
     }
 
     /// F2's own stage 2: a settled paired read (`settledPairedRead`,

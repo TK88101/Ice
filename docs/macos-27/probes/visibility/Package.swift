@@ -132,6 +132,7 @@ let package = Package(
             dependencies: [
                 "C1Core",
                 "C1Live",
+                "C2Core",
                 .product(name: "IceCore", package: "IceCore"),
                 .product(name: "MenuBarCapture", package: "MenuBarCapture"),
                 .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),

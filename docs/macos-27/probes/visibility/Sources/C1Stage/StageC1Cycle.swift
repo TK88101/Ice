@@ -222,7 +222,7 @@ extension StageC1 {
         // exists to project from.
         guard let perCycle = lastCycleDurationSeconds else { return true }
         let totalCycles = ScanPlanner.lengths.count + RunAccounting.smokeCycleCount
-        let remainingAfterThis = max(0, totalCycles - cyclesRunSoFar - 1)
+        let remainingAfterThis = measurementRemainingCycles ?? max(0, totalCycles - cyclesRunSoFar - 1)
         let projectedRemainingWork = perCycle * Double(remainingAfterThis + 1)
         let possibleRePrepare = StageC1.initialCycleDurationEstimateSeconds
         let elapsed = environment.pump.now() - runStartAt
@@ -235,6 +235,7 @@ extension StageC1 {
         ])
         guard fits else {
             evidence?.record("budget.exceeded", ["label": label])
+            budgetExceeded = true
             return false
         }
         return true

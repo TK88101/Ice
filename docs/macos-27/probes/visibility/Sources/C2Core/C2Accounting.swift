@@ -17,8 +17,29 @@ public enum C2Settled: Equatable, Sendable {
     case notShown
 }
 
+extension C2Settled {
+    /// Sitting B: a collar or baseline point passes only when the whole
+    /// hidden section hid without the fold, every other check passing.
+    public init(reading: C2Reading) {
+        switch reading {
+        case .hiddenNoFold: self = .pass
+        case .notShown: self = .notShown
+        case .hiddenFolded, .stillDrawn: self = .fail
+        }
+    }
+}
+
 public enum C2Retry {
     public static let maxAttempts = 3
+
+    /// One measured length: `nil` attempts are inconclusive cycles (no
+    /// reading at all); the first real reading settles it, and three
+    /// inconclusive attempts make it `notShown`. `nil` when another attempt
+    /// is due.
+    public static func settleReading(_ attempts: [C2Reading?]) -> C2Reading? {
+        if let reading = attempts.lazy.compactMap({ $0 }).first { return reading }
+        return attempts.count >= maxAttempts ? .notShown : nil
+    }
 
     /// The settled outcome, or `nil` when another attempt is due.
     public static func settle(_ attempts: [C2CycleOutcome]) -> C2Settled? {
