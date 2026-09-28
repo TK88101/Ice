@@ -89,6 +89,25 @@ public protocol C1HelperDefaultsProviding: Sendable {
 /// own recorded stored "NSStatusItem Preferred Position" values do not fit
 /// a right-edge-distance reading (crosscheck-rework8.json #0/#4), so
 /// `step1bPlacementPlan` reads them to set a floor rather than guess.
+/// C2 (docs/plans/2026-09-28-c2-protocol.md 6.1 item 4): the frontmost
+/// app and its own menu titles -- read-only apart from `activate`, which
+/// brings the Menus helper forward (no synthetic events).
+public protocol C1FrontmostControlling: Sendable {
+    func frontmostPID() -> pid_t?
+    /// The right edge of each of `pid`'s own menu bar titles, left to right;
+    /// `nil` when the read failed.
+    func menuTitleRightEdges(pid: pid_t) -> [Double]?
+    func activate(pid: pid_t) -> Bool
+}
+
+/// C1 never has a Menus helper; this answers nothing.
+public struct NoFrontmostControl: C1FrontmostControlling {
+    public init() {}
+    public func frontmostPID() -> pid_t? { nil }
+    public func menuTitleRightEdges(pid: pid_t) -> [Double]? { nil }
+    public func activate(pid: pid_t) -> Bool { false }
+}
+
 public protocol C1OwnerPreferenceScanning: Sendable {
     /// Every value, as a raw string, of the keys in `bundleID`'s own
     /// domain whose name begins with `PreferredPositionKey.scanPrefix`
@@ -218,6 +237,8 @@ public struct C1StageEnvironment: Sendable {
     /// live default's 3.0 s to exercise a discovery timeout. The live
     /// default is unchanged (`C1DiscoveryExecutor.boundSeconds`).
     public var discoveryExecutorBoundSeconds: Double
+    /// C2: the Menus helper's frontmost/menu seam (`NoFrontmostControl` for C1).
+    public var frontmost: any C1FrontmostControlling
 
     public init(
         capturer: any StripCapturing,
@@ -233,8 +254,10 @@ public struct C1StageEnvironment: Sendable {
         caffeinate: any C1CaffeinateLaunching,
         evidenceFactory: any C1EvidenceFactory,
         isTrusted: @escaping @Sendable () -> Bool,
-        discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds
+        discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds,
+        frontmost: any C1FrontmostControlling = NoFrontmostControl()
     ) {
+        self.frontmost = frontmost
         self.capturer = capturer
         self.discoverer = discoverer
         self.ownerAXReaderFactory = ownerAXReaderFactory

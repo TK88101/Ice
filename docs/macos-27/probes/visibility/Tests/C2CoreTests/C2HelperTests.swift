@@ -68,3 +68,43 @@ struct C2HelperTests {
         #expect(C2MenuWidth.short.adjust(lastTitleEnd: nil) == .done)
     }
 }
+
+@Suite("C2MenuCalibration")
+struct C2MenuCalibrationTests {
+    @Test("starts at one menu; more until the class is reached, then done at that count")
+    func climbsToMid() {
+        var calibration = C2MenuCalibration(width: .mid)
+        #expect(calibration.count == 1)
+        #expect(calibration.next(lastTitleEnd: 105) == .send(2))
+        #expect(calibration.next(lastTitleEnd: 165) == .send(3))
+        #expect(calibration.next(lastTitleEnd: 720) == .done(3))
+    }
+
+    @Test("fewer steps down; short with no title at all is done at once")
+    func stepsDown() {
+        var calibration = C2MenuCalibration(width: .short)
+        #expect(calibration.next(lastTitleEnd: 450) == .send(0))
+        #expect(calibration.next(lastTitleEnd: nil) == .done(0))
+    }
+
+    @Test("overshooting a window both ways fails instead of oscillating")
+    func oscillationFails() {
+        var calibration = C2MenuCalibration(width: .mid)
+        #expect(calibration.next(lastTitleEnd: 690) == .send(2))
+        #expect(calibration.next(lastTitleEnd: 790) == .failed("no menu count puts the last title in mid"))
+        var down = C2MenuCalibration(width: .mid)
+        #expect(down.next(lastTitleEnd: 790) == .send(0))
+        #expect(down.next(lastTitleEnd: 690) == .failed("no menu count puts the last title in mid"))
+    }
+
+    @Test("out of range, or past the step budget, fails")
+    func boundsFail() {
+        var low = C2MenuCalibration(width: .short)
+        #expect(low.next(lastTitleEnd: 450) == .send(0))
+        #expect(low.next(lastTitleEnd: 450) == .failed("no menu count puts the last title in short"))
+        var high = C2MenuCalibration(width: .long)
+        var last: C2MenuCalibration.Step = .send(1)
+        for _ in 0..<C2MenusCommand.maxMenus { last = high.next(lastTitleEnd: 10) }
+        #expect(last == .failed("no menu count puts the last title in long"))
+    }
+}

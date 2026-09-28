@@ -150,6 +150,6 @@ let package = Package(
         // reach `PlacementPlan`/`PreferredPositionKey` when modelling the
         // "honoured preferred position" scenarios -- `C1Stage` already
         // depends on it, but Swift needs the direct import to see it too.
-        .testTarget(name: "C1StageTests", dependencies: ["C1Stage", "C1Live", "C1Core"]),
+        .testTarget(name: "C1StageTests", dependencies: ["C1Stage", "C1Live", "C1Core", "C2Core"]),
     ]
 )

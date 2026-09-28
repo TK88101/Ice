@@ -395,6 +395,8 @@ extension StageC1 {
     /// setup and never again.
     private func passesPreflightOnce(label: String) -> Bool {
         guard targetKey != nil, let spacerKey, let protectedKey else { return false }
+        // C2 (6.1 item 4): the configuration's frontmost menus unchanged.
+        guard menusStillInPlace(label: label) else { return false }
         // Item 8: bounded, like the untemplated watch's own discovery read.
         guard let fresh = environment.pump.blocking({ await self.timedDiscoverer.discover(previous: nil) }) else {
             latchingCapturer.feed(.init(captureFailed: true))

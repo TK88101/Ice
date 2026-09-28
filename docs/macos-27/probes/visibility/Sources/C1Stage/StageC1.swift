@@ -18,6 +18,7 @@
 // type with it. No behaviour changed in this step.
 import C1Core
 import C1Live
+import C2Core
 import Foundation
 import IceCore
 import MenuBarCapture
@@ -39,12 +40,16 @@ public struct C1Apps: Sendable {
     /// left to right (`Hidden2.app`...), all under the target's bundle id.
     /// Empty for C1.
     public let extraHidden: [URL]
+    /// C2 (6.1 item 4): the Menus helper (`Menus.app`, the protected id)
+    /// and the width class it is calibrated to. `nil` for C1.
+    public let menus: (app: URL, width: C2MenuWidth)?
 
-    public init(target: URL, protected: URL, spacer: URL, extraHidden: [URL] = []) {
+    public init(target: URL, protected: URL, spacer: URL, extraHidden: [URL] = [], menus: (app: URL, width: C2MenuWidth)? = nil) {
         self.target = target
         self.protected = protected
         self.spacer = spacer
         self.extraHidden = extraHidden
+        self.menus = menus
     }
 }
 
@@ -312,6 +317,9 @@ public final class StageC1 {
     /// C2 (6.1 item 3): hidden-2...k, left to right, and their helpers.
     var extraHiddenHelpers: [any C1HelperControlling] = []
     var extraHiddenKeys: [ItemKey] = []
+    /// C2 (6.1 item 4): the Menus helper and its calibrated title edges.
+    var menusHelper: (any C1HelperControlling)?
+    var menusCalibratedEdges: [Double] = []
     /// The hidden section, Target first; empty until Target is launched.
     var hiddenKeys: [ItemKey] { targetKey.map { [$0] + extraHiddenKeys } ?? [] }
     /// Every launched helper's key -- what "not an owner item" means.

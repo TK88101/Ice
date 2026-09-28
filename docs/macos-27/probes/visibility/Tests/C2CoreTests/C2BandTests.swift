@@ -65,6 +65,11 @@ struct C2BandTests {
         #expect(C2Band.nextExpansion(points) == nil)
     }
 
+    @Test("less than one step above 0 still reaches 0 -- never an empty chunk")
+    func nearZeroReachesZero() {
+        #expect(C2Band.nextExpansion(readings([(8, .stillDrawn), (960, .stillDrawn)])) == [0.0])
+    }
+
     @Test("no hidden point and already scanned down to 0 -> expand upward; everything scanned -> nil")
     func noBandUpwardThenExhausted() {
         #expect(C2Band.nextExpansion(readings([(0, .stillDrawn), (960, .stillDrawn)])) == [976.0, 992.0, 1000.0])

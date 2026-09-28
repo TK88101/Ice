@@ -6,16 +6,18 @@
 // spacer before any helper is quit") every latch-trigger scenario needs.
 import C1Live
 import C1Stage
+import C2Core
 import Foundation
 
 enum I7 {
     /// `extraHidden`: C2's hidden-2...(extraHidden + 1) (T3); 0 for C1.
-    static func apps(extraHidden: Int = 0) -> C1Apps {
+    static func apps(extraHidden: Int = 0, menus: C2MenuWidth? = nil) -> C1Apps {
         C1Apps(
             target: URL(fileURLWithPath: "/tmp/fakebar/Target.app"),
             protected: URL(fileURLWithPath: "/tmp/fakebar/Protected.app"),
             spacer: URL(fileURLWithPath: "/tmp/fakebar/Spacer.app"),
-            extraHidden: (0..<extraHidden).map { URL(fileURLWithPath: "/tmp/fakebar/Hidden\($0 + 2).app") }
+            extraHidden: (0..<extraHidden).map { URL(fileURLWithPath: "/tmp/fakebar/Hidden\($0 + 2).app") },
+            menus: menus.map { (URL(fileURLWithPath: "/tmp/fakebar/Menus.app"), $0) }
         )
     }
 
@@ -43,7 +45,9 @@ enum I7 {
         signalDuringStep1bDiscovery: Bool = false,
         discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds,
         extraHidden: Int = 0,
-        lengthPlan: C1LengthPlan = .c1
+        lengthPlan: C1LengthPlan = .c1,
+        menus: C2MenuWidth? = nil,
+        frontmost: FakeFrontmost = FakeFrontmost()
     ) -> Run {
         let evidence = FakeEvidence()
         let caffeinate = FakeCaffeinate()
@@ -59,8 +63,8 @@ enum I7 {
         if signalDuringStep1bDiscovery {
             onFirstDiscovery = { handback.stage?.signalReceived() }
         }
-        let environment = FakeC1EnvironmentFactory.make(world: world, evidence: evidence, caffeinate: caffeinate, onHelperLaunch: onLaunch, onFirstDiscovery: onFirstDiscovery, discoveryExecutorBoundSeconds: discoveryExecutorBoundSeconds)
-        let stage = StageC1(environment: environment, apps: apps(extraHidden: extraHidden), dry: dry, lengthPlan: lengthPlan)
+        let environment = FakeC1EnvironmentFactory.make(world: world, evidence: evidence, caffeinate: caffeinate, onHelperLaunch: onLaunch, onFirstDiscovery: onFirstDiscovery, discoveryExecutorBoundSeconds: discoveryExecutorBoundSeconds, frontmost: frontmost)
+        let stage = StageC1(environment: environment, apps: apps(extraHidden: extraHidden, menus: menus), dry: dry, lengthPlan: lengthPlan)
         handback.stage = stage
         let code = stage.run()
         return Run(code: code, evidence: evidence, caffeinate: caffeinate)

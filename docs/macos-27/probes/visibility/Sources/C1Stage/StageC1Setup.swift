@@ -28,7 +28,7 @@ extension StageC1 {
     /// carries Protected's, P0-1), executables inside their bundles, and
     /// no helper under either already running.
     func step0Bundles() -> StepResult {
-        let extras = apps.extraHidden.map { ($0, C1HelperRole.target) }
+        let extras = apps.extraHidden.map { ($0, C1HelperRole.target) } + (apps.menus.map { [($0.app, C1HelperRole.protected)] } ?? [])
         for (url, expected) in [(apps.target, C1HelperRole.target), (apps.protected, C1HelperRole.protected), (apps.spacer, C1HelperRole.protected)] + extras {
             guard environment.helperLauncher.validateBundle(at: url, expectedBundleID: expected) else {
                 return .abort("\(url.lastPathComponent) is not a valid \(expected) bundle with an executable vzhelper inside it")
@@ -101,6 +101,13 @@ extension StageC1 {
         // would mean that guard was bypassed; fail closed rather than
         // launch unpositioned.
         guard let plan = placementPlan else { return .abort("no placement plan (step1b did not run)") }
+        // C2: `performPreflight`'s relaunch-once path calls this again after
+        // reaping every helper -- start the k-item and Menus bookkeeping
+        // afresh rather than appending to the reaped run's.
+        extraHiddenHelpers = []
+        extraHiddenKeys = []
+        menusHelper = nil
+        menusCalibratedEdges = []
 
         let channel = HelperControlChannel()
         self.channel = channel
@@ -115,6 +122,10 @@ extension StageC1 {
 
         // F5 (Amendment v6, crosscheck #4-#6/#9/#10/#12): checked before
         // every launch -- no launch after a stop.
+        // C2 (6.1 item 4): the Menus helper, calibrated and frontmost, before
+        // any status helper (a no-op for C1).
+        if case .abort(let reason) = launchAndCalibrateMenus(channel: channel) { return .abort(reason) }
+
         guard !isTerminal else { return .abort("terminal before launching Protected") }
         guard let protected = launchAndDiscover(label: "protected", app: apps.protected, bundleID: C1HelperRole.protected, role: "reference", identifier: "vz-reference", channel: channel, isProtected: true, autosaveName: C1AutosaveName.protected, preferredPosition: plan.protectedPreferredPosition) else {
             return .abort("could not launch or discover Protected")
@@ -275,7 +286,7 @@ extension StageC1 {
         channel?.quitAll()
         channel?.quitProtected()
         environment.pump.run(0.5)
-        let helperPIDs: Set<pid_t> = Set(([targetHelper, spacerHelper, protectedHelper].compactMap { $0 } + extraHiddenHelpers).map(\.pid))
+        let helperPIDs: Set<pid_t> = Set(([targetHelper, spacerHelper, protectedHelper, menusHelper].compactMap { $0 } + extraHiddenHelpers).map(\.pid))
         return waitForReap(of: helperPIDs, within: seconds, recordPrefix: "reap")
     }
 
@@ -287,7 +298,7 @@ extension StageC1 {
         expansionDriver?.collapse()
         channel?.quitAll()
         environment.pump.run(0.5)
-        let helperPIDs: Set<pid_t> = Set(([targetHelper, spacerHelper].compactMap { $0 } + extraHiddenHelpers).map(\.pid))
+        let helperPIDs: Set<pid_t> = Set(([targetHelper, spacerHelper, menusHelper].compactMap { $0 } + extraHiddenHelpers).map(\.pid))
         return waitForReap(of: helperPIDs, within: seconds, recordPrefix: "reap.nonProtected")
     }
 

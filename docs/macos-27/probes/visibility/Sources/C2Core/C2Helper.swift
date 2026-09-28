@@ -70,3 +70,34 @@ public enum C2MenuWidth: String, Equatable, Sendable, CaseIterable {
         }
     }
 }
+
+/// Finds the menu count whose last title lands in `width`'s class: one step
+/// per AX read of the Menus helper's own titles. Monotonic -- a direction
+/// change means no count fits, which fails rather than oscillating; so does
+/// leaving 0...`C2MenusCommand.maxMenus`.
+public struct C2MenuCalibration: Equatable, Sendable {
+    public enum Step: Equatable, Sendable {
+        case send(Int)
+        case done(Int)
+        case failed(String)
+    }
+
+    public let width: C2MenuWidth
+    public private(set) var count = 1
+    private var direction: C2MenuWidth.Adjustment?
+
+    public init(width: C2MenuWidth) {
+        self.width = width
+    }
+
+    public mutating func next(lastTitleEnd: Double?) -> Step {
+        let adjustment = width.adjust(lastTitleEnd: lastTitleEnd)
+        guard adjustment != .done else { return .done(count) }
+        let failure = Step.failed("no menu count puts the last title in \(width.rawValue)")
+        guard direction == nil || direction == adjustment else { return failure }
+        direction = adjustment
+        count += adjustment == .more ? 1 : -1
+        guard (0...C2MenusCommand.maxMenus).contains(count) else { return failure }
+        return .send(count)
+    }
+}

@@ -63,12 +63,15 @@ final class FakeHelperControl: C1HelperControlling, @unchecked Sendable {
 struct FakeHelperLauncher: C1HelperLaunching {
     let world: FakeBarWorld
     var onLaunch: (@Sendable (String) -> Void)?
+    /// C2: where the Menus helper's titles live.
+    var frontmost = FakeFrontmost()
 
     func validateBundle(at url: URL, expectedBundleID: String) -> Bool { true }
     func runningBundleIDs(among candidates: [String]) -> [String] { [] }
 
     func launch(appURL: URL, bundleID: String, role: String, arguments: [String], controllerPID: pid_t) -> (any C1HelperControlling)? {
         onLaunch?(role)
+        if role == "menus" { return FakeMenusControl(frontmost: frontmost, world: world) }
         let pid: pid_t
         switch role {
         case "reference": pid = FakeBarWorld.protectedPID
@@ -319,7 +322,8 @@ enum FakeC1EnvironmentFactory {
         caffeinate: FakeCaffeinate = FakeCaffeinate(),
         onHelperLaunch: (@Sendable (String) -> Void)? = nil,
         onFirstDiscovery: (@Sendable () -> Void)? = nil,
-        discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds
+        discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds,
+        frontmost: FakeFrontmost = FakeFrontmost()
     ) -> C1StageEnvironment {
         C1StageEnvironment(
             capturer: FakeStripCapturer(world: world, caffeinate: caffeinate),
@@ -330,14 +334,15 @@ enum FakeC1EnvironmentFactory {
             extrasScanner: {
                 [C1ExtrasItem(bundleID: "com.apple.MenuBarAgent", minX: FakeBarWorld.indicatorX, minY: 0, width: FakeBarWorld.indicatorWidth, height: Double(FakeBarWorld.heightPt))]
             },
-            helperLauncher: FakeHelperLauncher(world: world, onLaunch: onHelperLaunch),
+            helperLauncher: FakeHelperLauncher(world: world, onLaunch: onHelperLaunch, frontmost: frontmost),
             helperDefaults: FakeHelperDefaults(world: world),
             ownerPreferenceScanner: FakeOwnerPreferenceScanner(world: world),
             pump: FakePump(clock: world.clock),
             caffeinate: caffeinate,
             evidenceFactory: FakeEvidenceFactory(evidence: evidence),
             isTrusted: { true },
-            discoveryExecutorBoundSeconds: discoveryExecutorBoundSeconds
+            discoveryExecutorBoundSeconds: discoveryExecutorBoundSeconds,
+            frontmost: frontmost
         )
     }
 }

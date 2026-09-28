@@ -108,7 +108,9 @@ public enum C2Band {
 
     private static func chunkBelow(_ lowest: Double) -> [Double] {
         let steps = Int(expansionChunkPt / coarseStepPt)
-        return (1...steps).map { lowest - Double($0) * coarseStepPt }.filter { $0 >= minimumLengthPt }.sorted()
+        var chunk = (1...steps).map { lowest - Double($0) * coarseStepPt }.filter { $0 > minimumLengthPt }
+        if lowest - expansionChunkPt <= minimumLengthPt { chunk.append(minimumLengthPt) }
+        return chunk.sorted()
     }
 
     private static func chunkAbove(_ highest: Double) -> [Double] {
