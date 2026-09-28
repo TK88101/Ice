@@ -67,21 +67,23 @@ enum C2RunCommand {
             // Switching accounts takes the bar away mid-sitting (2026-09-29
             // rehearsal); stop with that reason rather than a manifest-less
             // child's anonymous safety stop.
-            guard sessionOnConsole() else {
-                log.record(["event": "sessionOffConsole", "step": step])
-                progress("step \(step) not started -- this session left the screen; stopping", since: started)
+            let offConsole = { (when: String) -> Never in
+                log.record(["event": "sessionOffConsole", "step": step, "when": when])
+                progress("step \(step) \(when) -- this session left the screen; stopping", since: started)
                 let verdict = C2Verdict.safetyStop(configuration: configuration.id)
                 log.finish(sitting: sitting, verdict: verdict)
                 caffeinate.terminate()
                 exit(exitCode(verdict))
             }
+            guard sessionOnConsole() else { offConsole("not started") }
             let directory = runDirectory.appendingPathComponent(String(format: "%03d-%@", step, configuration.id))
             let config = C2ConfigArguments(appsPath: apps, configuration: configuration, lengths: lengths, evidencePath: directory.path)
             log.record(["event": "start", "step": step, "configuration": configuration.id, "lengths": lengths])
             progress("step \(step) \(configuration.id) started (\(lengths.count) lengths)", since: started)
-            let code = runChild(config.arguments)
+            let (code, leftConsole) = runChild(config.arguments)
             let result = readBack(directory)
             log.record(["event": "end", "step": step, "exit": Int(code), "status": "\(result.status)", "points": result.points.count])
+            if leftConsole { offConsole("interrupted") }
             progress("step \(step) \(configuration.id) ended: \(result.status), \(result.points.count) points", since: started)
             if sitting == "A" { bracket.record(result) } else { confirm.record(result) }
         }
@@ -112,13 +114,26 @@ enum C2RunCommand {
         FileHandle.standardError.write(Data(line.utf8))
     }
 
-    private static func runChild(_ arguments: [String]) -> Int32 {
+    static let consolePollSeconds: UInt32 = 1
+
+    /// Runs one `c2-config`; if this session leaves the screen meanwhile, the
+    /// child gets SIGTERM, which `GuardedStage` turns into its terminal
+    /// safety teardown (helpers quit and reaped, verdict recorded).
+    private static func runChild(_ arguments: [String]) -> (code: Int32, leftConsole: Bool) {
         let child = Process()
         child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
         child.arguments = arguments
-        do { try child.run() } catch { return -1 }
+        do { try child.run() } catch { return (-1, false) }
+        var leftConsole = false
+        while child.isRunning {
+            sleep(consolePollSeconds)
+            if !leftConsole, child.isRunning, !sessionOnConsole() {
+                leftConsole = true
+                child.terminate()
+            }
+        }
         child.waitUntilExit()
-        return child.terminationStatus
+        return (child.terminationStatus, leftConsole)
     }
 
     /// A process's result, only through its verified final manifest; a
