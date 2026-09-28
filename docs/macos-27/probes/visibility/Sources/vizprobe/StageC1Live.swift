@@ -126,7 +126,7 @@ enum C1LiveWiring {
     /// One real `C1StageEnvironment`, built fresh for each `vizprobe c1`
     /// invocation -- exactly the concrete types
     /// `Sources/vizprobe/StageC1*.swift` used to construct directly.
-    static func make() -> C1StageEnvironment {
+    static func make(frontmost: any C1FrontmostControlling = NoFrontmostControl()) -> C1StageEnvironment {
         C1StageEnvironment(
             capturer: CGWindowListStripCapturer(),
             discoverer: MenuBarDiscoverer(
@@ -155,7 +155,8 @@ enum C1LiveWiring {
             pump: LivePump(),
             caffeinate: LiveCaffeinate(),
             evidenceFactory: LiveEvidenceFactory(),
-            isTrusted: { AXIsProcessTrusted() }
+            isTrusted: { AXIsProcessTrusted() },
+            frontmost: frontmost
         )
     }
 }

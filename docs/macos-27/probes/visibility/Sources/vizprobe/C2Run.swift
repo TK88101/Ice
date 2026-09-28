@@ -1,0 +1,148 @@
+// C2 T4 (docs/plans/2026-09-28-c2-protocol.md section 2, 6.1 item 5):
+// `vizprobe c2-run` -- the sequencer. Refuses to start unless the guards
+// hold, then runs one `vizprobe c2-config` process per C2Core step, trusts a
+// process's evidence only through its verified final manifest, and writes
+// its own `runner.jsonl` and, last, `runner.final.json` (atomic).
+//
+//   vizprobe c2-run --sitting A|B [--length <L>] --apps <dir>
+//       --evidence-root <dir> --expect-user <name> --owner-user <name>
+//       --expect-geometry <WxH[:lo-hi]>
+import AppKit
+import C2Core
+import CryptoKit
+import Foundation
+import IceCore
+import MenuBarCapture
+
+enum C2RunCommand {
+    static func run(_ arguments: [String]) -> Never {
+        guard let sitting = option("--sitting", in: arguments), ["A", "B"].contains(sitting) else { fail("c2-run: --sitting must be A or B") }
+        guard let apps = option("--apps", in: arguments), let rootPath = option("--evidence-root", in: arguments),
+              let expectedUser = option("--expect-user", in: arguments), let ownerUser = option("--owner-user", in: arguments),
+              let expectedGeometry = option("--expect-geometry", in: arguments).flatMap(C2Guards.Geometry.init(spec:))
+        else { fail("c2-run: --apps, --evidence-root, --expect-user, --owner-user and --expect-geometry are required") }
+        let length = option("--length", in: arguments).flatMap(Double.init)
+        if sitting == "B", length == nil { fail("c2-run: sitting B needs --length") }
+
+        guard C2Guards.userAllowed(current: NSUserName(), expected: expectedUser, owner: ownerUser) else {
+            fail("c2-run: refused -- this is not the isolated account")
+        }
+        guard let screen = NSScreen.main, let bar = BarGeometry(screen: screen),
+              expectedGeometry.matches(C2Guards.Geometry(widthPt: bar.widthPt, heightPt: bar.heightPt, notchLo: bar.notch?.lo, notchHi: bar.notch?.hi))
+        else { fail("c2-run: refused -- the display does not match --expect-geometry") }
+        guard C2Guards.rosterAllowed(bundleIDs: BarScan.items().map(\.bundleID)) else {
+            fail("c2-run: refused -- the bar has an item that is not a system item")
+        }
+
+        let root = URL(fileURLWithPath: rootPath)
+        let runDirectory = root.appendingPathComponent("\(LiveEvidence.timestamp(Date(), format: "yyyyMMdd-HHmmss"))-c2\(sitting)")
+        do { try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: false) } catch {
+            fail("c2-run: cannot create \(runDirectory.path): \(error)")
+        }
+        let caffeinate = Process()
+        caffeinate.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
+        caffeinate.arguments = ["-d", "-i", "-w", "\(getpid())"]
+        try? caffeinate.run()
+
+        let log = RunnerLog(directory: runDirectory)
+        var step = 0
+        var bracket = C2BracketSequencer()
+        var confirm = C2ConfirmSequencer(length: length ?? 0)
+        while true {
+            let next = sitting == "A" ? bracket.next() : confirm.next()
+            guard case .run(let configuration, let lengths) = next else {
+                guard case .finished(let verdict) = next else { break }
+                log.finish(sitting: sitting, verdict: verdict)
+                caffeinate.terminate()
+                exit(exitCode(verdict))
+            }
+            step += 1
+            let directory = runDirectory.appendingPathComponent(String(format: "%03d-%@", step, configuration.id))
+            let config = C2ConfigArguments(appsPath: apps, configuration: configuration, lengths: lengths, evidencePath: directory.path)
+            log.record(["event": "start", "step": step, "configuration": configuration.id, "lengths": lengths])
+            let code = runChild(config.arguments)
+            let result = readBack(directory)
+            log.record(["event": "end", "step": step, "exit": Int(code), "status": "\(result.status)", "points": result.points.count])
+            if sitting == "A" { bracket.record(result) } else { confirm.record(result) }
+        }
+        fail("c2-run: sequencer ended without a verdict")
+    }
+
+    private static func exitCode(_ verdict: C2Verdict) -> Int32 {
+        switch verdict {
+        case .length, .pass: 0
+        case .provisionalFail: 1
+        case .safetyStop: 3
+        }
+    }
+
+    private static func runChild(_ arguments: [String]) -> Int32 {
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        child.arguments = arguments
+        do { try child.run() } catch { return -1 }
+        child.waitUntilExit()
+        return child.terminationStatus
+    }
+
+    /// A process's result, only through its verified final manifest; a
+    /// missing or mismatching one is a safety stop (fail closed).
+    static func readBack(_ directory: URL) -> C2ProcessResult {
+        let finalURL = directory.appendingPathComponent("manifest.final.json")
+        guard let data = try? Data(contentsOf: finalURL),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let recorded = object["files"] as? [String: String],
+              C2Manifest.verify(recorded: recorded, actual: hashes(of: directory))
+        else { return C2ProcessResult(status: .safetyStop, points: []) }
+        let status = C2ProcessResult.Status(verdict: object["verdict"] as? String)
+        let lines = (try? String(contentsOf: directory.appendingPathComponent("samples.jsonl"), encoding: .utf8))?.split(separator: "\n") ?? []
+        let points = lines.compactMap { line -> C2Point? in
+            guard let record = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  record["kind"] as? String == "c2.point",
+                  let length = record["length"] as? Double,
+                  let reading = (record["reading"] as? String).flatMap(C2Reading.init(name:))
+            else { return nil }
+            return C2Point(length: length, reading: reading)
+        }
+        return C2ProcessResult(status: status, points: points)
+    }
+
+    static func hashes(of directory: URL) -> [String: String] {
+        var files = [String: String]()
+        let root = directory.standardizedFileURL.path + "/"
+        guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey]) else { return [:] }
+        for case let url as URL in enumerator where (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+            let relative = url.standardizedFileURL.path.replacingOccurrences(of: root, with: "")
+            guard relative != "manifest.final.json", let data = try? Data(contentsOf: url) else { continue }
+            files[relative] = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
+        return files
+    }
+}
+
+/// `runner.jsonl`, one record per event, then `runner.final.json` (atomic).
+private final class RunnerLog {
+    private let directory: URL
+    private var lines = [String]()
+
+    init(directory: URL) {
+        self.directory = directory
+    }
+
+    func record(_ fields: [String: Any]) {
+        var object = fields
+        object["wall"] = LiveEvidence.timestamp(Date(), format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]), let line = String(data: data, encoding: .utf8) else { return }
+        lines.append(line)
+        try? (lines.joined(separator: "\n") + "\n").write(to: directory.appendingPathComponent("runner.jsonl"), atomically: true, encoding: .utf8)
+    }
+
+    func finish(sitting: String, verdict: C2Verdict) {
+        record(["event": "verdict", "verdict": "\(verdict)"])
+        let final: [String: Any] = ["sitting": sitting, "verdict": "\(verdict)", "files": C2RunCommand.hashes(of: directory)]
+        if let data = try? JSONSerialization.data(withJSONObject: final, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: directory.appendingPathComponent("runner.final.json"), options: .atomic)
+        }
+        print("c2-run: sitting \(sitting): \(verdict)")
+    }
+}

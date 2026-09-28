@@ -80,6 +80,11 @@ if arguments.contains("--dry-run") {
     exit(DryRun.run())
 }
 
+// C2 (docs/plans/2026-09-28-c2-protocol.md): one configuration's measurement,
+// and the sequencer that runs them (`C2Live.swift`, `C2Run.swift`).
+if arguments.first == "c2-config" { C2ConfigCommand.run(arguments) }
+if arguments.first == "c2-run" { C2RunCommand.run(arguments) }
+
 // I5: `vizprobe c1` (docs/plans/2026-09-26-c1-protocol.md, Amendment v4).
 // `--dry` never sends `length` (C1ExpansionDriver, C1Live) -- the one part
 // of this stage that is safe to run before the owner names a time.
@@ -100,68 +105,11 @@ if arguments.first == "c1" {
     )
     let dry = arguments.contains("--dry")
     let stage = StageC1(environment: C1LiveWiring.make(), apps: c1Apps, dry: dry)
-    signal(SIGPIPE, SIG_IGN)
-    for number in [SIGINT, SIGTERM, SIGHUP] {
-        signal(number, SIG_IGN)
-        let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
-        source.setEventHandler {
-            FileHandle.standardError.write(Data("vizprobe c1: signal \(number) -- entering the terminal safety teardown\n".utf8))
-            // Item 8: its own terminal reason (`signalReceived()`, needing
-            // attention -- never `emergencyStop()`'s `.watchdog`), the
-            // same pre-armed recorded backstop the watchdog uses below
-            // (armed before the signal's own cleanup runs, for the same
-            // reason: that cleanup's own `confirmReap()` could hang), and
-            // no bare `exit(3)` here any more -- that used to leave the
-            // run with no recorded verdict at all, since `stage.run()`'s
-            // own thread never got a chance to reach `finish(...)`.
-            // `exit(stage.run())` below still reports the real exit code
-            // once that thread notices `isTerminal` and completes.
-            DispatchQueue.global().asyncAfter(deadline: .now() + StageC1.watchdogBackstopSeconds) {
-                FileHandle.standardError.write(Data("vizprobe c1: signal teardown did not finish within 2 min -- forcing exit\n".utf8))
-                stage.recordWatchdogBackstopVerdict()
-                exit(3)
-            }
-            stage.signalReceived()
-        }
-        source.resume()
-    }
-    // Item 5 (Codex round 2): the watchdog must run the same terminal
-    // safety teardown a trip does -- rest first (already synchronous
-    // inside `emergencyStop`), then reap, then the 30 s
-    // baseline-equivalence check, then a recorded verdict (including
-    // needs-attention) -- not exit before any of that happens.
-    // `emergencyStop()` only marks the run terminal and performs the
-    // immediate rest/quit/reap/stop-caffeinate cleanup; `stage.run()`'s
-    // own main-thread loop notices `isTerminal` at its next checkpoint
-    // and falls through to `runTeardownAndDecide(...)`, whose exit code
-    // `exit(stage.run())` below reports. Item 8's AX/discovery bounds are
-    // what make that checkpoint reachable within a few seconds even if a
-    // read was hung when the watchdog fired.
-    let watchdogMinutes = option("--watchdog", in: arguments).flatMap(Double.init) ?? StageC1.watchdogMinutes
-    DispatchQueue.global().asyncAfter(deadline: .now() + watchdogMinutes * 60) {
-        FileHandle.standardError.write(Data("vizprobe c1: WATCHDOG after \(watchdogMinutes) min -- entering the terminal safety teardown\n".utf8))
-        // Round 4 item 3: the 120 s backstop is armed *before*
-        // `emergencyStop()` is even called, not after it returns --
-        // `emergencyStop()` itself calls `confirmReap()` synchronously
-        // (as part of its cleanup actions), whose discovery could hang;
-        // arming the backstop first means that hang is still covered,
-        // instead of the backstop never being scheduled at all.
-        DispatchQueue.global().asyncAfter(deadline: .now() + StageC1.watchdogBackstopSeconds) {
-            FileHandle.standardError.write(Data("vizprobe c1: WATCHDOG teardown did not finish within 2 min of firing -- forcing exit\n".utf8))
-            // Round 3 item 4: synchronously write the recorded terminal
-            // verdict to evidence before any raw exit -- the run must
-            // never disappear from the record silently just because
-            // `run()` itself never reached its own `finish(...)`.
-            stage.recordWatchdogBackstopVerdict()
-            exit(2)
-        }
-        stage.emergencyStop()
-    }
-    exit(stage.run())
+    GuardedStage.run(stage, name: "c1", watchdogMinutes: option("--watchdog", in: arguments).flatMap(Double.init) ?? StageC1.watchdogMinutes)
 }
 
 guard arguments.first == "live" else {
-    fail("usage: vizprobe --dry-run | vizprobe live --apps <dir> | vizprobe c1 --apps <dir> [--spacer-app <path>] [--dry]")
+    fail("usage: vizprobe --dry-run | vizprobe live --apps <dir> | vizprobe c1 --apps <dir> [--spacer-app <path>] [--dry] | vizprobe c2-config ... | vizprobe c2-run ...")
 }
 guard let appsPath = option("--apps", in: arguments) else {
     fail("live: missing --apps <dir> (build.sh's output apps directory)")
