@@ -17,12 +17,16 @@ public struct C1Discoverer: Discovering {
     public let targetKey: ItemKey
     public let spacerKey: ItemKey
     public let protectedKey: ItemKey
+    /// C2 (docs/plans/2026-09-28-c2-protocol.md 6.1 item 2): hidden-2...k;
+    /// with Target, exactly these are left of the divider. Empty for C1.
+    public let extraHiddenKeys: [ItemKey]
 
-    public init(base: any Discovering, targetKey: ItemKey, spacerKey: ItemKey, protectedKey: ItemKey) {
+    public init(base: any Discovering, targetKey: ItemKey, spacerKey: ItemKey, protectedKey: ItemKey, extraHiddenKeys: [ItemKey] = []) {
         self.base = base
         self.targetKey = targetKey
         self.spacerKey = spacerKey
         self.protectedKey = protectedKey
+        self.extraHiddenKeys = extraHiddenKeys
     }
 
     /// `nil` when the base pass itself produced nothing, or when this
@@ -48,7 +52,8 @@ public struct C1Discoverer: Discovering {
         // is still rejected (`.infinity` for a missing frame never reads
         // as left of anything real).
         let leftOfDivider = set.items.filter { $0.position != .parked && ($0.frame?.minX ?? .infinity) < divider }
-        guard leftOfDivider.count == 1, leftOfDivider[0].key == targetKey else { return nil }
+        let hiddenKeys = Set([targetKey] + extraHiddenKeys)
+        guard leftOfDivider.count == hiddenKeys.count, Set(leftOfDivider.map(\.key)) == hiddenKeys else { return nil }
         guard protectedFrame.minX >= divider else { return nil }
 
         let dividerReading = DividerReading.make(
