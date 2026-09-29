@@ -4,6 +4,34 @@
 **Nothing runs until the owner has approved this document, answered O1-O3, and
 named a time.** A successor protocol: it does not reopen or reinterpret C2.
 
+## BLOCKED (2026-09-30, found before any instrument work): fold-free baseline
+
+The frozen verifier needs a baseline taken at rest (spacer collapsed, every item
+drawn) with the fold absent; otherwise it refuses every item
+(`Packages/IceCore/Sources/IceCore/StripAssessor.swift:120-131`,
+`Template.swift:43-44` "The fold was up when the baseline was taken, so frames
+cannot be trusted"). The owner's situation is by definition the opposite: with
+every item drawn the bar overflows and `«` is up. INFERRED consequence: Ice can
+never take a valid baseline there, so under O1 it always falls back to shown,
+and IceBar never works in exactly the case it exists for. S1 as written (k up to
+16 from a rest baseline) stops measuring the owner's case once k exceeds the room
+(about 12 helpers in `icetest`, INFERRED from `20260929-234942-c2A` frames).
+
+Candidate fixes, none verified:
+- (a) extend the verifier to take templates per item, incrementally, whenever
+  that item is drawn with the fold absent (keeps the "never report hidden without
+  evidence" guarantee; needs the owner to lift the detector freeze for this
+  study and a new pre-registration);
+- (b) drop verification, fix the spacer length from measured bands, and watch
+  only for `«`, collapsing when it appears (weakens G4 to "no `«`");
+- (c) take the baseline in the hidden state and verify restore by other means.
+
+Claude's current lean: (a). **Next step:** a thecure debate with Codex on
+Q1 is the inference right (a code counter-example?), Q2 an existing mechanism
+missed, Q3 which fix, Q4 the biggest worry; then revise sections 3-5, re-review,
+owner approval, and only then the S0/S1 instrument. The first debate round was
+cut off by a restart on 2026-09-30 with no answer.
+
 ## 0. The owner's goal (2026-09-30)
 
 Items that would otherwise push the bar left past the notch (and make macOS 27
