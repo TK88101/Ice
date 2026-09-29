@@ -735,3 +735,21 @@ Next steps, in the order the evidence argues for:
    is the case on this machine.
 3. Measure what happens when the frontmost app changes while the spacer is
    expanded: the room changes under a fixed width, and nothing here covers it.
+
+## Hiding study, stage 1 (2026-09-28 to 2026-09-30)
+
+**MEASURED -- a spacer hides one item without `«` (C1, owner's bar,
+2026-09-28, `~/IceReverse-evidence/20260928-202509-vzc1`).** Jump from rest,
+16 pt steps: 600 pt `hidden(folded: true)`, 616-840 pt `hidden(folded: false)`
+at every step, 856-888 pt `stillDrawn`; smoke 5/5 at 728 pt with capture active.
+
+**MEASURED -- long frontmost menus make the fold unreadable (C2 sitting A,
+isolated account, 2026-09-29, `~/IceReverse-evidence/20260929-234942-c2A`).**
+A `.regular` helper with 16 title menus, activated before calibration, put its
+last two titles at 1012 and 1058 pt, right of the notch (771.5-956.5). With them
+frontmost, 15 of 15 baseline attempts over three processes read the fold
+`unreadable`, and every item was refused `foldNotAbsentAtBaseline`: the frozen
+`StripAssessor` bounds the fold region from the notch to the leftmost observed
+item, and the menu ink sits inside it. Calibrating before activation never
+reached `long` (2026-09-29 00:30, a background app's titles do not grow on the
+bar -- INFERRED from the fix that made calibration work).

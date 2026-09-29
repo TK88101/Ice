@@ -257,6 +257,20 @@ stage 2) still needs the isolated account.
     jumps; then N = 5 at the midpoint of the band found, capture active.
 - A failure is replicated once before it drops C, unless it was a safety stop.
 
+## 7a. Outcome of stage 1 (2026-09-30)
+
+- **C1 PASSED** on the owner's bar (2026-09-28, `~/IceReverse-evidence/20260928-202509-vzc1`):
+  600 pt folded, 616-840 pt every 16 pt step `hidden(folded: false)`, 856-888 pt
+  still drawn; smoke 5/5 at 728 pt. MEASURED.
+- **C2: PROVISIONAL FAIL on `k1-long`, accepted by the owner** (2026-09-30,
+  `2026-09-28-c2-protocol.md` "Result"): with menus right of the notch the fold
+  is unreadable, so the long-menu layout is not shown. C is dropped under this
+  plan's scope, and with E and D already out, **this plan's outcome is NO-GO**.
+- Section 9 (read-only mode) is the fallback, but it is **deferred**: the owner
+  opened a successor study with a narrower scope, fixed before its measurements
+  (`2026-09-30-icebar-route-c.md`, route C: IceBar). Read-only mode is planned
+  only if that study ends NO-GO.
+
 ## 8. If GO -- what an implementation would touch (for scale, not now)
 
 - `ControlItem.updateStatusItemVisibility` is the only place hiding state becomes a

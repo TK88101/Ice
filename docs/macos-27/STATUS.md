@@ -45,8 +45,19 @@ that do push an item out, the item lands in the system's overflow, which shows a
 `«` chevron. Both were MEASURED on test helpers on 2026-09-18; that the same
 holds for Ice's own item is INFERRED. The owner has stopped the push-out
 approach.
-Whether there is any hiding mechanism on 27 that stays reliable and recoverable
-across layouts, app switches and Spaces is the next study. If no such mechanism
-is found, this fork will state that macOS 27 support is read-only.
+The hiding study (`docs/plans/2026-09-25-hiding-feasibility.md`) tested a
+different mechanism: a spacer of a chosen length. Results, on this machine:
+
+| what | status | tag |
+|---|---|---|
+| A spacer hides one item without `«` | at 616-840 pt every 16 pt step hid the helper; 5/5 at 728 pt | MEASURED, 2026-09-28, owner's bar |
+| Ice can verify that with a long frontmost menu | no: menus right of the notch make the check unreadable, so the item cannot be reported hidden | MEASURED, 2026-09-29, isolated account |
+
+The study required verification in every layout, so its outcome is NO-GO
+(owner accepted, 2026-09-30). The next study, route C, aims at IceBar with a
+narrower scope: items hidden and shown in Ice's panel while the frontmost menu
+ends left of the notch, shown on the bar otherwise
+(`docs/plans/2026-09-30-icebar-route-c.md`). If it ends NO-GO, this fork will
+state that macOS 27 support is read-only.
 
 Not verifiable on this machine: macOS 14 to 26 (the machine runs 27 only).
