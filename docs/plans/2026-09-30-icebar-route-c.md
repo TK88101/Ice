@@ -139,6 +139,9 @@ measurement.
    glyph, a glyph under an agent frame, a straddle at the notch edge, a size
    mismatch, one discrepant capture, baseline variation within `T_agree`.
    The frozen files stay byte-identical (A3/A4 check).
+   **Registered 2026-09-30:** `2026-09-30-icebar-c-prereg.md` v3, sha256
+   `d8bf04aacf519b21442a5df59e096145f4e7fcc963d58856776aa3c378853d6f`
+   (Codex converged in round 3). Its pre-S0 freeze manifest is still owed.
 7. **The oracle is validated before it certifies anything.** Offline: a frozen
    corpus of labelled strip images (every zone including left of the notch and
    right of the references, ordinary and coloured glyphs, 1x and 2x, partial
