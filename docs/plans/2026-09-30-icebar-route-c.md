@@ -4,7 +4,7 @@
 **Nothing runs until the owner has approved this document, answered O1-O4, and
 named a time.** A successor protocol: it does not reopen or reinterpret C2.
 
-## Fold-free baseline (was BLOCKED; resolved on paper 2026-09-30, owner O4 pending)
+## Fold-free baseline (was BLOCKED; resolved on paper 2026-09-30, O4 approved 2026-09-30)
 
 The frozen verifier refuses every item unless its baseline is taken with every
 item drawn and the fold absent (`StripAssessor.swift:115-131`). In the owner's
@@ -222,7 +222,7 @@ the run's baseline.
   accepted 2026-09-30 with monochrome icons (section 5); F1 answered 2026-09-30: measure the maximum
   (S1 capacity search), accept the measured capacity; F3 accepted 2026-09-30 only in its
   single-item form (section 5). All of O2 is answered.
-- **O4** (open): approve the new pixel predicate of section 4.0 (`RegionClear`
+- **O4** (answered 2026-09-30: approved): approve the new pixel predicate of section 4.0 (`RegionClear`
   and the hidden-state baseline invariant) as a detector change in substance,
   written in unfrozen probe code with the ten detector files and
   `Packages/MenuBarCapture` byte-frozen, under its own pre-registration (4.0
