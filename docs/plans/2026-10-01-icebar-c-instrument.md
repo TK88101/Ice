@@ -187,6 +187,7 @@ oracle), E2E (T6-T7: the executable writing real files, the freeze and the check
 |---|---|---|---|---|
 | 1 | 2026-10-01 | stop before T5/T6: pre-registration deviation 1 proposed (D24, D25) | -- | S2/S3 literal labels contradict section 5 + S13 |
 | 2 | 2026-10-01 | deviation 1 approved by the owner, written to the pre-registration's section 9 | `aefe17021f14bd0076494b8365e051e09d40ed65ef984a088b4eccc11867946f` | -- |
+| 3 | 2026-10-01 | corpus frozen (T6): `vzcorpus freeze`, run `20260930-102852-icebar-corpus`, source commit 54f63b9, 5749 items (S1 456, S2 912, S3 304, S4 684, S5 76, S6 152, S7 8, S8 4, S9 38, S10 2744, S11 114, S12 152, S13 99, S14 3, K 3); 471 S13 (glyph, cut, count, scale) combinations unreachable, every (cut, count, scale) reached by some glyph. No oracle call on a corpus item before this row's commit | freeze.json `56950a141074c77aa97439330b35f5caad047f31bf838f1ff76899db98ef9550` | -- |
 
 ## Appendix. Review record
 
