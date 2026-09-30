@@ -6,7 +6,7 @@ import VZGlyphs
 
 @Suite("GlyphCheck")
 struct GlyphCheckTests {
-    @Test("all six glyphs are accepted and the twin control is refused as not unique")
+    @Test("all 19 glyphs are accepted and the twin control is refused as not unique")
     func glyphsPairwiseDistinct() {
         let result = GlyphCheck.run()
         #expect(result.passed, "\(result.lines.joined(separator: "\n"))")

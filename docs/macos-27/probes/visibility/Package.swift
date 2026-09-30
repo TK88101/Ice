@@ -29,6 +29,8 @@ import PackageDescription
 //             sequencing) -- the live protocol pieces that need
 //             MenuBarCapture/MenuBarDetectorFeed to state their contracts
 //             but must still be reachable from a test target with fakes.
+//   IceBarOracle  route C's oracle (2026-10-01-icebar-c-instrument.md):
+//             the known-rendering matcher, `«` rule, controls. Tested.
 //   C1Stage   rework #5, step A: the C1 stage orchestration itself
 //             (`StageC1*.swift`) moved out of the `vizprobe` executable so a
 //             test target can reach it. Driven entirely through
@@ -68,7 +70,12 @@ let package = Package(
             dependencies: [.product(name: "IceCore", package: "IceCore")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
-        .testTarget(name: "VZGlyphsTests", dependencies: ["VZGlyphs"]),
+        .testTarget(name: "VZGlyphsTests", dependencies: ["VZGlyphs", "IceBarOracle"]),
+        // Route C (docs/plans/2026-10-01-icebar-c-instrument.md): the oracle
+        // of the pre-registration's section 5. Standard library plus IceCore's
+        // public pixel and frame types; no AppKit, no capture.
+        .target(name: "IceBarOracle", dependencies: [.product(name: "IceCore", package: "IceCore")]),
+        .testTarget(name: "IceBarOracleTests", dependencies: ["IceBarOracle", .product(name: "IceCore", package: "IceCore")]),
         .executableTarget(
             name: "vzhelper",
             // I2: the spacer role's `length <pt>`/`rest` commands are

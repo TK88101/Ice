@@ -11,20 +11,22 @@ public enum GlyphCheck {
     static let sidePt = 12
     static let scale = 2
     static let heightPt = 24
-    static let widthPt = 220
+    static let pitchPt = 30
+    /// Room for every glyph at `pitchPt`, then the agent frame.
+    static let widthPt = 20 + pitchPt * Glyph.allCases.count + 30
     typealias Placement = (id: String, glyph: Glyph, xPt: Int)
-    /// Every glyph, C2's three hidden-section glyphs included (T2).
-    static let distinctLayout: [Placement] = [
-        ("target", .target, 20), ("reference", .reference, 50), ("alt", .alt, 80),
-        ("hidden2", .hidden2, 110), ("hidden3", .hidden3, 140), ("hidden4", .hidden4, 170),
-    ]
+    /// Every glyph: C2's three hidden-section glyphs (T2) and route C's
+    /// thirteen (2026-10-01 instrument plan, T2).
+    static let distinctLayout: [Placement] = Glyph.allCases.enumerated().map { index, glyph in
+        (glyph.rawValue, glyph, 20 + pitchPt * index)
+    }
     /// The negative control: the same glyph twice must be refused as not
     /// unique, or the check above proves nothing.
     static let twinLayout: [Placement] = [("target", .target, 20), ("twin", .target, 50), ("reference", .reference, 80)]
     static let backdrop: (r: Double, g: Double, b: Double) = (40, 40, 40)
     static let ink: (r: Double, g: Double, b: Double) = (255, 255, 255)
 
-    /// Passes when the three glyphs are all accepted and the twin control's
+    /// Passes when every glyph is accepted and the twin control's
     /// two identical glyphs are both refused as not unique.
     public static func run(parameters: DetectorParameters = .preRegistered) -> (passed: Bool, lines: [String]) {
         guard let distinct = baseline(distinctLayout, parameters: parameters),
@@ -54,7 +56,7 @@ public enum GlyphCheck {
         // One MenuBarAgent frame right of the glyphs, as on the real bar (the
         // clock): the fold witness reads the fold against the agent's items,
         // and with none at all every baseline reads the fold as not absent.
-        let agent = [AgentFrame(minX: 200, minY: 0, width: 12)]
+        let agent = [AgentFrame(minX: Double(widthPt - 20), minY: 0, width: 12)]
         let samples = (0..<5).map { ObservationSample(time: Double($0), before: strip, after: strip, agentFrames: agent, itemFrames: frames) }
         return StripAssessor.baseline(samples: samples, geometry: geometry, parameters: parameters)
     }
@@ -88,21 +90,7 @@ public enum GlyphCheck {
 
     /// The glyph's alpha, row by row from the top, at `scale`.
     private static func coverage(_ glyph: Glyph) -> [Double]? {
-        let sidePx = sidePt * scale
-        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: sidePx, pixelsHigh: sidePx, bitsPerSample: 8,
-                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-                                         bytesPerRow: sidePx * 4, bitsPerPixel: 32)
-        else { return nil }
-        // The point size first: a context made before it draws 1 pt as 1 px,
-        // i.e. the glyph at half the bar's scale.
-        rep.size = NSSize(width: sidePt, height: sidePt)
-        guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = context
-        Glyphs.image(glyph, side: CGFloat(sidePt)).draw(in: NSRect(x: 0, y: 0, width: sidePt, height: sidePt))
-        context.flushGraphics()
-        NSGraphicsContext.restoreGraphicsState()
-        guard let data = rep.bitmapData else { return nil }
-        return (0..<(sidePx * sidePx)).map { Double(data[$0 * 4 + 3]) / 255 }
+        guard let rendered = try? GlyphRenderer.coverage(glyph, scale: scale) else { return nil }
+        return rendered.alpha.map { Double($0) / 255 }
     }
 }
