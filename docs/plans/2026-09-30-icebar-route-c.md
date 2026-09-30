@@ -149,6 +149,8 @@ measurement.
    sha256 `bb10b671205ce3a1fa8c5dcfb994a57558ee81424a5ee91ad45632c75f3de0f2`.
    **Deviation 3, 2026-10-01** (owner approved; ambiguous chevron slivers,
    cut-glyph identity; `2026-10-01-icebar-c-deviation3.md`): sha256 `bde8a4bf5176249ae95c65de6f15abb3611a972202e0e31b55e3a46b08b8bfb8`.
+   **Deviation 4, 2026-10-01** (owner approved; out-of-scope textures refused,
+   corpus 3; `2026-10-01-icebar-c-deviation4.md`): sha256 `e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3`.
 7. **The oracle is validated before it certifies anything.** Offline: a frozen
    corpus of labelled strip images (every zone including left of the notch and
    right of the references, ordinary and coloured glyphs, 1x and 2x, partial

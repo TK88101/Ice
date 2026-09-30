@@ -154,7 +154,7 @@ Parallel candidates: none (each task consumes the previous one's output).
 | A2 | line coverage >= 80 % for `IceBarOracle`, `IceBarCorpus`, `GlyphRenderer.swift` | `--enable-code-coverage`, `llvm-cov report` |
 | A3 | corpus frozen first, then 100 % | the freeze commit precedes the first `check.json`; `vzcorpus check` exit 0, "0 mislabels"; `git status` shows no image in the repository |
 | A4 | freeze | `git diff --exit-code af4baf1 -- Packages/MenuBarCapture`; `git diff --exit-code 32d523a -- Packages` |
-| A5 | pre-registration unchanged since deviation 3 | `shasum -a 256` = `bde8a4bf5176249ae95c65de6f15abb3611a972202e0e31b55e3a46b08b8bfb8` |
+| A5 | pre-registration unchanged since deviation 4 | `shasum -a 256` = `e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3` |
 | A6 | nothing else broken | full probe `swift test` (I7 group about 7 min); `build.sh <scratch>` builds |
 
 Coverage: unit (T1-T4), integration (T5, T7 test: generator + renderer +
@@ -208,6 +208,7 @@ Development runs of the new oracle: on the development corpus (salt `dev`) and f
 | 7 | 2026-10-01 | corpus 2 frozen (deviation 2 C6): `vzcorpus freeze --salt corpus-2`, run `20260930-121331-icebar-corpus2`, source commit 42fc538 (pre-registration `bde8a4bf…`), 5749 items, 471 S13 combinations unreachable; freeze 1 (row 3) kept as evidence. No oracle call on a corpus-2 item before this row's commit | freeze.json `027570dfa86a1a8c6de5ff906dabc3030d3856ba9e891ecb3431f6fa3f470260` | -- |
 | 8 | 2026-10-01 | corpus 2's single check (`vzcorpus check`): **0 of 5749 items fail their expectation**; every hash verified before labelling. U21 (the same frozen items through the test target) re-run as the acceptance path, not as a second result | check.json `1844ac22b38a002ac26f4528af9a60b95a21cd3db3f483bdcc6887c1763c7c09` | -- |
 | 9 | 2026-10-01 | **corpus 2's result withdrawn for 2780 items** (S10 fail-closed 2058, S4 684, S9 38): /simplify found `CorpusCheck.label` (`Freeze.swift:91`) gave the oracle no helper templates whenever `expected.helpers == nil`, a K-item sentinel also set for those items, so their verdict was inconclusive by construction (the references could not be found). The other 2969 items were checked with all templates and stand. Development corpus with the one-line fix (not committed; salt `dev`): 37/5749 fail, all S10 A = 32 fail-closed items, "clean while a member is drawn" (texture falses keep a cut member from being sighted). Freeze 2 and its check.json kept as evidence; deviation 4 drafted; work stopped for the owner | -- | implementation defect in the checker; C4 falsified on the development corpus |
+| 10 | 2026-10-01 | deviation 4 approved by the owner, written to section 9 | `e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3` | corpus 3 next |
 
 ## Appendix. Review record
 

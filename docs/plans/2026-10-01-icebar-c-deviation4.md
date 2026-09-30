@@ -1,6 +1,6 @@
 # Route C pre-registration, deviation 4 (draft): out-of-scope textures; corpus 3
 
-2026-10-01 · branch `wip/icebar-c` · **draft for the owner, not in force** ·
+2026-10-01 · branch `wip/icebar-c` · **approved by the owner 2026-10-01, in force** (pre-registration section 9, deviation 4) ·
 amends `2026-09-30-icebar-c-prereg.md` (sha256 `bde8a4bf…`, v3 + deviations 1-3):
 deviation 2's C4 and C6 (corpus 2 -> corpus 3).
 
