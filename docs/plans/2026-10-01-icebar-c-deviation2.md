@@ -143,9 +143,20 @@ capture can validate (b) where it is used. Instead:
 - Audit: the instrument plan's section 8 gets a row, committed before any
   oracle call on corpus 2, with corpus 2's `freeze.json` sha256, the source
   commit, and a reference to freeze 1; the single result is a separate row.
-- Part split: C1 and the corpus are part 1; the texture bound (C2) is part 2
-  (rule 1); the overlap guard (C3) and the live (b) control (C5) are part 3
-  (runner), each with its unit tests there.
+- Order (thecure, Codex converged 2026-10-01; the owner's 3-part split kept):
+  1. owner approval -> copied into the pre-registration's section 9, re-hashed;
+  2. part 1: TDD of C1 (U22b) and of the pure decision functions corpus 2
+     needs, all in `IceBarOracle`, standard library: `TextureBound` (C2, U9b),
+     `OverlapGuard` (C3, U22d), `BControl` (C5, U22e) -- `BControl` returns a
+     reasoned outcome (valid / insufficient captures / insufficient episodes /
+     mismatch), not a Boolean, so the runner can apply C5's stops; corpus 2
+     generator using them; freeze corpus 2 + section 8 row; one check;
+  3. part 2 wires rule 1 to that same `TextureBound` symbol (no copy), with an
+     integration test of the call site;
+  4. part 3 wires the runner to `OverlapGuard` (window-server bounds per
+     capture) and `BControl` (S0, S-adv), each with an integration test; the
+     pre-S0 freeze manifest hashes all of them;
+  5. S0 / S-adv live controls (C3 availability, C5), then S1.
 
 ### C7. Explicit amendments to section 6's gate (Codex r3: owner decisions)
 
@@ -177,3 +188,10 @@ texture bound as an added refusal, tested by U9b).
 | 3 | 2 P1, both "amend section 6 explicitly, owner decides" (predicate expectations for out-of-scope items; (b) qualified partly live) | written as C7; the decision is the owner's. Codex confirmed the texture-bound argument and the closed C3 gap |
 
 Trend: 6 -> 3 -> 2 P1, the last two being owner decisions, not defects.
+
+thecure (2026-10-01, owner-invoked): Codex judged C7.1 and C7.2 **right** on
+the evidence; whole-package check: no contradiction across C1-C7, one order
+error (corpus 2 needs C2/C3/C5's decision functions before its freeze) --
+accepted, fixed as the order in C6 with the part split kept; Codex added a
+single shared `TextureBound` symbol and a reasoned `BControl` outcome, both
+adopted. Converged.
