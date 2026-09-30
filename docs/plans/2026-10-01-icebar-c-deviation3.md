@@ -1,6 +1,6 @@
 # Route C pre-registration, deviation 3 (draft): ambiguous chevron slivers; cut-glyph identity
 
-2026-10-01 · branch `wip/icebar-c` · **draft for the owner, not in force** ·
+2026-10-01 · branch `wip/icebar-c` · **approved by the owner 2026-10-01, in force** (pre-registration section 9, deviation 3) ·
 amends `2026-09-30-icebar-c-prereg.md` (sha256 `bb10b671…`, v3 + deviations 1, 2)
 section 5 (`«` (b)) and the instrument plan's T12.
 
