@@ -6,12 +6,12 @@ import Testing
 
 @Suite("Rule 4: the claim")
 struct ClaimTests {
-    var clean: [StripImage] { Array(repeating: Bar.strip().image, count: 6) }
+    var clean: [StripImage] { Bar.six(Bar.strip().image) }
 
     var dirty: [StripImage] {
         var s = Bar.strip()
         s.stamp(Shapes.bracket(), at: 400)
-        return Array(repeating: s.image, count: 6)
+        return Bar.six(s.image)
     }
 
     func baseline() throws -> BaselineOutcome { .accepted(try #require(Bar.accepted())) }
@@ -72,7 +72,7 @@ struct ClaimTests {
     func chain(_ image: StripImage) -> (Fold, ClaimOutcome) {
         let samples = Bar.samples(Bar.strip().image)
         let frozen = Bar.frozen(samples)
-        let verdict = HiddenBaseline.evaluate(kept: Array(samples.dropFirst()), frozen: frozen, references: Bar.references, visible: Bar.visible)
+        let verdict = Bar.verdict(samples)
         let obs = observation(image)
         let reading = StripAssessor.observe(baseline: frozen, targets: [], references: Bar.references, samples: obs, parameters: .preRegistered)
         return (reading.fold, Claim.decide(fold: reading.fold, baseline: verdict.outcome, captures: obs.flatMap { [$0.before, $0.after] }))

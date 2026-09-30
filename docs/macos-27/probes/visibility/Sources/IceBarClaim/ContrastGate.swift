@@ -26,17 +26,15 @@ enum ContrastGate {
     /// nil when the gate cannot be measured: a malformed roster, an oracle
     /// error, a visible helper not identified `full`, an inconclusive capture,
     /// or no core / off-pixel to measure.
-    static func measure(stored: StripImage, visible: [OracleTemplate], references: [String], region: ClaimRegion,
-                        notch: PtSpan?, agentSpans: [PtSpan]) -> ContrastMeasurement? {
+    static func measure(stored: StripImage, visible: [OracleTemplate], references: [String], region: ClaimRegion) -> ContrastMeasurement? {
         let ids = visible.map(\.id)
         guard !visible.isEmpty, Set(ids).count == ids.count, Set(references).isSubset(of: ids),
               visible.allSatisfy({ $0.scale == stored.scale })
         else { return nil }
-        let context = OracleContext(notch: notch, agentFrames: agentSpans, leftmostReferenceOriginPt: region.span.hi)
-        guard let labels = try? Oracle.label(image: stored, helpers: visible, chevron: nil, context: context),
+        guard let labels = try? Oracle.label(image: stored, helpers: visible, chevron: nil, context: region.oracleContext),
               !labels.isInconclusive
         else { return nil }
-        let geometry = OracleGeometry(widthPx: stored.width, heightPx: stored.height, scale: stored.scale, context: context)
+        let geometry = region.oracleGeometry
 
         var core = [PixelColour]()
         var off = [PixelColour]()

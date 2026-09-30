@@ -6,11 +6,9 @@ import Testing
 
 @Suite("Rules 2-3: RegionClear")
 struct RegionClearTests {
-    func grey(_ d: Int) -> RGB3 { (UInt8(40 + d), UInt8(40 + d), UInt8(40 + d)) }
-
     func block(_ count: Int, at x0: Int, _ y0: Int, _ c: RGB3) -> StripImage {
         var s = Bar.strip()
-        for i in 0..<count { s.set(x0 + i % 4, y0 + i / 4, c) }
+        s.block(count, at: x0, y0, c)
         return s.image
     }
 
@@ -20,7 +18,7 @@ struct RegionClearTests {
 
     @Test("six captures equal to the stored image are clear")
     func unchanged() throws {
-        #expect(try clear(Array(repeating: Bar.strip().image, count: 6)) == .clear(largestCluster: 0))
+        #expect(try clear(Bar.six(Bar.strip().image)) == .clear(largestCluster: 0))
     }
 
     @Test("R16: other than six captures is not clear", arguments: [0, 5, 7])
@@ -34,7 +32,7 @@ struct RegionClearTests {
         let others = [Strip(widthPt: 401).image, Strip(heightPt: 25).image,
                       StripImage(width: base.width, height: base.height, scale: 1, bytes: base.bytes)]
         for other in others {
-            var captures = Array(repeating: base, count: 6)
+            var captures = Bar.six(base)
             captures[2] = other
             #expect(try clear(captures) == .notClear(.shapeMismatch(index: 2)))
         }
@@ -46,7 +44,7 @@ struct RegionClearTests {
         let baseline = Bar.accepted(reads: reads)
         var glyph = Bar.strip()
         glyph.stamp(Shapes.bracket(), at: 400)
-        let outcome = try clear(Array(repeating: glyph.image, count: 6), baseline: baseline)
+        let outcome = try clear(Bar.six(glyph.image), baseline: baseline)
         guard case .notClear(.changed(index: 0, clusterPx: let size)) = outcome else {
             Issue.record("\(outcome)")
             return
@@ -58,18 +56,18 @@ struct RegionClearTests {
     func u13() throws {
         var straddle = Bar.strip()
         straddle.stamp(Shapes.bracket(), at: 312)
-        guard case .notClear(.changed(index: 0, _)) = try clear(Array(repeating: straddle.image, count: 6)) else {
+        guard case .notClear(.changed(index: 0, _)) = try clear(Bar.six(straddle.image)) else {
             Issue.record("straddle read as clear")
             return
         }
         var inside = Bar.strip()
         inside.stamp(Shapes.bracket(), at: 290)
-        #expect(try clear(Array(repeating: inside.image, count: 6)) == .clear(largestCluster: 0))
+        #expect(try clear(Bar.six(inside.image)) == .clear(largestCluster: 0))
     }
 
     @Test("U14: one discrepant capture of six is not clear")
     func u14() throws {
-        var captures = Array(repeating: Bar.strip().image, count: 6)
+        var captures = Bar.six(Bar.strip().image)
         captures[4] = block(16, at: 400, 20, Bar.white)
         #expect(try clear(captures) == .notClear(.changed(index: 4, clusterPx: 16)))
     }
@@ -77,21 +75,21 @@ struct RegionClearTests {
     @Test("U15: an observation equal to a kept capture T_agree off the stored image is clear")
     func u15Agree() throws {
         var off = Bar.strip()
-        off.set(400, 30, grey(8))
+        off.set(400, 30, Bar.grey(8))
         let base = Bar.strip().image
-        let images = (0..<10).map { $0 == 5 ? off.image : base }
+        let images = Bar.captures(base, replacing: 5, with: off.image)
         guard case let .accepted(baseline) = Bar.verdict(Bar.samples(base, images: images)).outcome else {
             Issue.record("baseline refused")
             return
         }
-        #expect(try clear(Array(repeating: off.image, count: 6), baseline: baseline) == .clear(largestCluster: 0))
+        #expect(try clear(Bar.six(off.image), baseline: baseline) == .clear(largestCluster: 0))
     }
 
     @Test("U15: a 16-px cluster at T_diff is clear, at T_diff + 1 not; a 15-px cluster at 255 is clear", arguments: [
         (16, 32, true), (16, 33, false), (15, 215, true),
     ])
     func u15Limits(count: Int, delta: Int, isClear: Bool) throws {
-        let outcome = try clear(Array(repeating: block(count, at: 400, 20, grey(delta)), count: 6))
+        let outcome = try clear(Bar.six(block(count, at: 400, 20, Bar.grey(delta))))
         if isClear {
             #expect(outcome == .clear(largestCluster: delta > 32 ? count : 0))
         } else {
@@ -102,8 +100,8 @@ struct RegionClearTests {
     @Test("U16: a uniform +40 shift of the whole region is not clear")
     func u16() throws {
         var shifted = Bar.strip()
-        shifted.fill(Bar.regionColumns, grey(40))
-        guard case .notClear(.changed(index: 0, _)) = try clear(Array(repeating: shifted.image, count: 6)) else {
+        shifted.fill(Bar.regionColumns, Bar.grey(40))
+        guard case .notClear(.changed(index: 0, _)) = try clear(Bar.six(shifted.image)) else {
             Issue.record("a backdrop change read as clear")
             return
         }

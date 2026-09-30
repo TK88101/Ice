@@ -10,12 +10,10 @@ import Testing
 
 @Suite("U9b: texture bound in rule 1")
 struct TextureCallSiteTests {
-    func grey(_ d: Int) -> RGB3 { (UInt8(40 + d), UInt8(40 + d), UInt8(40 + d)) }
-
     @Test("U9b: a region pixel 12 from M_x is accepted, 13 refused", arguments: [(12, true), (13, false)])
     func bound(delta: Int, accepted: Bool) {
         var strip = Bar.strip()
-        strip.set(400, 30, grey(delta))
+        strip.set(400, 30, Bar.grey(delta))
         let verdict = Bar.verdict(Bar.samples(strip.image))
         #expect(verdict.failedClauses == (accepted ? [] : [.texture]))
         #expect(verdict.measurements.texture == (accepted ? .accepted(maxDeviation: delta) : .refused(maxDeviation: delta)))
@@ -24,8 +22,8 @@ struct TextureCallSiteTests {
     @Test("U9b: deviations only in notch or agent columns are accepted")
     func exclusions() {
         var strip = Bar.strip()
-        strip.set(250, 30, grey(80))
-        strip.set(410, 30, grey(80))
+        strip.set(250, 30, Bar.grey(80))
+        strip.set(410, 30, Bar.grey(80))
         let reads = Array(repeating: Bar.agentFrames + [AgentFrame(minX: 200, minY: 0, width: 20)], count: 5)
         let verdict = Bar.verdict(Bar.samples(strip.image, reads: reads))
         #expect(verdict.failedClauses.isEmpty)
@@ -92,7 +90,7 @@ struct TextureCallSiteTests {
     ])
     func sameArguments(column: Int, accepted: Bool) {
         var strip = CorpusBar.strip()
-        strip.set(column, 5, grey(13))
+        strip.set(column, 5, Bar.grey(13))
         let image = strip.image
         let (verdict, _) = CorpusBar.verdict(image)
         let corpus = TextureBound.evaluate(image, region: PtSpan(lo: CorpusGeometry.notch.hi, hi: CorpusGeometry.leftmostReferencePt),

@@ -65,11 +65,11 @@ enum PixelKit {
         return PixelColour(r: m[0], g: m[1], b: m[2])
     }
 
-    /// Sizes of the 8-connected clusters of `true` in a `width` x `height`
-    /// mask (the cluster rule of `FoldWitness.unexplainedClusters`).
-    static func clusterSizes(_ mask: [Bool], width: Int, height: Int) -> [Int] {
+    /// The largest 8-connected cluster of `true` in a `width` x `height`
+    /// mask, 0 if none (the cluster rule of `FoldWitness.unexplainedClusters`).
+    static func largestCluster(_ mask: [Bool], width: Int, height: Int) -> Int {
         var visited = [Bool](repeating: false, count: mask.count)
-        var sizes = [Int]()
+        var largest = 0
         for start in mask.indices where mask[start] && !visited[start] {
             visited[start] = true
             var stack = [start]
@@ -90,8 +90,8 @@ enum PixelKit {
                     }
                 }
             }
-            sizes.append(size)
+            largest = max(largest, size)
         }
-        return sizes
+        return largest
     }
 }

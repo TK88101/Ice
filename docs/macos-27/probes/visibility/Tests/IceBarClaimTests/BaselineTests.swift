@@ -9,19 +9,12 @@ import Testing
 
 @Suite("Rule 1: hidden-state baseline")
 struct BaselineTests {
-    /// Paints `count` pixels, 4 per row, from (x0, y0).
     func cluster(_ count: Int, at x0: Int, _ y0: Int, _ c: RGB3) -> Strip {
         var s = Bar.strip()
-        for i in 0..<count { s.set(x0 + i % 4, y0 + i / 4, c) }
+        s.block(count, at: x0, y0, c)
         return s
     }
 
-    func grey(_ d: Int) -> RGB3 { (UInt8(40 + d), UInt8(40 + d), UInt8(40 + d)) }
-
-    /// Ten capture images, all `base` except capture `index` (0...9).
-    func captures(_ base: StripImage, replacing index: Int, with other: StripImage) -> [StripImage] {
-        (0..<10).map { $0 == index ? other : base }
-    }
 
     // MARK: U1
 
@@ -43,9 +36,9 @@ struct BaselineTests {
     @Test("U1: the stored image is the earliest kept sample's before capture, whatever the input order")
     func storedIsEarliest() {
         var marked = Bar.strip()
-        marked.set(400, 30, grey(4))
+        marked.set(400, 30, Bar.grey(4))
         let base = Bar.strip().image
-        let samples = Bar.samples(base, images: captures(base, replacing: 2, with: marked.image))
+        let samples = Bar.samples(base, images: Bar.captures(base, replacing: 2, with: marked.image))
         let verdict = HiddenBaseline.evaluate(kept: Array(samples.dropFirst()).reversed(), frozen: Bar.frozen(samples),
                                               references: Bar.references, visible: Bar.visible)
         guard case let .accepted(baseline) = verdict.outcome else {
@@ -60,9 +53,9 @@ struct BaselineTests {
     @Test("U2: one pixel of one kept capture off by T_agree is accepted, by T_agree + 1 refused", arguments: [(8, true), (9, false)])
     func u2(delta: Int, accepted: Bool) {
         var off = Bar.strip()
-        off.set(400, 30, grey(delta))
+        off.set(400, 30, Bar.grey(delta))
         let base = Bar.strip().image
-        let verdict = Bar.verdict(Bar.samples(base, images: captures(base, replacing: 5, with: off.image)))
+        let verdict = Bar.verdict(Bar.samples(base, images: Bar.captures(base, replacing: 5, with: off.image)))
         #expect(verdict.measurements.maxAgreementDistance == delta)
         if accepted {
             #expect(verdict.failedClauses.isEmpty)
@@ -76,9 +69,9 @@ struct BaselineTests {
     func u2AgentFramesIncluded() {
         let reads = Array(repeating: Bar.agentFrames + [AgentFrame(minX: 200, minY: 0, width: 20)], count: 5)
         var off = Bar.strip()
-        off.set(410, 30, grey(9))
+        off.set(410, 30, Bar.grey(9))
         let base = Bar.strip().image
-        let verdict = Bar.verdict(Bar.samples(base, images: captures(base, replacing: 7, with: off.image), reads: reads))
+        let verdict = Bar.verdict(Bar.samples(base, images: Bar.captures(base, replacing: 7, with: off.image), reads: reads))
         #expect(verdict.outcome == .refused(.disagree))
     }
 
@@ -92,7 +85,7 @@ struct BaselineTests {
         let taller = Strip(heightPt: 25).image
         let rescaled = StripImage(width: base.width, height: base.height, scale: 1, bytes: base.bytes)
         for other in [wider, taller, rescaled] {
-            let verdict = Bar.verdict(Bar.samples(base, images: captures(base, replacing: 6, with: other)), frozenFrom: good)
+            let verdict = Bar.verdict(Bar.samples(base, images: Bar.captures(base, replacing: 6, with: other)), frozenFrom: good)
             #expect(verdict.outcome == .refused(.capturesDiffer))
         }
     }
@@ -119,7 +112,7 @@ struct BaselineTests {
 
     @Test("U5: a 16-px cluster at T_bg + 1 from its row median is refused by the row-median clause")
     func u5Refused() {
-        let verdict = Bar.verdict(Bar.samples(cluster(16, at: 400, 20, grey(33)).image))
+        let verdict = Bar.verdict(Bar.samples(cluster(16, at: 400, 20, Bar.grey(33)).image))
         #expect(verdict.failedClauses.first == .rowDeviation)
         #expect(verdict.outcome == .refused(.rowDeviation))
         #expect(verdict.measurements.largestRowCluster == 16)
@@ -128,7 +121,7 @@ struct BaselineTests {
     @Test("U5: 15 px at T_bg + 1, or 16 px at T_bg, pass the row-median clause; the texture bound still refuses (R15)",
           arguments: [(15, 33), (16, 32)])
     func u5Accepted(count: Int, delta: Int) {
-        let verdict = Bar.verdict(Bar.samples(cluster(count, at: 400, 20, grey(delta)).image))
+        let verdict = Bar.verdict(Bar.samples(cluster(count, at: 400, 20, Bar.grey(delta)).image))
         #expect(!verdict.failedClauses.contains(.rowDeviation))
         #expect(verdict.failedClauses == [.texture])
         #expect(verdict.outcome == .refused(.texture))
@@ -141,8 +134,9 @@ struct BaselineTests {
 
     @Test("U6: a deviating cluster wholly inside a baseline agent frame is accepted")
     func u6Inside() {
-        let verdict = Bar.verdict(Bar.samples(cluster(16, at: 410, 20, grey(60)).image, reads: inRegionAgent))
+        let verdict = Bar.verdict(Bar.samples(cluster(16, at: 410, 20, Bar.grey(60)).image, reads: inRegionAgent))
         #expect(verdict.failedClauses.isEmpty)
+        #expect(Bar.isAccepted(verdict))
         #expect(verdict.measurements.largestRowCluster == 0)
     }
 
@@ -150,7 +144,7 @@ struct BaselineTests {
     func u6Outside() {
         var strip = Bar.strip()
         for x in 432..<448 {
-            for y in 20..<22 { strip.set(x, y, grey(60)) }
+            for y in 20..<22 { strip.set(x, y, Bar.grey(60)) }
         }
         let verdict = Bar.verdict(Bar.samples(strip.image, reads: inRegionAgent))
         #expect(verdict.failedClauses.first == .rowDeviation)
@@ -165,10 +159,7 @@ struct BaselineTests {
         strip.fill(250..<270, rows: 10..<30, Bar.white)
         let verdict = Bar.verdict(Bar.samples(strip.image))
         #expect(verdict.failedClauses.isEmpty)
-        guard case .accepted = verdict.outcome else {
-            Issue.record("refused: \(verdict.outcome)")
-            return
-        }
+        #expect(Bar.isAccepted(verdict))
     }
 
     // MARK: U9
@@ -193,10 +184,7 @@ struct BaselineTests {
     func u9OffBar(extra: AgentFrame) {
         let verdict = Bar.verdict(Bar.samples(Bar.strip().image, reads: reads(changingSample: 2, to: Bar.agentFrames + [extra])))
         #expect(verdict.failedClauses.isEmpty)
-        guard case .accepted = verdict.outcome else {
-            Issue.record("refused: \(verdict.outcome)")
-            return
-        }
+        #expect(Bar.isAccepted(verdict))
     }
 
     @Test("U9: a chevron-width on-bar frame in any kept read is refused")

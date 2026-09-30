@@ -8,13 +8,14 @@ import IceCore
 public struct HiddenBaseline: Equatable, Sendable {
     /// The first kept capture, whole; only its region is compared.
     public let stored: StripImage
-    public let region: PtSpan
-    public let notch: PtSpan?
     /// The earliest kept read's on-bar `MenuBarAgent` frames.
     public let canonicalAgentFrames: [AgentFrame]
-    /// Region columns minus notch columns.
-    let columns: [Int]
+    let claimRegion: ClaimRegion
+
+    public var region: PtSpan { claimRegion.span }
+    public var notch: PtSpan? { claimRegion.notch }
 }
+
 
 public enum BaselineRefusal: Equatable, Sendable {
     case foldNotAbsent(Fold)
@@ -87,7 +88,6 @@ extension HiddenBaseline {
     struct Setup {
         let stored: StripImage
         let captures: [StripImage]
-        let geometry: BarGeometry
         let canonical: [AgentFrame]
         let region: ClaimRegion
     }
@@ -117,12 +117,11 @@ extension HiddenBaseline {
         guard reads.dropFirst().allSatisfy({ FoldWitness.agentSetMatches(current: $0, baseline: canonical, parameters: detector) }) else {
             return .refused(.agentFramesMoved)
         }
-        let origins = references.map { frozen.templates[$0]?.originXPt }
-        guard !origins.isEmpty, !origins.contains(nil), let rightEdge = origins.compactMap({ $0 }).min(),
-              let region = ClaimRegion(geometry: geometry, widthPx: first.before.width, rightEdgePt: rightEdge,
-                                       agentSpans: canonical.map(\.span))
+        let origins = references.compactMap { frozen.templates[$0]?.originXPt }
+        guard origins.count == references.count, let rightEdge = origins.min(),
+              let region = ClaimRegion(geometry: geometry, rightEdgePt: rightEdge, agentSpans: canonical.map(\.span))
         else { return .refused(.regionUndefined) }
-        return .ready(Setup(stored: first.before, captures: captures, geometry: geometry, canonical: canonical, region: region))
+        return .ready(Setup(stored: first.before, captures: captures, canonical: canonical, region: region))
     }
 
     /// The four pixel clauses, all measured; the refusal is the first failing.
@@ -131,8 +130,7 @@ extension HiddenBaseline {
         let rows = setup.captures.map { rowDeviation($0, region: setup.region, parameters: parameters) }
         let largestRowCluster = rows.map(\.largestCluster).max() ?? 0
         let texture = textureOutcome(setup)
-        let contrast = ContrastGate.measure(stored: setup.stored, visible: visible, references: references,
-                                            region: setup.region, notch: setup.geometry.notch, agentSpans: setup.canonical.map(\.span))
+        let contrast = ContrastGate.measure(stored: setup.stored, visible: visible, references: references, region: setup.region)
 
         var failed = [BaselineRefusal]()
         if agreement > parameters.tAgree { failed.append(.disagree) }
@@ -146,9 +144,8 @@ extension HiddenBaseline {
         let measurements = BaselineMeasurements(maxAgreementDistance: agreement, largestRowCluster: largestRowCluster,
                                                 maxRowDeviation: rows.map(\.maxDeviation).max() ?? 0,
                                                 texture: texture, contrast: contrast)
-        let baseline = HiddenBaseline(stored: setup.stored, region: setup.region.span, notch: setup.geometry.notch,
-                                      canonicalAgentFrames: setup.canonical, columns: setup.region.columns)
-        let outcome: BaselineOutcome = failed.first.map { .refused($0) } ?? .accepted(baseline)
+        let outcome: BaselineOutcome = failed.first.map { .refused($0) }
+            ?? .accepted(HiddenBaseline(stored: setup.stored, canonicalAgentFrames: setup.canonical, claimRegion: setup.region))
         return BaselineVerdict(outcome: outcome, measurements: measurements, failedClauses: failed)
     }
 
@@ -175,15 +172,14 @@ extension HiddenBaseline {
                 if d > parameters.tBg { mask[y * capture.width + x] = true }
             }
         }
-        let largest = PixelKit.clusterSizes(mask, width: capture.width, height: capture.height).max() ?? 0
-        return (largest, worst)
+        return (PixelKit.largestCluster(mask, width: capture.width, height: capture.height), worst)
     }
 
     /// Deviation 2 C2 through part 1's own symbol, with the corpus's argument
     /// construction: rule 1's region, the notch, the canonical agent frames.
     static func textureOutcome(_ setup: Setup) -> TextureBound.Outcome {
         let outcomes = setup.captures.map {
-            TextureBound.evaluate($0, region: setup.region.span, notch: setup.geometry.notch, agentFrames: setup.canonical.map(\.span))
+            TextureBound.evaluate($0, region: setup.region.span, notch: setup.region.notch, agentFrames: setup.region.agentSpans)
         }
         var worst = 0
         var refused = false

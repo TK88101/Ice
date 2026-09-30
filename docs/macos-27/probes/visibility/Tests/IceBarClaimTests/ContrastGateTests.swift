@@ -7,11 +7,9 @@ import Testing
 
 @Suite("U8: contrast gate")
 struct ContrastGateTests {
-    func grey(_ v: Int) -> RGB3 { (UInt8(v), UInt8(v), UInt8(v)) }
-
     @Test("U8: C_r = 129 is accepted, 128 refused", arguments: [(169, 129, true), (168, 128, false)])
     func contrast(ink: Int, cR: Int, accepted: Bool) {
-        let verdict = Bar.verdict(Bar.samples(Bar.strip(targetInk: grey(ink)).image))
+        let verdict = Bar.verdict(Bar.samples(Bar.strip(targetInk: Bar.level(ink)).image))
         #expect(verdict.measurements.contrast?.cR == cR)
         #expect(verdict.failedClauses == (accepted ? [] : [.contrast]))
     }
@@ -19,7 +17,7 @@ struct ContrastGateTests {
     @Test("U8: M_x within T_bg of M_r is accepted, T_bg + 1 refused", arguments: [(32, true), (33, false)])
     func regionMedian(delta: Int, accepted: Bool) {
         var strip = Bar.strip()
-        strip.fill(Bar.regionColumns, grey(40 + delta))
+        strip.fill(Bar.regionColumns, Bar.level(40 + delta))
         let verdict = Bar.verdict(Bar.samples(strip.image))
         #expect(verdict.measurements.contrast?.mxToMr == delta)
         #expect(verdict.failedClauses == (accepted ? [] : [.contrast]))
@@ -29,7 +27,7 @@ struct ContrastGateTests {
           arguments: [(32, [BaselineRefusal.texture]), (33, [.texture, .contrast])])
     func rowMedian(delta: Int, failed: [BaselineRefusal]) {
         var strip = Bar.strip()
-        strip.fill(Bar.regionColumns, rows: 5..<6, grey(40 + delta))
+        strip.fill(Bar.regionColumns, rows: 5..<6, Bar.level(40 + delta))
         let verdict = Bar.verdict(Bar.samples(strip.image))
         #expect(verdict.measurements.contrast?.maxRowMedianToMx == delta)
         #expect(verdict.failedClauses == failed)
@@ -80,6 +78,8 @@ struct ContrastGateTests {
              IceBarOracle.Placement(xPx: 6, yPx: 15, matchClass: .full, hits: 95, visibleOn: 100, falses: 1, visibleOff: 50)],
             [IceBarOracle.Placement(xPx: 7, yPx: 14, matchClass: .full, hits: 95, visibleOn: 100, falses: 1, visibleOff: 50),
              IceBarOracle.Placement(xPx: 6, yPx: 14, matchClass: .full, hits: 95, visibleOn: 100, falses: 1, visibleOff: 50)],
+            [IceBarOracle.Placement(xPx: 6, yPx: 16, matchClass: .full, hits: 95, visibleOn: 100, falses: 1, visibleOff: 50),
+             IceBarOracle.Placement(xPx: 6, yPx: 15, matchClass: .full, hits: 95, visibleOn: 100, falses: 1, visibleOff: 50)],
             [IceBarOracle.Placement(xPx: 7, yPx: 14, matchClass: .partial, hits: 99, visibleOn: 100, falses: 0, visibleOff: 50),
              IceBarOracle.Placement(xPx: 6, yPx: 14, matchClass: .full, hits: 91, visibleOn: 100, falses: 1, visibleOff: 50)],
         ]

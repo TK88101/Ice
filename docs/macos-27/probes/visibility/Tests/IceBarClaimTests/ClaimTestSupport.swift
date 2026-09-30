@@ -50,6 +50,11 @@ struct Strip {
         }
     }
 
+    /// Paints `count` pixels, 4 per row, from (x0, y0): one 8-connected cluster.
+    mutating func block(_ count: Int, at x0: Int, _ y0: Int, _ c: RGB3) {
+        for i in 0..<count { set(x0 + i % 4, y0 + i / 4, c) }
+    }
+
     var image: StripImage { StripImage(width: width, height: height, scale: scale, bytes: bytes) }
 }
 
@@ -140,6 +145,20 @@ enum Bar {
         }
     }
 
+    /// A grey of level `v` on every channel.
+    static func level(_ v: Int) -> RGB3 { (UInt8(v), UInt8(v), UInt8(v)) }
+
+    /// The dark backdrop raised by `d` on every channel.
+    static func grey(_ d: Int) -> RGB3 { level(40 + d) }
+
+    /// One attempt: six equal captures.
+    static func six(_ image: StripImage) -> [StripImage] { Array(repeating: image, count: 6) }
+
+    /// Ten capture images, all `base` except capture `index` (0...9).
+    static func captures(_ base: StripImage, replacing index: Int, with other: StripImage) -> [StripImage] {
+        (0..<10).map { $0 == index ? other : base }
+    }
+
     static func frozen(_ samples: [ObservationSample]) -> BaselineResult {
         StripAssessor.baseline(samples: samples, geometry: geometry, parameters: .preRegistered)
     }
@@ -150,6 +169,11 @@ enum Bar {
                         references: [String] = references, visible: [OracleTemplate]? = nil) -> BaselineVerdict {
         HiddenBaseline.evaluate(kept: Array(samples.dropFirst()), frozen: frozen(frozenFrom ?? samples),
                                 references: references, visible: visible ?? Self.visible)
+    }
+
+    static func isAccepted(_ verdict: BaselineVerdict) -> Bool {
+        if case .accepted = verdict.outcome { return true }
+        return false
     }
 
     static func accepted(_ strip: Strip = strip(), reads: [[AgentFrame]]? = nil) -> HiddenBaseline? {

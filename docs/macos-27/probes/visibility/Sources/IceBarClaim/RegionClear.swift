@@ -29,11 +29,11 @@ public enum RegionClear {
         for (index, capture) in captures.enumerated() {
             var mask = [Bool](repeating: false, count: capture.width * capture.height)
             for y in 0..<capture.height {
-                for x in baseline.columns where PixelKit.distance(capture, stored, x, y) > parameters.tDiff {
+                for x in baseline.claimRegion.columns where PixelKit.distance(capture, stored, x, y) > parameters.tDiff {
                     mask[y * capture.width + x] = true
                 }
             }
-            let top = PixelKit.clusterSizes(mask, width: capture.width, height: capture.height).max() ?? 0
+            let top = PixelKit.largestCluster(mask, width: capture.width, height: capture.height)
             if top >= parameters.clusterMinPx { return .notClear(.changed(index: index, clusterPx: top)) }
             largest = max(largest, top)
         }
