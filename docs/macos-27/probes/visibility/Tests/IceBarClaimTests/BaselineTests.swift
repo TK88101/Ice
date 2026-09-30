@@ -118,7 +118,7 @@ struct BaselineTests {
         #expect(verdict.measurements.largestRowCluster == 16)
     }
 
-    @Test("U5: 15 px at T_bg + 1, or 16 px at T_bg, pass the row-median clause; the texture bound still refuses (R15)",
+    @Test("U5: 15 px at T_bg + 1, or 16 px at T_bg, pass the row-median clause; the texture bound still refuses (R15, owner-approved, claim plan section 8 row 5)",
           arguments: [(15, 33), (16, 32)])
     func u5Accepted(count: Int, delta: Int) {
         let verdict = Bar.verdict(Bar.samples(cluster(count, at: 400, 20, Bar.grey(delta)).image))
