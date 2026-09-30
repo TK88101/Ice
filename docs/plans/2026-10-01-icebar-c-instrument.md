@@ -78,6 +78,8 @@ Constraints (owner, 2026-09-30):
 | D20 | colour cases | ordinary: white (255) on (40, 40, 40), black (0) on (235, 235, 235); coloured: (255, 0, 0) on both | S1 |
 | D21 | half alpha | coverage x 0.5 before compositing | S6 |
 | D22 | noise | SplitMix64, seed per item from its id; S7: +-6 uniform per pixel on (40, 40, 40); S10 value noise: lattice 8 pt, smoothstep interpolation, value in [-A, +A] on (90, 90, 90) grey, A = 16 and 32; diagonal gradient (40,40,40) -> (110,110,110) along x + y; blue -> orange as written, along x | amplitude read as the largest deviation (the stricter reading) |
+| D24 | S2, S3 "`drawn(partial)` iff visible P >= 16, else `none`" vs the edge rule (section 5) and S13 ("15: `drawn(edge)`") | **BLOCKED, owner decision** (Codex r3 P1: a change, not a reading). Proposed pre-registration deviation 1 (section 9): expected label by the generator's visible on-px n: n = all of P -> `full`; n >= 16 -> `partial`; 4 <= n < 16 -> `edge`; n < 4 -> `none`. S5 "under" has no "else none" and takes the same rule as a reading (Codex r3 agreed) | the literal S2/S3 text registers a mislabel for any oracle that implements section 5's edge rule; found before any oracle run on the corpus |
+| D25 | comparing a label with its expectation | class, zone and helper exact. x: exact box origin unless deviation 1 adds the 2 pt position tolerance (proposed with D24; Codex r3 P2: tolerance is registered only for controls). Where the recipe says only "drawn" or "found as itself" (S4, S8, S12) any class is accepted; S1, S5 touching, S6, S11 require `full` as written. S9 is checked for inconclusive only. K2 and K3 are one item (identical bytes, "kept as one item") | literal wording of each row |
 | D23 | capsule | 20 pt x 18 pt violet (130, 90, 250) rounded rect (radius 9 pt), vertically centred, drawn over glyphs; its frame is the canonical agent frame given to the oracle; not chevron width, so no `«` (a) | stand-in, section 6 |
 
 ## 4. Design
@@ -182,7 +184,7 @@ oracle), E2E (T6-T7: the executable writing real files, the freeze and the check
 
 | # | date | event | hash / item | reason |
 |---|---|---|---|---|
-| -- | -- | none yet | -- | -- |
+| 1 | 2026-10-01 | stop before T5/T6: pre-registration deviation 1 proposed (D24, D25) | -- | S2/S3 literal labels contradict section 5 + S13 |
 
 ## Appendix. Review record
 
@@ -201,3 +203,10 @@ oracle), E2E (T6-T7: the executable writing real files, the freeze and the check
 ### Round 2: 0 P0, 0 P1 -- CONVERGED
 
 Trend: r1 1 P0 + 3 P1 + 3 P2 -> r2 none. Codex accepted both rejections/modifications.
+
+### Round 3 (scoped to D24, D25, added before the corpus freeze): 1 P1, 1 P2
+
+| finding | ruling | change |
+|---|---|---|
+| P1 D24 changes S2/S3's registered "else none" | accepted | D24 blocked; pre-registration deviation 1 proposed to the owner; work stopped before the freeze |
+| P2 D25: 2 pt tolerance registered only for controls; S9 "no `«`" added | accepted | tolerance folded into deviation 1's proposal; S9 checks inconclusive only |
