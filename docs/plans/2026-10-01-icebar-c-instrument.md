@@ -211,6 +211,7 @@ Development runs of the new oracle: on the development corpus (salt `dev`) and f
 | 10 | 2026-10-01 | deviation 4 approved by the owner, written to section 9 | `e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3` | corpus 3 next |
 | 11 | 2026-10-01 | corpus 3 frozen (deviation 4 D4.2): `vzcorpus freeze --salt corpus-3`, run `20260930-123540-icebar-corpus3`, source commit daa9ceb (pre-registration `e693654c…`), 5749 items, 471 S13 combinations unreachable; freezes 1 and 2 kept as evidence. No oracle call on a corpus-3 item before this row's commit | freeze.json `f8a64fbc81dd327897d54b0187e14e6a9af0fbc6dd960406a6bfb7994271853d` | -- |
 | 12 | 2026-10-01 | corpus 3's single check (`vzcorpus check`, pre-registration hash, sources, renderings, recipe and every PNG verified first): **0 of 5749 items fail their expectation**, every synthetic item searched with all 19 templates. (check.json bytes equal corpus 2's: both are the same ids with empty lists.) U21 re-run through the test target as the acceptance path | check.json `1844ac22b38a002ac26f4528af9a60b95a21cd3db3f483bdcc6887c1763c7c09` | -- |
+| 13 | 2026-10-01 | /simcodex round 2 (codex review, P2): `vzcorpus check` now also re-hashes every K input (K3 is not an item, so it was not covered by the pixel comparison) against its recorded and pre-registered sha256. vzcorpus is provenance-only in the freeze; applies to later checks, corpus 3 is not re-checked (its result, row 12, stands; K3 is not an item and cannot change it) | -- | tool gap, no rule change |
 
 ## Appendix. Review record
 

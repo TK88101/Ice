@@ -110,6 +110,10 @@ func verify(_ manifest: FreezeManifest, dir: URL, templates: CorpusTemplates) th
     if preregistration != manifest.preregistrationSHA256 {
         problems.append("pre-registration changed since the freeze: \(manifest.preregistrationSHA256) -> \(preregistration)")
     }
+    for k in manifest.kInputs {
+        let measured = sha256(ofFile: KCaptures.directory.appendingPathComponent(k.file))
+        if measured != k.measuredSHA256 || measured != k.expectedSHA256 { problems.append("K input changed: \(k.id) \(k.file)") }
+    }
     let current = sourceHashes(frozenSourceDirs)
     for (path, hash) in manifest.sources where frozenSourceDirs.contains(where: { path.hasPrefix($0 + "/") }) && current[path] != hash {
         problems.append("source changed: \(path)")
