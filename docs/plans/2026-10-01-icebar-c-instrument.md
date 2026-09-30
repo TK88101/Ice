@@ -154,7 +154,7 @@ Parallel candidates: none (each task consumes the previous one's output).
 | A2 | line coverage >= 80 % for `IceBarOracle`, `IceBarCorpus`, `GlyphRenderer.swift` | `--enable-code-coverage`, `llvm-cov report` |
 | A3 | corpus frozen first, then 100 % | the freeze commit precedes the first `check.json`; `vzcorpus check` exit 0, "0 mislabels"; `git status` shows no image in the repository |
 | A4 | freeze | `git diff --exit-code af4baf1 -- Packages/MenuBarCapture`; `git diff --exit-code 32d523a -- Packages` |
-| A5 | pre-registration unchanged since deviation 1 | `shasum -a 256` = `aefe17021f14bd0076494b8365e051e09d40ed65ef984a088b4eccc11867946f` |
+| A5 | pre-registration unchanged since deviation 2 | `shasum -a 256` = `bb10b671205ce3a1fa8c5dcfb994a57558ee81424a5ee91ad45632c75f3de0f2` |
 | A6 | nothing else broken | full probe `swift test` (I7 group about 7 min); `build.sh <scratch>` builds |
 
 Coverage: unit (T1-T4), integration (T5, T7 test: generator + renderer +
@@ -189,6 +189,7 @@ oracle), E2E (T6-T7: the executable writing real files, the freeze and the check
 | 2 | 2026-10-01 | deviation 1 approved by the owner, written to the pre-registration's section 9 | `aefe17021f14bd0076494b8365e051e09d40ed65ef984a088b4eccc11867946f` | -- |
 | 3 | 2026-10-01 | corpus frozen (T6): `vzcorpus freeze`, run `20260930-102852-icebar-corpus`, source commit 54f63b9, 5749 items (S1 456, S2 912, S3 304, S4 684, S5 76, S6 152, S7 8, S8 4, S9 38, S10 2744, S11 114, S12 152, S13 99, S14 3, K 3); 471 S13 (glyph, cut, count, scale) combinations unreachable, every (cut, count, scale) reached by some glyph. No oracle call on a corpus item before this row's commit | freeze.json `56950a141074c77aa97439330b35f5caad047f31bf838f1ff76899db98ef9550` | -- |
 | 4 | 2026-10-01 | first oracle run on the frozen corpus (T7, `vzcorpus check`): **2144 of 5749 mislabelled; U21 fails; S0 blocked** (section 6). Passing rows: S1, S6, S7, S8, S9, S11, S12, S14, K1, K4 (all items). Failing: S2 412/912, S3 96/304, S4 539/684, S5 23/76, S10 1019/2744, S13 54/99, K2. Causes (MEASURED from `check.json`, no oracle bug found): (a) at a cut (notch, strip end, capsule) the visible part of one glyph is a shared stroke (a post, a bar end) that other glyphs' templates match as `partial`/`edge`, so those helpers are labelled drawn and the capture is inconclusive (D14/D15) -- risk R1; (b) S4: a 4 pt overlap puts the neighbour's ink in the second glyph's Q, false > 10 %, second glyph `none`; (c) S10 value noise A = 32: phantom `partial`/`edge` matches on bare texture at the strip start, and references missed; (d) K2: the K1 chevron template hits 169/169 on-px but 76/577 (13.2 %) off-px over the red grid texture, above the 10 % false limit -- risk R2. Work stopped for the owner; no rule, recipe or expectation changed | check.json `981530ae27e8709c0c563108632d1ffb7490392d877743aa992b0295388da062` | pre-registered rules, not implementation |
+| 5 | 2026-10-01 | deviation 2 approved by the owner and written to the pre-registration's section 9; part 1 continues under it (C1, `TextureBound`, `OverlapGuard`, `BControl`, corpus 2) | `bb10b671205ce3a1fa8c5dcfb994a57558ee81424a5ee91ad45632c75f3de0f2` | freeze 1 kept as evidence |
 
 ## Appendix. Review record
 

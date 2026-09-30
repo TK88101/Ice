@@ -1,6 +1,6 @@
 # Route C pre-registration, deviation 2 (draft): oracle identity vs sighting, texture, overlap
 
-2026-10-01 · branch `wip/icebar-c` · **draft for review, not in force** ·
+2026-10-01 · branch `wip/icebar-c` · **approved by the owner 2026-10-01, in force** (pre-registration section 9, deviation 2) ·
 amends `2026-09-30-icebar-c-prereg.md` (sha256 `aefe1702…`, v3 + deviation 1)
 sections 3 (slivers), 5, 6 and 7. Owner approved drafting it (2026-10-01); it
 takes effect only when the owner approves the converged text, is copied into

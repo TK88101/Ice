@@ -1,6 +1,6 @@
 # Route C pre-registration: hidden-state baseline, `RegionClear`, oracle
 
-2026-09-30 · branch `wip/icebar-c` · v3, converged (Codex round 3); deviation 1 (2026-10-01) ·
+2026-09-30 · branch `wip/icebar-c` · v3, converged (Codex round 3); deviations 1 and 2 (2026-10-01) ·
 the artifact required by `2026-09-30-icebar-route-c.md` section 4.0 rules 6 and 7.
 Its sha256 is recorded in that plan's rule 6 once review has converged; from then
 on, any change here is a deviation, logged in section 9 with its reason and a new
@@ -289,6 +289,7 @@ harness reports, from S0's captures only: the maximum kept-capture pixel distanc
 | # | date | change | reason | new sha256 |
 |---|---|---|---|---|
 | 1 | 2026-10-01 | S2 and S3 expected labels: "`drawn(partial, notchEdge)` iff visible P >= 16 px, else `none`" becomes, by the generator's visible on-px count n: n = all of P -> `drawn(full)`; n >= 16 -> `drawn(partial)`; 4 <= n < 16 -> `drawn(edge)`; n < 4 -> `none` (zone as the cut gives it). Corpus labels are compared with their expected x within section 5's 2 pt position tolerance. Approved by the owner 2026-10-01 | S2/S3 predate the edge rule (r1) and S13 (r2), which label the same cut `drawn(edge)` at 4-15 px; the literal text registered a mislabel for any oracle implementing section 5. Found by Codex (instrument plan review r3, P1) before the corpus was generated and before any oracle run on it | recorded in `2026-09-30-icebar-route-c.md` rule 6 (a file cannot hold its own hash) |
+| 2 | 2026-10-01 | Oracle and corpus revised by `2026-10-01-icebar-c-deviation2.md` (sha256 `7b44dfc24e98ec2b9dcfbf206ef88c91016bbf6e3245b191c29eca209356126e`), whose text is part of this document: C1 identity only from `full`, `partial`/`edge` as anonymous sightings, unexplained sightings count as a member seen; C2 hit/false tests unchanged, texture bound added to rule 1 (every region pixel within `T_o`/2 of M_x); C3 overlap guard on window-server bounds of every helper, S0 measures it; C4 fail-closed predicate for out-of-scope textures; C5 `«` (b) qualified by S14/K1/K4 before S0 and live ((a) implies (b), >= 10 captures, >= 2 episodes) before S1; C6 corpus 2 with new seeds, frozen before its single check, freeze 1 kept; C7 section 6's gate reads "every item meets its written expectation". Approved by the owner 2026-10-01 | freeze 1 (run `20260930-102852-icebar-corpus`): 2144/5749 mislabelled from rule-level causes (shared strokes at cuts, overlap, heavy texture, K2 texture); Codex 3 rounds + thecure converged | recorded in `2026-09-30-icebar-route-c.md` rule 6 |
 
 ## Appendix. Review record (Codex gpt-5.6-terra)
 

@@ -144,6 +144,9 @@ measurement.
    (Codex converged in round 3). Its pre-S0 freeze manifest is still owed.
    **Deviation 1, 2026-10-01** (owner approved; S2/S3 labels follow the edge
    rule): sha256 `aefe17021f14bd0076494b8365e051e09d40ed65ef984a088b4eccc11867946f`.
+   **Deviation 2, 2026-10-01** (owner approved; oracle identity vs sightings,
+   texture bound, overlap guard, live (b) control; `2026-10-01-icebar-c-deviation2.md`):
+   sha256 `bb10b671205ce3a1fa8c5dcfb994a57558ee81424a5ee91ad45632c75f3de0f2`.
 7. **The oracle is validated before it certifies anything.** Offline: a frozen
    corpus of labelled strip images (every zone including left of the notch and
    right of the references, ordinary and coloured glyphs, 1x and 2x, partial
