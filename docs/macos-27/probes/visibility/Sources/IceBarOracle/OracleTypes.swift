@@ -28,6 +28,8 @@ public struct OracleTemplate: Equatable, Sendable {
     public let width: Int
     public let height: Int
     public let scale: Double
+    /// The coverage it was made from, 0...255, rows from the top.
+    public let alpha: [UInt8]
     /// Pixel offsets inside the box.
     let on: [Point]
     let off: [Point]
@@ -47,6 +49,7 @@ public struct OracleTemplate: Equatable, Sendable {
         self.width = width
         self.height = height
         self.scale = scale
+        self.alpha = alpha
         var on = [Point]()
         var off = [Point]()
         var onByColumn = [Int](repeating: 0, count: width)

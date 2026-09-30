@@ -31,6 +31,8 @@ import PackageDescription
 //             but must still be reachable from a test target with fakes.
 //   IceBarOracle  route C's oracle (2026-10-01-icebar-c-instrument.md):
 //             the known-rendering matcher, `«` rule, controls. Tested.
+//   IceBarCorpus / vzcorpus  its offline corpus S1-S14, K1-K4: generator,
+//             freeze manifest, check (writes only outside the repository).
 //   C1Stage   rework #5, step A: the C1 stage orchestration itself
 //             (`StageC1*.swift`) moved out of the `vizprobe` executable so a
 //             test target can reach it. Driven entirely through
@@ -76,6 +78,21 @@ let package = Package(
         // public pixel and frame types; no AppKit, no capture.
         .target(name: "IceBarOracle", dependencies: [.product(name: "IceCore", package: "IceCore")]),
         .testTarget(name: "IceBarOracleTests", dependencies: ["IceBarOracle", .product(name: "IceCore", package: "IceCore")]),
+        // The oracle's offline corpus (pre-registration section 6): the
+        // deterministic generator, K1-K4 loading, the freeze manifest and the
+        // check. AppKit via VZGlyphs (the helpers' own drawing code).
+        .target(
+            name: "IceBarCorpus",
+            dependencies: ["VZGlyphs", "IceBarOracle", .product(name: "IceCore", package: "IceCore")],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "IceBarCorpusTests",
+            dependencies: ["IceBarCorpus", "IceBarOracle", "VZGlyphs", .product(name: "IceCore", package: "IceCore")],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        // `vzcorpus freeze` / `vzcorpus check` (instrument plan section 4).
+        .executableTarget(name: "vzcorpus", dependencies: ["IceBarCorpus", "IceBarOracle"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "vzhelper",
             // I2: the spacer role's `length <pt>`/`rest` commands are

@@ -13,7 +13,7 @@
 // on 2026-09-19.
 import AppKit
 
-public enum Glyph: String, CaseIterable, Sendable {
+public enum Glyph: String, CaseIterable, Sendable, Codable {
     /// Open on the right, accent bottom-left. Also the twin's glyph: the
     /// 2026-09-19 ambiguity control depends on the two being identical.
     case target
