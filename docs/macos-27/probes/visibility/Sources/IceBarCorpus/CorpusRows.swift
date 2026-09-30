@@ -25,7 +25,7 @@ extension ItemBuilder {
             try Self.s1Zones.flatMap { xPt in
                 try ColourCase.allCases.map { c in
                     try item("S1-\(g.rawValue)-x\(Int(xPt))-\(c.rawValue)", row: "S1", backdrop: c.backdrop,
-                             subjects: [subject(g, xPt: xPt, ink: c.ink, .full)])
+                             subjects: [subject(g, xPt: xPt, ink: c.ink)])
                 }
             }
         }
@@ -37,7 +37,7 @@ extension ItemBuilder {
                 try ["left", "right"].flatMap { edge in
                     try ColourCase.allCases.map { c in
                         try item("S2-\(g.rawValue)-\(edge)\(f)-\(c.rawValue)", row: "S2", backdrop: c.backdrop,
-                                 subjects: [subject(g, xPt: Self.straddleX(edge: edge, fraction: f), ink: c.ink, .byCount)])
+                                 subjects: [subject(g, xPt: Self.straddleX(edge: edge, fraction: f), ink: c.ink)])
                     }
                 }
             }
@@ -49,7 +49,7 @@ extension ItemBuilder {
             try [("start", -6.0), ("end", Double(CorpusGeometry.widthPt) - 6)].flatMap { name, xPt in
                 try ColourCase.allCases.map { c in
                     try item("S3-\(g.rawValue)-\(name)-\(c.rawValue)", row: "S3", backdrop: c.backdrop,
-                             subjects: [subject(g, xPt: xPt, ink: c.ink, .byCount)])
+                             subjects: [subject(g, xPt: xPt, ink: c.ink)])
                 }
             }
         }
@@ -59,7 +59,7 @@ extension ItemBuilder {
         try Glyph.allCases.flatMap { a in
             try Glyph.allCases.filter { $0 != a }.map { b in
                 try item("S4-\(a.rawValue)-\(b.rawValue)", row: "S4", backdrop: ColourCase.whiteOnDark.backdrop,
-                         subjects: [subject(a, xPt: 1100, .any), subject(b, xPt: 1108, .any)])
+                         subjects: [subject(a, xPt: 1100), subject(b, xPt: 1108)])
             }
         }
     }
@@ -69,9 +69,9 @@ extension ItemBuilder {
         try Glyph.allCases.flatMap { g in
             [
                 try item("S5-\(g.rawValue)-touching", row: "S5", backdrop: ColourCase.whiteOnDark.backdrop,
-                         subjects: [subject(g, xPt: CorpusGeometry.capsuleXPt - 12, .full)]),
+                         subjects: [subject(g, xPt: CorpusGeometry.capsuleXPt - 12)]),
                 try item("S5-\(g.rawValue)-under", row: "S5", backdrop: ColourCase.whiteOnDark.backdrop,
-                         subjects: [subject(g, xPt: CorpusGeometry.capsuleXPt - 10, .byCount)]),
+                         subjects: [subject(g, xPt: CorpusGeometry.capsuleXPt - 10)]),
             ]
         }
     }
@@ -84,7 +84,7 @@ extension ItemBuilder {
         return try Glyph.allCases.flatMap { g in
             try cases.map { variant, bg, c in
                 try item("S6-\(g.rawValue)-\(variant)-\(bg)", row: "S6", backdrop: c.backdrop,
-                         subjects: [subject(g, xPt: 1100, ink: c.ink, alpha: 0.5, .full)])
+                         subjects: [subject(g, xPt: 1100, ink: c.ink, alpha: 0.5)])
             }
         }
     }
@@ -105,7 +105,7 @@ extension ItemBuilder {
         let slotted = Set(CorpusGeometry.referenceSlots.map(\.glyph))
         let rest = Glyph.allCases.filter { !slotted.contains($0) }
         return try [ColourCase.whiteOnDark, .blackOnLight].map { c in
-            let subjects = rest.enumerated().map { i, g in subject(g, xPt: 970 + 20 * Double(i), ink: c.ink, .any) }
+            let subjects = rest.enumerated().map { i, g in subject(g, xPt: 970 + 20 * Double(i), ink: c.ink) }
             return try item("S8-\(c == .whiteOnDark ? "dark" : "light")", row: "S8", backdrop: c.backdrop, subjects: subjects)
         }
     }
@@ -113,7 +113,7 @@ extension ItemBuilder {
     func s9() throws -> [ItemSpec] {
         try Glyph.allCases.map { g in
             try item("S9-\(g.rawValue)", row: "S9", backdrop: ColourCase.whiteOnDark.backdrop,
-                     subjects: [subject(g, xPt: 1100, .any), subject(g, xPt: 1130, .any)], twin: true)
+                     subjects: [subject(g, xPt: 1100), subject(g, xPt: 1130)], twin: true)
         }
     }
 
@@ -125,12 +125,12 @@ extension ItemBuilder {
                 for (inkName, ink) in Self.texturedInks {
                     for xPt in Self.s1Zones {
                         items.append(try item("S10-\(name)-S1-\(g.rawValue)-x\(Int(xPt))-\(inkName)", row: "S10", backdrop: backdrop,
-                                              subjects: [subject(g, xPt: xPt, ink: ink, .full)]))
+                                              subjects: [subject(g, xPt: xPt, ink: ink)]))
                     }
                     for f in Self.s2Fractions {
                         for edge in ["left", "right"] {
                             items.append(try item("S10-\(name)-S2-\(g.rawValue)-\(edge)\(f)-\(inkName)", row: "S10", backdrop: backdrop,
-                                                  subjects: [subject(g, xPt: Self.straddleX(edge: edge, fraction: f), ink: ink, .byCount)]))
+                                                  subjects: [subject(g, xPt: Self.straddleX(edge: edge, fraction: f), ink: ink)]))
                         }
                     }
                 }
@@ -143,7 +143,7 @@ extension ItemBuilder {
         try Glyph.allCases.flatMap { g in
             try [-4, 0, 4].map { dy in
                 try item("S11-\(g.rawValue)-dy\(dy)", row: "S11", backdrop: ColourCase.whiteOnDark.backdrop,
-                         subjects: [subject(g, xPt: 1100, dy: dy, .full)])
+                         subjects: [subject(g, xPt: 1100, dy: dy)])
             }
         }
     }
@@ -157,10 +157,10 @@ extension ItemBuilder {
             for i in all.indices {
                 let triple = (0..<3).map { all[(i + $0) % all.count] }
                 items.append(try item("S12-triple-\(i)-\(bg)", row: "S12", backdrop: c.backdrop,
-                                      subjects: triple.enumerated().map { k, g in subject(g, xPt: 1100 + 13 * Double(k), ink: c.ink, .any) }))
+                                      subjects: triple.enumerated().map { k, g in subject(g, xPt: 1100 + 13 * Double(k), ink: c.ink) }))
                 items.append(try item("S12-pair-\(i)-\(bg)", row: "S12", backdrop: c.backdrop,
-                                      subjects: [subject(all[i], xPt: 1100, ink: c.ink, .any),
-                                                 subject(all[(i + 1) % all.count], xPt: 1112, ink: .coloured, .any)]))
+                                      subjects: [subject(all[i], xPt: 1100, ink: c.ink),
+                                                 subject(all[(i + 1) % all.count], xPt: 1112, ink: .coloured)]))
             }
         }
         return items

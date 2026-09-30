@@ -24,9 +24,10 @@ public enum CorpusRecipe {
             let refused = input.id == "K2"
             return ItemSpec(id: input.id, row: "K", scale: 2, backdrop: .uniform(.grey(0)), glyphs: [], chevrons: [],
                             capsuleXPt: 0, agentFramesPt: [], recorded: input.file, seedSalt: salt, windows: [:], visibleControls: [],
+                            textureRegionPt: [KCaptures.textureRegion.lo, KCaptures.textureRegion.hi],
+                            textureFramesPt: refused ? [[KCaptures.k2ChevronFramePt.lo, KCaptures.k2ChevronFramePt.hi]] : [],
                             mode: refused ? .textureRefused : .exact,
-                            expected: Expectation(helpers: nil, requiredSightings: [:], cutIdentity: [:], placedColumns: [], seesMember: nil, inconclusive: nil,
-                                                  chevron: refused ? nil : input.chevron, memberVisiblyDrawn: false))
+                            expected: .unasserted(chevron: refused ? nil : input.chevron))
         }
         return (items, unreachable)
     }
@@ -49,23 +50,12 @@ enum ColourCase: String, CaseIterable {
     }
 }
 
-/// What a placed glyph must be labelled.
-enum Expect {
-    /// `drawn(full)` as the row says.
-    case full
-    /// "drawn" / "found as itself": any class.
-    case any
-    /// Deviation 1: by its visible on-pixel count.
-    case byCount
-}
-
 struct Subject {
     let glyph: Glyph
     let xPx: Int
     let yPx: Int
     let ink: InkSpec
     let alphaFactor: Double
-    let expect: Expect
 }
 
 struct ItemBuilder {
@@ -79,9 +69,10 @@ struct ItemBuilder {
     var side: Int { CorpusGeometry.glyphSidePt * scale }
     func x(_ pt: Double) -> Int { CorpusGeometry.px(pt, scale: scale) }
 
-    func subject(_ glyph: Glyph, xPt: Double, dy: Int = 0, ink: InkSpec = ColourCase.whiteOnDark.ink,
-                 alpha: Double = 1, _ expect: Expect) -> Subject {
-        Subject(glyph: glyph, xPx: x(xPt), yPx: top + dy, ink: ink, alphaFactor: alpha, expect: expect)
+    /// Expectations come from each glyph's visible on-pixel count (C6, D3.2),
+    /// not from the row.
+    func subject(_ glyph: Glyph, xPt: Double, dy: Int = 0, ink: InkSpec = ColourCase.whiteOnDark.ink, alpha: Double = 1) -> Subject {
+        Subject(glyph: glyph, xPx: x(xPt), yPx: top + dy, ink: ink, alphaFactor: alpha)
     }
 
     /// References fill their slots unless the item is empty or their glyph is
@@ -106,15 +97,17 @@ struct ItemBuilder {
         let mode = try modeFor(backdrop, id: id, frames: frames)
         let overlapping = OverlapGuard.evaluate(roster: Glyph.allCases.map(\.rawValue), bounds: windows) != .clear
         let expected: Expectation
-        if twin || overlapping {
-            expected = Expectation(helpers: nil, requiredSightings: [:], cutIdentity: [:], placedColumns: [], seesMember: nil, inconclusive: true,
-                                   chevron: nil, memberVisiblyDrawn: false)
+        if mode == .textureRefused {
+            expected = .unasserted()
+        } else if twin || overlapping {
+            expected = .unasserted(inconclusive: true)
         } else {
-            expected = try expectation(glyphs, geometry: geometry, mode: mode, chevron: chevron ?? (scale == 2 ? .absent : .notEvaluable))
+            expected = try expectation(glyphs, geometry: geometry, chevron: chevron ?? (scale == 2 ? .absent : .notEvaluable))
         }
         return ItemSpec(id: id, row: row, scale: scale, backdrop: backdrop, glyphs: glyphs, chevrons: chevrons,
                         capsuleXPt: capsuleXPt, agentFramesPt: frames, recorded: nil, seedSalt: salt, windows: windows,
-                        visibleControls: controls, mode: mode, expected: expected)
+                        visibleControls: controls, textureRegionPt: Self.textureRegion, textureFramesPt: frames,
+                        mode: mode, expected: expected)
     }
 
     /// C3's guard input for all 19 helpers: drawn ones at their image box,
@@ -131,20 +124,21 @@ struct ItemBuilder {
         return windows
     }
 
-    /// C2: uniform backdrops are flat by construction; the rest are rendered
-    /// (backdrop only) and judged by `TextureBound` over the region.
+    /// Rule 1's region: notch right edge to the leftmost reference.
+    static let textureRegion = [CorpusGeometry.notch.hi, CorpusGeometry.leftmostReferencePt]
+
+    /// C2 / D4.1: uniform backdrops are flat by construction; the rest are
+    /// rendered (backdrop only) and judged by `TextureBound` over the region.
     func modeFor(_ backdrop: Backdrop, id: String, frames: [[Double]]) throws -> ExpectationMode {
         if case .uniform = backdrop { return .exact }
-        var canvas = Canvas(scale: scale)
-        canvas.fill(backdrop, seed: CorpusRenderer.seed(salt: salt, id: id))
-        let image = StripImage(width: canvas.width, height: canvas.height, scale: Double(scale), bytes: canvas.bytes)
-        let outcome = TextureBound.evaluate(image, region: PtSpan(lo: CorpusGeometry.notch.hi, hi: CorpusGeometry.leftmostReferencePt),
+        let image = CorpusRenderer.backdrop(backdrop, scale: scale, seed: CorpusRenderer.seed(salt: salt, id: id))
+        let outcome = TextureBound.evaluate(image, region: PtSpan(lo: Self.textureRegion[0], hi: Self.textureRegion[1]),
                                             notch: CorpusGeometry.notch, agentFrames: frames.map { PtSpan(lo: $0[0], hi: $0[1]) })
         if case .accepted = outcome { return .exact }
-        return .failClosed
+        return .textureRefused
     }
 
-    func expectation(_ glyphs: [GlyphPlacement], geometry: OracleGeometry, mode: ExpectationMode, chevron: ChevronSighting) throws -> Expectation {
+    func expectation(_ glyphs: [GlyphPlacement], geometry: OracleGeometry, chevron: ChevronSighting) throws -> Expectation {
         var helpers = [String: ExpectedLabel]()
         for glyph in Glyph.allCases { helpers[glyph.rawValue] = ExpectedLabel.none }
         var required = [String: [Int]]()
@@ -152,14 +146,12 @@ struct ItemBuilder {
         var placedColumns = [[Int]]()
         var memberSeen = false
         var faint = false
-        var memberVisiblyDrawn = false
         for placed in glyphs {
             let template = try templates.helper(placed.glyph, scale: scale)
             let n = geometry.visibleOnCount(template, x0: placed.xPx, y0: placed.yPx)
             let columns = (placed.xPx..<(placed.xPx + side)).filter { geometry.isVisible(x: $0, y: placed.yPx) }
             if let lo = columns.first, let hi = columns.last { placedColumns.append([lo, hi + 1]) }
             let isMember = Self.members.contains(placed.glyph)
-            if isMember && n >= 4 { memberVisiblyDrawn = true }
             let full = ExpectedLabel.drawn([.full], xPt: CorpusGeometry.labelX(placed.xPx, scale: scale),
                                            zone: CorpusGeometry.zone(x0: placed.xPx, width: side, scale: scale))
             if n == template.onCount {
@@ -175,13 +167,9 @@ struct ItemBuilder {
                 faint = true
             }
         }
-        if mode == .failClosed {
-            return Expectation(helpers: nil, requiredSightings: [:], cutIdentity: [:], placedColumns: [], seesMember: nil, inconclusive: nil,
-                               chevron: nil, memberVisiblyDrawn: memberVisiblyDrawn)
-        }
         let sees: Tri = memberSeen ? .yes : faint ? .either : .no
         return Expectation(helpers: helpers, requiredSightings: required, cutIdentity: cutIdentity, placedColumns: placedColumns, seesMember: sees,
-                           inconclusive: false, chevron: chevron, memberVisiblyDrawn: memberVisiblyDrawn)
+                           inconclusive: false, chevron: chevron)
     }
 
     /// The references' ink follows the bar: white on a dark backdrop, black on the light one.

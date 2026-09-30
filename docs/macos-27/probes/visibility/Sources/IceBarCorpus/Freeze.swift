@@ -88,18 +88,26 @@ public enum CorpusCheck {
     /// The oracle on one item: every helper template at the item's scale
     /// (none for K items, D18), the chevron template at scale 2 only (D17).
     public static func label(_ item: CorpusItem, templates: CorpusTemplates) throws -> CaptureLabels {
-        let helpers = item.spec.expected.helpers == nil ? [] : try templates.helpers(scale: item.spec.scale)
+        let helpers = try helperTemplates(for: item.spec, templates: templates)
         let chevron = item.spec.scale == 2 ? templates.chevron : nil
         return try Oracle.label(image: item.image, helpers: helpers, chevron: chevron, context: item.context)
     }
 
     /// Instrument plan 7a, T12: the item's expectation against the oracle's
     /// labels and the attempt verdict of that one capture. Empty = met.
+    /// Every synthetic item is searched with all 19 templates; K items, whose
+    /// markers are not VZGlyphs, with none (D18). Never decided by an
+    /// expectation field (deviation 4, the corpus-2 checker defect).
+    public static func helperTemplates(for spec: ItemSpec, templates: CorpusTemplates) throws -> [OracleTemplate] {
+        spec.recorded == nil ? try templates.helpers(scale: spec.scale) : []
+    }
+
     public static func problems(_ item: CorpusItem, templates: CorpusTemplates) throws -> [String] {
         let spec = item.spec
         if spec.mode == .textureRefused {
-            let outcome = TextureBound.evaluate(item.image, region: KCaptures.textureRegion, notch: KCaptures.notch,
-                                                agentFrames: [KCaptures.k2ChevronFramePt])
+            let outcome = TextureBound.evaluate(CorpusRenderer.textureImage(item),
+                                                region: PtSpan(lo: spec.textureRegionPt[0], hi: spec.textureRegionPt[1]),
+                                                notch: spec.context.notch, agentFrames: spec.textureFramesPt.map { PtSpan(lo: $0[0], hi: $0[1]) })
             if case .refused = outcome { return [] }
             return ["texture bound accepted: \(outcome)"]
         }
@@ -112,12 +120,6 @@ public enum CorpusCheck {
             overlap: OverlapGuard.evaluate(roster: roster, bounds: spec.windows)
         )
         let expected = spec.expected
-        if spec.mode == .failClosed {
-            var problems = [String]()
-            if labels.chevron == .present { problems.append("chevron present") }
-            if expected.memberVisiblyDrawn && !(verdict.seesMember || verdict.inconclusive) { problems.append("clean while a member is drawn") }
-            return problems
-        }
         if expected.inconclusive == true {
             return verdict.inconclusive ? [] : ["expected inconclusive, got conclusive"]
         }

@@ -13,7 +13,7 @@ struct Deviation3CheckTests {
     let expected = Expectation(
         helpers: ["hook": .none, "tee": .none], requiredSightings: ["hook": [2740, 2760]],
         cutIdentity: ["hook": .drawn([.full], xPt: 1371.5, zone: .rightOfReferences)],
-        placedColumns: [[2740, 2760]], seesMember: .yes, inconclusive: false, chevron: .absent, memberVisiblyDrawn: true
+        placedColumns: [[2740, 2760]], seesMember: .yes, inconclusive: false, chevron: .absent
     )
 
     func verdict(_ labels: CaptureLabels) -> AttemptVerdict {
@@ -50,7 +50,7 @@ struct Deviation3CheckTests {
     @Test("S14 on the development corpus: every case yields `«` present and meets its expectation")
     func s14Regression() throws {
         let templates = try CorpusTemplates(kDirectory: KCaptures.directory)
-        let specs = try CorpusRecipe.specs(templates: templates, salt: "dev").items.filter { $0.row == "S14" }
+        let specs = try ItemBuilder(templates: templates, scale: 2, salt: "dev").s14()
         #expect(specs.count == 3)
         for spec in specs {
             let item = try CorpusRenderer.render(spec, templates: templates)

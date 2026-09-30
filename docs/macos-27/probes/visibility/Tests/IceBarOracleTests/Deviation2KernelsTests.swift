@@ -70,14 +70,8 @@ struct Deviation2KernelsTests {
     // U22b: sightings explained only by the ink of a full-identified helper.
     @Test("a partial match on the post of an identified glyph is an explained sighting")
     func explainedSighting() throws {
-        var postB = [UInt8](repeating: 0, count: 400)
-        for y in 2..<18 {
-            for x in [0, 1, 2, 3, 16, 17] { postB[y * 20 + x] = 255 }
-            postB[y * 20 + 18] = 64
-            postB[y * 20 + 19] = 64
-        }
         let a = OracleTemplate(id: "a", width: 20, height: 20, alpha: Shapes.bracket(), scale: 2)
-        let b = OracleTemplate(id: "b", width: 20, height: 20, alpha: postB, scale: 2)
+        let b = postTemplate("b")
         var canvas = Canvas()
         canvas.stamp(Shapes.bracket(), side: 20, at: 2200, y0)
         canvas.fillColumns(2186..<2202, (130, 90, 250))

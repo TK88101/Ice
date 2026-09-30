@@ -113,7 +113,7 @@ New and changed code, all under `docs/macos-27/probes/visibility` (not linked in
   mislabels), `PNGIO` (decode K items, encode outputs), `SplitMix64`.
 - `Sources/vzcorpus/main.swift` (new executable), two subcommands, both refusing
   an output directory inside the repository:
-  - `vzcorpus freeze --out <dir> [--k-dir <dir>]`: generates every item, writes
+  - `vzcorpus freeze --out <dir> --salt <salt>` (K inputs: `$ICEBAR_K_DIR` or the pre-registered run's captures; deviation 4 dropped `--k-dir`): generates every item, writes
     its PNG and `freeze.json`; runs **no** oracle matching. `freeze.json` schema:
     `runId`, `gitRevision` (must be clean), `sources` (sha256 of every file of
     `VZGlyphs`, `IceBarCorpus`, `IceBarOracle`, `vzcorpus`, by path),

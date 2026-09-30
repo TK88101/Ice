@@ -79,14 +79,18 @@ public enum Tri: String, Codable, Sendable {
     case yes, no, either
 }
 
-/// How an item is judged (instrument plan section 7a, T12).
+/// How an item is judged (instrument plan section 7a, T12; deviation 4).
 public enum ExpectationMode: String, Codable, Sendable {
     /// Inside the texture bound: identity, sightings, verdict, `«` exact.
     case exact
-    /// Outside it (deviation 2 C4): never clean when a member is visibly drawn.
-    case failClosed
-    /// K2 (C5): the texture bound refuses its region.
+    /// Outside it (deviation 4 D4.1, and K2): the texture bound must refuse
+    /// the item's backdrop; no oracle behaviour is expected.
     case textureRefused
+}
+
+/// Salts of frozen corpora; development runs must not use them (deviation 4).
+public enum CorpusSalt {
+    public static func isFrozen(_ salt: String) -> Bool { salt.hasPrefix("corpus-") }
 }
 
 public struct Expectation: Codable, Equatable, Sendable {
@@ -105,8 +109,12 @@ public struct Expectation: Codable, Equatable, Sendable {
     public let inconclusive: Bool?
     /// Exact `«`; nil where not asserted.
     public let chevron: ChevronSighting?
-    /// C4: some member is placed with >= 4 visible on-px.
-    public let memberVisiblyDrawn: Bool
+
+    /// Nothing asserted but `inconclusive` / `«` where given.
+    static func unasserted(inconclusive: Bool? = nil, chevron: ChevronSighting? = nil) -> Expectation {
+        Expectation(helpers: nil, requiredSightings: [:], cutIdentity: [:], placedColumns: [], seesMember: nil,
+                    inconclusive: inconclusive, chevron: chevron)
+    }
 }
 
 /// A visible helper in its slot, with the AX `minX` its positive control uses.
@@ -143,6 +151,10 @@ public struct ItemSpec: Codable, Equatable, Sendable {
     /// Window-server bounds of all 19 helpers (C3's guard input).
     public let windows: [String: WindowBounds]
     public let visibleControls: [VisibleControl]
+    /// Rule 1's region and excluded agent frames for the texture bound
+    /// (deviation 4 D4.1): notch right edge to the leftmost reference.
+    public let textureRegionPt: [Double]
+    public let textureFramesPt: [[Double]]
     public let mode: ExpectationMode
     public let expected: Expectation
 

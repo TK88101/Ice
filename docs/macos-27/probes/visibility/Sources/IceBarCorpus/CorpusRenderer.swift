@@ -15,6 +15,21 @@ public enum CorpusRenderer {
     /// Freeze 1 seeded by id alone; later corpora prefix a salt (deviation 2 C6).
     static func seed(salt: String, id: String) -> String { salt.isEmpty ? id : "\(salt)|\(id)" }
 
+    /// The backdrop alone, as the texture bound judges it (deviation 4 D4.1).
+    static func backdrop(_ backdrop: Backdrop, scale: Int, seed: String) -> StripImage {
+        var canvas = Canvas(scale: scale)
+        canvas.fill(backdrop, seed: seed)
+        return StripImage(width: canvas.width, height: canvas.height, scale: Double(scale), bytes: canvas.bytes)
+    }
+
+    /// The pixels the texture bound is applied to: a K capture itself, or a
+    /// synthetic item's backdrop without its glyphs.
+    static func textureImage(_ item: CorpusItem) -> StripImage {
+        let spec = item.spec
+        guard spec.recorded == nil else { return item.image }
+        return backdrop(spec.backdrop, scale: spec.scale, seed: seed(salt: spec.seedSalt, id: spec.id))
+    }
+
     public static func render(_ spec: ItemSpec, templates: CorpusTemplates, kDirectory: URL = KCaptures.directory) throws -> CorpusItem {
         if let file = spec.recorded {
             let data = try Data(contentsOf: kDirectory.appendingPathComponent(file))

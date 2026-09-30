@@ -39,6 +39,12 @@ struct GlyphSetTests {
         #expect(labels.inconclusive.isEmpty, "\(labels.inconclusive)")
     }
 
+    @Test("the oracle's glyph inset is the drawing code's own inset")
+    func insetAgrees() {
+        #expect(OracleParameters.preRegistered.glyphInsetPt == Double(Glyphs.inset.dx))
+        #expect(GlyphRenderer.sidePt == 12)
+    }
+
     @Test("GlyphCheck: all 19 accepted by the frozen baseline rules, the twin refused")
     func glyphCheck() {
         let result = GlyphCheck.run()

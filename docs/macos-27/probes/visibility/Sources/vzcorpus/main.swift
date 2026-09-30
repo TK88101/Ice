@@ -106,6 +106,10 @@ func freeze() throws {
 /// Everything the freeze fixed must be unchanged before the oracle runs.
 func verify(_ manifest: FreezeManifest, dir: URL, templates: CorpusTemplates) throws -> [ItemSpec] {
     var problems = [String]()
+    let preregistration = sha256(ofFile: repoRoot.appendingPathComponent(preregistrationPath))
+    if preregistration != manifest.preregistrationSHA256 {
+        problems.append("pre-registration changed since the freeze: \(manifest.preregistrationSHA256) -> \(preregistration)")
+    }
     let current = sourceHashes(frozenSourceDirs)
     for (path, hash) in manifest.sources where frozenSourceDirs.contains(where: { path.hasPrefix($0 + "/") }) && current[path] != hash {
         problems.append("source changed: \(path)")
@@ -140,7 +144,7 @@ func check() throws {
 /// Development runs only (deviation 2 C6): the frozen corpus's salt is refused.
 func dev() throws {
     let salt = argument("--salt")
-    guard salt != "corpus-2" else { fail("the corpus-2 salt is only checked through its freeze", code: 2) }
+    guard !CorpusSalt.isFrozen(salt) else { fail("\(salt) is a frozen corpus's salt; it is only checked through its freeze", code: 2) }
     let out = outsideRepository(argument("--out"))
     try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
     let templates = try CorpusTemplates(kDirectory: KCaptures.directory)

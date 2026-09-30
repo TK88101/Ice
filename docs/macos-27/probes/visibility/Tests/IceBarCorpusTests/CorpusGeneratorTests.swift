@@ -12,7 +12,7 @@ import VZGlyphs
 @Suite("Corpus generator", .serialized)
 struct CorpusGeneratorTests {
     static let templates = Result { try CorpusTemplates(kDirectory: KCaptures.directory) }
-    static let recipe = Result { try CorpusRecipe.specs(templates: templates.get(), salt: "corpus-2") }
+    static let recipe = Result { try CorpusRecipe.specs(templates: templates.get(), salt: "corpus-3") }
 
     func spec(_ id: String) throws -> ItemSpec {
         try #require(Self.recipe.get().items.first { $0.id == id }, "no item \(id)")
@@ -111,9 +111,11 @@ struct CorpusGeneratorTests {
     func textureModes() throws {
         let items = try Self.recipe.get().items.filter { $0.row == "S10" }
         let modes = Dictionary(grouping: items) { $0.id.split(separator: "-")[1] }.mapValues { Set($0.map(\.mode)) }
-        #expect(modes["value32"] == [.failClosed])
+        #expect(modes["value32"] == [.textureRefused])
         #expect(modes["diagonal"] == [.exact])
-        #expect(items.allSatisfy { $0.seedSalt == "corpus-2" })
+        #expect(items.allSatisfy { $0.seedSalt == "corpus-3" })
+        // D4.1: rule 1's region and exclusions.
+        #expect(items.allSatisfy { $0.textureRegionPt == [CorpusGeometry.notch.hi, CorpusGeometry.leftmostReferencePt] && $0.textureFramesPt == $0.agentFramesPt })
     }
 
     @Test("a different salt gives different noise")
@@ -167,6 +169,8 @@ struct CorpusGeneratorTests {
         #expect(try spec("S14-noAX-2x").expected.chevron == .present)
         #expect(try spec("K2").expected.chevron == nil)
         #expect(try spec("K2").mode == .textureRefused)
+        #expect(try spec("K2").textureRegionPt == [956.5, 1008])
+        #expect(try spec("K2").textureFramesPt == [[1012.5, 1030]])
         #expect(try spec("K1").expected.chevron == .present)
         #expect(try spec("K4").expected.chevron == .absent)
         #expect(try spec("S7-dark-2x").expected.seesMember == .no)
@@ -206,5 +210,23 @@ struct CorpusGeneratorTests {
         let geometry = OracleGeometry(widthPx: CorpusGeometry.widthPx(scale: item.scale), heightPx: CorpusGeometry.heightPx(scale: item.scale),
                                       scale: Double(item.scale), context: item.context)
         return try geometry.visibleOnCount(templates.helper(placed.glyph, scale: item.scale), x0: placed.xPx, y0: placed.yPx)
+    }
+
+    // Deviation 4, before corpus 3: templates follow `spec.recorded`, never an
+    // expectation field.
+    @Test("every synthetic item gets all 19 templates, K items none")
+    func templateSelection() throws {
+        let templates = try Self.templates.get()
+        for item in try Self.recipe.get().items {
+            let count = try CorpusCheck.helperTemplates(for: item, templates: templates).count
+            #expect(count == (item.recorded == nil ? 19 : 0), "\(item.id)")
+        }
+    }
+
+    @Test("frozen salts are refused for development runs")
+    func frozenSalts() {
+        #expect(CorpusSalt.isFrozen("corpus-2"))
+        #expect(CorpusSalt.isFrozen("corpus-3"))
+        #expect(!CorpusSalt.isFrozen("dev"))
     }
 }

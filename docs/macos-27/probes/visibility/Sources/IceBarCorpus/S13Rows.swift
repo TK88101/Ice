@@ -24,7 +24,7 @@ extension ItemBuilder {
                         unreachable.append("\(base)-\(scale)x")
                         continue
                     }
-                    let placed = Subject(glyph: g, xPx: x0, yPx: top + dy, ink: ColourCase.whiteOnDark.ink, alphaFactor: 1, expect: .byCount)
+                    let placed = Subject(glyph: g, xPx: x0, yPx: top + dy, ink: ColourCase.whiteOnDark.ink, alphaFactor: 1)
                     items.append(try item(base, row: "S13", backdrop: ColourCase.whiteOnDark.backdrop, subjects: [placed],
                                           capsuleXPt: capsuleXPt, frames: frames))
                 }
