@@ -2,7 +2,8 @@
 
 2026-10-01 · branch `wip/icebar-c` · final (Codex converged, round 2) ·
 implements `2026-09-30-icebar-c-prereg.md` v3 (sha256
-`d8bf04aacf519b21442a5df59e096145f4e7fcc963d58856776aa3c378853d6f`), sections 5-7.
+`d8bf04aacf519b21442a5df59e096145f4e7fcc963d58856776aa3c378853d6f`; after its deviation 1
+of 2026-10-01, `aefe17021f14bd0076494b8365e051e09d40ed65ef984a088b4eccc11867946f`), sections 5-7.
 
 The pre-registration is not changed by this plan. Where it leaves a detail open,
 section 3 below fixes it **before** the oracle first runs on the corpus; each
@@ -78,8 +79,8 @@ Constraints (owner, 2026-09-30):
 | D20 | colour cases | ordinary: white (255) on (40, 40, 40), black (0) on (235, 235, 235); coloured: (255, 0, 0) on both | S1 |
 | D21 | half alpha | coverage x 0.5 before compositing | S6 |
 | D22 | noise | SplitMix64, seed per item from its id; S7: +-6 uniform per pixel on (40, 40, 40); S10 value noise: lattice 8 pt, smoothstep interpolation, value in [-A, +A] on (90, 90, 90) grey, A = 16 and 32; diagonal gradient (40,40,40) -> (110,110,110) along x + y; blue -> orange as written, along x | amplitude read as the largest deviation (the stricter reading) |
-| D24 | S2, S3 "`drawn(partial)` iff visible P >= 16, else `none`" vs the edge rule (section 5) and S13 ("15: `drawn(edge)`") | **BLOCKED, owner decision** (Codex r3 P1: a change, not a reading). Proposed pre-registration deviation 1 (section 9): expected label by the generator's visible on-px n: n = all of P -> `full`; n >= 16 -> `partial`; 4 <= n < 16 -> `edge`; n < 4 -> `none`. S5 "under" has no "else none" and takes the same rule as a reading (Codex r3 agreed) | the literal S2/S3 text registers a mislabel for any oracle that implements section 5's edge rule; found before any oracle run on the corpus |
-| D25 | comparing a label with its expectation | class, zone and helper exact. x: exact box origin unless deviation 1 adds the 2 pt position tolerance (proposed with D24; Codex r3 P2: tolerance is registered only for controls). Where the recipe says only "drawn" or "found as itself" (S4, S8, S12) any class is accepted; S1, S5 touching, S6, S11 require `full` as written. S9 is checked for inconclusive only. K2 and K3 are one item (identical bytes, "kept as one item") | literal wording of each row |
+| D24 | S2, S3 labels vs the edge rule and S13 | resolved by pre-registration **deviation 1** (owner approved 2026-10-01): by visible on-px n, all of P -> `full`; n >= 16 -> `partial`; 4 <= n < 16 -> `edge`; n < 4 -> `none`. S5 "under" follows the same rule as a reading (Codex r3) | Codex r3 P1: a change, so made as a deviation before the corpus exists |
+| D25 | comparing a label with its expectation | class, zone and helper exact. x within the 2 pt position tolerance (registered for corpus labels by deviation 1). Where the recipe says only "drawn" or "found as itself" (S4, S8, S12) any class is accepted; S1, S5 touching, S6, S11 require `full` as written. S9 is checked for inconclusive only. K2 and K3 are one item (identical bytes, "kept as one item") | literal wording of each row |
 | D23 | capsule | 20 pt x 18 pt violet (130, 90, 250) rounded rect (radius 9 pt), vertically centred, drawn over glyphs; its frame is the canonical agent frame given to the oracle; not chevron width, so no `«` (a) | stand-in, section 6 |
 
 ## 4. Design
@@ -153,7 +154,7 @@ Parallel candidates: none (each task consumes the previous one's output).
 | A2 | line coverage >= 80 % for `IceBarOracle`, `IceBarCorpus`, `GlyphRenderer.swift` | `--enable-code-coverage`, `llvm-cov report` |
 | A3 | corpus frozen first, then 100 % | the freeze commit precedes the first `check.json`; `vzcorpus check` exit 0, "0 mislabels"; `git status` shows no image in the repository |
 | A4 | freeze | `git diff --exit-code af4baf1 -- Packages/MenuBarCapture`; `git diff --exit-code 32d523a -- Packages` |
-| A5 | pre-registration unchanged | `shasum -a 256` = `d8bf04aa...853d6f` |
+| A5 | pre-registration unchanged since deviation 1 | `shasum -a 256` = `aefe17021f14bd0076494b8365e051e09d40ed65ef984a088b4eccc11867946f` |
 | A6 | nothing else broken | full probe `swift test` (I7 group about 7 min); `build.sh <scratch>` builds |
 
 Coverage: unit (T1-T4), integration (T5, T7 test: generator + renderer +
@@ -185,6 +186,7 @@ oracle), E2E (T6-T7: the executable writing real files, the freeze and the check
 | # | date | event | hash / item | reason |
 |---|---|---|---|---|
 | 1 | 2026-10-01 | stop before T5/T6: pre-registration deviation 1 proposed (D24, D25) | -- | S2/S3 literal labels contradict section 5 + S13 |
+| 2 | 2026-10-01 | deviation 1 approved by the owner, written to the pre-registration's section 9 | `aefe17021f14bd0076494b8365e051e09d40ed65ef984a088b4eccc11867946f` | -- |
 
 ## Appendix. Review record
 

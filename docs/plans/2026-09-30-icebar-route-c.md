@@ -142,6 +142,8 @@ measurement.
    **Registered 2026-09-30:** `2026-09-30-icebar-c-prereg.md` v3, sha256
    `d8bf04aacf519b21442a5df59e096145f4e7fcc963d58856776aa3c378853d6f`
    (Codex converged in round 3). Its pre-S0 freeze manifest is still owed.
+   **Deviation 1, 2026-10-01** (owner approved; S2/S3 labels follow the edge
+   rule): sha256 `aefe17021f14bd0076494b8365e051e09d40ed65ef984a088b4eccc11867946f`.
 7. **The oracle is validated before it certifies anything.** Offline: a frozen
    corpus of labelled strip images (every zone including left of the notch and
    right of the references, ordinary and coloured glyphs, 1x and 2x, partial
