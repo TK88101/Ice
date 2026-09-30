@@ -10,7 +10,7 @@ struct U22ControlsTests {
     let y0 = 22
 
     func drawn(_ id: String, x: Double, _ matchClass: MatchClass = .full) -> CaptureLabels {
-        CaptureLabels(labels: [id: .drawn(matchClass, xPt: x, zone: .rightOfReferences)], matches: [:], inconclusive: [], chevron: .absent)
+        CaptureLabels(labels: [id: .drawn(matchClass, xPt: x, zone: .rightOfReferences)], matches: [:], sightings: [], inconclusive: [], chevron: .absent)
     }
 
     // Positive controls: within 2 pt of AX minX + 1.5 pt.
@@ -25,18 +25,18 @@ struct U22ControlsTests {
         let visible = [VisibleHelper(id: "v1", axMinX: 1350)]
         #expect(Controls.positiveMisses(drawn("v1", x: 1353.6), visible: visible) == ["v1"])
         #expect(Controls.positiveMisses(drawn("v1", x: 1351.5, .partial), visible: visible) == ["v1"])
-        let none = CaptureLabels(labels: ["v1": .none], matches: [:], inconclusive: [], chevron: .absent)
+        let none = CaptureLabels(labels: ["v1": .none], matches: [:], sightings: [], inconclusive: [], chevron: .absent)
         #expect(Controls.positiveMisses(none, visible: visible) == ["v1"])
     }
 
     @Test("a visible helper not found makes the attempt inconclusive")
     func attemptInconclusiveOnControlMiss() {
         let ok = drawn("v1", x: 1351.5)
-        let missed = CaptureLabels(labels: ["v1": .none], matches: [:], inconclusive: [], chevron: .absent)
+        let missed = CaptureLabels(labels: ["v1": .none], matches: [:], sightings: [], inconclusive: [], chevron: .absent)
         let visible = [VisibleHelper(id: "v1", axMinX: 1350)]
-        let good = AttemptVerdict.evaluate(captures: [ok, ok], reads: [], barHeightPt: 32, members: [], visible: visible)
+        let good = AttemptVerdict.evaluate(captures: [ok, ok], reads: [], barHeightPt: 32, members: [], visible: visible, overlap: .clear)
         #expect(!good.inconclusive)
-        let bad = AttemptVerdict.evaluate(captures: [ok, missed], reads: [], barHeightPt: 32, members: [], visible: visible)
+        let bad = AttemptVerdict.evaluate(captures: [ok, missed], reads: [], barHeightPt: 32, members: [], visible: visible, overlap: .clear)
         #expect(bad.inconclusive)
         #expect(bad.controlMisses == ["v1"])
     }
@@ -44,9 +44,9 @@ struct U22ControlsTests {
     @Test("a member not drawn(full) at a rest control makes the cycle inconclusive")
     func memberControl() {
         let both = CaptureLabels(labels: ["m1": .drawn(.full, xPt: 1100, zone: .region), "m2": .drawn(.full, xPt: 1120, zone: .region)],
-                                 matches: [:], inconclusive: [], chevron: .absent)
+                                 matches: [:], sightings: [], inconclusive: [], chevron: .absent)
         let one = CaptureLabels(labels: ["m1": .drawn(.full, xPt: 1100, zone: .region), "m2": .drawn(.partial, xPt: 1120, zone: .region)],
-                                matches: [:], inconclusive: [], chevron: .absent)
+                                matches: [:], sightings: [], inconclusive: [], chevron: .absent)
         #expect(!Controls.cycleInconclusive(restCaptures: [both, both], members: ["m1", "m2"]))
         #expect(Controls.cycleInconclusive(restCaptures: [both, one], members: ["m1", "m2"]))
         #expect(Controls.memberMisses(one, members: ["m1", "m2"]) == ["m2"])
@@ -63,7 +63,10 @@ struct U22ControlsTests {
         canvas.stamp(alpha, side: 20, at: 1897, y0)
         canvas.fillColumns(1543..<1913, (0, 0, 0))
         let labels = try Oracle.label(image: canvas.image, helpers: [template], chevron: nil, context: .corpus())
-        #expect(labels.labels["a"] == (found ? .drawn(.edge, xPt: 950, zone: .notchEdge) : HelperLabel.none))
+        #expect(labels.labels["a"] == HelperLabel.none)
+        let sighted = labels.sightings.contains { $0.xPx == 1897 && $0.matchClass == .edge && !$0.explained }
+        #expect(sighted == found)
+        if !found { #expect(labels.sightings.isEmpty) }
     }
 
     // `«` (a): an on-bar MenuBarAgent frame 17.5 +- 0.5 pt wide.
@@ -134,28 +137,34 @@ struct U22ControlsTests {
     }
 
     // Verdict per attempt: any capture, any read.
-    @Test("the attempt sees a member drawn in any capture, at any class")
+    @Test("the attempt sees a member identified in any capture, or any unexplained sighting")
     func seesMember() {
-        let clean = CaptureLabels(labels: ["m1": .none], matches: [:], inconclusive: [], chevron: .absent)
-        let edge = CaptureLabels(labels: ["m1": .drawn(.edge, xPt: 957, zone: .notchEdge)], matches: [:], inconclusive: [], chevron: .absent)
-        #expect(!AttemptVerdict.evaluate(captures: [clean, clean], reads: [], barHeightPt: 32, members: ["m1"], visible: []).seesMember)
-        #expect(AttemptVerdict.evaluate(captures: [clean, edge], reads: [], barHeightPt: 32, members: ["m1"], visible: []).seesMember)
+        let clean = CaptureLabels(labels: ["m1": .none], matches: [:], sightings: [], inconclusive: [], chevron: .absent)
+        let edge = CaptureLabels(labels: ["m1": .none], matches: [:],
+                                 sightings: [Sighting(templateID: "zz", xPx: 1910, yPx: 22, width: 24, matchClass: .edge, explained: false)],
+                                 inconclusive: [], chevron: .absent)
+        let explained = CaptureLabels(labels: ["m1": .none], matches: [:],
+                                      sightings: [Sighting(templateID: "zz", xPx: 1910, yPx: 22, width: 24, matchClass: .edge, explained: true)],
+                                      inconclusive: [], chevron: .absent)
+        #expect(!AttemptVerdict.evaluate(captures: [explained], reads: [], barHeightPt: 32, members: ["m1"], visible: [], overlap: .clear).seesMember)
+        #expect(!AttemptVerdict.evaluate(captures: [clean, clean], reads: [], barHeightPt: 32, members: ["m1"], visible: [], overlap: .clear).seesMember)
+        #expect(AttemptVerdict.evaluate(captures: [clean, edge], reads: [], barHeightPt: 32, members: ["m1"], visible: [], overlap: .clear).seesMember)
     }
 
     @Test("the attempt sees `«` from any read (a) or any capture (b)")
     func seesChevron() {
-        let clean = CaptureLabels(labels: [:], matches: [:], inconclusive: [], chevron: .absent)
-        let pixels = CaptureLabels(labels: [:], matches: [:], inconclusive: [], chevron: .present)
+        let clean = CaptureLabels(labels: [:], matches: [:], sightings: [], inconclusive: [], chevron: .absent)
+        let pixels = CaptureLabels(labels: [:], matches: [:], sightings: [], inconclusive: [], chevron: .present)
         let chevronRead = [[AgentFrame(minX: 976.5, minY: 0, width: 17.5)]]
-        #expect(!AttemptVerdict.evaluate(captures: [clean], reads: [], barHeightPt: 32, members: [], visible: []).seesChevron)
-        #expect(AttemptVerdict.evaluate(captures: [clean], reads: chevronRead, barHeightPt: 32, members: [], visible: []).seesChevron)
-        #expect(AttemptVerdict.evaluate(captures: [clean, pixels], reads: [], barHeightPt: 32, members: [], visible: []).seesChevron)
+        #expect(!AttemptVerdict.evaluate(captures: [clean], reads: [], barHeightPt: 32, members: [], visible: [], overlap: .clear).seesChevron)
+        #expect(AttemptVerdict.evaluate(captures: [clean], reads: chevronRead, barHeightPt: 32, members: [], visible: [], overlap: .clear).seesChevron)
+        #expect(AttemptVerdict.evaluate(captures: [clean, pixels], reads: [], barHeightPt: 32, members: [], visible: [], overlap: .clear).seesChevron)
     }
 
     @Test("an inconclusive capture makes the attempt inconclusive")
     func inconclusiveCapture() {
-        let clean = CaptureLabels(labels: [:], matches: [:], inconclusive: [], chevron: .absent)
-        let twin = CaptureLabels(labels: [:], matches: [:], inconclusive: [.spreadPlacements("m1")], chevron: .absent)
-        #expect(AttemptVerdict.evaluate(captures: [clean, twin], reads: [], barHeightPt: 32, members: [], visible: []).inconclusive)
+        let clean = CaptureLabels(labels: [:], matches: [:], sightings: [], inconclusive: [], chevron: .absent)
+        let twin = CaptureLabels(labels: [:], matches: [:], sightings: [], inconclusive: [.spreadPlacements("m1")], chevron: .absent)
+        #expect(AttemptVerdict.evaluate(captures: [clean, twin], reads: [], barHeightPt: 32, members: [], visible: [], overlap: .clear).inconclusive)
     }
 }

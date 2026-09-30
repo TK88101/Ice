@@ -1,7 +1,10 @@
 // vzcorpus (docs/plans/2026-10-01-icebar-c-instrument.md, section 4, T6/T7):
 //
-//   vzcorpus freeze --out <dir>        generate every corpus item, write its PNG
+//   vzcorpus freeze --out <dir> --salt <salt>
+//                                      generate every corpus item, write its PNG
 //                                      and freeze.json; no oracle matching
+//   vzcorpus dev --salt dev            development run (deviation 2 C6): generate
+//                                      in memory and check; never corpus 2's salt
 //   vzcorpus check --freeze <file>     verify every frozen hash, then run the
 //                                      oracle on each item; writes check.json
 //
@@ -80,7 +83,7 @@ func freeze() throws {
     guard (try FileManager.default.contentsOfDirectory(atPath: itemsDir.path)).isEmpty else { fail("\(itemsDir.path) is not empty") }
 
     let templates = try CorpusTemplates(kDirectory: KCaptures.directory)
-    let (items, unreachable) = try CorpusRecipe.specs(templates: templates)
+    let (items, unreachable) = try CorpusRecipe.specs(templates: templates, salt: argument("--salt"))
     let manifest = try FreezeBuilder.manifest(
         runId: out.lastPathComponent, gitRevision: git(["rev-parse", "HEAD"]),
         preregistrationSHA256: sha256(ofFile: repoRoot.appendingPathComponent(preregistrationPath)),
@@ -113,7 +116,7 @@ func verify(_ manifest: FreezeManifest, dir: URL, templates: CorpusTemplates) th
         if Digest.sha256(try templates.coverage(glyph, scale: r.scale).alpha) != r.alphaSHA256 { problems.append("rendering changed: \(r.glyph) \(r.scale)x") }
     }
     if Digest.sha256(templates.chevron.alpha) != manifest.chevronTemplate.alphaSHA256 { problems.append("chevron template changed") }
-    let (specs, _) = try CorpusRecipe.specs(templates: templates)
+    let (specs, _) = try CorpusRecipe.specs(templates: templates, salt: manifest.items.first?.spec.seedSalt ?? "")
     if specs != manifest.items.map(\.spec) { problems.append("recipe changed") }
     for record in manifest.items {
         let png = dir.appendingPathComponent("items/\(record.spec.id).png")
@@ -131,7 +134,21 @@ func check() throws {
     let templates = try CorpusTemplates(kDirectory: KCaptures.directory)
     let specs = try verify(manifest, dir: dir, templates: templates)
     let raw = Dictionary(uniqueKeysWithValues: manifest.items.map { ($0.spec.id, $0.rawSHA256) })
+    try run(specs, templates: templates, raw: raw, out: dir)
+}
 
+/// Development runs only (deviation 2 C6): the frozen corpus's salt is refused.
+func dev() throws {
+    let salt = argument("--salt")
+    guard salt != "corpus-2" else { fail("the corpus-2 salt is only checked through its freeze", code: 2) }
+    let out = outsideRepository(argument("--out"))
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    let templates = try CorpusTemplates(kDirectory: KCaptures.directory)
+    let specs = try CorpusRecipe.specs(templates: templates, salt: salt).items
+    try run(specs, templates: templates, raw: nil, out: out)
+}
+
+func run(_ specs: [ItemSpec], templates: CorpusTemplates, raw: [String: String]?, out dir: URL) throws {
     let lock = NSLock()
     var results = [String: [String]]()
     DispatchQueue.concurrentPerform(iterations: specs.count) { i in
@@ -139,10 +156,10 @@ func check() throws {
         let problems: [String]
         do {
             let item = try CorpusRenderer.render(spec, templates: templates)
-            if Digest.sha256(item.image.bytes) != raw[spec.id] {
+            if let raw, Digest.sha256(item.image.bytes) != raw[spec.id] {
                 problems = ["regenerated pixels differ from the freeze"]
             } else {
-                problems = CorpusCheck.mismatches(spec.expected, try CorpusCheck.label(item, templates: templates))
+                problems = try CorpusCheck.problems(item, templates: templates)
             }
         } catch {
             problems = ["error: \(error)"]
@@ -165,7 +182,8 @@ do {
     switch CommandLine.arguments.dropFirst().first {
     case "freeze": try freeze()
     case "check": try check()
-    default: fail("usage: vzcorpus freeze --out <dir> | vzcorpus check --freeze <freeze.json>", code: 2)
+    case "dev": try dev()
+    default: fail("usage: vzcorpus freeze --out <dir> --salt <salt> | check --freeze <freeze.json> | dev --salt <salt> --out <dir>", code: 2)
     }
 } catch {
     fail("\(error)")

@@ -12,7 +12,7 @@ import VZGlyphs
 @Suite("Corpus generator", .serialized)
 struct CorpusGeneratorTests {
     static let templates = Result { try CorpusTemplates(kDirectory: KCaptures.directory) }
-    static let recipe = Result { try CorpusRecipe.specs(templates: templates.get()) }
+    static let recipe = Result { try CorpusRecipe.specs(templates: templates.get(), salt: "corpus-2") }
 
     func spec(_ id: String) throws -> ItemSpec {
         try #require(Self.recipe.get().items.first { $0.id == id }, "no item \(id)")
@@ -69,8 +69,9 @@ struct CorpusGeneratorTests {
         }
     }
 
-    // Deviation 1 of the pre-registration: by visible on-px n.
-    @Test("S2, S3, S5, S13 expected labels follow the visible on-pixel count")
+    // Deviation 2 C1/C6: identity only for n = all of P; a required
+    // unexplained sighting for 4 <= n < all; nothing required below 4.
+    @Test("S2, S3, S5, S13 expectations follow the visible on-pixel count")
     func countRule() throws {
         let (items, _) = try Self.recipe.get()
         let templates = try Self.templates.get()
@@ -78,16 +79,50 @@ struct CorpusGeneratorTests {
             for placed in item.glyphs where placed.role == .test {
                 let n = try visibleOn(item, placed, templates)
                 let all = try templates.helper(placed.glyph, scale: item.scale).onCount
-                let expected = try #require(item.expected.helpers?[placed.glyph.rawValue])
-                switch expected {
-                case .none:
-                    #expect(n < 4, "\(item.id)")
-                case let .drawn(classes, _, _):
-                    let want: MatchClass = n == all ? .full : n >= 16 ? .partial : .edge
-                    #expect(n >= 4 && classes == [want], "\(item.id): n=\(n) expected \(classes)")
+                let id = placed.glyph.rawValue
+                let label = try #require(item.expected.helpers?[id])
+                let required = item.expected.requiredSightings[id]
+                if n == all {
+                    #expect(label.isFull && required == nil, "\(item.id)")
+                } else if n >= 4 {
+                    #expect(label == .none && required != nil, "\(item.id): n=\(n)")
+                    #expect(item.expected.seesMember == .yes, "\(item.id)")
+                } else {
+                    #expect(label == .none && required == nil, "\(item.id): n=\(n)")
                 }
             }
         }
+    }
+
+    @Test("the guard input lists all 19 helpers; only S4's pairs overlap")
+    func guardInput() throws {
+        for item in try Self.recipe.get().items where item.recorded == nil {
+            let outcome = OverlapGuard.evaluate(roster: Glyph.allCases.map(\.rawValue), bounds: item.windows)
+            if item.row == "S4" {
+                #expect(outcome != .clear, "\(item.id)")
+                #expect(item.expected.inconclusive == true)
+            } else {
+                #expect(outcome == .clear, "\(item.id): \(outcome)")
+            }
+        }
+    }
+
+    @Test("S10 items take their mode from the texture bound on their own backdrop")
+    func textureModes() throws {
+        let items = try Self.recipe.get().items.filter { $0.row == "S10" }
+        let modes = Dictionary(grouping: items) { $0.id.split(separator: "-")[1] }.mapValues { Set($0.map(\.mode)) }
+        #expect(modes["value32"] == [.failClosed])
+        #expect(modes["diagonal"] == [.exact])
+        #expect(items.allSatisfy { $0.seedSalt == "corpus-2" })
+    }
+
+    @Test("a different salt gives different noise")
+    func salts() throws {
+        let templates = try Self.templates.get()
+        let dev = try #require(try CorpusRecipe.specs(templates: templates, salt: "dev").items.first { $0.id == "S10-value32-empty-2x" })
+        let a = try CorpusRenderer.render(dev, templates: templates)
+        let b = try CorpusRenderer.render(spec("S10-value32-empty-2x"), templates: templates)
+        #expect(a.image.bytes != b.image.bytes)
     }
 
     @Test("S5 touching keeps every on-pixel visible")
@@ -98,6 +133,7 @@ struct CorpusGeneratorTests {
             let placed = try #require(item.glyphs.first { $0.role == .test })
             #expect(try visibleOn(item, placed, templates) == templates.helper(.hook, scale: scale).onCount)
             #expect(item.expected.helpers?["hook"] == .drawn([.full], xPt: 1369.5, zone: .rightOfReferences))
+            #expect(item.expected.seesMember == .yes)
         }
     }
 
@@ -106,6 +142,7 @@ struct CorpusGeneratorTests {
         let plain = try spec("S1-zed-x1100-whiteOnDark-2x")
         #expect(plain.glyphs.filter { $0.role == .reference }.map(\.glyph) == [.reference, .alt])
         #expect(plain.expected.helpers?["reference"] == .drawn([.full], xPt: 1318.5, zone: .rightOfReferences))
+        #expect(plain.visibleControls == [VisibleControl(id: "reference", axMinX: 1317), VisibleControl(id: "alt", axMinX: 1350)])
         let moved = try spec("S1-alt-x700-whiteOnDark-2x")
         #expect(moved.glyphs.filter { $0.role == .reference }.map(\.glyph) == [.reference])
         #expect(moved.expected.helpers?["alt"] == .drawn([.full], xPt: 701.5, zone: .leftOfNotch))
@@ -124,12 +161,15 @@ struct CorpusGeneratorTests {
         #expect(item.context.agentFrames == [PtSpan(lo: 1380, hi: 1400)])
     }
 
-    @Test("S9 expects inconclusive, S14 and K1/K2 expect the chevron, K4 does not; scale 1 is not evaluable")
+    @Test("S9 inconclusive; S14 and K1 the chevron, K4 none, K2 texture-refused; scale 1 not evaluable")
     func specialExpectations() throws {
-        #expect(try spec("S9-ess-2x").expected.inconclusive)
+        #expect(try spec("S9-ess-2x").expected.inconclusive == true)
         #expect(try spec("S14-noAX-2x").expected.chevron == .present)
-        #expect(try spec("K2").expected.chevron == .present)
+        #expect(try spec("K2").expected.chevron == nil)
+        #expect(try spec("K2").mode == .textureRefused)
+        #expect(try spec("K1").expected.chevron == .present)
         #expect(try spec("K4").expected.chevron == .absent)
+        #expect(try spec("S7-dark-2x").expected.seesMember == .no)
         #expect(try spec("K4").expected.helpers == nil)
         #expect(try spec("S1-zed-x1100-whiteOnDark-1x").expected.chevron == .notEvaluable)
         #expect(try Self.recipe.get().items.filter { $0.row == "S14" }.allSatisfy { $0.scale == 2 })

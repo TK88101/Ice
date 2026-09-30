@@ -65,16 +65,56 @@ public struct ChevronPlacement: Codable, Equatable, Sendable {
 
 public enum ExpectedLabel: Codable, Equatable, Sendable {
     case none
-    /// Any of `classes`, at `xPt` within 2 pt (deviation 1), in `zone`.
+    /// Deviation 2 C1: identity is `full` only; kept as a list for the
+    /// freeze-1 record format.
     case drawn([MatchClass], xPt: Double, zone: Zone)
+
+    public var isFull: Bool {
+        if case let .drawn(classes, _, _) = self { return classes == [.full] }
+        return false
+    }
+}
+
+public enum Tri: String, Codable, Sendable {
+    case yes, no, either
+}
+
+/// How an item is judged (instrument plan section 7a, T12).
+public enum ExpectationMode: String, Codable, Sendable {
+    /// Inside the texture bound: identity, sightings, verdict, `«` exact.
+    case exact
+    /// Outside it (deviation 2 C4): never clean when a member is visibly drawn.
+    case failClosed
+    /// K2 (C5): the texture bound refuses its region.
+    case textureRefused
 }
 
 public struct Expectation: Codable, Equatable, Sendable {
-    /// Per helper id; nil for K items, whose markers are not VZGlyphs (D18).
+    /// Identity per helper (`full` or `none`); nil where not asserted.
     public let helpers: [String: ExpectedLabel]?
-    public let chevron: ChevronSighting
-    /// S9: the capture is inconclusive; nothing else is checked (D25).
-    public let inconclusive: Bool
+    /// Per placed glyph with 4 <= n < all of P: its visible columns, where at
+    /// least one unexplained sighting must overlap.
+    public let requiredSightings: [String: [Int]]
+    /// Visible columns of every placed glyph: in exact mode every unexplained
+    /// sighting must overlap one of them.
+    public let placedColumns: [[Int]]
+    public let seesMember: Tri?
+    public let inconclusive: Bool?
+    /// Exact `«`; nil where not asserted.
+    public let chevron: ChevronSighting?
+    /// C4: some member is placed with >= 4 visible on-px.
+    public let memberVisiblyDrawn: Bool
+}
+
+/// A visible helper in its slot, with the AX `minX` its positive control uses.
+public struct VisibleControl: Codable, Equatable, Sendable {
+    public let id: String
+    public let axMinX: Double
+
+    public init(id: String, axMinX: Double) {
+        self.id = id
+        self.axMinX = axMinX
+    }
 }
 
 /// S13's five cuts.
@@ -95,6 +135,12 @@ public struct ItemSpec: Codable, Equatable, Sendable {
     public let agentFramesPt: [[Double]]
     /// A K item's file name under `KCaptures.directory`.
     public let recorded: String?
+    /// Prefixed to the id to seed the item's noise (`corpus-2`, `dev`).
+    public let seedSalt: String
+    /// Window-server bounds of all 19 helpers (C3's guard input).
+    public let windows: [String: WindowBounds]
+    public let visibleControls: [VisibleControl]
+    public let mode: ExpectationMode
     public let expected: Expectation
 
     public var context: OracleContext {

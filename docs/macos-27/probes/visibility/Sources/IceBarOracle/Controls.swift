@@ -38,13 +38,16 @@ public enum Controls {
 }
 
 public struct AttemptVerdict: Equatable, Sendable {
-    /// Any capture has any member drawn (full, partial or edge).
+    /// Any capture has a member identified `full`, or any unexplained
+    /// sighting (deviation 2 C1, fail-closed).
     public let seesMember: Bool
     /// (a) in any read or (b) in any capture.
     public let seesChevron: Bool
     /// Some capture had no chevron template at its scale (never certifies).
     public let chevronNotEvaluable: Bool
     public let controlMisses: [String]
+    /// Deviation 2 C3: the window-server overlap guard over every helper.
+    public let overlap: OverlapOutcome
     public let inconclusive: Bool
 
     public static func evaluate(
@@ -52,11 +55,12 @@ public struct AttemptVerdict: Equatable, Sendable {
         reads: [[AgentFrame]],
         barHeightPt: Double,
         members: Set<String>,
-        visible: [VisibleHelper]
+        visible: [VisibleHelper],
+        overlap: OverlapOutcome
     ) -> AttemptVerdict {
         let seesMember = captures.contains { capture in
-            members.contains { id in
-                if case .drawn? = capture.labels[id] { return true }
+            capture.hasUnexplainedSighting || members.contains { id in
+                if case .drawn(.full, _, _)? = capture.labels[id] { return true }
                 return false
             }
         }
@@ -72,7 +76,8 @@ public struct AttemptVerdict: Equatable, Sendable {
             seesChevron: seesChevron,
             chevronNotEvaluable: captures.contains { $0.chevron == .notEvaluable },
             controlMisses: misses,
-            inconclusive: !misses.isEmpty || captures.contains(where: \.isInconclusive)
+            overlap: overlap,
+            inconclusive: !misses.isEmpty || overlap != .clear || captures.contains(where: \.isInconclusive)
         )
     }
 }

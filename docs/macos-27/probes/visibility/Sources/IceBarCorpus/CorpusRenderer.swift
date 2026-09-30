@@ -12,13 +12,16 @@ public struct CorpusItem: Sendable {
 }
 
 public enum CorpusRenderer {
+    /// Freeze 1 seeded by id alone; later corpora prefix a salt (deviation 2 C6).
+    static func seed(salt: String, id: String) -> String { salt.isEmpty ? id : "\(salt)|\(id)" }
+
     public static func render(_ spec: ItemSpec, templates: CorpusTemplates, kDirectory: URL = KCaptures.directory) throws -> CorpusItem {
         if let file = spec.recorded {
             let data = try Data(contentsOf: kDirectory.appendingPathComponent(file))
             return CorpusItem(spec: spec, image: try PNGIO.decode(data, scale: Double(spec.scale)))
         }
         var canvas = Canvas(scale: spec.scale)
-        canvas.fill(spec.backdrop, seed: spec.id)
+        canvas.fill(spec.backdrop, seed: seed(salt: spec.seedSalt, id: spec.id))
         for placed in spec.glyphs {
             let coloured = placed.ink == .coloured
             let coverage = try templates.coverage(placed.glyph, scale: spec.scale, coloured: coloured)

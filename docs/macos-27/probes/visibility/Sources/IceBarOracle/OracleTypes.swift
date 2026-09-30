@@ -119,6 +119,36 @@ public struct Placement: Equatable, Sendable {
     public let visibleOn: Int
     public let falses: Int
     public let visibleOff: Int
+    /// Image pixel indices (y * width + x) of the hits; kept for `partial` and
+    /// `edge` placements only, where a sighting must be explained (deviation 2 C1).
+    var hitPixels: [Int] = []
+
+    public static func == (a: Placement, b: Placement) -> Bool {
+        a.xPx == b.xPx && a.yPx == b.yPx && a.matchClass == b.matchClass && a.hits == b.hits
+            && a.visibleOn == b.visibleOn && a.falses == b.falses && a.visibleOff == b.visibleOff
+    }
+}
+
+/// Deviation 2 C1: a `partial` or `edge` placement of any helper template.
+/// Anonymous: `templateID` is recorded, never used for identity.
+public struct Sighting: Equatable, Sendable {
+    public let templateID: String
+    public let xPx: Int
+    public let yPx: Int
+    public let width: Int
+    public let matchClass: MatchClass
+    /// Every hit pixel lies on the ink (alpha > 0) of a helper identified
+    /// `full` in the same capture, at its best placement.
+    public let explained: Bool
+
+    public init(templateID: String, xPx: Int, yPx: Int, width: Int, matchClass: MatchClass, explained: Bool) {
+        self.templateID = templateID
+        self.xPx = xPx
+        self.yPx = yPx
+        self.width = width
+        self.matchClass = matchClass
+        self.explained = explained
+    }
 }
 
 public enum InconclusiveReason: Equatable, Sendable {
@@ -134,19 +164,26 @@ public enum ChevronSighting: String, Equatable, Sendable, Codable {
     case notEvaluable
 }
 
-/// The oracle's labels for one capture.
+/// The oracle's labels for one capture (deviation 2 C1: identity from `full`
+/// matches only; `partial` and `edge` matches are anonymous sightings).
 public struct CaptureLabels: Equatable, Sendable {
     public let labels: [String: HelperLabel]
+    /// Each helper's `full` placements.
     public let matches: [String: [Placement]]
+    public let sightings: [Sighting]
     public let inconclusive: [InconclusiveReason]
     public let chevron: ChevronSighting
 
-    public init(labels: [String: HelperLabel], matches: [String: [Placement]], inconclusive: [InconclusiveReason], chevron: ChevronSighting) {
+    public init(labels: [String: HelperLabel], matches: [String: [Placement]], sightings: [Sighting],
+                inconclusive: [InconclusiveReason], chevron: ChevronSighting) {
         self.labels = labels
         self.matches = matches
+        self.sightings = sightings
         self.inconclusive = inconclusive
         self.chevron = chevron
     }
+
+    public var hasUnexplainedSighting: Bool { sightings.contains { !$0.explained } }
 
     public var isInconclusive: Bool { !inconclusive.isEmpty }
 }

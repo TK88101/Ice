@@ -72,7 +72,20 @@ final class Searcher {
         } else {
             return nil
         }
-        return Placement(xPx: x0, yPx: y0, matchClass: matchClass, hits: hits, visibleOn: visibleOn, falses: falses, visibleOff: visibleOff)
+        var placement = Placement(xPx: x0, yPx: y0, matchClass: matchClass, hits: hits, visibleOn: visibleOn, falses: falses, visibleOff: visibleOff)
+        if matchClass != .full { placement.hitPixels = hitPixels(t.on, x0: x0, y0: y0, from: backdrop) }
+        return placement
+    }
+
+    private func hitPixels(_ points: [OracleTemplate.Point], x0: Int, y0: Int, from b: (Int, Int, Int)) -> [Int] {
+        let width = geometry.widthPx
+        return points.compactMap { p in
+            guard geometry.isVisible(x: x0 + p.x, y: y0 + p.y) else { return nil }
+            let index = (y0 + p.y) * width + x0 + p.x
+            let i = index * 4
+            let d = max(abs(Int(bytes[i]) - b.0), abs(Int(bytes[i + 1]) - b.1), abs(Int(bytes[i + 2]) - b.2))
+            return d > parameters.tO ? index : nil
+        }
     }
 
     private func visibleCounts(_ t: OracleTemplate, x0: Int, y0: Int) -> (on: Int, off: Int) {

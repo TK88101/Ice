@@ -113,7 +113,7 @@ extension ItemBuilder {
     func s9() throws -> [ItemSpec] {
         try Glyph.allCases.map { g in
             try item("S9-\(g.rawValue)", row: "S9", backdrop: ColourCase.whiteOnDark.backdrop,
-                     subjects: [subject(g, xPt: 1100, .any), subject(g, xPt: 1130, .any)], inconclusive: true)
+                     subjects: [subject(g, xPt: 1100, .any), subject(g, xPt: 1130, .any)], twin: true)
         }
     }
 

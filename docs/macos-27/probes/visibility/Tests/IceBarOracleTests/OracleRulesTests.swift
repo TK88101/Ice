@@ -84,14 +84,15 @@ struct OracleRulesTests {
     }
 
     // Box at 1900: columns 0-12 in the notch (1543..<1913), 13-19 visible, 16 on-px.
-    @Test("partial: 16 visible on-px with one miss is drawn(partial, notchEdge)")
+    @Test("partial: 16 visible on-px with one miss is a partial sighting, not a label (deviation 2 C1)")
     func partialAtNotch() throws {
         var canvas = Canvas()
         canvas.stamp(Shapes.bracket(), side: 20, at: 1900, y0)
         canvas.fillColumns(1543..<1913, (0, 0, 0))
         canvas.set(1900 + 16, y0 + 2, (40, 40, 40))
         let labels = try label(canvas)
-        #expect(labels.labels["a"] == .drawn(.partial, xPt: 951.5, zone: .notchEdge))
+        #expect(labels.labels["a"] == HelperLabel.none)
+        #expect(labels.sightings.contains { $0.xPx == 1900 && $0.matchClass == .partial && !$0.explained })
     }
 
     // Box at 1899: columns 14-19 visible, 12 on-px; one miss makes it
@@ -104,16 +105,18 @@ struct OracleRulesTests {
         canvas.set(1899 + 16, y0 + 2, (40, 40, 40))
         let labels = try label(canvas)
         #expect(labels.labels["a"] == HelperLabel.none)
+        #expect(labels.sightings.isEmpty)
     }
 
     // Box at 1897: only column 16 visible, 4 on-px, all hits, no false.
-    @Test("edge: 4 visible on-px, all hits and no false, is drawn(edge)")
+    @Test("edge: 4 visible on-px, all hits and no false, is an edge sighting")
     func edgeFour() throws {
         var canvas = Canvas()
         canvas.stamp(Shapes.bracket(), side: 20, at: 1897, y0)
         canvas.fillColumns(1543..<1913, (0, 0, 0))
         let labels = try label(canvas)
-        #expect(labels.labels["a"] == .drawn(.edge, xPt: 950, zone: .notchEdge))
+        #expect(labels.labels["a"] == HelperLabel.none)
+        #expect(labels.sightings.contains { $0.xPx == 1897 && $0.matchClass == .edge && !$0.explained })
     }
 
     @Test("edge: one false off-pixel in the visible part refuses it")
@@ -124,16 +127,18 @@ struct OracleRulesTests {
         canvas.set(1897 + 18, y0 + 10, (255, 255, 255))
         let labels = try label(canvas)
         #expect(labels.labels["a"] == HelperLabel.none)
+        #expect(!labels.sightings.contains { $0.xPx == 1897 })
     }
 
     // D6: agent-frame columns (2760..<2800 at 2x) are not visible.
-    @Test("a glyph partly under an agent frame is drawn(partial)")
+    @Test("a glyph partly under an agent frame is a partial sighting")
     func underAgentFrame() throws {
         var canvas = Canvas()
         canvas.stamp(Shapes.bracket(), side: 20, at: 2744, y0)
         canvas.fillColumns(2760..<2800, (130, 90, 250))
         let labels = try label(canvas)
-        #expect(labels.labels["a"] == .drawn(.partial, xPt: 1373.5, zone: .rightOfReferences))
+        #expect(labels.labels["a"] == HelperLabel.none)
+        #expect(labels.sightings.contains { $0.xPx == 2744 && $0.matchClass == .partial && !$0.explained })
     }
 
     @Test("a glyph touching an agent frame (0 pt gap) is drawn(full)")
@@ -143,6 +148,7 @@ struct OracleRulesTests {
         canvas.fillColumns(2760..<2800, (130, 90, 250))
         let labels = try label(canvas)
         #expect(labels.labels["a"] == .drawn(.full, xPt: 1371.5, zone: .rightOfReferences))
+        #expect(labels.sightings.allSatisfy { $0.explained })
     }
 
     // D10: windows of +-1.5 pt around each edge; the notch's right edge is

@@ -49,7 +49,7 @@ public struct OracleGeometry: Sendable {
         return lo..<max(lo, hi)
     }
 
-    func isVisible(x: Int, y: Int) -> Bool {
+    public func isVisible(x: Int, y: Int) -> Bool {
         x >= 0 && x < widthPx && y >= 0 && y < heightPx && visibleColumn[x]
     }
 

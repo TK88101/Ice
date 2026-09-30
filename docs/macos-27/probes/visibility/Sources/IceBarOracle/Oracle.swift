@@ -18,13 +18,26 @@ public enum Oracle {
         let searcher = Searcher(image: image, geometry: geometry, parameters: parameters)
 
         var labels = [String: HelperLabel]()
-        var matches = [String: [Placement]]()
+        var fullMatches = [String: [Placement]]()
+        var partials = [(template: OracleTemplate, placement: Placement)]()
+        var identified = [(template: OracleTemplate, placement: Placement)]()
         for template in helpers {
             let found = searcher.matches(template, prune: true)
-            matches[template.id] = found
-            labels[template.id] = best(found, template: template, geometry: geometry).map {
-                .drawn($0.matchClass, xPt: Double($0.xPx) / image.scale + parameters.glyphInsetPt, zone: geometry.zone(x0: $0.xPx, width: template.width))
-            } ?? HelperLabel.none
+            let full = found.filter { $0.matchClass == .full }
+            fullMatches[template.id] = full
+            partials += found.filter { $0.matchClass != .full }.map { (template, $0) }
+            if let top = best(full, template: template, geometry: geometry) {
+                identified.append((template, top))
+                labels[template.id] = .drawn(.full, xPt: Double(top.xPx) / image.scale + parameters.glyphInsetPt,
+                                             zone: geometry.zone(x0: top.xPx, width: template.width))
+            } else {
+                labels[template.id] = HelperLabel.none
+            }
+        }
+        let ink = inkMask(identified, width: image.width, height: image.height)
+        let sightings = partials.map { template, p in
+            Sighting(templateID: template.id, xPx: p.xPx, yPx: p.yPx, width: template.width, matchClass: p.matchClass,
+                     explained: !p.hitPixels.isEmpty && p.hitPixels.allSatisfy { ink[$0] })
         }
 
         let sighting: ChevronSighting
@@ -36,10 +49,27 @@ public enum Oracle {
         let tolerancePx = parameters.positionTolerancePt * image.scale
         return CaptureLabels(
             labels: labels,
-            matches: matches,
-            inconclusive: ambiguity(matches, order: helpers.map(\.id), tolerancePx: tolerancePx),
+            matches: fullMatches,
+            sightings: sightings,
+            inconclusive: ambiguity(fullMatches, order: helpers.map(\.id), tolerancePx: tolerancePx),
             chevron: sighting
         )
+    }
+
+    /// The pixels where some `full`-identified helper's rendering has alpha > 0
+    /// at its best placement (deviation 2 C1).
+    static func inkMask(_ identified: [(template: OracleTemplate, placement: Placement)], width: Int, height: Int) -> [Bool] {
+        var mask = [Bool](repeating: false, count: width * height)
+        for (template, placement) in identified {
+            for y in 0..<template.height {
+                for x in 0..<template.width where template.alpha[y * template.width + x] > 0 {
+                    let ix = placement.xPx + x
+                    let iy = placement.yPx + y
+                    if ix >= 0, ix < width, iy >= 0, iy < height { mask[iy * width + ix] = true }
+                }
+            }
+        }
+        return mask
     }
 
     /// Every placement of `template` meeting some class, `prune` off for the

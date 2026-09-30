@@ -93,17 +93,62 @@ public enum CorpusCheck {
         return try Oracle.label(image: item.image, helpers: helpers, chevron: chevron, context: item.context)
     }
 
-    /// D25: class, zone, helper exact; x within 2 pt; S9 by inconclusive alone.
-    public static func mismatches(_ expected: Expectation, _ got: CaptureLabels, tolerancePt: Double = OracleParameters.preRegistered.positionTolerancePt) -> [String] {
-        if expected.inconclusive {
-            return got.isInconclusive ? [] : ["expected inconclusive, got conclusive"]
+    /// Instrument plan 7a, T12: the item's expectation against the oracle's
+    /// labels and the attempt verdict of that one capture. Empty = met.
+    public static func problems(_ item: CorpusItem, templates: CorpusTemplates) throws -> [String] {
+        let spec = item.spec
+        if spec.mode == .textureRefused {
+            let outcome = TextureBound.evaluate(item.image, region: KCaptures.textureRegion, notch: KCaptures.notch,
+                                                agentFrames: [KCaptures.k2ChevronFramePt])
+            if case .refused = outcome { return [] }
+            return ["texture bound accepted: \(outcome)"]
         }
+        let labels = try label(item, templates: templates)
+        let roster = spec.recorded == nil ? Glyph.allCases.map(\.rawValue) : []
+        let verdict = AttemptVerdict.evaluate(
+            captures: [labels], reads: [], barHeightPt: Double(CorpusGeometry.heightPt),
+            members: Set(ItemBuilder.members.map(\.rawValue)),
+            visible: spec.visibleControls.map { VisibleHelper(id: $0.id, axMinX: $0.axMinX) },
+            overlap: OverlapGuard.evaluate(roster: roster, bounds: spec.windows)
+        )
+        let expected = spec.expected
+        if spec.mode == .failClosed {
+            var problems = [String]()
+            if labels.chevron == .present { problems.append("chevron present") }
+            if expected.memberVisiblyDrawn && !(verdict.seesMember || verdict.inconclusive) { problems.append("clean while a member is drawn") }
+            return problems
+        }
+        if expected.inconclusive == true {
+            return verdict.inconclusive ? [] : ["expected inconclusive, got conclusive"]
+        }
+        return exactProblems(expected, labels: labels, verdict: verdict)
+    }
+
+    static func exactProblems(_ expected: Expectation, labels: CaptureLabels, verdict: AttemptVerdict,
+                              tolerancePt: Double = OracleParameters.preRegistered.positionTolerancePt) -> [String] {
         var problems = [String]()
-        if got.isInconclusive { problems.append("inconclusive: \(got.inconclusive)") }
-        if got.chevron != expected.chevron { problems.append("chevron: expected \(expected.chevron), got \(got.chevron)") }
+        if expected.inconclusive == false && verdict.inconclusive {
+            problems.append("inconclusive: \(labels.inconclusive) controls \(verdict.controlMisses) guard \(verdict.overlap)")
+        }
+        if let chevron = expected.chevron, labels.chevron != chevron { problems.append("chevron: expected \(chevron), got \(labels.chevron)") }
         for (id, want) in (expected.helpers ?? [:]).sorted(by: { $0.key < $1.key }) {
-            let have = got.labels[id] ?? HelperLabel.none
+            let have = labels.labels[id] ?? HelperLabel.none
             if !agrees(want, have, tolerancePt: tolerancePt) { problems.append("\(id): expected \(want), got \(have)") }
+        }
+        let unexplained = labels.sightings.filter { !$0.explained }
+        func overlaps(_ s: Sighting, _ columns: [Int]) -> Bool { s.xPx < columns[1] && s.xPx + s.width > columns[0] }
+        for (id, columns) in expected.requiredSightings.sorted(by: { $0.key < $1.key }) where !unexplained.contains(where: { overlaps($0, columns) }) {
+            problems.append("\(id): no unexplained sighting over columns \(columns)")
+        }
+        if expected.helpers != nil {
+            for s in unexplained where !expected.placedColumns.contains(where: { overlaps(s, $0) }) {
+                problems.append("stray sighting \(s.templateID) at \(s.xPx) (\(s.matchClass))")
+            }
+        }
+        switch expected.seesMember {
+        case .yes? where !verdict.seesMember: problems.append("expected sees a member")
+        case .no? where verdict.seesMember: problems.append("expected no member seen")
+        default: break
         }
         return problems
     }

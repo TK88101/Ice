@@ -61,6 +61,11 @@ public enum KCaptures {
     public static let chevronFramePt = PtSpan(lo: 976.5, hi: 994)
     /// The run's manifest.json notchLeft/notchRight.
     public static let notch = PtSpan(lo: 771.5, hi: 956.5)
+    /// Rule 1's region for that run (instrument plan 7a, T12): notch right edge
+    /// to its target helper at x 1008 (MEASURED samples.jsonl ownAX).
+    public static let textureRegion = PtSpan(lo: 956.5, hi: 1008)
+    /// K2's chevron AX frame (labels.json "oracleValue" x=1012.5 w=17.5).
+    public static let k2ChevronFramePt = PtSpan(lo: 1012.5, hi: 1030)
 
     public static var directory: URL {
         if let override = ProcessInfo.processInfo.environment["ICEBAR_K_DIR"], !override.isEmpty {

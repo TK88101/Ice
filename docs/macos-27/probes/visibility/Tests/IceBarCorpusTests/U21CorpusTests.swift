@@ -15,7 +15,8 @@ struct U21CorpusTests {
     func corpus() throws {
         let manifest = try JSONDecoder().decode(FreezeManifest.self, from: Data(contentsOf: URL(fileURLWithPath: Self.freezePath)))
         let templates = try CorpusTemplates(kDirectory: KCaptures.directory)
-        let specs = try CorpusRecipe.specs(templates: templates).items
+        let salt = manifest.items.first?.spec.seedSalt ?? ""
+        let specs = try CorpusRecipe.specs(templates: templates, salt: salt).items
         #expect(specs == manifest.items.map(\.spec), "the recipe changed since the freeze")
 
         let lock = NSLock()
@@ -27,7 +28,7 @@ struct U21CorpusTests {
                 let item = try CorpusRenderer.render(record.spec, templates: templates)
                 problems = Digest.sha256(item.image.bytes) == record.rawSHA256 ? [] : ["pixels differ from the freeze"]
                 if problems.isEmpty {
-                    problems = CorpusCheck.mismatches(record.spec.expected, try CorpusCheck.label(item, templates: templates))
+                    problems = try CorpusCheck.problems(item, templates: templates)
                 }
             } catch {
                 problems = ["\(error)"]
