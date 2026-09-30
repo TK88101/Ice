@@ -95,6 +95,9 @@ public struct Expectation: Codable, Equatable, Sendable {
     /// Per placed glyph with 4 <= n < all of P: its visible columns, where at
     /// least one unexplained sighting must overlap.
     public let requiredSightings: [String: [Int]]
+    /// Deviation 3 D3.2: the same glyph identified `full` within 2 pt also
+    /// meets its requirement; keyed like `requiredSightings`.
+    public let cutIdentity: [String: ExpectedLabel]
     /// Visible columns of every placed glyph: in exact mode every unexplained
     /// sighting must overlap one of them.
     public let placedColumns: [[Int]]

@@ -133,12 +133,16 @@ public enum CorpusCheck {
         if let chevron = expected.chevron, labels.chevron != chevron { problems.append("chevron: expected \(chevron), got \(labels.chevron)") }
         for (id, want) in (expected.helpers ?? [:]).sorted(by: { $0.key < $1.key }) {
             let have = labels.labels[id] ?? HelperLabel.none
-            if !agrees(want, have, tolerancePt: tolerancePt) { problems.append("\(id): expected \(want), got \(have)") }
+            let alternative = expected.cutIdentity[id].map { agrees($0, have, tolerancePt: tolerancePt) } ?? false
+            if !agrees(want, have, tolerancePt: tolerancePt) && !alternative { problems.append("\(id): expected \(want), got \(have)") }
         }
         let unexplained = labels.sightings.filter { !$0.explained }
         func overlaps(_ s: Sighting, _ columns: [Int]) -> Bool { s.xPx < columns[1] && s.xPx + s.width > columns[0] }
-        for (id, columns) in expected.requiredSightings.sorted(by: { $0.key < $1.key }) where !unexplained.contains(where: { overlaps($0, columns) }) {
-            problems.append("\(id): no unexplained sighting over columns \(columns)")
+        for (id, columns) in expected.requiredSightings.sorted(by: { $0.key < $1.key }) {
+            let identified = expected.cutIdentity[id].map { agrees($0, labels.labels[id] ?? HelperLabel.none, tolerancePt: tolerancePt) } ?? false
+            if !identified && !unexplained.contains(where: { overlaps($0, columns) }) {
+                problems.append("\(id): neither identified nor sighted over columns \(columns)")
+            }
         }
         if expected.helpers != nil {
             for s in unexplained where !expected.placedColumns.contains(where: { overlaps(s, $0) }) {

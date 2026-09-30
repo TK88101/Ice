@@ -25,7 +25,7 @@ public enum CorpusRecipe {
             return ItemSpec(id: input.id, row: "K", scale: 2, backdrop: .uniform(.grey(0)), glyphs: [], chevrons: [],
                             capsuleXPt: 0, agentFramesPt: [], recorded: input.file, seedSalt: salt, windows: [:], visibleControls: [],
                             mode: refused ? .textureRefused : .exact,
-                            expected: Expectation(helpers: nil, requiredSightings: [:], placedColumns: [], seesMember: nil, inconclusive: nil,
+                            expected: Expectation(helpers: nil, requiredSightings: [:], cutIdentity: [:], placedColumns: [], seesMember: nil, inconclusive: nil,
                                                   chevron: refused ? nil : input.chevron, memberVisiblyDrawn: false))
         }
         return (items, unreachable)
@@ -107,7 +107,7 @@ struct ItemBuilder {
         let overlapping = OverlapGuard.evaluate(roster: Glyph.allCases.map(\.rawValue), bounds: windows) != .clear
         let expected: Expectation
         if twin || overlapping {
-            expected = Expectation(helpers: nil, requiredSightings: [:], placedColumns: [], seesMember: nil, inconclusive: true,
+            expected = Expectation(helpers: nil, requiredSightings: [:], cutIdentity: [:], placedColumns: [], seesMember: nil, inconclusive: true,
                                    chevron: nil, memberVisiblyDrawn: false)
         } else {
             expected = try expectation(glyphs, geometry: geometry, mode: mode, chevron: chevron ?? (scale == 2 ? .absent : .notEvaluable))
@@ -148,9 +148,9 @@ struct ItemBuilder {
         var helpers = [String: ExpectedLabel]()
         for glyph in Glyph.allCases { helpers[glyph.rawValue] = ExpectedLabel.none }
         var required = [String: [Int]]()
+        var cutIdentity = [String: ExpectedLabel]()
         var placedColumns = [[Int]]()
-        var identifiedMember = false
-        var cutSeen = false
+        var memberSeen = false
         var faint = false
         var memberVisiblyDrawn = false
         for placed in glyphs {
@@ -160,23 +160,27 @@ struct ItemBuilder {
             if let lo = columns.first, let hi = columns.last { placedColumns.append([lo, hi + 1]) }
             let isMember = Self.members.contains(placed.glyph)
             if isMember && n >= 4 { memberVisiblyDrawn = true }
+            let full = ExpectedLabel.drawn([.full], xPt: CorpusGeometry.labelX(placed.xPx, scale: scale),
+                                           zone: CorpusGeometry.zone(x0: placed.xPx, width: side, scale: scale))
             if n == template.onCount {
-                helpers[placed.glyph.rawValue] = .drawn([.full], xPt: CorpusGeometry.labelX(placed.xPx, scale: scale),
-                                                        zone: CorpusGeometry.zone(x0: placed.xPx, width: side, scale: scale))
-                if isMember { identifiedMember = true }
+                helpers[placed.glyph.rawValue] = full
+                if isMember { memberSeen = true }
             } else if n >= 4, let lo = columns.first, let hi = columns.last {
+                // D3.2: identified as itself, or sighted; a visible glyph
+                // identified means no member, sighted means a member alarm.
                 required[placed.glyph.rawValue] = [lo, hi + 1]
-                cutSeen = true
+                cutIdentity[placed.glyph.rawValue] = full
+                if isMember { memberSeen = true } else { faint = true }
             } else if n > 0 {
                 faint = true
             }
         }
         if mode == .failClosed {
-            return Expectation(helpers: nil, requiredSightings: [:], placedColumns: [], seesMember: nil, inconclusive: nil,
+            return Expectation(helpers: nil, requiredSightings: [:], cutIdentity: [:], placedColumns: [], seesMember: nil, inconclusive: nil,
                                chevron: nil, memberVisiblyDrawn: memberVisiblyDrawn)
         }
-        let sees: Tri = identifiedMember || cutSeen ? .yes : faint ? .either : .no
-        return Expectation(helpers: helpers, requiredSightings: required, placedColumns: placedColumns, seesMember: sees,
+        let sees: Tri = memberSeen ? .yes : faint ? .either : .no
+        return Expectation(helpers: helpers, requiredSightings: required, cutIdentity: cutIdentity, placedColumns: placedColumns, seesMember: sees,
                            inconclusive: false, chevron: chevron, memberVisiblyDrawn: memberVisiblyDrawn)
     }
 

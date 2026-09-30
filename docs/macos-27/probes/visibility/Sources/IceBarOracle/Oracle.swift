@@ -40,9 +40,22 @@ public enum Oracle {
                      explained: !p.hitPixels.isEmpty && p.hitPixels.allSatisfy { ink[$0] })
         }
 
+        // Deviation 3 D3.1: a chevron partial/edge match sharing a hit pixel
+        // with a helper sighting is not `«` but an unexplained sighting.
+        var chevronSightings = [Sighting]()
         let sighting: ChevronSighting
         if let chevron, chevron.scale == image.scale {
-            sighting = searcher.matches(chevron, prune: true).isEmpty ? .absent : .present
+            let helperHits = Set(partials.flatMap { $0.placement.hitPixels })
+            var present = false
+            for p in searcher.matches(chevron, prune: true) {
+                if p.matchClass != .full && p.hitPixels.contains(where: helperHits.contains) {
+                    chevronSightings.append(Sighting(templateID: chevron.id, xPx: p.xPx, yPx: p.yPx, width: chevron.width,
+                                                     matchClass: p.matchClass, explained: false))
+                } else {
+                    present = true
+                }
+            }
+            sighting = present ? .present : .absent
         } else {
             sighting = .notEvaluable
         }
@@ -50,7 +63,7 @@ public enum Oracle {
         return CaptureLabels(
             labels: labels,
             matches: fullMatches,
-            sightings: sightings,
+            sightings: sightings + chevronSightings,
             inconclusive: ambiguity(fullMatches, order: helpers.map(\.id), tolerancePx: tolerancePx),
             chevron: sighting
         )

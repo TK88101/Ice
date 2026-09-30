@@ -85,8 +85,8 @@ struct CorpusGeneratorTests {
                 if n == all {
                     #expect(label.isFull && required == nil, "\(item.id)")
                 } else if n >= 4 {
-                    #expect(label == .none && required != nil, "\(item.id): n=\(n)")
-                    #expect(item.expected.seesMember == .yes, "\(item.id)")
+                    #expect(label == .none && required != nil && item.expected.cutIdentity[id] != nil, "\(item.id): n=\(n)")
+                    if !CorpusGeometry.visibleGlyphs.contains(placed.glyph) { #expect(item.expected.seesMember == .yes, "\(item.id)") }
                 } else {
                     #expect(label == .none && required == nil, "\(item.id): n=\(n)")
                 }

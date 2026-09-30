@@ -109,4 +109,44 @@ struct Deviation2KernelsTests {
         #expect(verdict.seesMember)
         #expect(!verdict.inconclusive)
     }
+
+    // Deviation 3 D3.1: a chevron partial sharing hits with a helper sighting
+    // is an unexplained sighting by definition, even over identified ink.
+    func postTemplate(_ id: String) -> OracleTemplate {
+        var alpha = [UInt8](repeating: 0, count: 400)
+        for y in 2..<18 {
+            for x in [0, 1, 2, 3, 16, 17] { alpha[y * 20 + x] = 255 }
+            alpha[y * 20 + 18] = 64
+            alpha[y * 20 + 19] = 64
+        }
+        return OracleTemplate(id: id, width: 20, height: 20, alpha: alpha, scale: 2)
+    }
+
+    @Test("an ambiguous chevron partial is not `«` but an unexplained sighting, never explained")
+    func ambiguousChevron() throws {
+        let a = OracleTemplate(id: "a", width: 20, height: 20, alpha: Shapes.bracket(), scale: 2)
+        var canvas = Canvas()
+        canvas.stamp(Shapes.bracket(), side: 20, at: 2200, y0)
+        canvas.fillColumns(2186..<2202, (130, 90, 250))
+        let context = OracleContext(notch: PtSpan(lo: 771.5, hi: 956.5), agentFrames: [PtSpan(lo: 1093, hi: 1101)], leftmostReferenceOriginPt: 1317)
+        let labels = try Oracle.label(image: canvas.image, helpers: [a, postTemplate("b")], chevron: postTemplate(ChevronTemplate.id), context: context)
+        #expect(labels.chevron == .absent)
+        let ambiguous = labels.sightings.contains { $0.templateID == ChevronTemplate.id && !$0.explained }
+        #expect(ambiguous)
+        let verdict = AttemptVerdict.evaluate(captures: [labels], reads: [], barHeightPt: 32, members: ["b"], visible: [], overlap: .clear)
+        #expect(verdict.seesMember)
+    }
+
+    @Test("a chevron partial no helper template sights is `«`")
+    func unambiguousChevron() throws {
+        var alpha = [UInt8](repeating: 0, count: 400)
+        for y in 2..<18 { for x in [0, 1, 2, 3, 16, 17] { alpha[y * 20 + x] = 255 } }
+        var canvas = Canvas()
+        canvas.stamp(alpha, side: 20, at: 2186, y0)
+        canvas.fillColumns(2190..<2202, (130, 90, 250))
+        let context = OracleContext(notch: PtSpan(lo: 771.5, hi: 956.5), agentFrames: [PtSpan(lo: 1095, hi: 1101)], leftmostReferenceOriginPt: 1317)
+        let labels = try Oracle.label(image: canvas.image, helpers: [], chevron: postTemplate(ChevronTemplate.id), context: context)
+        #expect(labels.chevron == .present)
+        #expect(labels.sightings.isEmpty)
+    }
 }
