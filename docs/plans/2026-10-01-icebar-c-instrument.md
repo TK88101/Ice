@@ -206,6 +206,7 @@ Development runs of the new oracle: on the development corpus (salt `dev`) and f
 | 5 | 2026-10-01 | deviation 2 approved by the owner and written to the pre-registration's section 9; part 1 continues under it (C1, `TextureBound`, `OverlapGuard`, `BControl`, corpus 2) | `bb10b671205ce3a1fa8c5dcfb994a57558ee81424a5ee91ad45632c75f3de0f2` | freeze 1 kept as evidence |
 | 6 | 2026-10-01 | development run (salt `dev`, run `20260930-113108-icebar-dev`): 7/5749 failing; deviation 3 drafted, approved by the owner, written to section 9 (D3.1 ambiguous chevron slivers, D3.2 cut-glyph identity, which also amends T12 (i)/(ii)) | `bde8a4bf5176249ae95c65de6f15abb3611a972202e0e31b55e3a46b08b8bfb8` | corpus 2 still not generated |
 | 7 | 2026-10-01 | corpus 2 frozen (deviation 2 C6): `vzcorpus freeze --salt corpus-2`, run `20260930-121331-icebar-corpus2`, source commit 42fc538 (pre-registration `bde8a4bf…`), 5749 items, 471 S13 combinations unreachable; freeze 1 (row 3) kept as evidence. No oracle call on a corpus-2 item before this row's commit | freeze.json `027570dfa86a1a8c6de5ff906dabc3030d3856ba9e891ecb3431f6fa3f470260` | -- |
+| 8 | 2026-10-01 | corpus 2's single check (`vzcorpus check`): **0 of 5749 items fail their expectation**; every hash verified before labelling. U21 (the same frozen items through the test target) re-run as the acceptance path, not as a second result | check.json `1844ac22b38a002ac26f4528af9a60b95a21cd3db3f483bdcc6887c1763c7c09` | -- |
 
 ## Appendix. Review record
 
