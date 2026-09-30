@@ -33,6 +33,9 @@ import PackageDescription
 //             the known-rendering matcher, `«` rule, controls. Tested.
 //   IceBarCorpus / vzcorpus  its offline corpus S1-S14, K1-K4: generator,
 //             freeze manifest, check (writes only outside the repository).
+//   IceBarClaim  route C part 2 (2026-10-02-icebar-c-claim.md): rule 1's
+//             hidden-state baseline, `RegionClear`, the claim, the start-up
+//             invariants. Tested.
 //   C1Stage   rework #5, step A: the C1 stage orchestration itself
 //             (`StageC1*.swift`) moved out of the `vizprobe` executable so a
 //             test target can reach it. Driven entirely through
@@ -90,6 +93,15 @@ let package = Package(
             name: "IceBarCorpusTests",
             dependencies: ["IceBarCorpus", "IceBarOracle", "VZGlyphs", .product(name: "IceCore", package: "IceCore")],
             swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        // Route C part 2 (docs/plans/2026-10-02-icebar-c-claim.md): the
+        // hidden-state baseline (rule 1), `RegionClear` (rules 2-3), the
+        // claim (rule 4) and the start-up invariants. Standard library plus
+        // IceCore and the oracle's public API; no AppKit, no capture.
+        .target(name: "IceBarClaim", dependencies: ["IceBarOracle", .product(name: "IceCore", package: "IceCore")]),
+        .testTarget(
+            name: "IceBarClaimTests",
+            dependencies: ["IceBarClaim", "IceBarOracle", "IceBarCorpus", .product(name: "IceCore", package: "IceCore")]
         ),
         // `vzcorpus freeze` / `vzcorpus check` (instrument plan section 4).
         .executableTarget(name: "vzcorpus", dependencies: ["IceBarCorpus", "IceBarOracle"], swiftSettings: [.swiftLanguageMode(.v5)]),
