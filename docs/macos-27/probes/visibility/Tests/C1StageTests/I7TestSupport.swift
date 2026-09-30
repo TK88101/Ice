@@ -1,0 +1,87 @@
+// I7 (rework #6a): shared plumbing for `I7OrchestrationTests.swift` and
+// `I7FaultTriggerTests.swift` -- the three helper bundle stand-ins, one
+// `run(world:)` convenience that builds a fresh environment/evidence and
+// drives the real `StageC1` orchestration exactly like every I7 scenario
+// always has, and the one assertion (section 4 / P0-3: "rest reaches the
+// spacer before any helper is quit") every latch-trigger scenario needs.
+import C1Live
+import C1Stage
+import C2Core
+import Foundation
+
+enum I7 {
+    /// `extraHidden`: C2's hidden-2...(extraHidden + 1) (T3); 0 for C1.
+    static func apps(extraHidden: Int = 0, menus: C2MenuWidth? = nil) -> C1Apps {
+        C1Apps(
+            target: URL(fileURLWithPath: "/tmp/fakebar/Target.app"),
+            protected: URL(fileURLWithPath: "/tmp/fakebar/Protected.app"),
+            spacer: URL(fileURLWithPath: "/tmp/fakebar/Spacer.app"),
+            extraHidden: (0..<extraHidden).map { URL(fileURLWithPath: "/tmp/fakebar/Hidden\($0 + 2).app") },
+            menus: menus.map { (URL(fileURLWithPath: "/tmp/fakebar/Menus.app"), $0) }
+        )
+    }
+
+    struct Run {
+        let code: Int32
+        let evidence: FakeEvidence
+        let caffeinate: FakeCaffeinate
+    }
+
+    /// `signalDuringLaunchOfRole`: scenario 6's own hook -- when supplied,
+    /// `stage.signalReceived()` fires synchronously right as that role's
+    /// helper begins launching (`FakeHelperLauncher.onLaunch`), simulating
+    /// a signal arriving mid-setup with no change to any file outside this
+    /// test target.
+    ///
+    /// `signalDuringStep1bDiscovery`: Amendment v9, H5's "signal during
+    /// step1b" fixture -- when `true`, `stage.signalReceived()` fires
+    /// synchronously right before the very first discovery pass
+    /// `step1bPlacementPlan` makes (`FakeDiscoverer.onFirstDiscovery`),
+    /// with no change to any file outside this test target.
+    static func run(
+        world: FakeBarWorld,
+        dry: Bool = false,
+        signalDuringLaunchOfRole: String? = nil,
+        signalDuringStep1bDiscovery: Bool = false,
+        discoveryExecutorBoundSeconds: Double = C1DiscoveryExecutor.boundSeconds,
+        extraHidden: Int = 0,
+        lengthPlan: C1LengthPlan = .c1,
+        menus: C2MenuWidth? = nil,
+        frontmost: FakeFrontmost = FakeFrontmost()
+    ) -> Run {
+        let evidence = FakeEvidence()
+        let caffeinate = FakeCaffeinate()
+        let handback = StageHandback()
+        var onLaunch: (@Sendable (String) -> Void)?
+        if let signalDuringLaunchOfRole {
+            onLaunch = { role in
+                guard role == signalDuringLaunchOfRole else { return }
+                handback.stage?.signalReceived()
+            }
+        }
+        var onFirstDiscovery: (@Sendable () -> Void)?
+        if signalDuringStep1bDiscovery {
+            onFirstDiscovery = { handback.stage?.signalReceived() }
+        }
+        let environment = FakeC1EnvironmentFactory.make(world: world, evidence: evidence, caffeinate: caffeinate, onHelperLaunch: onLaunch, onFirstDiscovery: onFirstDiscovery, discoveryExecutorBoundSeconds: discoveryExecutorBoundSeconds, frontmost: frontmost)
+        let stage = StageC1(environment: environment, apps: apps(extraHidden: extraHidden, menus: menus), dry: dry, lengthPlan: lengthPlan)
+        handback.stage = stage
+        let code = stage.run()
+        return Run(code: code, evidence: evidence, caffeinate: caffeinate)
+    }
+
+    /// Section 4 / P0-3: whatever tripped the latch, `rest` reaches the
+    /// spacer before any helper is quit -- scoped to *after the last
+    /// `length` command* (crosscheck #14): an ordinary cycle's own
+    /// mid-run collapse already logs `spacer.rest` long before any
+    /// teardown quit, which would satisfy a plain "rest appears somewhere
+    /// before quit" check by accident regardless of whether the trip's own
+    /// cleanup ordering is correct.
+    static func restPrecedesFirstQuitAfterLastLength(_ world: FakeBarWorld) -> Bool {
+        let log = world.commandLog
+        guard let firstQuitIndex = log.firstIndex(where: { $0.hasSuffix(".quit") }) else { return false }
+        let searchFrom = log.lastIndex(where: { $0.hasPrefix("spacer.length ") }) ?? log.startIndex
+        guard let restIndex = log[searchFrom...].firstIndex(of: "spacer.rest") else { return false }
+        return restIndex < firstQuitIndex
+    }
+}

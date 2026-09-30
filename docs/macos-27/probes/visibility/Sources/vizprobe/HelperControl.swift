@@ -15,7 +15,12 @@ enum HelperControlError: Error {
     case launchFailed(String)
 }
 
-final class HelperControl {
+// Step A: `@unchecked Sendable` so `extension HelperControl: C1HelperControlling`
+// (`StageC1Live.swift`) does not need a retroactive conformance in a
+// different file (a hard error under Swift 6 mode) -- not a behaviour
+// change: every method here already only ever touches its own state
+// through `process`'s own thread-safety or `LineQueue`'s internal lock.
+final class HelperControl: @unchecked Sendable {
     let role: String
     let bundleID: String
     private let process: Process
@@ -118,6 +123,16 @@ final class HelperControl {
             process.waitUntilExit()
         }
     }
+
+    /// G5 (Amendment v7): the same EOF quit signal as `quit(timeout:)`,
+    /// without the wait or the `terminate()`/`waitUntilExit()` fallback --
+    /// the non-blocking form off-main terminal handling uses. Closing an
+    /// already-closed pipe is a harmless no-op (`try?`), so a later,
+    /// main-thread `quit(timeout:)` on the same helper (the real,
+    /// discovery-confirmed reap) still runs safely afterward.
+    func requestQuit() {
+        try? stdin.fileHandleForWriting.close()
+    }
 }
 
 /// A small blocking queue of reply lines, filled by `HelperControl`'s
@@ -186,5 +201,22 @@ enum HelperDefaults {
         guard process.terminationStatus == 0 else { return nil }
         guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return nil }
         return plist.keys.sorted()
+    }
+
+    /// Amendment v8, "Placement by the helpers' own preferred position"
+    /// (option A): `defaults write <bundleID> <key> -float <value>`, run
+    /// before that helper's own process ever launches -- the one write
+    /// this whole enum makes (`forget`/`keys` only ever delete or read).
+    /// `true` when the write process exited 0.
+    @discardableResult
+    static func write(_ bundleID: String, key: String, value: Double) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+        process.arguments = ["write", bundleID, key, "-float", String(value)]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return false }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
     }
 }

@@ -13,18 +13,40 @@ import CryptoKit
 import Foundation
 import IceCore
 
-final class LiveEvidence {
+// Step A: `@unchecked Sendable` so `extension LiveEvidence: C1EvidenceRecording`
+// (`StageC1Live.swift`) does not need a retroactive conformance in a
+// different file (a hard error under Swift 6 mode) -- not a behaviour
+// change: this type was already only ever driven synchronously, from
+// `StageC1`'s own call sequence, one call at a time, same as before.
+final class LiveEvidence: @unchecked Sendable {
     let runId: String
     let directory: URL
     private let samples: FileHandle
     private var kept = 0
+    /// C2 (docs/plans/2026-09-28-c2-protocol.md section 2): set once by
+    /// `vizprobe c2-config` before its stage builds evidence -- the exact
+    /// directory the sequencer chose (it must not exist yet), and a hashed
+    /// `manifest.final.json` written atomically at `close()`.
+    nonisolated(unsafe) static var directoryOverride: URL?
+    private let writesFinalManifest: Bool
+    private var lastVerdict: String?
 
     init(binaryURLs: [String: URL], arguments: [String], geometry: BarGeometry?, parameters: DetectorParameters, suffix: String = "vzlive") throws {
         let stamp = Self.timestamp(Date(), format: "yyyyMMdd-HHmmss")
-        runId = "\(stamp)-\(suffix)"
-        directory = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("IceReverse-evidence")
-            .appendingPathComponent(runId)
+        if let override = Self.directoryOverride {
+            guard !FileManager.default.fileExists(atPath: override.path) else {
+                throw CocoaError(.fileWriteFileExists, userInfo: [NSFilePathErrorKey: override.path])
+            }
+            runId = override.lastPathComponent
+            directory = override
+            writesFinalManifest = true
+        } else {
+            runId = "\(stamp)-\(suffix)"
+            directory = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("IceReverse-evidence")
+                .appendingPathComponent(runId)
+            writesFinalManifest = false
+        }
         let captures = directory.appendingPathComponent("captures")
         try FileManager.default.createDirectory(at: captures, withIntermediateDirectories: true)
         let samplesURL = directory.appendingPathComponent("samples.jsonl")
@@ -37,6 +59,7 @@ final class LiveEvidence {
     func record(_ kind: String, _ fields: [String: Any]) {
         var object = fields
         object["kind"] = kind
+        if kind == "run.verdict" { lastVerdict = fields["verdict"] as? String }
         object["wall"] = Self.timestamp(Date(), format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
         guard JSONSerialization.isValidJSONObject(object),
               let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
@@ -64,6 +87,27 @@ final class LiveEvidence {
 
     func close() {
         try? samples.close()
+        guard writesFinalManifest else { return }
+        writeFinalManifest()
+    }
+
+    /// Every file's SHA-256 (paths relative to the directory) and the run's
+    /// verdict, written with `.atomic` (a temp file, then a rename) so a
+    /// reader never sees a partial one; the reader refuses a directory
+    /// without it or with any mismatch.
+    private func writeFinalManifest() {
+        var files = [String: String]()
+        let root = directory.standardizedFileURL.path + "/"
+        if let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey]) {
+            for case let url as URL in enumerator where (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                let relative = url.standardizedFileURL.path.replacingOccurrences(of: root, with: "")
+                guard relative != "manifest.final.json" else { continue }
+                files[relative] = Self.sha256(of: url) ?? "?"
+            }
+        }
+        let final: [String: Any] = ["runId": runId, "verdict": lastVerdict ?? NSNull(), "files": files]
+        guard let data = try? JSONSerialization.data(withJSONObject: final, options: [.prettyPrinted, .sortedKeys]) else { return }
+        try? data.write(to: directory.appendingPathComponent("manifest.final.json"), options: .atomic)
     }
 
     private func writeManifest(binaryURLs: [String: URL], arguments: [String], geometry: BarGeometry?, parameters: DetectorParameters) throws {

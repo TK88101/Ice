@@ -13,6 +13,7 @@
 // This tool never launches anything, adds a menu bar item, or posts an
 // event except inside `live`, and never on `--dry-run`.
 import AppKit
+import C1Stage
 import Foundation
 
 func option(_ name: String, in arguments: [String]) -> String? {
@@ -79,8 +80,38 @@ if arguments.contains("--dry-run") {
     exit(DryRun.run())
 }
 
+// C2 (docs/plans/2026-09-28-c2-protocol.md): one configuration's measurement,
+// and the sequencer that runs them (`C2Live.swift`, `C2Run.swift`).
+if arguments.first == "c2-config" { C2ConfigCommand.run(arguments) }
+if arguments.first == "c2-run" { C2RunCommand.run(arguments) }
+if arguments.first == "c2-geometry" { C2GeometryCommand.run() }
+if arguments.first == "c2-read" { C2ReadCommand.run(arguments) }
+
+// I5: `vizprobe c1` (docs/plans/2026-09-26-c1-protocol.md, Amendment v4).
+// `--dry` never sends `length` (C1ExpansionDriver, C1Live) -- the one part
+// of this stage that is safe to run before the owner names a time.
+if arguments.first == "c1" {
+    guard let appsPath = option("--apps", in: arguments) else {
+        fail("c1: missing --apps <dir> (build.sh's output apps directory)")
+    }
+    let appsURL = URL(fileURLWithPath: appsPath)
+    // build.sh assembles Spacer.app under the *same* bundle id as
+    // Protected.app (P0-1 -- the Twin precedent: a new id would leave a
+    // permanent entry in the system's menu bar settings); `--spacer-app`
+    // only overrides the path, never the id, for a bundle built elsewhere.
+    let spacerPath = option("--spacer-app", in: arguments) ?? appsURL.appendingPathComponent("Spacer.app").path
+    let c1Apps = C1Apps(
+        target: appsURL.appendingPathComponent("Target.app"),
+        protected: appsURL.appendingPathComponent("Protected.app"),
+        spacer: URL(fileURLWithPath: spacerPath)
+    )
+    let dry = arguments.contains("--dry")
+    let stage = StageC1(environment: C1LiveWiring.make(), apps: c1Apps, dry: dry)
+    GuardedStage.run(stage, name: "c1", watchdogMinutes: option("--watchdog", in: arguments).flatMap(Double.init) ?? StageC1.watchdogMinutes)
+}
+
 guard arguments.first == "live" else {
-    fail("usage: vizprobe --dry-run | vizprobe live --apps <dir>")
+    fail("usage: vizprobe --dry-run | vizprobe live --apps <dir> | vizprobe c1 --apps <dir> [--spacer-app <path>] [--dry] | vizprobe c2-config ... | vizprobe c2-run ...")
 }
 guard let appsPath = option("--apps", in: arguments) else {
     fail("live: missing --apps <dir> (build.sh's output apps directory)")

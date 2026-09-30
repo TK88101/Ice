@@ -19,6 +19,28 @@ import PackageDescription
 //             section 5: the first run's supervisor, recorder, watchdog and
 //             restorer. IceWatchCore holds the pure rules (Foundation only,
 //             no AppKit, no Accessibility) and is the only tested target
+//   C1Core    docs/plans/2026-09-26-c1-protocol.md section 7, I1: the C1
+//             protocol's pure decisions (scan planner, preflight order and
+//             roster-snapshot checks, baseline-equivalence, the latch, run
+//             accounting, the spacer command parser). Standard library
+//             only, like IceWatchCore -- 100% line coverage.
+//   C1Live    section 7, I3/I4/I5's testable seams (the latching capturer,
+//             the C1 discoverer, the stage's dry-run/trip command
+//             sequencing) -- the live protocol pieces that need
+//             MenuBarCapture/MenuBarDetectorFeed to state their contracts
+//             but must still be reachable from a test target with fakes.
+//   IceBarOracle  route C's oracle (2026-10-01-icebar-c-instrument.md):
+//             the known-rendering matcher, `«` rule, controls. Tested.
+//   IceBarCorpus / vzcorpus  its offline corpus S1-S14, K1-K4: generator,
+//             freeze manifest, check (writes only outside the repository).
+//   C1Stage   rework #5, step A: the C1 stage orchestration itself
+//             (`StageC1*.swift`) moved out of the `vizprobe` executable so a
+//             test target can reach it. Driven entirely through
+//             `C1StageEnvironment` (capturer, discoverer, AX reader
+//             factories, geometry, helper launcher, helper defaults, pump,
+//             caffeinate, evidence sink, trust check) -- no AppKit, no
+//             concrete live process/screen types. `vizprobe c1` builds the
+//             one real `C1StageEnvironment` and hands it to `StageC1`.
 let package = Package(
     name: "vzreplay",
     platforms: [
@@ -45,11 +67,39 @@ let package = Package(
         // own swhelper/swctl/swfront targets.
         .target(
             name: "VZGlyphs",
+            // GlyphCheck (moved here from vizprobe for C2's T2) checks the
+            // glyphs with IceCore's own baseline rules.
+            dependencies: [.product(name: "IceCore", package: "IceCore")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .testTarget(name: "VZGlyphsTests", dependencies: ["VZGlyphs", "IceBarOracle"]),
+        // Route C (docs/plans/2026-10-01-icebar-c-instrument.md): the oracle
+        // of the pre-registration's section 5. Standard library plus IceCore's
+        // public pixel and frame types; no AppKit, no capture.
+        .target(name: "IceBarOracle", dependencies: [.product(name: "IceCore", package: "IceCore")]),
+        .testTarget(name: "IceBarOracleTests", dependencies: ["IceBarOracle", .product(name: "IceCore", package: "IceCore")]),
+        // The oracle's offline corpus (pre-registration section 6): the
+        // deterministic generator, K1-K4 loading, the freeze manifest and the
+        // check. AppKit via VZGlyphs (the helpers' own drawing code).
+        .target(
+            name: "IceBarCorpus",
+            dependencies: ["VZGlyphs", "IceBarOracle", .product(name: "IceCore", package: "IceCore")],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "IceBarCorpusTests",
+            dependencies: ["IceBarCorpus", "IceBarOracle", "VZGlyphs", .product(name: "IceCore", package: "IceCore")],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        // `vzcorpus freeze` / `vzcorpus check` (instrument plan section 4).
+        .executableTarget(name: "vzcorpus", dependencies: ["IceBarCorpus", "IceBarOracle"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "vzhelper",
-            dependencies: ["VZGlyphs"],
+            // I2: the spacer role's `length <pt>`/`rest` commands are
+            // parsed by C1Core's own pure parser, not reimplemented here.
+            // C2 (T2): the hidden-<n>/menus roles and the `menus <n>`
+            // command are parsed by C2Core, likewise.
+            dependencies: ["VZGlyphs", "C1Core", "C2Core"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         // T13/T14: the live protocol's controller.
@@ -57,6 +107,9 @@ let package = Package(
             name: "vizprobe",
             dependencies: [
                 "VZGlyphs",
+                "C1Core",
+                "C1Live",
+                "C1Stage",
                 .product(name: "IceCore", package: "IceCore"),
                 .product(name: "MenuBarCapture", package: "MenuBarCapture"),
                 .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),
@@ -75,5 +128,52 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(name: "IceWatchCoreTests", dependencies: ["IceWatchCore"]),
+        // C1 protocol (I1): pure decisions only, standard library only.
+        .target(name: "C1Core"),
+        .testTarget(name: "C1CoreTests", dependencies: ["C1Core"]),
+        // C2 protocol (docs/plans/2026-09-28-c2-protocol.md, T1): bands,
+        // expansion, refinement, intersection, the length, the collar and
+        // the accounting. Standard library only, 100% line coverage.
+        .target(name: "C2Core"),
+        .testTarget(name: "C2CoreTests", dependencies: ["C2Core"]),
+        // C1 protocol (I3/I4/I5): the live seams, testable with fakes.
+        .target(
+            name: "C1Live",
+            dependencies: [
+                "C1Core",
+                .product(name: "IceCore", package: "IceCore"),
+                .product(name: "MenuBarCapture", package: "MenuBarCapture"),
+                .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),
+                .product(name: "MenuBarDetectorFeed", package: "MenuBarDiscovery"),
+            ]
+        ),
+        .testTarget(name: "C1LiveTests", dependencies: ["C1Live"]),
+        // C1 protocol rework #5, step A: the stage orchestration itself,
+        // moved out of `vizprobe` so `C1StageTests` can drive the real code
+        // (I7) through a fake `C1StageEnvironment`.
+        .target(
+            name: "C1Stage",
+            dependencies: [
+                "C1Core",
+                "C1Live",
+                "C2Core",
+                .product(name: "IceCore", package: "IceCore"),
+                .product(name: "MenuBarCapture", package: "MenuBarCapture"),
+                .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),
+                .product(name: "MenuBarDetectorFeed", package: "MenuBarDiscovery"),
+            ],
+            // This is a verbatim migration of code written under
+            // `vizprobe`'s own v5 mode (Sendable was never enforced at
+            // those call sites) -- v5 here too, so step A stays a pure
+            // move with no incidental Sendable-conformance changes to
+            // `StageC1`'s own types. `C1StageEnvironment`'s seam protocols
+            // are still fully usable from a Swift 6 test target either way.
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        // Amendment v8a: C1Core is added directly so the fake bar can
+        // reach `PlacementPlan`/`PreferredPositionKey` when modelling the
+        // "honoured preferred position" scenarios -- `C1Stage` already
+        // depends on it, but Swift needs the direct import to see it too.
+        .testTarget(name: "C1StageTests", dependencies: ["C1Stage", "C1Live", "C1Core", "C2Core"]),
     ]
 )
