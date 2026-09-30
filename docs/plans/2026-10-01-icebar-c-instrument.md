@@ -181,6 +181,18 @@ oracle), E2E (T6-T7: the executable writing real files, the freeze and the check
 - Rollback: everything is new files plus `Glyphs.swift`/`GlyphCheck.swift`
   additions on `wip/icebar-c`; `git checkout 32d523a -- docs/macos-27/probes/visibility`.
 
+## 7a. Part 1 under deviation 2 (pre-registration section 9 row 2; `2026-10-01-icebar-c-deviation2.md`)
+
+| # | task | DoD |
+|---|---|---|
+| T8 | oracle C1: `CaptureLabels.labels` from `full` only; D14/D15 on `full` only; `sightings` = every `partial`/`edge` placement of any helper template with its box and hit pixels; *explained* iff every hit pixel is on alpha > 0 of a `full`-identified helper at its best placement; `AttemptVerdict.seesMember` = member `full` or any unexplained sighting | existing rule tests rewritten to the new labels (edge/partial cases assert sightings), U22b (explained / unexplained; adversarial: full visible helper plus a >= 4 px member sliver touching it -> unexplained, sees a member) red then green |
+| T9 | `TextureBound.evaluate(image, region, notch, agent frames)` -> accepted / refused(max deviation), every region pixel outside notch and agent columns within 12 of the per-channel lower median M_x | U9b: 12 accepted, 13 refused, deviations only in notch or agent columns accepted |
+| T10 | `OverlapGuard.evaluate(roster, bounds)` -> clear / missing(id) / overlap(a, b); overlap = both axes intersect by > 0.5 pt; `AttemptVerdict` takes the guard outcome, inconclusive unless clear | U22d: 0.5 clear, 0.6 overlap, a roster helper with no bounds -> missing, a hidden (off-screen) helper listed -> clear |
+| T11 | `BControl.evaluate([(episode, a, b)])` -> valid / mismatch(index) / insufficientCaptures(n) / insufficientEpisodes(n); only captures with (a) count; mismatch first; >= 10 captures, >= 2 episodes | U22e |
+| T12 | corpus 2: seed salt `corpus-2` (dev salt `dev`), recorded per item; per-item expectation: identity labels exact (`full` or `none`); required sightings (column range of each placed glyph with 4 <= n < all of P); every unexplained sighting overlaps some placed glyph's columns +-2 pt (exact mode only); `seesMember` yes / no / either (either when a glyph with n < 4 is placed); `inconclusive` exact; `«` exact. Mode per item from `TextureBound` on the item's backdrop-only rendering (region 956.5 pt to 1317 pt, capsule frame excluded): accepted -> exact; refused -> C4 predicate. S4 items carry both glyphs' window bounds (overlapping 4 pt) -> expected inconclusive through the guard; all other items carry their placed glyphs' boxes as bounds (the guard's roster is the drawn helpers; "every helper listed" is U22d's and S0's). Visible helpers in their slots are positive controls in every item. K2: `TextureBound` on K2's region x 956.5-1008 pt (1008 = the run's target helper x, MEASURED `samples.jsonl` ownAX) expected refused; K1 `«` present, K4 absent. The check evaluates the attempt verdict per item (one capture, no AX reads) | generator tests updated first; corpus 2 frozen and committed (section 8 row) before its single check |
+
+Development runs of the new oracle: on the development corpus (salt `dev`) and freeze 1 only; never on corpus 2 before its freeze row.
+
 ## 8. Freeze and oracle-change log
 
 | # | date | event | hash / item | reason |
