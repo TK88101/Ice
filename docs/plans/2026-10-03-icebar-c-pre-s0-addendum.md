@@ -1,6 +1,6 @@
 # Route C pre-registration, pre-S0 addendum (draft for review)
 
-2026-10-03 · branch `wip/icebar-runner` · **draft: not yet in the pre-registration**. Section 6
+2026-10-03 · branch `wip/icebar-runner` · **approved by the owner 2026-10-03 and written to the pre-registration's section 9** (sha256 now `a4e8b31b714b3acf2972fbfb3573f08ea41f9935ccaa25561606b6d6346fa572`); this file is the reviewed draft, kept as written. Section 6
 of `2026-09-30-icebar-c-prereg.md` schedules this addendum ("appended to section 9 as an
 addendum ... reviewed, and this document re-hashed"). After review and the owner's
 approval it is appended under section 9's ledger, the pre-registration is re-hashed,
