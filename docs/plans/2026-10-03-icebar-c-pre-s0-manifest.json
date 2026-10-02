@@ -1,0 +1,447 @@
+{
+  "chevronAlphaSHA256" : "f34511e3e602f5151ffbd378d0eca4dec6dd1515db4438ef99dd1a7cfe352209",
+  "corpus3" : {
+    "checkSHA256" : "1844ac22b38a002ac26f4528af9a60b95a21cd3db3f483bdcc6887c1763c7c09",
+    "chevronMatchesFreeze" : true,
+    "freezeSHA256" : "f8a64fbc81dd327897d54b0187e14e6a9af0fbc6dd960406a6bfb7994271853d",
+    "items" : 5749,
+    "kInputs" : [
+      {
+        "file" : "00011-probe-mid-20.png",
+        "id" : "K1",
+        "matchesRecordedAndPreregistered" : true,
+        "sha256" : "a3bcce60c95dc037ca2085cb6acc6f51539d749d69d2c3871d707639a36739e6"
+      },
+      {
+        "file" : "00015-probe-mid-648.png",
+        "id" : "K2",
+        "matchesRecordedAndPreregistered" : true,
+        "sha256" : "763ecc099fd04c89db630b9571abaea0e1433c0c246259749806efd8675021e2"
+      },
+      {
+        "file" : "00017-probe-mid-652.png",
+        "id" : "K3",
+        "matchesRecordedAndPreregistered" : true,
+        "sha256" : "763ecc099fd04c89db630b9571abaea0e1433c0c246259749806efd8675021e2"
+      },
+      {
+        "file" : "00041-probe-mid-4.png",
+        "id" : "K4",
+        "matchesRecordedAndPreregistered" : true,
+        "sha256" : "e720dbe781d20c9fc4bbe67d61056c6494e043de29d5eaebb7c548a7ef70279e"
+      }
+    ],
+    "pngsVerified" : 5749,
+    "preregistrationAtFreeze" : "e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3",
+    "renderingsMatchFreeze" : true,
+    "run" : "20260930-123540-icebar-corpus3",
+    "sourcesMatchFreeze" : true
+  },
+  "gitRevision" : "a4efdbb74ac08ff1239b2b1e8d72f938dd5f1dd9",
+  "preregistrationSHA256Before" : "e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3",
+  "renderings" : [
+    {
+      "alphaSHA256" : "6cd12bea66318e8ef285e4f37551398005f7b53d7d5d2be7ab3d593e2050ed97",
+      "colouredRGBSHA256" : "a7bd573fbb652a56c2bc26d905f5eeec5666382b33f4bf725540b615aef789a0",
+      "glyph" : "target",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "1edd045f87b5590a1367302779e6cb29dc06ca18d88b475911de74ea8beaa5c8",
+      "colouredRGBSHA256" : "094d62ecf89f03b7d2b6624b50bc358946af98331ce70e21ef44200229685243",
+      "glyph" : "reference",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "fe3786b92e9263866f30823ba79ff4ab8304df11c49d4af8953efba607a43190",
+      "colouredRGBSHA256" : "28dd2d588a1e96735fd369bab928f0155b0fb359e7e14d87a18686f699cee304",
+      "glyph" : "alt",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "e4b920bac5d58d157922e60dab0241babb9f986554b0096680d89a75bda17fe2",
+      "colouredRGBSHA256" : "7ce4764d3a8bb7afd44bb25176783c4070eb39908cb19148a9d44d20a3081e19",
+      "glyph" : "hidden2",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "5c60410ddc2285b251b27133a7e8a574c3fc08ca90011fe8c984d043971a4caa",
+      "colouredRGBSHA256" : "baec9680f406813b70124ddd4fac7eb3bd9c77cd641cbd6f0665c9abad664206",
+      "glyph" : "hidden3",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "07fd6adebc97f4b0db00c7cfcbd1a313560bb49fbac8e0b345ea9f30a068db11",
+      "colouredRGBSHA256" : "1458f1154281fd3c0422ebe8939d97786c4e95917a7c8f010518e3cdbf835651",
+      "glyph" : "hidden4",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "6e60b96ea3de306aaf9f47e8f1473b04162eee470aa2429bc49e366e035e5de0",
+      "colouredRGBSHA256" : "133ba59f04f4aa8057c44bac0564b1f69c78d14c1a65657c2f09828be84ef11a",
+      "glyph" : "ell",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "74be596d3d88a4c2a3c4728d7b9e120f97cc5d49978893cb085d70045279de59",
+      "colouredRGBSHA256" : "25678e42fe1051eb761ee7abb639ca6dfa782841aa903437186bf2f7325323b2",
+      "glyph" : "gamma",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "4ef63ea92b20cc510363ced37fb2543d989604cfedb35719ee07042d69c3f0bd",
+      "colouredRGBSHA256" : "dfa058d217f952948059c8a86243fd88c4ffb0260b3194c0580c485d8827a580",
+      "glyph" : "zed",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "429ab24ac77cf8669bcda41d370d763bd57d1aa3f567c7ae2db79167fe94e9f9",
+      "colouredRGBSHA256" : "10e5e6754c57f25ae38cca059be59f821f13ddb47f6257878d4342f5473958b5",
+      "glyph" : "vee",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "a395c19293b438f9c85b9f1fadbb41928056ea649a62a7fdc3e4c9ec0f1c608b",
+      "colouredRGBSHA256" : "a1443e423ad8f9ebe9c7a4f7b6ac0e33abc4f9d046c74df4721253a98ff38731",
+      "glyph" : "wedge",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "337bd97d02e910c6da5ce0f334c4016402b5855e9bf303352c3ec2ad821a54e2",
+      "colouredRGBSHA256" : "e1d03406197f6687158486fe90f0fa95cef97c14262d6a1197c0e2b01b7e8326",
+      "glyph" : "arrow",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "f1f8bc129d7b7bd6d11f7052b16bd9a5c90cf44a96b7d76ddb4e66e72f9d57a2",
+      "colouredRGBSHA256" : "a395139357085c5b8f066f110d7d67431feafe4162a10a41adb851b81e7d4fe4",
+      "glyph" : "cross",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "50fa6fdf15a179ca349692b3c8c6345d1e414aa39cf279b0255421334226c6f7",
+      "colouredRGBSHA256" : "8750e3efbecc896bc204c558ec0f590a81ffd5b5e6f54882cdf94eedd006bd08",
+      "glyph" : "tee",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "2f5a6748cba0a478588bb0decb76922e755d09f064db4fb3b85511560a49452b",
+      "colouredRGBSHA256" : "9d64cf259e27257335a06b6ed245523db50f4d8c931efd23726359b74303e6e9",
+      "glyph" : "eff",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "56710ee7c9f612445938fced588b4f854821cbba7851f3e5bebbd4240afdff2e",
+      "colouredRGBSHA256" : "1d0a60e1990d7fd2f90bcddbaa9f3b00333261d5d84b8b4c2bd441ec3ab0b296",
+      "glyph" : "ess",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "56311fbfc69b602b3716d46e54383e3dc5342fb3e69a3db6ea93fec43650636d",
+      "colouredRGBSHA256" : "487982367ff2a1f64a063f546a2998b7b4fda21b8ee8d6a4d0d8ba2daa7e3fac",
+      "glyph" : "wave",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "3d5d05fd4401aa5fe7e0df3a8f08635579f02333dbe067b7ecc8c43943aa6881",
+      "colouredRGBSHA256" : "8ef86db55a83fc91361e192c2bd0e360604d21992a4fe05b9e99a259c43dddfc",
+      "glyph" : "hook",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "5871c1a42bd278cefdc7eba6880088981288c9be5008a2ff4ac7ab552eaccfa7",
+      "colouredRGBSHA256" : "0595812f4c7fb90edf8319756980daa4a0e1cc524a9ba4344654d7bf9f546873",
+      "glyph" : "bolt",
+      "scale" : 1
+    },
+    {
+      "alphaSHA256" : "7fb268cefb2b998c7011f3acf6c17a08903bb0a880ba9cd896bd8a822187eef8",
+      "colouredRGBSHA256" : "895e3f5fcdbb38a734343ea6d1a27f38496a767de7d76c8caac6f116543b9505",
+      "glyph" : "target",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "b73433b4009ee369775a41cdab122cd1e350094b291bcc4bc243e512de68517c",
+      "colouredRGBSHA256" : "ff4d014f0e8314d3edddaa562fc643a32d9b4148b2afae9eed5ad7283e0f5c90",
+      "glyph" : "reference",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "49ec7d087e4ecd3d1e4585698382be82999b43cc64413fc1ec7df7ff2c83ad43",
+      "colouredRGBSHA256" : "23b285f8036015bedddd643ae577f29677c8ed2d6394a6c16dc683931604c580",
+      "glyph" : "alt",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "bd5a8cd6b1774767f79f39520397afaf811e693bbe8878eaf274f536b697ed59",
+      "colouredRGBSHA256" : "db9fb5ce9634eff21bc55f2e1a5ea1e5e3ae9eea9ec3d0dbf27e88f86f0757b9",
+      "glyph" : "hidden2",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "e0b2beb771351ddaa23a180d5d4bf01ff3cb9a85dbbaa23535c5d5f0cd7c2620",
+      "colouredRGBSHA256" : "41f8a4f02d83d3a9965b949ccf0dc28d99507b21cf184165ad368a9072c2c9c5",
+      "glyph" : "hidden3",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "5a5333c245e18c8e319417f8fdcc0e2e7f79510db6226f7105877d7cdf65c12f",
+      "colouredRGBSHA256" : "2bbf5b4d1862e100391a114718fa47086119f673060479a98072ce1f2724dff2",
+      "glyph" : "hidden4",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "c97bedd04d8ac103872b0207d418422f6352f3de97341d7893346075961b4875",
+      "colouredRGBSHA256" : "cc3499ce001afcce3fa07ac825a37d967e2f707136eb47563b9fed9b6adba694",
+      "glyph" : "ell",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "458db21713d419960dae9a2ab734d4162db47e15a92938c9c21f414358b54e30",
+      "colouredRGBSHA256" : "673e55b7a78b312eb1031accaa8a7f2c61826b72e05fbece845a694f859155bb",
+      "glyph" : "gamma",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "3493a30b246141c14715c84c56d97c54ad08174fe4a3e0bd836e9abbea0b0033",
+      "colouredRGBSHA256" : "c22e117a6636e11d24ef96c6dbc506a11adf0050c7931b53b32378a6483a9158",
+      "glyph" : "zed",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "1e575a948be683f8053f7f3022413832a34035b2fc4c37daa6955a0dde2363cd",
+      "colouredRGBSHA256" : "d0bc2e27080e94e8a20c7840964d9c0ec2ad0bd4b091033a56bd0a2c5ad6429e",
+      "glyph" : "vee",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "fc6f3160bc4348e9a7ed5eff67fa5935bd68948f61aff5b673453e6370b88bd2",
+      "colouredRGBSHA256" : "bd4644583a7ff41dd152a761fe77d2491bbdb134aa9fe21843da909608d731cc",
+      "glyph" : "wedge",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "a163f8033304f1a904acd1d91d6a885a6e2a2c8249e33eb5749b5155451dd460",
+      "colouredRGBSHA256" : "8ff9fde5730d315804a4d5db646b19362be28d00f5699b935c32194c9c6a1417",
+      "glyph" : "arrow",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "8416481bfd0e2accdbbec3ec230066ea462fca239108138f43980843414eb7dc",
+      "colouredRGBSHA256" : "c473050d203e296f40d9dfcdb2d31388b03b7cceb297b58909d81c73407ac8b3",
+      "glyph" : "cross",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "bbca21b71b5cf07a3d06b04e3d43c6020655bd8e6fd20faa8dd72171921e74a9",
+      "colouredRGBSHA256" : "aaaf5e0d784909c9623f46c03407b93cb0e56730ad6f6c88d3e2376eccb2414c",
+      "glyph" : "tee",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "fe3b96aafbf980c1e6ba4c6892ca591d701bdf1f20d49d2e0713f0b715ca0881",
+      "colouredRGBSHA256" : "01d2733eb3f410de653ebee2919258b8bb09ab08720a2b48c4e7931f399a93c2",
+      "glyph" : "eff",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "70adb3a2de97b218b77e094fd21e5d7eda7efd4efaec21a2dff57b57d98a54ee",
+      "colouredRGBSHA256" : "2c3f0921eb28ec159b0e430c4687e92fd1bc0c0964840d1cdadfbdb9a12b8aa1",
+      "glyph" : "ess",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "146390095c615e2c4a2a46def024e955ed5f3d06a454f25f40a12ed3e17dafd4",
+      "colouredRGBSHA256" : "c763db40f3b60b8a2816201243c1031fb37886508fd637f81805b5ae9ee9946d",
+      "glyph" : "wave",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "fdd45ace514bb9247f26cbf8978df2d0ea00dd4350af83fa3a32281c813e2596",
+      "colouredRGBSHA256" : "ee1fd02a5ae04667943b408447ff6a9e3101d91862fda4d8902a6232fd9d5e44",
+      "glyph" : "hook",
+      "scale" : 2
+    },
+    {
+      "alphaSHA256" : "af63356578669948d8faf74ad48dd946f642069cbfc52a19f344c60e43e04b29",
+      "colouredRGBSHA256" : "36559a7c323f0cd64924645a7ee70cd9d95c72529217159151f3219b06f82eff",
+      "glyph" : "bolt",
+      "scale" : 2
+    }
+  ],
+  "sources" : {
+    "Packages\/IceCore\/Sources\/IceCore\/AttributeWalkPolicy.swift" : "1ee29d63203b348a01d765da14c38e2349fce0c0038767c08b19678708249106",
+    "Packages\/IceCore\/Sources\/IceCore\/CaptureStability.swift" : "956665bb9ad1d8f1e45b3c5b08db53abc7b780c30b429e809cae477b52c48aa9",
+    "Packages\/IceCore\/Sources\/IceCore\/CheckPlan.swift" : "29e40b135def26bfc77af4c14110eff48a6e42ab5dbd50431f99bbe33a701760",
+    "Packages\/IceCore\/Sources\/IceCore\/CheckSupport.swift" : "94aad5b5a9f13b563d53abaf551e60908e33885a6d4032fcb6981f29236b83ba",
+    "Packages\/IceCore\/Sources\/IceCore\/DetectorParameters.swift" : "00a2de1a645bf12e85398d42ca72b576a9265732aac5cc0bac92eec9d73a59c7",
+    "Packages\/IceCore\/Sources\/IceCore\/DiscoveredCachePlan.swift" : "586d3e5938be1d365ec26fabbf7be7582fc2ec99140382bdebb59e50451a9a3d",
+    "Packages\/IceCore\/Sources\/IceCore\/DiscoveredItem.swift" : "9c403af4c3934040d20173091813439ee65ec7da79e53f7871742ac183246fb4",
+    "Packages\/IceCore\/Sources\/IceCore\/DiscoveryInputs.swift" : "34fa0f4f534ad2e8a93833edefa222b9cc9a195d9a077a0427da82f2d8916676",
+    "Packages\/IceCore\/Sources\/IceCore\/FoldWitness.swift" : "e23ca90dfcab8e17301128d290babf324c9827c7bd66de613cc7f16c6b8324e4",
+    "Packages\/IceCore\/Sources\/IceCore\/Ink.swift" : "24e172f883c031c3e89438a1736eee4ffa23b6c82b930c57b509a48685360550",
+    "Packages\/IceCore\/Sources\/IceCore\/ItemCatalog.swift" : "db0b1c153539fb6bec679fb86f3f9709065b451f969224ab2ce4cf24c80cdbd8",
+    "Packages\/IceCore\/Sources\/IceCore\/ItemKey.swift" : "6b91958282dfc12c55df957adc15e707d14934785605564c3be67eb5a3f7671b",
+    "Packages\/IceCore\/Sources\/IceCore\/ItemPosition.swift" : "3a6f893ef2612d15bf9c0a05eb1c9eae983aa0da393db63abdf5f039a2b49406",
+    "Packages\/IceCore\/Sources\/IceCore\/ItemSection.swift" : "7c39ad341a9f78820b15a7cb441b4547169598784c92f8a15b550aafa0b14e09",
+    "Packages\/IceCore\/Sources\/IceCore\/MenuBarItemCacheState.swift" : "9e8fa0dd830ce234271d80d8f92f48f0ea7d97b2a7b4ff7f456f7bcfa9f8e59e",
+    "Packages\/IceCore\/Sources\/IceCore\/MenuBarItemVisibility.swift" : "9274e1091b662db5a1c8b9d017420f1d297f5bbf98bde9fd283dd3096c68e7e4",
+    "Packages\/IceCore\/Sources\/IceCore\/ReadClassifier.swift" : "ac7899a0d558bdb327b02d40441b125c3487511191c4b0eced73e47d5bbcd257",
+    "Packages\/IceCore\/Sources\/IceCore\/ResponsivenessQuarantine.swift" : "04ec97ef055863812a5497eba3d72c4640190569728fe829f1a0bf1fa55c5b0a",
+    "Packages\/IceCore\/Sources\/IceCore\/StripAssessor.swift" : "6368b7e43f887832abf9950b97b1d704959e7f6010f923510373d8088fb7e0b3",
+    "Packages\/IceCore\/Sources\/IceCore\/StripImage.swift" : "f6d1c1a598c21f15bf7d39d673d1ab1ae33037ad3cba86a84eb03bf86fecd7dd",
+    "Packages\/IceCore\/Sources\/IceCore\/Template.swift" : "54035501bc412480a5bc79f395cecb472f080ffd1e9b850731e73ce60c2de8d5",
+    "Packages\/IceCore\/Sources\/IceCore\/TemplateMatcher.swift" : "bd29b9d00428195df980313b1268470685b106f6edf3ce3a34a1785a9051a6b0",
+    "Packages\/IceCore\/Sources\/IceCore\/VerificationGuards.swift" : "146ecad8d983f813f198b88a0d4251e23e7a89fca2f3c6dfa5c6f837c405f806",
+    "Packages\/IceCore\/Sources\/IceCore\/VerificationTrigger.swift" : "ec7e207c44a55060fc2fc5008b4ed309408c3bb2119eac5bc3635d69fbb82ec2",
+    "Packages\/MenuBarCapture\/Sources\/MBCaptureSanity\/main.swift" : "fd65484928c9a893ab854ff9fb180dbae1fa40ea22dcb0e3623a1b5122fdc305",
+    "Packages\/MenuBarCapture\/Sources\/MenuBarCapture\/LiveMenuBarAXReader.swift" : "b0278b86467902506737d450b364d7950342897465c3dadd61fb9da2e0e79a24",
+    "Packages\/MenuBarCapture\/Sources\/MenuBarCapture\/LiveStripCapturer.swift" : "50caf8b4d600d61d61d3b3a51db6f99be606bbe6a8010f9898c083af816ee71a",
+    "Packages\/MenuBarCapture\/Sources\/MenuBarCapture\/MenuBarAXReading.swift" : "9171f6eb7f5b7b166af1d6db8df2e292891757cbaba53681956159c7685a5110",
+    "Packages\/MenuBarCapture\/Sources\/MenuBarCapture\/Preflight.swift" : "5a6e2b7653e3dfad66f70f9b8f18cd09ae52ea98dd7f4eb88855c86c7af74d09",
+    "Packages\/MenuBarCapture\/Sources\/MenuBarCapture\/Sampler.swift" : "64b657f7c157a43a32f845255f595cc6ad52b45fab66254ed250f3446da4a9b6",
+    "Packages\/MenuBarCapture\/Sources\/MenuBarCapture\/ScreenGeometrySource.swift" : "2cbe91e9d97122a818b0a37b8324421846b18b3d8f885cbf7f78d6cf6366500f",
+    "Packages\/MenuBarCapture\/Sources\/MenuBarCapture\/StripCapturing.swift" : "492d7dc907d9f94ae31cc9766e44a3d5504dc3841bbf4ed362dd85336d9bfc4a",
+    "Packages\/MenuBarCapture\/Sources\/MenuBarCapture\/StripImage+CGImage.swift" : "dff0a533eb8cabf6bd33a87c04f8fd63d65ea7583168345ae6daaba462675b6d",
+    "Packages\/MenuBarCapture\/Sources\/MenuBarCapture\/VisibilityObserver.swift" : "2c687b8b8eef0aa64a8654fb95b8e1097a87633469f53cd87db73782de2b661f",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDetectorFeed\/CancellableCapturer.swift" : "fa9a6f6b004a61c85675d4af1c185b38f4a0405b8a5f5017d732122d63fd8687",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDetectorFeed\/CancellableReader.swift" : "b69c5796ea311e9b79c5cd2d5fc2680a03594ead18087fad0a061dec37717a00",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDetectorFeed\/CancellationFlag.swift" : "823460798c09784822f5f26d8701315216f105c72e2da9be24b3facb052aa19e",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDetectorFeed\/DiscoveredFrameReader.swift" : "e8ad06842ea8d8c6dae3aca441e7ccfe2b8a07ee1d50e19340473a44b8f97163",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDetectorFeed\/DiscoveredTargets.swift" : "370dd1da6da3daf42eb75771f7d315858cb50c054121c2c20084f3237ed0ca2f",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDetectorFeed\/Discovering.swift" : "d542dd6977e3c97292945e2335ddcfd588e0e7485f0afcff35d9c71af827f802",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDetectorFeed\/HidingVerification.swift" : "1bba5e4a0d1c7f438ab2549b476e5358daf7de7dc6e9438f9fe6c80515bcdb77",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDetectorFeed\/HidingVerificationLive.swift" : "9fa3ff212d16b17a098ba92734e40c781c6e3872e0a8a8122d0e06ad916acc48",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDetectorFeed\/PreparedVerification.swift" : "fe1d35fe6c94e52610d300dee76e4ae043d774a27e06d020f6c4d2ccb1b67f3d",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDiscovery\/AXErrorNames.swift" : "16ccc4ebbe5f206593f4ef2b86f2a48ff760cc3865158b02b224fff86a739004",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDiscovery\/DiscoveryLabel.swift" : "e5e66daabf9b9722f5d800379ef9d3e67f0670ee827456486db8751c2da4eaf1",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDiscovery\/DiscoveryResult.swift" : "2eca8bd80e0098986eda128e19b63d4f2320aaddd7f94df1cb8eb4f0dad3bfe9",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDiscovery\/DisplayProviding.swift" : "2e6e0245cd4bd78afedbbd65a462d3f9de660a47c5d2631c36484b496860a73f",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDiscovery\/ExtrasReading.swift" : "8667b54b1d060c1bffc25f4320e1d562c387f7bc6908c59b10b90ca2e332dd21",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDiscovery\/LiveExtrasReader.swift" : "6ca8f2d1cf4c01a98928a92abba942ed94cc4e12530b691dba5d5f6abc4169a6",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDiscovery\/MenuBarDiscoverer.swift" : "b0202b034e6f7d9941eadf24b48d1a8484600d795129542b92094c80e2a30c13",
+    "Packages\/MenuBarDiscovery\/Sources\/MenuBarDiscovery\/RunningAppsProviding.swift" : "77daeaaaf89c79fad892f1c25116d407c795cd0e5ab899404420c93fe9c501ec",
+    "Packages\/MenuBarDiscovery\/Sources\/mbdiscover\/main.swift" : "9f9547c09ae0cf2d9ac204c632fafdc5b944e3ddf63c3badcdb1e9fbfe131b82",
+    "docs\/macos-27\/probes\/visibility\/Package.swift" : "922bf839f7b1b2a958db8d0ea8349d03837ae0363c81e31e4fb5adc8504d8eee",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/BarFrame.swift" : "f5aabd8ecedded24a245ff605d8073eb778579d3618492afa1e88fd0ba90b563",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/BaselineEquivalence.swift" : "cba896ab962e765c28f8b4c8dc0a81327796460cfd93d75db626e92ae64a3e14",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/Latch.swift" : "d4f63adaeb6eaa89fa40ea85932dfa9a7758cccc2403e9661dfd5eea5f49f893",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/LatchObservationMerge.swift" : "fc6b86bab462aaa48aa73e7b6e8f26acf5abcbd26b42db191cf2ab6064b1a36f",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/PlacementGate.swift" : "b720935ec9a1df253e293878529e2062a6583794e01aa34f9a0d91da74776537",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/PlacementPlan.swift" : "8f8ed42d54b8312eb4df091688b52d87958b9a048d589cfd636d3fe730ba3c8a",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/PlacementValueScan.swift" : "637ee2ad871ad5bf34c9f467a9522f3adfd89193748d4552fe84730dd676b11f",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/PreferredPositionKey.swift" : "4d08a7cd350757a5d1036ce2d4e337278a94e576541dc97e2aed2ac0945adbc8",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/PreflightOrderCheck.swift" : "a0d0b973be26e81a7103fffeb8aeead043f321336f7c1d04762ef1f2df628171",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/RosterSnapshot.swift" : "5f37b4249cb4b24652da0289c1e5d5faf1d55db05acfd8357538aea0c1b69313",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/RunAccounting.swift" : "7de5201d5ed5e44813d29b5a104e4a3c6fdca3d1e83bf0173d8a1a22603eafdf",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/ScanPlanner.swift" : "efffda80a984e942576cb1aecf4ba6ac2eb6be9dc0b30d644a036ae7f640678a",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/SpacerCommand.swift" : "4b25a5d3416fffcb9ec8fdb9f4e98b75eda17ca8784bdc4bb0f626dc040c5fee",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Core\/UntemplatedOwnerWatch.swift" : "479bbaa83d11ba29cb04959ccbd51011f3a7c77339e18067390462c9d297f687",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Live\/C1AXExecutor.swift" : "e427f96af9d2433fa5881125ddad14d57a0caaf1791e45a5cc12a32209cbd5ed",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Live\/C1Discoverer.swift" : "a8a398ebb500a3fce3d1623fa0755069880a4284ab09d682032c0ac14ad425cc",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Live\/C1DiscoveryExecutor.swift" : "f200032072c39ec818e32a259f2a10e2cb031343dd620cfb757ac73433f35eab",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Live\/C1ExecutedAXReader.swift" : "cf86e177367fedb73876ae3fc0e00bde1e68933224c43eb069a3f1dcbd26e748",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Live\/C1ExpansionDriver.swift" : "658efcb65f23ed4fdb9433e2992c939b408bd5f4db426a52a347aa7e67ce5b4e",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Live\/C1HelperChannel.swift" : "48b01d5d97bc790f987a0d3d55ee5b57082fc0424cb6bb1175bc1b682749fc0a",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Live\/C1ReapCheck.swift" : "28de48eba73a890df869e6e09f9bbbda6d692e062b6e481025c7ebf3c7788be3",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Live\/C1StageMachine.swift" : "5d7fd79d7cdbc3ab93619cb43bffa68bda4b0b552a9ce6b08c40d78ea796c667",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Live\/LatchingCapturer.swift" : "4c09cc45c317db41c533712a6eeef4e9a0b003e40271b8d6979b6f7a21630b42",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Live\/TimedDiscoverer.swift" : "6a79b287616840ce1195707315ad191bca7b28bb72724f6d9e7b32812dfcabec",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Stage\/BaselineDiagnostics.swift" : "da3261fe55e1216902e53a46e33d5d5c3b686fa121694863d4ed33634781427e",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Stage\/C1StageEnvironment.swift" : "36161ffb8b9e85a2f68f51933cd30aa6a813ddd532389de37876ba1ab9d59384",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Stage\/StageC1.swift" : "57465191a15c968d958e08a949f17f0b3172a16eca107257eb5f988e39b412bc",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Stage\/StageC1Baseline.swift" : "26a25f512af0d89bc5aea5784721e73e1f5b1fbb6400489e003a97e7b2ce54bc",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Stage\/StageC1Cycle.swift" : "0813a89145a5ae6d50ee4d6e77247a01daf8da2547732f36dbbee8429d5ed941",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Stage\/StageC1Measure.swift" : "4495f2cfe8749c6a7dc9a53bd06a0e081a4659f931b08f251aee4a86812a963f",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Stage\/StageC1Menus.swift" : "a890569e100e538bb384ad2ddc12e2a40252bcbc35fee806646b4144577bfe99",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Stage\/StageC1Placement.swift" : "548132d98276bf276e79ff0689b6e12e8f8b313bec0cab149d68cc015bee2c17",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Stage\/StageC1Setup.swift" : "87f46322969784023b20e487e3fb57d1b9f77365770e585deca407e727868344",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C1Stage\/StageC1Teardown.swift" : "ba358098abe7ade2f2d5216dcb94eedb295c2b144c643122bbf92badb30d2ee1",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C2Core\/C2Accounting.swift" : "5c28e3d6932299bfa3de5988c50311979e7dc94b2567876ef2814a7b7f6a29c8",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C2Core\/C2Arguments.swift" : "f7894266ae1ef919f71265ee3e836019b50d07c71d72994a013861fb7b1261c7",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C2Core\/C2Band.swift" : "1c4410eabd31fb755bfaee41e5a4769357dac2044a49a2f806eeac6c843ff1f5",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C2Core\/C2Evidence.swift" : "cd6501876a8f069fa06ea28de8705f87cbf6be4757749aaee46ef91c86ad4645",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C2Core\/C2Guards.swift" : "7dbe9eced94dc7f985e349a0b85a0c59b5877e4db604fe75b1443d5cebad5b1e",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C2Core\/C2Helper.swift" : "e8190ff50fcf99356efddf72257ba50f12b67968b15fe6f1f18bbb8d3d06d75c",
+    "docs\/macos-27\/probes\/visibility\/Sources\/C2Core\/C2Sequencer.swift" : "9f27243f34bd5319d374a43f36fbf35dc36464a7b95d62e236c7df6cd32f6f5e",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarClaim\/Claim.swift" : "3a9a54bb68e290979c3a370fd37f7a29a69da6c1977072aa25c9b114ea372314",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarClaim\/ClaimParameters.swift" : "d911c13c7552048454cbcbe2890d35a7be10cc8f22f169e94ad9b0f7d7d94780",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarClaim\/ClaimRegion.swift" : "8f7659a8c5ac86cb001fd82bc739c80b0fb9b613f4188d35bb84e1a5498beaf2",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarClaim\/ContrastGate.swift" : "ec7a3c9286e5c14408cc36c455786c0946c8a56756d56103d4dee9ec23f0b834",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarClaim\/HiddenBaseline.swift" : "b9bb8c605fd485c9f9b58cf401dc8101e0ef94a5b2fddcfc4e0df299ef964cfa",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarClaim\/PixelKit.swift" : "89a8673518119f8dd780d7f4f9b1bd5c40351ac390eea7e7ed4ef70514c1afd2",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarClaim\/RegionClear.swift" : "980ed1f6c61947a93b505523fc1fc6ad964ae2c7bca43c7a0c94794120a7d000",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarCorpus\/CorpusGeometry.swift" : "25830bf9f0604ecc7511a3b4b39d0de2ec17684773ee1deb23fa510a07968cac",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarCorpus\/CorpusRecipe.swift" : "6e0a3007009e26b1deec25ac717160f146b448da5b20072df640fa2ad662e109",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarCorpus\/CorpusRenderer.swift" : "3a7c03c111ebee428b60d7696818044b41e98885d3b34e5424c1c3f3f3ddf709",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarCorpus\/CorpusRows.swift" : "9b98970210a9aa2fc79af7e5bc774d5fc98f9416e880228aac9f75f1407f2dc0",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarCorpus\/CorpusSpec.swift" : "d4108d5595b8bcd56965f8ec98dee23c98ffa07be8eb85ed75a9c251281e4874",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarCorpus\/CorpusTemplates.swift" : "54902bf9472b4d71b38310caeb662b39727d49db6a375743de2226ade20733b0",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarCorpus\/Freeze.swift" : "269a343a368b141ab1453eb53c3e2da3ba2d9a1c95b651857a56c4ea61030595",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarCorpus\/S13Rows.swift" : "2b3bad3ff8235748e328922ac7fd93d4e73f28803bf12ed679f81c52a9b61618",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarCorpus\/Support.swift" : "b1caa48ed9cf906cb2918c79319a8c0bfa5084dd578f501dffd266ffd050608b",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarOracle\/Chevron.swift" : "92b0dc43decdd782af114fa759cc582b0b6445a49b2de46cd3e6749856f09993",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarOracle\/Controls.swift" : "0efecfdeb2238df28db4a484004849faf9ca383d64549d65fe6c009dd0e62923",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarOracle\/Kernels.swift" : "b8ad973911facff9dc28e1c62e8cb46a128f9519b06897f08688f7d7179a882e",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarOracle\/Oracle.swift" : "e099da52d32bb17968a93c5b7855f60ec241a89545abd1dac178eaf753b9c8cf",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarOracle\/OracleGeometry.swift" : "b39b44698d6f0314d891d638f63148712f662272a45253db786f4946896ca547",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarOracle\/OracleTypes.swift" : "b26a10c3e8206e70931f976b2f1516b968e26c180b70dc18fed203a41ddd5f0c",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarOracle\/Searcher.swift" : "04b881d6053d313b28a1d80cc7d2207b928d2b429afa29a1667b9f34fc7e058a",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarRunCore\/AttemptJudge.swift" : "db232b47bb09bbbd5f196fd3a4d97eb2ee22496e207a219c208d4249b4f3d468",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarRunCore\/Cadence.swift" : "7707d1a1a3001169326c0dc114ed26ebeb80653bbf34d80da9877802642f742b",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarRunCore\/CycleRules.swift" : "ac01b0cda4f6a4d148e7c8e248b6d2d3e1c73917648caac43eeb8f8083fbf58a",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarRunCore\/FallbackTally.swift" : "3e0c52618b0a9d859a4c16d3974ef476aa940dcdbd2c35d406abb0f518048e39",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarRunCore\/Roster.swift" : "5e10d5cd4c7e16f51e22604fc177a5e69fd414f009502a8b7861460fe02191e4",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarRunCore\/S1Sequencer.swift" : "541b6f425127ed4c8cb403637e571601cd8d4d937fb62cd98791060cd961bca4",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarRunCore\/Sitting.swift" : "64e2a86158869a02b252c3fa26536f7f0d950e67b8e7a8fa3f5bdb8b9f0b91bd",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarRunCore\/SittingDriver.swift" : "ca1ed1c95fc053ac484e6310557913b653a5b0a3b8609b4e2a31c553f3583d0d",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarRunCore\/StageRules.swift" : "2a3933aea57ffb706e3a99b91ed3ee1db82ce71907c1fed2abc85141f23d960b",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarRunCore\/StepReport.swift" : "1e16e40872ecde769c10c70272f1839a5bd8d0c4b7cbaa4699f4d011c5dcfb5c",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarStage\/Cycle.swift" : "62339bf9d1d7c088f6f8c9f05629d080528f19aab416cf0e5e6c0e1733c00543",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarStage\/Environment.swift" : "bb74c6885b83c171e390f5540abccbd660cfcf75ccf21984cf7c689bebb11a67",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarStage\/Probe.swift" : "a3f17d8fdd7c84b044081549ca934d22c0bbb9d6b116fd553ca713249b5c7437",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarStage\/Step.swift" : "b31d5b450e8a453d0139f6ccf1cbea00163e47e19cc429e20b789e81f1f84e24",
+    "docs\/macos-27\/probes\/visibility\/Sources\/IceBarStage\/StepArguments.swift" : "62ec3e2bb3fb61975a62ec0f7935026b65cf8294cd9233c362bab3717733c4ab",
+    "docs\/macos-27\/probes\/visibility\/Sources\/VZGlyphs\/GlyphCheck.swift" : "86f3a52fc228a244ecc8a85910b00749096229d900de88add60a76fa0ddc61b7",
+    "docs\/macos-27\/probes\/visibility\/Sources\/VZGlyphs\/GlyphRenderer.swift" : "6ce3f91ffc57610a5980c3cf662a95fe9807295f443b88d91b8c52370986a77a",
+    "docs\/macos-27\/probes\/visibility\/Sources\/VZGlyphs\/Glyphs.swift" : "96e6ebaafa6fdf55f8836f619c9561d6c6085e54c2913423776e36e67386652f",
+    "docs\/macos-27\/probes\/visibility\/Sources\/icebarfreeze\/main.swift" : "6c6c0484e0c963c58c2a9ee6705774eef9ff0a5609f14cb2cc3f58d228082143",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/BarScan.swift" : "ccaa7883ad09110fd06e0e947349f37ddfbd7e467d4687e753723e8aa92c6244",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/C2Live.swift" : "786b7268fb3aefe1038f7436eb4c86b3f12921a202ef8c1f3300410e5bc60c49",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/C2Read.swift" : "86422c0abf43bf03d47cc379875f38cafb82787993497bf9dea667e76d754623",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/C2Run.swift" : "9326dfe1a50e1207d26411fd2302a25f97d7009764a6ee815d68c6526ebb0765",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/DryRun.swift" : "62cea3f6a5f6d789ef5a0c1392c07e297af85ad4e5c46728be7471cb6b483164",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/GitRevision.swift" : "0a62bf5dfa12e043205ccbb482bf526b0179667e1a0bdda00950e7869a80804b",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/GuardedStage.swift" : "36477318461e680a1761c58b33969cfbae22f3b7265200b1a3e7da4bd908f45a",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/HelperControl.swift" : "667b41b2942b791cf5408bb86f86c11640f85ff780da353cffe20c516b0dcb66",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/IceBarLive.swift" : "2603ec593a300e8481f782bc98f813bc7fa588f2f105388650d32e24e6d7f819",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/IceBarRun.swift" : "6377d6f78aad03a427ccdfe406147fb25105f4f7a8728ff0e72a44abba564ee5",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/LiveEvidence.swift" : "28d4132912900b65f5324d775fe1e261ff13edd382bd117064758d3816194b48",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/LiveRun.swift" : "e2bb4acaff7a60392b9927e47b737bab9a373d3e015a4de463b07a9907621c44",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/LiveRunStep1And2.swift" : "09d8af82ca7ad7d12e5081fa044cca78d49241aa5e4d1118b180250e706b0f65",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/LiveRunStep3And4.swift" : "afffa36fa9099c20875d112d76b1009a9434653e430214b7dee75962c8d1602b",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/LiveRunStep5.swift" : "824cb5931c243304638c7065cda1f5c4faf1d5993d639c4801afc93a9c5cd250",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/LiveRunStep6.swift" : "4b40496c19bbc3f29bc0f5fceb6b48fa7d0452a4a30411bb4c2b351f26cb9532",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/LiveRunStep7.swift" : "ea4003d7e5325dde1638f77d4f8ef551ee1d435ac623be4828721a6b111423be",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/LiveRunTypes.swift" : "3db4937935bb30c2b2e3c0ed321cef5fbf5f268fb48dd8d1ccf5d1cd56d67bb1",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/PreflightCheck.swift" : "e44a5cc174bdec6343424d26343c3daffe93bb11dc3a23de279efcfad4fc5559",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/Pump.swift" : "6f9832f2e888f4869deea1d27aa51272750c65b18c5d501e2e7301906870febe",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/RawAX.swift" : "3235b48730b3fa7ca257887f4f0d997de47392b8562b374fe9cd439c1f53ded1",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/SafetyMonitor.swift" : "2da2ce7320a998e7ab37f70d51b929ac0d774b734a34ed5c4bf13e704efd9018",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/StageC1Live.swift" : "ece6f60c31bd2c40b2d6006f304ff29afbc3fa13e731413fd176b1ff3d5df4b3",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/StageDiscover.swift" : "bbfbef8491f8fd677c846bd0443eb77b7fc155b794d91219fbea76f94583a25e",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/StageDryRun.swift" : "9c4c37e3ba067829dd9cc0b9ddf8e0b1d83708ac106e451fc6de5529e7a9f34d",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/StageRun.swift" : "20e0d5900c9576b0d842b2435c769e9719b93d2f2ef0cd470f6f4efbdb9e8359",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/StageShared.swift" : "6e57ac6e0eb1e4dbdd6d203243705e5958c743cd99fc6f40255c75f407cb5297",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/StageVerify.swift" : "d12f617824342dfdf981b77bc2d37a4730912194d089fcc6158574b5d17c1e4c",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/StripImagePNG.swift" : "ca248b4adc05f6c80faecdaf1b3794e52a3a4b829f2441a2f6dedad7ffeb5b2c",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/ThirdPartyBaseline.swift" : "5c7f8c04dbad4c2380e151157d184b7ce199a236eb355b561ab026d92f1a3ade",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vizprobe\/main.swift" : "9cbd565da50807916f118802d096a225f80d6af8673a853aadeb3e0f24686583",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vzhelper\/MenusRole.swift" : "3beb773548e81537450eb7f8f523c39403f00a6e21970812309160b9b0971c5d",
+    "docs\/macos-27\/probes\/visibility\/Sources\/vzhelper\/main.swift" : "6010dae603c93a126b83c3970011e0b415ee367e25e9a65757f336306efde3c6",
+    "docs\/macos-27\/probes\/visibility\/build.sh" : "02e7bb066fa2ec3e0f202520f4996f7b61e302bec14227ba9d38ea6ab3ea6fbe",
+    "docs\/macos-27\/probes\/visibility\/run-icebar.sh" : "17970cce6895c7fbe3974b9a97d5168bdf4cd4a6b70e8e8d17b378125c4dea40",
+    "docs\/macos-27\/probes\/visibility\/stage-icebar.sh" : "327587fbc3c4c771ee74235397322b9b844f75d06b0a5bbd39984c4622194906",
+    "docs\/plans\/checks\/check-a3a4.sh" : "4d64e6e2b9106ea50a340283c9955d3a8582ef2f19574f8ce8b504cbe122143d"
+  }
+}
