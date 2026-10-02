@@ -150,16 +150,22 @@ final class IceBarSitting {
     }
 
     func run() -> SittingResult {
+        // D5.2: an original picture that could not be restored is refused before S0.
+        guard let desktop = LiveDesktopPicture(directory: directory, log: log) else {
+            return .interrupted("no main screen, or the original desktop picture cannot be read (deviation 5 D5.2)")
+        }
+        let stop = SignalStop()
         var driver = SittingDriver()
-        let desktop = LiveDesktopPicture(directory: directory, log: log)
         while true {
             switch driver.next() {
             case .finished(let result):
                 return result
             case .setDesktopPicture(let appearance):
-                driver.desktopPictureSet(desktop?.set(appearance) ?? false)
+                let ok = desktop.set(appearance)
+                if !ok, appearance == nil { progress("icebar-run: 桌面圖未能還原，原圖：\(desktop.original.path)") }
+                driver.desktopPictureSet(ok)
             case .run(let request):
-                switch runStep(request) {
+                switch runStep(request, stop: stop) {
                 case .ended(let result): driver.end(result)
                 case .report(let report): driver.record(report)
                 }
@@ -173,19 +179,24 @@ final class IceBarSitting {
     }
 
     /// The session leaving the screen or a report that does not verify ends the sitting here.
-    private func runStep(_ request: SittingRequest) -> StepOutcome {
+    private func runStep(_ request: SittingRequest, stop: SignalStop) -> StepOutcome {
         step += 1
         guard C2RunCommand.sessionOnConsole() else { return .ended(.interrupted("this session left the screen before step \(step)")) }
+        if let number = stop.received { return .ended(.interrupted("signal \(number) before step \(step)")) }
         let stepDirectory = directory.appendingPathComponent(String(format: "%03d-%@", step, request.name.replacingOccurrences(of: " ", with: "-")))
         let arguments = StepArguments(kind: request.kind, members: request.members, menu: request.menu, appsPath: apps, evidencePath: stepDirectory.path)
         log.record(["event": "start", "step": step, "name": request.name, "arguments": arguments.arguments])
         progress(ProgressLine.start(step: step, name: request.name, clock: clock(), elapsed: elapsed()))
-        let (code, leftConsole) = C2RunCommand.runChild(arguments.arguments)
+        let (code, leftConsole) = C2RunCommand.runChild(arguments.arguments) { stop.received != nil }
         let report = Self.readReport(stepDirectory)
         let status = report?.status.rawValue ?? "unverified"
         log.record(["event": "end", "step": step, "exit": Int(code), "status": status, "reason": report?.reason ?? ""])
         progress(ProgressLine.end(step: step, name: request.name, status: status, clock: clock(), elapsed: elapsed()))
         if leftConsole { return .ended(.interrupted("this session left the screen during step \(step)")) }
+        if let number = stop.received {
+            log.record(["event": "signal", "signal": Int(number), "step": step])
+            return .ended(.interrupted("signal \(number) during step \(step)"))
+        }
         guard let report else { return .ended(.safetyStop("step \(step) left no verified report")) }
         return .report(report)
     }
@@ -200,7 +211,36 @@ final class IceBarSitting {
 
     private func clock() -> String { LiveEvidence.timestamp(Date(), format: "HH:mm:ss") }
     private func elapsed() -> Int { Int(Date().timeIntervalSince(started)) }
-    private func progress(_ line: String) { FileHandle.standardError.write(Data((line + "\n").utf8)) }
+    /// The terminal may be gone (SIGHUP): a failed write must not end the sitting before the restore.
+    private func progress(_ line: String) { try? FileHandle.standardError.write(contentsOf: Data((line + "\n").utf8)) }
+}
+
+/// SIGINT, SIGTERM or SIGHUP to `icebar-run` (D5.2): the step in progress is
+/// terminated and the sitting ends on its normal path, which restores the
+/// desktop picture. The sitting holds this for the whole run.
+final class SignalStop: @unchecked Sendable {
+    private let lock = NSLock()
+    private var first: Int32?
+    private var sources = [DispatchSourceSignal]()
+
+    init() {
+        // A closed terminal (SIGHUP) must not kill the sitting at its next write.
+        signal(SIGPIPE, SIG_IGN)
+        for number in [SIGINT, SIGTERM, SIGHUP] {
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
+            source.setEventHandler { [weak self] in self?.note(number) }
+            source.resume()
+            sources.append(source)
+        }
+    }
+
+    /// The first signal received, if any.
+    var received: Int32? { lock.withLock { first } }
+
+    private func note(_ number: Int32) {
+        lock.withLock { first = first ?? number }
+    }
 }
 
 enum IceBarDryCommand {

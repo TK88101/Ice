@@ -1,5 +1,5 @@
-// Q20: the whole sitting as one pure state machine -- S0, then S-adv (only
-// once the owner decided K2), then S1; every gate; `«` episodes merged across
+// Q20: the whole sitting as one pure state machine -- S0, then S-adv (the
+// desktop picture per appearance, deviation 5 D5.2), then S1; every gate; `«` episodes merged across
 // step processes; a safety stop or an ended step ends the sitting.
 import C2Core
 import IceBarOracle
@@ -38,7 +38,7 @@ struct SittingDriverTests {
     }
 
     static func drive(_ driver: inout SittingDriver, answer: (SittingRequest) -> StepReport = answer,
-                      pictureSet: Bool = true) -> (SittingResult, [SittingRequest], [Appearance?]) {
+                      pictureSet: (Int) -> Bool = { _ in true }) -> (SittingResult, [SittingRequest], [Appearance?]) {
         var requests = [SittingRequest]()
         var pictures = [Appearance?]()
         while true {
@@ -49,7 +49,7 @@ struct SittingDriverTests {
                 driver.record(answer(request))
             case .setDesktopPicture(let appearance):
                 pictures.append(appearance)
-                driver.desktopPictureSet(pictureSet)
+                driver.desktopPictureSet(pictureSet(pictures.count - 1))
             }
         }
     }
@@ -63,15 +63,79 @@ struct SittingDriverTests {
         #expect(pictures == [.dark, .light, .dark, nil])
     }
 
-    @Test("D5.2: a desktop picture that cannot be set ends the sitting")
+    @Test("D5.2: a desktop picture that cannot be set ends the sitting, and the original is asked for once")
     func pictureFails() {
         var driver = SittingDriver()
-        let (result, requests, _) = Self.drive(&driver, pictureSet: false)
+        let (result, requests, pictures) = Self.drive(&driver, pictureSet: { _ in false })
         #expect(result == .interrupted("the desktop picture could not be set (deviation 5 D5.2)"))
         #expect(requests.count == 1)
+        #expect(pictures == [.dark, nil])
     }
 
-    @Test("decided: S0, four variants x two sweeps, the `«` rest state, then S1 to its capacity")
+    @Test("D5.2: a failed change from one staged picture to the other still asks for the original")
+    func secondPictureFails() {
+        var driver = SittingDriver()
+        let (result, _, pictures) = Self.drive(&driver, pictureSet: { $0 != 1 })
+        #expect(result == .interrupted("the desktop picture could not be set (deviation 5 D5.2)"))
+        #expect(pictures == [.dark, .light, nil])
+    }
+
+    @Test("D5.2: a sitting the runner ends with a staged picture set restores the original before it finishes")
+    func endedWithStagedPicture() {
+        var driver = SittingDriver()
+        #expect(driver.next() == .run(SittingDriver.s0))
+        driver.record(Self.answer(SittingDriver.s0))
+        #expect(driver.next() == .setDesktopPicture(.dark))
+        driver.desktopPictureSet(true)
+        guard case .run = driver.next() else {
+            Issue.record("no S-adv step")
+            return
+        }
+        driver.end(.interrupted("signal 15"))
+        #expect(driver.next() == .setDesktopPicture(nil))
+        driver.desktopPictureSet(true)
+        #expect(driver.next() == .finished(.interrupted("signal 15")))
+    }
+
+    @Test("D5.2: a safety stop during S-adv restores the original; a failed restore keeps the result and ends")
+    func safetyStopWithStagedPicture() {
+        let stop: (SittingRequest) -> StepReport = { request in
+            if case .sAdvSweep = request.kind { var r = Self.report(.safetyStop); r.reason = "foreign item"; return r }
+            return Self.answer(request)
+        }
+        var restored = SittingDriver()
+        let (result, _, pictures) = Self.drive(&restored, answer: stop)
+        #expect(result == .safetyStop("S-adv dark-ordinary: foreign item"))
+        #expect(pictures == [.dark, nil])
+        var failing = SittingDriver()
+        let (kept, _, asked) = Self.drive(&failing, answer: stop, pictureSet: { $0 == 0 })
+        #expect(kept == .safetyStop("S-adv dark-ordinary: foreign item"))
+        #expect(asked == [.dark, nil])
+    }
+
+    @Test("D5.2: a picture change is always followed by a new step process (its own warm-up and settle) or the end")
+    func pictureThenStep() {
+        var driver = SittingDriver()
+        var afterPicture = false
+        var changes = 0
+        loop: while true {
+            switch driver.next() {
+            case .finished:
+                break loop
+            case .run(let request):
+                afterPicture = false
+                driver.record(Self.answer(request))
+            case .setDesktopPicture:
+                #expect(!afterPicture)
+                afterPicture = true
+                changes += 1
+                driver.desktopPictureSet(true)
+            }
+        }
+        #expect(changes == 4)
+    }
+
+    @Test("S0, four variants x two sweeps, the `«` rest state, then S1 to its capacity")
     func whole() {
         var driver = SittingDriver()
         let (result, requests, _) = Self.drive(&driver)

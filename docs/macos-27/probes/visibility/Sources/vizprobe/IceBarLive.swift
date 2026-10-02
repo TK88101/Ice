@@ -6,7 +6,6 @@
 // (the corpus's own, with K1's sha256 checked against the pre-registration).
 import AppKit
 import C2Core
-import CryptoKit
 import Foundation
 import IceBarCorpus
 import IceBarOracle
@@ -179,53 +178,76 @@ enum IceBarLiveWiring {
 
 /// Deviation 5 D5.2: between S-adv variants only, the desktop picture is one
 /// of two staged solid images (dark grey, light grey: inside E5's dark and
-/// light ranges), each written once into the sitting's directory and recorded
-/// with its sha256; the original picture is restored before S1. The next step
-/// process's own warm-up and settle follow every change.
+/// light ranges), each written into the sitting's directory and recorded
+/// with its sha256; the original picture is restored before S1 and whenever
+/// the sitting ends on its normal path (a signal to `icebar-run` included;
+/// SIGKILL or a crash cannot restore: the first record holds the original's
+/// path). The next step process's own warm-up and settle follow every change.
 final class LiveDesktopPicture {
-    static let levels: [IceBarRunCore.Appearance: UInt8] = [.dark: 30, .light: 225]
     static let sidePx = 64
 
     private let directory: URL
     private let log: RunnerLog
     private let screen: NSScreen
-    private let original: URL?
+    let original: URL
+    /// The original's scaling, clipping and fill colour, handed back with it.
+    private let originalOptions: [NSWorkspace.DesktopImageOptionKey: Any]
 
+    /// `nil` unless the original picture can be read now: one that could not
+    /// be restored later is refused before anything changes.
     init?(directory: URL, log: RunnerLog) {
-        guard let screen = NSScreen.main else { return nil }
+        guard let screen = NSScreen.main, let original = NSWorkspace.shared.desktopImageURL(for: screen),
+              let data = try? Data(contentsOf: original)
+        else {
+            log.record(["event": "desktopPicture.failed", "appearance": "original", "error": "no main screen, or the original picture cannot be read"])
+            return nil
+        }
         self.directory = directory
         self.log = log
         self.screen = screen
-        original = NSWorkspace.shared.desktopImageURL(for: screen)
-        log.record(["event": "desktopPicture.original", "path": original?.path ?? ""])
+        self.original = original
+        originalOptions = NSWorkspace.shared.desktopImageOptions(for: screen) ?? [:]
+        log.record(["event": "desktopPicture.original", "path": original.path, "sha256": Digest.sha256(data)])
     }
 
-    /// `nil`: the original picture.
+    /// `nil`: the original picture, set even if its bytes can no longer be read (the hash is then left out).
     func set(_ appearance: IceBarRunCore.Appearance?) -> Bool {
-        // A staged image that cannot be written never falls back to the original.
-        let target = appearance.map { staged($0) } ?? original
-        guard let image = target, let data = try? Data(contentsOf: image) else {
-            log.record(["event": "desktopPicture.failed", "appearance": appearance?.rawValue ?? "original"])
-            return false
+        let label = appearance?.rawValue ?? "original"
+        let image: URL
+        switch appearance {
+        case nil:
+            image = original
+        case let staged?:
+            // A staged image that cannot be written never falls back to the original.
+            guard let url = self.staged(staged) else {
+                log.record(["event": "desktopPicture.failed", "appearance": label, "error": "the staged image cannot be written"])
+                return false
+            }
+            image = url
         }
         do {
-            try NSWorkspace.shared.setDesktopImageURL(image, for: screen, options: [:])
+            try NSWorkspace.shared.setDesktopImageURL(image, for: screen, options: appearance == nil ? originalOptions : [:])
         } catch {
-            log.record(["event": "desktopPicture.failed", "appearance": appearance?.rawValue ?? "original", "error": "\(error)"])
+            log.record(["event": "desktopPicture.failed", "appearance": label, "error": "\(error)"])
             return false
         }
-        let sha = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        log.record(["event": "desktopPicture", "appearance": appearance?.rawValue ?? "original", "path": image.path, "sha256": sha])
+        let sha = (try? Data(contentsOf: image)).map(Digest.sha256) ?? "unreadable"
+        log.record(["event": "desktopPicture", "appearance": label, "path": image.path, "sha256": sha])
         return true
     }
 
-    /// The staged solid image for `appearance`, written once.
+    /// The staged solid image for `appearance`, written anew at each change
+    /// (whatever is at its path -- the directory is shared -- is removed first).
     private func staged(_ appearance: IceBarRunCore.Appearance) -> URL? {
-        guard let level = Self.levels[appearance] else { return nil }
+        let level: UInt8
+        switch appearance {
+        case .dark: level = 30
+        case .light: level = 225
+        case .neither: return nil
+        }
         let url = directory.appendingPathComponent("desktop-\(appearance.rawValue).png")
-        if FileManager.default.fileExists(atPath: url.path) { return url }
-        var bytes = [UInt8]()
-        for _ in 0..<(Self.sidePx * Self.sidePx) { bytes += [level, level, level, 255] }
+        try? FileManager.default.removeItem(at: url)
+        let bytes = (0..<(Self.sidePx * Self.sidePx)).flatMap { _ -> [UInt8] in [level, level, level, 255] }
         let image = StripImage(width: Self.sidePx, height: Self.sidePx, scale: 1, bytes: bytes)
         return (try? image.writePNG(to: url)) == nil ? nil : url
     }

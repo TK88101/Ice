@@ -53,6 +53,15 @@ struct OverlapGuardCallSiteTests {
         #expect(run.report.cycles.allSatisfy { !$0.controlMiss && $0.observations.allSatisfy { $0.outcome == .granted } })
     }
 
+    @Test("every step process warms up first: its first 24 captures, before any baseline (Q20; D5.2's re-warm after a picture change)",
+          arguments: [Run.cleanS0, Run.cleanSweep, Run.cleanConfirm].map(\.step))
+    func warmUpFirst(step: IceBarStep) {
+        let phases = step.recorder.entries.map(\.phase)
+        #expect(phases.prefix(24).allSatisfy { $0 == "warm-up" })
+        #expect(phases.filter { $0 == "warm-up" }.count == 24)
+        #expect(phases.dropFirst(24).contains("baseline"))
+    }
+
     @Test("a missing window or a 0.6 pt overlap in an attempt makes that attempt inconclusive",
           arguments: [Fault.windowMissing("hidden2"), .windowMissing("reference"), .windowOverlap("hidden2", "hidden3", 0.6)])
     func attempt(fault: Fault) throws {

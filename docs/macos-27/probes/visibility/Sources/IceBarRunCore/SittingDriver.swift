@@ -112,14 +112,19 @@ public struct SittingDriver: Sendable {
     }
 
     /// D5.2: whether the requested desktop picture was set. A failure ends the
-    /// sitting (a failed restore at its end keeps the result already reached).
+    /// sitting; a staged picture may then be on the desktop, so the original
+    /// is asked for once more (a failed restore at the sitting's end keeps the
+    /// result already reached).
     public mutating func desktopPictureSet(_ ok: Bool) {
         if ok {
             picture = pendingPicture
             return
         }
-        picture = nil
-        if case .done = phase { return }
+        if case .done = phase {
+            picture = nil
+            return
+        }
+        if let pendingPicture { picture = pendingPicture }
         end(.interrupted("the desktop picture could not be set (deviation 5 D5.2)"))
     }
 

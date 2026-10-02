@@ -15,7 +15,10 @@ import IceBarCorpus
 
 let packageDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 let preregistration = "docs/plans/2026-09-30-icebar-c-prereg.md"
-let preregistrationBefore = "e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3"
+/// The pre-registration corpus 3 was frozen and checked under (v3 + deviations 1-4).
+let preregistrationAtCorpus3Freeze = "e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3"
+/// The pre-registration now (+ deviation 5 and the first pre-S0 addendum): the hash before the addendum that will cite this manifest.
+let preregistrationCurrent = "a4e8b31b714b3acf2972fbfb3573f08ea41f9935ccaa25561606b6d6346fa572"
 let corpus3Run = "20260930-123540-icebar-corpus3"
 let corpus3Freeze = "f8a64fbc81dd327897d54b0187e14e6a9af0fbc6dd960406a6bfb7994271853d"
 let corpus3Check = "1844ac22b38a002ac26f4528af9a60b95a21cd3db3f483bdcc6887c1763c7c09"
@@ -121,14 +124,14 @@ func write() throws {
     guard dirty.isEmpty else { fail("uncommitted changes:\n\(dirty)") }
     var problems = [String]()
     let current = sha256(repoRoot.appendingPathComponent(preregistration))
-    if current != preregistrationBefore { problems.append("pre-registration is \(current), not \(preregistrationBefore)") }
+    if current != preregistrationCurrent { problems.append("pre-registration is \(current), not \(preregistrationCurrent)") }
 
     let corpusDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("IceReverse-evidence/\(corpus3Run)")
     let freezeURL = corpusDir.appendingPathComponent("freeze.json")
     if sha256(freezeURL) != corpus3Freeze { problems.append("corpus 3 freeze.json changed") }
     if sha256(corpusDir.appendingPathComponent("check.json")) != corpus3Check { problems.append("corpus 3 check.json changed") }
     let freeze = try JSONDecoder().decode(FreezeManifest.self, from: Data(contentsOf: freezeURL))
-    if freeze.preregistrationSHA256 != preregistrationBefore { problems.append("corpus 3 was frozen under \(freeze.preregistrationSHA256)") }
+    if freeze.preregistrationSHA256 != preregistrationAtCorpus3Freeze { problems.append("corpus 3 was frozen under \(freeze.preregistrationSHA256)") }
 
     var pngs = [String: String]()
     for record in freeze.items {
@@ -162,7 +165,7 @@ func write() throws {
     guard problems.isEmpty else { fail("not frozen:\n" + problems.prefix(40).joined(separator: "\n")) }
 
     let manifest = PreS0Manifest(
-        gitRevision: git(["rev-parse", "HEAD"]), preregistrationSHA256Before: preregistrationBefore, sources: sources,
+        gitRevision: git(["rev-parse", "HEAD"]), preregistrationSHA256Before: preregistrationCurrent, sources: sources,
         renderings: built.renderings, chevronAlphaSHA256: built.chevronTemplate.alphaSHA256,
         corpus3: .init(run: corpus3Run, freezeSHA256: corpus3Freeze, checkSHA256: corpus3Check, preregistrationAtFreeze: freeze.preregistrationSHA256,
                        items: freeze.items.count, pngsVerified: verified, pngs: pngs, sourcesMatchFreeze: sourcesMatch,

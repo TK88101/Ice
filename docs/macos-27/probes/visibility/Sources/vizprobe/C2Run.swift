@@ -119,16 +119,24 @@ enum C2RunCommand {
     /// Runs one `c2-config`; if this session leaves the screen meanwhile, the
     /// child gets SIGTERM, which `GuardedStage` turns into its terminal
     /// safety teardown (helpers quit and reaped, verdict recorded).
-    static func runChild(_ arguments: [String]) -> (code: Int32, leftConsole: Bool) {
+    /// `stop`: polled with the console; once true the child gets SIGTERM too.
+    static func runChild(_ arguments: [String], stop: () -> Bool = { false }) -> (code: Int32, leftConsole: Bool) {
         let child = Process()
         child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
         child.arguments = arguments
         do { try child.run() } catch { return (-1, false) }
         var leftConsole = false
+        var terminated = false
         while child.isRunning {
             sleep(consolePollSeconds)
-            if !leftConsole, child.isRunning, !sessionOnConsole() {
-                leftConsole = true
+            guard child.isRunning else { continue }
+            if !terminated {
+                leftConsole = !sessionOnConsole()
+                terminated = leftConsole || stop()
+                if terminated { child.terminate() }
+            } else if !leftConsole {
+                // `stop`'s caller ignores the signals itself, and a child inherits that until its
+                // own handlers are installed: SIGTERM is sent again at every poll until it is reaped.
                 child.terminate()
             }
         }
