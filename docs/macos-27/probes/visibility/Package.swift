@@ -103,6 +103,15 @@ let package = Package(
             name: "IceBarClaimTests",
             dependencies: ["IceBarClaim", "IceBarOracle", "IceBarCorpus", .product(name: "IceCore", package: "IceCore")]
         ),
+        // Route C part 3 (docs/plans/2026-10-03-icebar-c-runner.md): cadence,
+        // attempts, fallback accounting and the sitting's sequencing -- every
+        // decision of the runner, pure. Standard library plus IceCore, the
+        // oracle, the claim and C2Core's band/retry rules.
+        .target(name: "IceBarRunCore", dependencies: ["IceBarOracle", "IceBarClaim", "C2Core", .product(name: "IceCore", package: "IceCore")]),
+        .testTarget(
+            name: "IceBarRunCoreTests",
+            dependencies: ["IceBarRunCore", "IceBarOracle", "IceBarClaim", "C2Core", .product(name: "IceCore", package: "IceCore")]
+        ),
         // `vzcorpus freeze` / `vzcorpus check` (instrument plan section 4).
         .executableTarget(name: "vzcorpus", dependencies: ["IceBarCorpus", "IceBarOracle"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
