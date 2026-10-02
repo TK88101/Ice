@@ -133,11 +133,11 @@ final class FakeWorld {
         return MenuBarAXSnapshot(itemFrames: frames, agentFrames: agents)
     }
 
-    func windows() -> [WindowEntry] {
+    func windows(owners: Set<Int32>) -> [WindowEntry] {
         let fault = faults[captures - 1]
         let layout = layout()
         var entries = [WindowEntry]()
-        for item in items where item.role != "spacer" {
+        for item in items where item.role != "spacer" && owners.contains(item.pid) {
             if fault == .windowMissing(item.id) { continue }
             // A pushed-off item keeps its own (off-region) position, distinct from the others'.
             var x = layout[item.id] ?? -500
@@ -207,7 +207,7 @@ struct FakeReader: MenuBarAXReading, @unchecked Sendable {
 
 struct FakeSeams: IceBarWindowListing, IceBarHelperLaunching, IceBarClock, IceBarMenus {
     let world: FakeWorld
-    func windows() -> [WindowEntry] { world.windows() }
+    func windows(owners: Set<Int32>) -> [WindowEntry] { world.windows(owners: owners) }
     func launch(app: String, bundleID: String, arguments: [String]) -> IceBarHelper? { world.launch(arguments: arguments) }
     func now() -> Double { world.now }
     func sleep(until time: Double) { world.sleep(until: time) }
@@ -235,7 +235,7 @@ enum Fake {
                                  barOwners: { world.owners }, forgetDomain: { _ in true }, domainKeys: { _ in [] })
     }
 
-    static func plan(_ kind: StepKind, members: Int = 2, coloured: Bool = false) -> StepPlan {
-        StepPlan(kind: kind, members: members, menu: .short, colouredMembers: coloured, glyphOrder: StageFixtures.glyphOrder, helperLifetimeSeconds: 900)
+    static func plan(_ kind: StepKind, members: Int = 2) -> StepPlan {
+        StepPlan(kind: kind, members: members, menu: .short, glyphOrder: StageFixtures.glyphOrder, helperLifetimeSeconds: 900)
     }
 }

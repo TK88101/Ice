@@ -9,7 +9,6 @@ import IceBarRunCore
 import IceCore
 
 public final class IceBarStep {
-    public static let bundles = ["com.icespike4.target", "com.icespike4.protected"]
     public static let s0LengthPt = 728.0
     /// S-adv's `«` rest state: at most this long collecting episodes (Q17).
     public static let chevronTimeBoxSeconds = 1200.0
@@ -33,13 +32,6 @@ public final class IceBarStep {
         probe = Probe(environment: environment, templates: templates)
     }
 
-    var s1Rules: Bool {
-        switch plan.kind {
-        case .s1Bracket, .s1Confirm: true
-        default: false
-        }
-    }
-
     /// The bounds recorder every capture of this step went through (tests read it).
     public var recorder: BoundsRecordingCapturer { probe.recorder }
     public var judgedCaptures: Int { probe.judgedCaptures }
@@ -50,7 +42,7 @@ public final class IceBarStep {
         }
         let roster: [RosterEntry]
         do {
-            roster = try Roster.entries(glyphOrder: plan.glyphOrder, members: Roster.maxMembers, colouredMembers: plan.colouredMembers)
+            roster = try Roster.entries(glyphOrder: plan.glyphOrder, members: Roster.maxMembers, colouredMembers: plan.kind.colouredMembers)
         } catch {
             return StepReport(status: .inconclusive, reason: "roster: \(error)")
         }
@@ -72,10 +64,8 @@ public final class IceBarStep {
 
     /// Q11, Q21: guards, Menus, the visible helpers, the spacer, the members; the gate; warm-up.
     private func launch(_ roster: [RosterEntry]) -> StepReport? {
-        if let foreign = environment.barOwners().first(where: { !$0.bundleID.hasPrefix("com.apple.") }) {
-            return StepReport(status: .safetyStop, reason: "the bar has a non-system item before launch: \(foreign.bundleID)")
-        }
-        for bundle in Self.bundles where !environment.forgetDomain(bundle) || environment.domainKeys(bundle) != [] {
+        if let report = rosterGuard() { return report }
+        if let bundle = dirtyDomains().first {
             return StepReport(status: .inconclusive, reason: "helper domain \(bundle) not empty before launch")
         }
         if let problem = environment.menus.launchAndCalibrate(plan.menu) {
@@ -85,7 +75,7 @@ public final class IceBarStep {
         for entry in roster where entry.role == .visible {
             guard launchGlyph(entry) else { return StepReport(status: .inconclusive, reason: "\(entry.id) did not come up") }
         }
-        guard let spacerHelper = environment.launcher.launch(app: "Protected.app", bundleID: Self.bundles[1],
+        guard let spacerHelper = environment.launcher.launch(app: Roster.spacerApp, bundleID: Roster.otherBundleID,
                                                              arguments: Roster.spacerArguments(lifetimeSeconds: plan.helperLifetimeSeconds)),
               spacerHelper.awaitUp(timeout: Self.launchTimeoutSeconds)
         else { return StepReport(status: .inconclusive, reason: "the spacer did not come up") }
@@ -130,7 +120,7 @@ public final class IceBarStep {
     private func discovered(_ id: String) -> Bool {
         let deadline = environment.clock.now() + Self.discoverySeconds
         while environment.clock.now() <= deadline {
-            if environment.axReader.read(items: probe.pids)?.itemFrames[id] != nil { return true }
+            if let pid = probe.pids[id], environment.axReader.read(items: [id: pid])?.itemFrames[id] != nil { return true }
             environment.clock.sleep(until: environment.clock.now() + 0.25)
         }
         return false
@@ -139,7 +129,7 @@ public final class IceBarStep {
     /// Q21: only system items and this step's own helpers.
     private func rosterGuard() -> StepReport? {
         let ours = Set(launched.map(\.helper.pid))
-        if let foreign = environment.barOwners().first(where: { !$0.bundleID.hasPrefix("com.apple.") && !ours.contains($0.pid) }) {
+        if let foreign = environment.barOwners().first(where: { !C2Guards.rosterAllowed(bundleIDs: [$0.bundleID]) && !ours.contains($0.pid) }) {
             return StepReport(status: .safetyStop, reason: "an unexpected item on the bar: \(foreign.bundleID)")
         }
         return nil
@@ -152,15 +142,18 @@ public final class IceBarStep {
         if menusLaunched { environment.menus.quit() }
         var problems = [String]()
         if let alive = launched.first(where: { $0.helper.isRunning }) { problems.append("\(alive.id) still running") }
-        for bundle in Self.bundles where !environment.forgetDomain(bundle) || environment.domainKeys(bundle) != [] {
-            problems.append("helper domain \(bundle) not empty")
-        }
+        problems += dirtyDomains().map { "helper domain \($0) not empty" }
         let ours = Set(launched.map(\.helper.pid))
-        if environment.barOwners().contains(where: { ours.contains($0.pid) || Self.bundles.contains($0.bundleID) }) {
+        if environment.barOwners().contains(where: { ours.contains($0.pid) || Roster.bundleIDs.contains($0.bundleID) }) {
             problems.append("a helper is still on the bar")
         }
         environment.evidence.record("teardown", ["problems": problems])
         return problems.isEmpty ? nil : problems.joined(separator: "; ")
+    }
+
+    /// Every helper bundle's domain forgotten; those that are still not empty (or unreadable).
+    private func dirtyDomains() -> [String] {
+        Roster.bundleIDs.filter { !environment.forgetDomain($0) || environment.domainKeys($0) != [] }
     }
 
     // MARK: - Bodies
@@ -175,9 +168,7 @@ public final class IceBarStep {
         }
     }
 
-    private var observations: [ReportB] {
-        probe.episodes.all.map { ReportB(episode: $0.episode, axChevron: $0.axChevron, pixels: $0.pixels) }
-    }
+    private var observations: [ReportB] { probe.episodes.all.map(ReportB.init) }
 
     private func aborted(_ why: String, keeping report: StepReport = StepReport(status: .inconclusive)) -> StepReport {
         var report = report
@@ -221,7 +212,7 @@ public final class IceBarStep {
                     report.reason = "NO-GO at \(length) pt"
                     return report
                 }
-                readings.append(run.controlsPassed ? (run.inBand ? .hiddenNoFold : .stillDrawn) : nil)
+                readings.append(CycleRules.bandReading(controlsPassed: run.controlsPassed, outcomes: run.record.observations.map(\.outcome)))
             }
             report.points.append(ReportPoint(length: length, reading: "\(C2Retry.settleReading(readings) ?? .notShown)"))
         }
@@ -251,46 +242,25 @@ public final class IceBarStep {
         var holds = [BarState]()
         while let length = sweep.nextLength() {
             setLength(length)
-            guard let baseline = takeBaseline(),
-                  let raw = observe(baseline, firstStart: max(environment.clock.now(), lastChange + cadence.settle))
-            else { return aborted("an S-adv step at \(length) pt could not complete") }
-            holds.append(baseline.holdState)
-            let baselineJudged = judgeBaseline(baseline)
-            let observation = judgeObservation(raw, baseline: baseline)
-            sweep.record(stepResult(baseline, baselineJudged, observation, variant: variant, length: length, phase: sweep.phase))
+            guard let measurement = measure(observations: 1) else { return aborted("an S-adv step at \(length) pt could not complete") }
+            let judged = judge(measurement)
+            holds.append(judged.holdState)
+            let result = CycleRules.sAdvStep(noGo: judged.observations.contains { $0.record.outcome == .noGo },
+                                             appearanceMatches: judged.holdState.appearance == variant.appearance,
+                                             anyInconclusive: judged.all.contains { $0.verdict.inconclusive },
+                                             seesMember: judged.all.contains { $0.verdict.seesMember })
+            environment.evidence.record("sAdv.step", ["length": length, "phase": "\(sweep.phase)", "result": "\(result)"])
+            sweep.record(result)
         }
         rest()
         let restoreControl = control("restore control")
-        let controlsHeld = restControl.passed && restoreControl?.passed == true
-            && holds.allSatisfy { $0 == restControl.judged.state && $0 == restoreControl?.judged.state }
-        var report = StepReport(status: .completed)
-        switch sweep.status {
-        case .noGo:
-            report.status = .noGo
-            report.sweep = .noGo
-        case .done where controlsHeld:
-            report.sweep = .pass
-        default:
-            report.sweep = .inconclusive
-            report.reason = "sweep: \(sweep.status), controls held: \(controlsHeld)"
-        }
+        let controlsHeld = CycleRules.controlsHeld(rest: (restControl.passed, restControl.judged.state),
+                                                   restore: restoreControl.map { ($0.passed, $0.judged.state) }, holds: holds)
+        var report = StepReport(status: sweep.status == .noGo ? .noGo : .completed)
+        report.sweep = CycleRules.sweepResult(sweep.status, controlsHeld: controlsHeld)
+        if report.sweep == .inconclusive { report.reason = "sweep: \(sweep.status), controls held: \(controlsHeld)" }
         report.chevronObservations = observations
         return report
-    }
-
-    private func stepResult(_ baseline: BaselineRun, _ baselineJudged: [Judged], _ observation: ObservationRun, variant: SAdvVariant,
-                            length: Double, phase: SAdvSweep.Phase) -> SAdvStepResult {
-        let judged = baselineJudged + observation.judged
-        let result: SAdvStepResult
-        if observation.record.outcome == .noGo {
-            result = .noGo
-        } else if baseline.holdState.appearance.rawValue != variant.appearance.rawValue || judged.contains(where: { $0.verdict.inconclusive }) {
-            result = .inconclusive
-        } else {
-            result = judged.contains { $0.verdict.seesMember } ? .membersSeen : .membersGone
-        }
-        environment.evidence.record("sAdv.step", ["length": length, "phase": "\(phase)", "result": "\(result)"])
-        return result
     }
 
     /// Q17: members added at rest until `«` (a) shows, then episodes until `BControl` decides or the time box ends.
@@ -304,16 +274,9 @@ public final class IceBarStep {
             last = entry
             shows = ChevronRule.fromAX(reads: [read.judged.taken.timed.sample.agentFrames], barHeightPt: environment.geometry.heightPt)
         }
-        var noGo = false
         while shows, let entry = last, environment.clock.now() - started < Self.chevronTimeBoxSeconds {
-            guard let baseline = takeBaseline(),
-                  let raw = observe(baseline, firstStart: max(environment.clock.now(), lastChange + cadence.settle))
-            else { return aborted("a `«` episode could not complete") }
-            _ = judgeBaseline(baseline)
-            if judgeObservation(raw, baseline: baseline).record.outcome == .noGo {
-                noGo = true
-                break
-            }
+            guard let measurement = measure(observations: 1) else { return aborted("a `«` episode could not complete") }
+            if judge(measurement).observations.contains(where: { $0.record.outcome == .noGo }) { return chevronReport(noGo: true, shown: true) }
             switch BControl.evaluate(probe.episodes.all) {
             case .insufficientCaptures, .insufficientEpisodes: break
             case .valid, .mismatch: return chevronReport(noGo: false, shown: true)
@@ -323,7 +286,7 @@ public final class IceBarStep {
                 return aborted("a `«` episode could not be repeated")
             }
         }
-        return chevronReport(noGo: noGo, shown: shows)
+        return chevronReport(noGo: false, shown: shows)
     }
 
     private func chevronReport(noGo: Bool, shown: Bool) -> StepReport {

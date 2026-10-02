@@ -38,7 +38,7 @@ public enum S1Step: Equatable, Sendable {
 
 public enum S1StepResult: Equatable, Sendable {
     /// Settled readings (the step retries an inconclusive cycle itself, `C2Retry`).
-    case bracket(points: [C2Point], completed: Bool, noGo: Bool)
+    case bracket(points: [C2Point], completed: Bool)
     case confirm(cycles: [CycleRecord], completed: Bool)
     /// The step judged a NO-GO outside its cycles' records (a control or baseline capture).
     case noGo(String)
@@ -48,7 +48,7 @@ public enum S1StepResult: Equatable, Sendable {
 public struct S1Sequencer: Equatable, Sendable {
     public static let doubling = [1, 2, 4, 8, 12, 16]
     public static let menus = [C2MenuWidth.short, .mid]
-    public static let maxLengthsPerStep = 14
+    public static let maxLengthsPerStep = C2PendingList.maxPerProcess
     public static let minCapacity = 4
     /// k = 3 gates S2-S5 and is skipped by the doubling.
     public static let confirmedAfter = 3
@@ -67,18 +67,16 @@ public struct S1Sequencer: Equatable, Sendable {
     private var menuIndex = 0
     private var phase = Phase.bracket
     private var points = [C2Point]()
-    private var pending = C2BracketSequencer.coarse
-    private var shortBatches = 0
+    private var pending = C2PendingList(C2BracketSequencer.coarse)
 
     public init() {}
 
     private var profile: S1Profile { S1Profile(k: k, menu: Self.menus[menuIndex]) }
-    private var batch: [Double] { Array(pending.prefix(Self.maxLengthsPerStep)) }
 
     public func next() -> S1Step {
         if let verdict { return .finished(verdict) }
         switch phase {
-        case .bracket: return .run(profile, purpose: .bracket, lengths: batch)
+        case .bracket: return .run(profile, purpose: .bracket, lengths: pending.batch)
         case .confirm(let length, _, let replicate): return .run(profile, purpose: .confirm(replicate: replicate), lengths: [length])
         }
     }
@@ -90,12 +88,8 @@ public struct S1Sequencer: Equatable, Sendable {
             verdict = .safetyStop(why)
         case (.noGo(let why), _):
             verdict = .noGo("\(profile.id): \(why)")
-        case (.bracket(let measured, let completed, let noGo), .bracket):
-            if noGo {
-                verdict = .noGo("\(profile.id) during the band scan")
-            } else {
-                absorb(measured, completed: completed)
-            }
+        case (.bracket(let measured, let completed), .bracket):
+            absorb(measured, completed: completed)
         case (.confirm(let cycles, let completed), .confirm(let length, let inconclusive, let replicate)):
             settle(FallbackTally.tally(cycles).verdict, completed: completed, length: length, inconclusive: inconclusive, replicate: replicate)
         default:
@@ -106,19 +100,13 @@ public struct S1Sequencer: Equatable, Sendable {
 
     // MARK: - One profile
 
+    /// As C2's sitting A: a short batch is re-run without its measured lengths, three short batches end the list.
     private mutating func absorb(_ measured: [C2Point], completed: Bool) {
-        let given = batch.count
-        var counted = 0
-        for point in measured {
-            guard let index = pending.firstIndex(of: point.length) else { continue }
-            pending.remove(at: index)
-            points.append(point)
-            counted += 1
-        }
-        if !completed || counted < given { shortBatches += 1 }
-        if pending.isEmpty {
+        let given = Set(pending.batch)
+        points += measured.filter { given.contains($0.length) }
+        if pending.absorb(measured, completed: completed) {
             advance()
-        } else if shortBatches >= C2Retry.maxAttempts {
+        } else if pending.exhausted {
             profileEnded(passed: false)
         }
     }
@@ -126,8 +114,7 @@ public struct S1Sequencer: Equatable, Sendable {
     private mutating func advance() {
         let more = C2Band.nextExpansion(points) ?? C2Band.refinementPoints(points)
         if !more.isEmpty {
-            pending = more
-            shortBatches = 0
+            pending = C2PendingList(more)
         } else if let band = C2Band.band(points) {
             phase = .confirm(length: ((band.lo + band.hi) / 2).rounded(), inconclusive: 0, replicate: false)
         } else if k == Self.doubling[0] {
@@ -170,8 +157,7 @@ public struct S1Sequencer: Equatable, Sendable {
     private mutating func startProfile() {
         phase = .bracket
         points = []
-        pending = C2BracketSequencer.coarse
-        shortBatches = 0
+        pending = C2PendingList(C2BracketSequencer.coarse)
     }
 
     // MARK: - The capacity search

@@ -49,21 +49,21 @@ public enum C2Step: Equatable, Sendable {
 /// review of the instrument, round 1), re-run without its already-measured
 /// lengths when a process falls short; `C2Retry.maxAttempts` short
 /// processes per list, and a process that measured its whole batch never
-/// counts as one.
-struct C2PendingList: Equatable, Sendable {
-    static let maxPerProcess = 14
+/// counts as one. Public: route C's S1 batches its band scans the same way.
+public struct C2PendingList: Equatable, Sendable {
+    public static let maxPerProcess = 14
 
-    var lengths: [Double]
-    var failures = 0
+    public private(set) var lengths: [Double]
+    public private(set) var failures = 0
 
-    init(_ lengths: [Double]) {
+    public init(_ lengths: [Double]) {
         self.lengths = lengths
     }
 
-    var batch: [Double] { Array(lengths.prefix(Self.maxPerProcess)) }
+    public var batch: [Double] { Array(lengths.prefix(Self.maxPerProcess)) }
 
     /// Removes what `points` measured; `true` when nothing is left.
-    mutating func absorb(_ points: [C2Point], completed: Bool) -> Bool {
+    public mutating func absorb(_ points: [C2Point], completed: Bool) -> Bool {
         let given = batch.count
         var remaining = lengths
         var measured = 0
@@ -77,7 +77,7 @@ struct C2PendingList: Equatable, Sendable {
         return lengths.isEmpty
     }
 
-    var exhausted: Bool { failures >= C2Retry.maxAttempts }
+    public var exhausted: Bool { failures >= C2Retry.maxAttempts }
 }
 
 /// Sitting A: bracket every configuration (coarse, expansion, refinement).

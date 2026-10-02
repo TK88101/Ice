@@ -111,26 +111,27 @@ public enum S0Judge {
     }
 }
 
-/// E5: the bar's appearance variant by its median luma outside the notch --
-/// the frozen `Ink.calibrated` measure (every second column and row, luma
-/// (r + g + b) / 3, the upper median), re-implemented because it is private
-/// there (as parts 1 and 2 re-implemented the frozen distance, D9).
+/// E5: the bar's appearance variant by its median luma outside the notch,
+/// read through the frozen `Ink.calibrated` (white ink on a dark bar, black on a
+/// light one, nothing in the decision band when no glyph frame is given).
 public enum Appearance: String, Codable, Equatable, Sendable {
     case dark, light, neither
 
-    public static func of(_ image: StripImage, notch: PtSpan?, parameters: DetectorParameters = .preRegistered) -> Appearance {
-        let notchColumns = notch.map { OracleGeometry.notchColumns($0, scale: image.scale) } ?? 0..<0
-        var lumas = [Int]()
-        for y in stride(from: 0, to: image.height, by: 2) {
-            for x in stride(from: 0, to: image.width, by: 2) where !notchColumns.contains(x) {
-                let p = image.pixel(x: x, y: y)
-                lumas.append((Int(p.r) + Int(p.g) + Int(p.b)) / 3)
-            }
+    public static func of(_ image: StripImage, geometry: BarGeometry, parameters: DetectorParameters = .preRegistered) -> Appearance {
+        switch Ink.calibrated(from: image, geometry: geometry, glyphFrames: [], parameters: parameters) {
+        case Ink(colours: [parameters.whiteInk])?: .dark
+        case Ink(colours: [parameters.blackInk])?: .light
+        default: .neither
         }
-        guard !lumas.isEmpty else { return .neither }
-        let median = lumas.sorted()[lumas.count / 2]
-        if median < parameters.inkDecisionBand.lowerBound { return .dark }
-        return median > parameters.inkDecisionBand.upperBound ? .light : .neither
+    }
+}
+
+/// Section 2's on-bar rule (`minY` in [0, bar height)), one copy for the runner.
+public enum OnBar {
+    public static func contains(minY: Double, heightPt: Double) -> Bool { minY >= 0 && minY < heightPt }
+
+    public static func frames(_ frames: [AgentFrame], heightPt: Double) -> [AgentFrame] {
+        frames.filter { contains(minY: $0.minY, heightPt: heightPt) }
     }
 }
 
@@ -146,7 +147,7 @@ public struct BarState: Codable, Equatable, Sendable {
 
     /// Any on-bar `MenuBarAgent` frame of the frozen pill width.
     public static func indicator(_ frames: [AgentFrame], barHeightPt: Double, parameters: DetectorParameters = .preRegistered) -> Bool {
-        frames.contains { $0.minY >= 0 && $0.minY < barHeightPt && FoldWitness.isPill($0, parameters: parameters) }
+        OnBar.frames(frames, heightPt: barHeightPt).contains { FoldWitness.isPill($0, parameters: parameters) }
     }
 }
 

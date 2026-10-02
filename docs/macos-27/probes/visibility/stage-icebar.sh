@@ -27,6 +27,12 @@ k1sha=a3bcce60c95dc037ca2085cb6acc6f51539d749d69d2c3871d707639a36739e6
 
 shared=/Users/Shared/IceReverse-icebar
 mkdir -p $shared/evidence $shared/k
+# /Users/Shared is world-writable: everything below is done as the owner, so
+# refuse a staging directory (or a child of it) that is a symlink or that the
+# owner does not own (another account could have created it first).
+for dir in $shared $shared/k $shared/evidence ${shared}/apps(N); do
+    [[ ! -L $dir && -O $dir ]] || { echo "stage-icebar: $dir is a symlink or not owned by $owner" >&2; exit 1; }
+done
 chmod 0777 $shared/evidence
 # Replace only the previous staged copy of the tools, never evidence.
 [[ -d $shared/apps ]] && /bin/rm -r $shared/apps
@@ -36,7 +42,8 @@ chmod 0644 $shared/k/*
 cp "$here/run-icebar.sh" $shared/run-icebar.sh
 chmod 0755 $shared/run-icebar.sh
 
-geometry=$("$shared/apps/vizprobe" c2-geometry)
+# The owner's own build, never the shared copy the isolated account can write to.
+geometry=$("$scratch/apps/vizprobe" c2-geometry)
 cat > $shared/icebar.env <<ENV
 EXPECT_USER=$isolated
 OWNER_USER=$owner

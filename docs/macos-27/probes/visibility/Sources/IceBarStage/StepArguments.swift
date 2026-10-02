@@ -23,17 +23,11 @@ public struct StepArguments: Equatable {
         self.evidencePath = evidencePath
     }
 
-    public var colouredMembers: Bool {
-        if case .sAdvSweep(let variant) = kind { return variant.colouredMembers }
-        return false
-    }
-
     /// S0 is five to fifteen cycles; every other step is sized to finish well inside the helpers' lifetime.
     public var watchdogMinutes: Double { kind == .s0 ? 20 : 28 }
 
     public func plan(glyphOrder: [String]) -> StepPlan {
-        StepPlan(kind: kind, members: members, menu: menu, colouredMembers: colouredMembers, glyphOrder: glyphOrder,
-                 helperLifetimeSeconds: Self.helperLifetimeSeconds)
+        StepPlan(kind: kind, members: members, menu: menu, glyphOrder: glyphOrder, helperLifetimeSeconds: Self.helperLifetimeSeconds)
     }
 
     public var arguments: [String] {
@@ -63,42 +57,35 @@ public struct StepArguments: Equatable {
     }
 
     public static func parse(_ arguments: [String]) -> Result<StepArguments, ParseError> {
-        func value(_ name: String) -> String? {
-            guard let i = arguments.firstIndex(of: name), i + 1 < arguments.count else { return nil }
+        Result { try parsed(arguments) }.mapError { $0 as? ParseError ?? .invalid("\($0)") }
+    }
+
+    private static func parsed(_ arguments: [String]) throws(ParseError) -> StepArguments {
+        func value(_ name: String) throws(ParseError) -> String {
+            guard let i = arguments.firstIndex(of: name), i + 1 < arguments.count else { throw .missing(name) }
             return arguments[i + 1]
         }
-        func require(_ name: String) -> Result<String, ParseError> {
-            value(name).map(Result.success) ?? .failure(.missing(name))
+        func variant() throws(ParseError) -> SAdvVariant {
+            let name = try value("--variant")
+            guard let variant = SAdvVariant.all.first(where: { $0.name == name }) else { throw .invalid("--variant") }
+            return variant
         }
-        func variant() -> Result<SAdvVariant, ParseError> {
-            require("--variant").flatMap { name in SAdvVariant.all.first { $0.name == name }.map(Result.success) ?? .failure(.invalid("--variant")) }
+        let kind: StepKind
+        switch try value("--kind") {
+        case "s0": kind = .s0
+        case "sadv-sweep": kind = .sAdvSweep(try variant())
+        case "sadv-chevron": kind = .sAdvChevron(try variant())
+        case "s1-bracket":
+            let lengths = try value("--lengths").split(separator: ",").map { Double($0) }
+            guard !lengths.isEmpty, lengths.allSatisfy({ $0 != nil }) else { throw .invalid("--lengths") }
+            kind = .s1Bracket(lengths.compactMap { $0 })
+        case "s1-confirm":
+            guard let length = Double(try value("--length")) else { throw .invalid("--length") }
+            kind = .s1Confirm(length)
+        default: throw .invalid("--kind")
         }
-        let kind: Result<StepKind, ParseError> = require("--kind").flatMap { name in
-            switch name {
-            case "s0": return .success(.s0)
-            case "sadv-sweep": return variant().map(StepKind.sAdvSweep)
-            case "sadv-chevron": return variant().map(StepKind.sAdvChevron)
-            case "s1-bracket":
-                return require("--lengths").flatMap { list in
-                    let lengths = list.split(separator: ",").map { Double($0) }
-                    guard !lengths.isEmpty, lengths.allSatisfy({ $0 != nil }) else { return .failure(.invalid("--lengths")) }
-                    return .success(.s1Bracket(lengths.compactMap { $0 }))
-                }
-            case "s1-confirm":
-                return require("--length").flatMap { Double($0).map { .success(.s1Confirm($0)) } ?? .failure(.invalid("--length")) }
-            default: return .failure(.invalid("--kind"))
-            }
-        }
-        return kind.flatMap { kind in
-            require("--members").flatMap { m in
-                guard let members = Int(m), (1...Roster.maxMembers).contains(members) else { return .failure(.invalid("--members")) }
-                return require("--menu").flatMap { w in
-                    guard let menu = C2MenuWidth(rawValue: w) else { return .failure(.invalid("--menu")) }
-                    return require("--apps").flatMap { apps in
-                        require("--evidence").map { StepArguments(kind: kind, members: members, menu: menu, appsPath: apps, evidencePath: $0) }
-                    }
-                }
-            }
-        }
+        guard let members = Int(try value("--members")), (1...Roster.maxMembers).contains(members) else { throw .invalid("--members") }
+        guard let menu = C2MenuWidth(rawValue: try value("--menu")) else { throw .invalid("--menu") }
+        return StepArguments(kind: kind, members: members, menu: menu, appsPath: try value("--apps"), evidencePath: try value("--evidence"))
     }
 }

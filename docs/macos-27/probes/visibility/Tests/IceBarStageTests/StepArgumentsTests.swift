@@ -21,8 +21,9 @@ struct StepArgumentsTests {
 
     @Test("the coloured members of a coloured S-adv variant only")
     func coloured() {
-        #expect(StepArguments(kind: .sAdvSweep(SAdvVariant(appearance: .dark, colouredMembers: true)), members: 4, menu: .short, appsPath: "/a", evidencePath: "/e").colouredMembers)
-        #expect(!StepArguments(kind: .s1Confirm(650), members: 4, menu: .short, appsPath: "/a", evidencePath: "/e").colouredMembers)
+        #expect(StepKind.sAdvSweep(SAdvVariant(appearance: .dark, colouredMembers: true)).colouredMembers)
+        #expect(!StepKind.sAdvChevron(SAdvVariant(appearance: .dark, colouredMembers: true)).colouredMembers)
+        #expect(!StepKind.s1Confirm(650).colouredMembers)
     }
 
     @Test("a malformed list is refused", arguments: [

@@ -31,8 +31,14 @@ public enum Roster {
     public static let visibleGlyphs = ["reference", "alt", "target"]
     public static let glyphCount = 19
     public static let maxMembers = 16
-    static let memberBundle = (id: "com.icespike4.target", app: "Target.app")
-    static let otherBundle = (id: "com.icespike4.protected", app: "Protected.app")
+    /// build.sh's bundles: members under the target's id, everything else under the protected id (no new id).
+    public static let memberBundleID = "com.icespike4.target"
+    public static let otherBundleID = "com.icespike4.protected"
+    public static let bundleIDs = [memberBundleID, otherBundleID]
+    public static let memberApp = "Target.app"
+    public static let otherApp = "Protected.app"
+    public static let spacerApp = otherApp
+    public static let menusApp = "Menus.app"
 
     /// `glyphOrder`: `Glyph.allCases` names; members are the first `members` non-visible ones.
     public static func entries(glyphOrder: [String], members: Int, colouredMembers: Bool) throws(RosterError) -> [RosterEntry] {
@@ -46,8 +52,9 @@ public enum Roster {
     }
 
     static func entry(_ glyph: String, _ role: HelperRole, coloured: Bool) -> RosterEntry {
-        let bundle = role == .member ? memberBundle : otherBundle
-        return RosterEntry(id: glyph, role: role, coloured: coloured, bundleID: bundle.id, app: bundle.app, identifier: "vz-icebar-\(glyph)")
+        let member = role == .member
+        return RosterEntry(id: glyph, role: role, coloured: coloured, bundleID: member ? memberBundleID : otherBundleID,
+                           app: member ? memberApp : otherApp, identifier: "vz-icebar-\(glyph)")
     }
 
     public static func arguments(_ entry: RosterEntry, lifetimeSeconds: Int) -> [String] {
@@ -77,7 +84,7 @@ public enum PlacementCheck {
     public static func evaluate(frames: [String: ItemFrame], members: [String], spacer: String, visible: [String], barHeightPt: Double) -> PlacementOutcome {
         for id in members + [spacer] + visible {
             guard let frame = frames[id] else { return .missing(id) }
-            guard frame.minY >= 0, frame.minY < barHeightPt else { return .offBar(id) }
+            guard OnBar.contains(minY: frame.minY, heightPt: barHeightPt) else { return .offBar(id) }
         }
         guard let spacerFrame = frames[spacer] else { return .missing(spacer) }
         if let late = members.first(where: { (frames[$0].map { $0.minX + $0.width } ?? .infinity) > spacerFrame.minX }) { return .outOfOrder(late) }

@@ -33,8 +33,8 @@ public protocol IceBarMenus {
 }
 
 public protocol IceBarWindowListing {
-    /// Every window the window server lists, off-screen ones included.
-    func windows() -> [WindowEntry]
+    /// Every window of these owners the window server lists, off-screen ones included.
+    func windows(owners: Set<Int32>) -> [WindowEntry]
 }
 
 public protocol IceBarClock {
@@ -103,74 +103,19 @@ public struct StageTemplates {
     }
 }
 
-public enum StepKind: Equatable {
-    case s0
-    /// One S-adv sweep, up and down.
-    case sAdvSweep(SAdvVariant)
-    /// S-adv's rest state with `«` up: the live (b) control's episodes.
-    case sAdvChevron(SAdvVariant)
-    /// One cycle per length, each retried up to three times when inconclusive.
-    case s1Bracket([Double])
-    /// Five cycles at the band's midpoint.
-    case s1Confirm(Double)
-}
-
 public struct StepPlan {
     public let kind: StepKind
     public let members: Int
     public let menu: C2MenuWidth
-    public let colouredMembers: Bool
     /// The `Glyph.allCases` names (`Roster.entries`).
     public let glyphOrder: [String]
     public let helperLifetimeSeconds: Int
 
-    public init(kind: StepKind, members: Int, menu: C2MenuWidth, colouredMembers: Bool, glyphOrder: [String], helperLifetimeSeconds: Int) {
+    public init(kind: StepKind, members: Int, menu: C2MenuWidth, glyphOrder: [String], helperLifetimeSeconds: Int) {
         self.kind = kind
         self.members = members
         self.menu = menu
-        self.colouredMembers = colouredMembers
         self.glyphOrder = glyphOrder
         self.helperLifetimeSeconds = helperLifetimeSeconds
-    }
-}
-
-public enum StepStatus: String, Codable, Equatable {
-    case completed, inconclusive, noGo, safetyStop
-}
-
-public struct ReportPoint: Codable, Equatable {
-    public let length: Double
-    /// `C2Reading`'s name (`C2Reading(name:)` reads it back).
-    public let reading: String
-}
-
-public struct ReportB: Codable, Equatable {
-    public let episode: Int
-    public let axChevron: Bool
-    public let pixels: ChevronSighting
-
-    public var observation: BObservation { BObservation(episode: episode, axChevron: axChevron, pixels: pixels) }
-}
-
-public struct S0Report: Codable, Equatable {
-    public let outcome: S0Outcome
-    public let c3: C3Outcome
-    public let section8: Section8Outcome
-}
-
-/// What one step process hands its sequencer (`result.json`).
-public struct StepReport: Codable, Equatable {
-    public var status: StepStatus
-    public var reason: String?
-    public var roster: [RosterEntry] = []
-    public var points: [ReportPoint] = []
-    public var cycles: [CycleRecord] = []
-    public var s0: S0Report?
-    public var sweep: RepeatResult?
-    public var chevronObservations: [ReportB] = []
-
-    public init(status: StepStatus, reason: String? = nil) {
-        self.status = status
-        self.reason = reason
     }
 }

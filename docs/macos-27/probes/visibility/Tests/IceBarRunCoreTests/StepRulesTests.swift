@@ -221,13 +221,14 @@ struct BarStateTests {
 
     @Test("E5: dark below 118, light above 138, neither inside the band; the notch is not counted")
     func appearance() {
-        let notch = PtSpan(lo: 0, hi: 15)
-        #expect(Appearance.of(strip(117), notch: nil) == .dark)
-        #expect(Appearance.of(strip(118), notch: nil) == .neither)
-        #expect(Appearance.of(strip(138), notch: nil) == .neither)
-        #expect(Appearance.of(strip(139), notch: nil) == .light)
-        #expect(Appearance.of(strip(200, notchFill: 0), notch: notch) == .light)
-        #expect(Appearance.of(strip(200, notchFill: 0), notch: nil) == .dark)
+        let plain = BarGeometry(widthPt: 20, heightPt: 2, scale: 2, notch: nil)
+        let notched = BarGeometry(widthPt: 20, heightPt: 2, scale: 2, notch: PtSpan(lo: 0, hi: 15))
+        #expect(Appearance.of(strip(117), geometry: plain) == .dark)
+        #expect(Appearance.of(strip(118), geometry: plain) == .neither)
+        #expect(Appearance.of(strip(138), geometry: plain) == .neither)
+        #expect(Appearance.of(strip(139), geometry: plain) == .light)
+        #expect(Appearance.of(strip(200, notchFill: 0), geometry: notched) == .light)
+        #expect(Appearance.of(strip(200, notchFill: 0), geometry: plain) == .dark)
     }
 
     @Test("the indicator state is any on-bar pill-width agent frame")

@@ -127,7 +127,8 @@ enum IceBarRunCommand {
         try? caffeinate.run()
         let sitting = IceBarSitting(apps: apps, directory: directory)
         let result = sitting.run()
-        sitting.log.finish(result)
+        sitting.log.record(["event": "result", "result": "\(result)"])
+        sitting.log.writeFinal(["result": "\(result)"])
         caffeinate.terminate()
         print(ProgressLine.final(result, directory: directory.path))
         switch result {
@@ -139,108 +140,62 @@ enum IceBarRunCommand {
     }
 }
 
-/// One sitting: S0, then S-adv, then S1 (route C O3), stopping at the first gate that ends it.
+/// One sitting, as `SittingDriver` asks for it: each step is one child
+/// process, trusted only through its verified final manifest.
 final class IceBarSitting {
     let apps: String
     let directory: URL
-    let log: IceBarRunnerLog
+    let log: RunnerLog
     private let started = Date()
     private var step = 0
-    private var observations = [[BObservation]]()
-    private var lastEnded: SittingResult?
 
     init(apps: String, directory: URL) {
         self.apps = apps
         self.directory = directory
-        log = IceBarRunnerLog(directory: directory)
+        log = RunnerLog(directory: directory)
     }
 
     func run() -> SittingResult {
-        let s0Report: StepReport?
-        switch runStep(.s0, members: 2, menu: .long, name: "S0") {
-        case .ended(let result): return result
-        case .report(let report): s0Report = report
-        }
-        observations.append(s0Report?.chevronObservations.map(\.observation) ?? [])
-        let s0 = ReportReading.s0(s0Report)
-        if case .end(let result) = Sitting.afterS0(s0.outcome, c3: s0.c3, section8: s0.section8) { return result }
-        if case .end(let result) = Sitting.beforeSAdv(appearanceDecided: AppearanceDecision.decided) { return result }
-        if let result = sAdv() { return result }
-        return s1()
-    }
-
-    private func sAdv() -> SittingResult? {
-        var sequencer = SAdvSequencer()
+        var driver = SittingDriver(appearanceDecided: AppearanceDecision.decided)
         while true {
-            let next = sequencer.next()
-            let kind: StepKind
-            switch next {
-            case .sweep(let variant): kind = .sAdvSweep(variant)
-            case .chevron(let variant): kind = .sAdvChevron(variant)
-            case .finished(let outcome):
-                let decision = Sitting.afterSAdv(outcome, bControl: BControl.evaluate(ChevronEpisodes.merged(observations)))
-                if case .end(let result) = decision { return result }
-                return nil
-            }
-            let name = if case .sweep(let variant) = next { "S-adv \(variant.name)" } else { "S-adv «" }
-            guard case .report(let report) = runStep(kind, members: 4, menu: .short, name: name) else { return lastEnded ?? .interrupted("a step ended the sitting") }
-            observations.append(report?.chevronObservations.map(\.observation) ?? [])
-            sequencer.record(ReportReading.sweep(report))
-        }
-    }
-
-    private func s1() -> SittingResult {
-        var sequencer = S1Sequencer()
-        while true {
-            switch sequencer.next() {
-            case .finished(let verdict):
-                return Sitting.afterS1(verdict)
-            case .run(let profile, let purpose, let lengths):
-                let kind: StepKind = purpose == .bracket ? .s1Bracket(lengths) : .s1Confirm(lengths[0])
-                switch runStep(kind, members: profile.k, menu: profile.menu, name: "S1 \(profile.id)") {
-                case .ended(let result): return result
-                case .report(let report): sequencer.record(ReportReading.s1(report, purpose: purpose))
+            switch driver.next() {
+            case .finished(let result):
+                return result
+            case .run(let request):
+                switch runStep(request) {
+                case .ended(let result): driver.end(result)
+                case .report(let report): driver.record(report)
                 }
             }
         }
     }
 
     enum StepOutcome {
-        /// The step's verified report.
-        case report(StepReport?)
+        case report(StepReport)
         case ended(SittingResult)
     }
 
-    /// One child process; the session leaving the screen, an unverified report or a safety stop ends the sitting.
-    private func runStep(_ kind: StepKind, members: Int, menu: C2MenuWidth, name: String) -> StepOutcome {
+    /// The session leaving the screen or a report that does not verify ends the sitting here.
+    private func runStep(_ request: SittingRequest) -> StepOutcome {
         step += 1
-        guard C2RunCommand.sessionOnConsole() else { return end(.interrupted("this session left the screen before step \(step)")) }
-        let stepDirectory = directory.appendingPathComponent(String(format: "%03d-%@", step, name.replacingOccurrences(of: " ", with: "-")))
-        let arguments = StepArguments(kind: kind, members: members, menu: menu, appsPath: apps, evidencePath: stepDirectory.path)
-        log.record(["event": "start", "step": step, "name": name, "arguments": arguments.arguments])
-        progress(ProgressLine.start(step: step, name: name, clock: clock(), elapsed: elapsed()))
+        guard C2RunCommand.sessionOnConsole() else { return .ended(.interrupted("this session left the screen before step \(step)")) }
+        let stepDirectory = directory.appendingPathComponent(String(format: "%03d-%@", step, request.name.replacingOccurrences(of: " ", with: "-")))
+        let arguments = StepArguments(kind: request.kind, members: request.members, menu: request.menu, appsPath: apps, evidencePath: stepDirectory.path)
+        log.record(["event": "start", "step": step, "name": request.name, "arguments": arguments.arguments])
+        progress(ProgressLine.start(step: step, name: request.name, clock: clock(), elapsed: elapsed()))
         let (code, leftConsole) = C2RunCommand.runChild(arguments.arguments)
         let report = Self.readReport(stepDirectory)
         let status = report?.status.rawValue ?? "unverified"
         log.record(["event": "end", "step": step, "exit": Int(code), "status": status, "reason": report?.reason ?? ""])
-        progress(ProgressLine.end(step: step, name: name, status: status, clock: clock(), elapsed: elapsed()))
-        if leftConsole { return end(.interrupted("this session left the screen during step \(step)")) }
-        guard let report else { return end(.safetyStop("step \(step) left no verified report")) }
-        if report.status == .safetyStop { return end(.safetyStop("step \(step): \(report.reason ?? "safety stop")")) }
+        progress(ProgressLine.end(step: step, name: request.name, status: status, clock: clock(), elapsed: elapsed()))
+        if leftConsole { return .ended(.interrupted("this session left the screen during step \(step)")) }
+        guard let report else { return .ended(.safetyStop("step \(step) left no verified report")) }
         return .report(report)
-    }
-
-    private func end(_ result: SittingResult) -> StepOutcome {
-        lastEnded = result
-        return .ended(result)
     }
 
     /// `result.json`, trusted only through the step's verified final manifest.
     static func readReport(_ directory: URL) -> StepReport? {
-        guard let data = try? Data(contentsOf: directory.appendingPathComponent("manifest.final.json")),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let recorded = object["files"] as? [String: String],
-              C2Manifest.verify(recorded: recorded, actual: C2RunCommand.hashes(of: directory)),
+        guard C2RunCommand.verifiedFinalManifest(directory) != nil,
               let result = try? Data(contentsOf: directory.appendingPathComponent("result.json"))
         else { return nil }
         return try? JSONDecoder().decode(StepReport.self, from: result)
@@ -251,38 +206,12 @@ final class IceBarSitting {
     private func progress(_ line: String) { FileHandle.standardError.write(Data((line + "\n").utf8)) }
 }
 
-/// `runner.jsonl`, one record per event, then `runner.final.json` (atomic).
-final class IceBarRunnerLog {
-    private let directory: URL
-    private var lines = [String]()
-
-    init(directory: URL) {
-        self.directory = directory
-    }
-
-    func record(_ fields: [String: Any]) {
-        var object = fields
-        object["wall"] = LiveEvidence.timestamp(Date(), format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
-        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]), let line = String(data: data, encoding: .utf8) else { return }
-        lines.append(line)
-        try? (lines.joined(separator: "\n") + "\n").write(to: directory.appendingPathComponent("runner.jsonl"), atomically: true, encoding: .utf8)
-    }
-
-    func finish(_ result: SittingResult) {
-        record(["event": "result", "result": "\(result)"])
-        let final: [String: Any] = ["result": "\(result)", "files": C2RunCommand.hashes(of: directory)]
-        if let data = try? JSONSerialization.data(withJSONObject: final, options: [.prettyPrinted, .sortedKeys]) {
-            try? data.write(to: directory.appendingPathComponent("runner.final.json"), options: .atomic)
-        }
-    }
-}
-
 enum IceBarDryCommand {
     /// Nothing launched, nothing captured, no event posted.
     static func run(_ arguments: [String]) -> Never {
         guard let apps = option("--apps", in: arguments) else { fail("icebar-dry: missing --apps <dir>") }
         var problems = [String]()
-        for (app, bundle) in [("Target.app", "com.icespike4.target"), ("Protected.app", "com.icespike4.protected"), ("Menus.app", "com.icespike4.protected")] {
+        for (app, bundle) in [(Roster.memberApp, Roster.memberBundleID), (Roster.otherApp, Roster.otherBundleID), (Roster.menusApp, Roster.otherBundleID)] {
             let url = URL(fileURLWithPath: apps).appendingPathComponent(app)
             if !LiveHelperLauncher().validateBundle(at: url, expectedBundleID: bundle) { problems.append("\(app) is not a \(bundle) helper bundle") }
         }
@@ -296,7 +225,7 @@ enum IceBarDryCommand {
         let startup = StartupCheck.evaluate(claim: .preRegistered, detector: .preRegistered, scale: Double(scale))
         print("icebar-dry: start-up check at scale \(scale): \(startup)")
         let order = Glyph.allCases.map(\.rawValue)
-        for (stage, members, coloured) in [("S0", 2, false), ("S-adv", 4, true), ("S1 k16", 16, false)] {
+        for (stage, members, coloured) in [("S0", SittingDriver.s0.members, false), ("S-adv", SittingDriver.sAdvMembers, true), ("S1 k16", Roster.maxMembers, false)] {
             let roster = (try? Roster.entries(glyphOrder: order, members: members, colouredMembers: coloured)) ?? []
             print("icebar-dry: \(stage) roster " + roster.map { "\($0.id)/\($0.role.rawValue)\($0.coloured ? "/coloured" : "")@\($0.bundleID)" }.joined(separator: " "))
         }

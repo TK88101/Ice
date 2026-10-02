@@ -116,7 +116,7 @@ struct ScriptedBar {
                 return (verdict, steps)
             case .run(let profile, .bracket, let lengths):
                 let points = lengths.map { C2Point(length: $0, reading: reading(profile, $0)) }
-                sequencer.record(.bracket(points: points, completed: true, noGo: false))
+                sequencer.record(.bracket(points: points, completed: true))
             case .run(let profile, .confirm, _):
                 let cycles = cycles(profile)
                 sequencer.record(.confirm(cycles: cycles, completed: !cycles.isEmpty))
@@ -242,8 +242,8 @@ struct S1SequencerTests {
         #expect(bar.run(&sequencer).0 == .noGo("k2-mid at 650 pt"))
         var bracketNoGo = S1Sequencer()
         _ = bracketNoGo.next()
-        bracketNoGo.record(.bracket(points: [], completed: true, noGo: true))
-        #expect(bracketNoGo.next() == .finished(.noGo("k1-short during the band scan")))
+        bracketNoGo.record(.noGo("NO-GO at 520.0 pt"))
+        #expect(bracketNoGo.next() == .finished(.noGo("k1-short: NO-GO at 520.0 pt")))
     }
 
     @Test("a safety stop ends S1")
@@ -258,12 +258,12 @@ struct S1SequencerTests {
     func shortBatches() {
         var sequencer = S1Sequencer()
         guard case .run(_, _, let first) = sequencer.next() else { Issue.record("no step"); return }
-        sequencer.record(.bracket(points: [C2Point(length: first[0], reading: .stillDrawn)], completed: false, noGo: false))
+        sequencer.record(.bracket(points: [C2Point(length: first[0], reading: .stillDrawn)], completed: false))
         guard case .run(_, _, let second) = sequencer.next() else { Issue.record("no step"); return }
         #expect(second.first == first[1])
-        sequencer.record(.bracket(points: [], completed: false, noGo: false))
+        sequencer.record(.bracket(points: [], completed: false))
         _ = sequencer.next()
-        sequencer.record(.bracket(points: [], completed: false, noGo: false))
+        sequencer.record(.bracket(points: [], completed: false))
         // k = 1 short not shown is a failure; with no capacity, S1 ends below four.
         #expect(sequencer.next() == .finished(.capacityBelowFour(0)))
     }

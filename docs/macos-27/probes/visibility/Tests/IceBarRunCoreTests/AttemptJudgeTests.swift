@@ -50,12 +50,12 @@ struct AttemptJudgeTests {
 
     @Test("Q3: stop after the first attempt whose claim is granted, else after three")
     func stopRule() {
-        #expect(AttemptJudge.needsAnotherAttempt([]))
-        #expect(AttemptJudge.needsAnotherAttempt([A.record(A.notClear, A.clean)]))
-        #expect(!AttemptJudge.needsAnotherAttempt([A.record(A.granted, A.controlMiss)]))
-        #expect(!AttemptJudge.needsAnotherAttempt([A.record(A.granted, A.member)]))
-        #expect(AttemptJudge.needsAnotherAttempt(Array(repeating: A.record(A.notClear, A.clean), count: 2)))
-        #expect(!AttemptJudge.needsAnotherAttempt(Array(repeating: A.record(A.notClear, A.clean), count: 3)))
+        #expect(AttemptJudge.needsAnotherAttempt(claims: []))
+        #expect(AttemptJudge.needsAnotherAttempt(claims: [A.record(A.notClear, A.clean)].map(\.claim)))
+        #expect(!AttemptJudge.needsAnotherAttempt(claims: [A.record(A.granted, A.controlMiss)].map(\.claim)))
+        #expect(!AttemptJudge.needsAnotherAttempt(claims: [A.record(A.granted, A.member)].map(\.claim)))
+        #expect(AttemptJudge.needsAnotherAttempt(claims: Array(repeating: A.record(A.notClear, A.clean), count: 2).map(\.claim)))
+        #expect(!AttemptJudge.needsAnotherAttempt(claims: Array(repeating: A.record(A.notClear, A.clean), count: 3).map(\.claim)))
     }
 
     @Test("U19: granted and clean on attempt 2 -> granted, attempts = 2")

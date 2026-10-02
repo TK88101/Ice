@@ -36,10 +36,7 @@ public struct AttemptRecord: Equatable, Sendable {
     }
 }
 
-public enum AttemptClass: String, Equatable, Sendable {
-    case noGo, inconclusive, granted, notGranted
-}
-
+/// One attempt's class (Q5) and one observation's outcome (Q6).
 public enum ObservationOutcome: String, Codable, Equatable, Sendable {
     case noGo, inconclusive, granted, notGranted
 }
@@ -83,7 +80,7 @@ public struct ObservationRecord: Codable, Equatable, Sendable {
 
 public enum AttemptJudge {
     /// Q5: NO-GO, then inconclusive, then granted (clean), then not granted.
-    public static func classify(_ attempt: AttemptRecord) -> AttemptClass {
+    public static func classify(_ attempt: AttemptRecord) -> ObservationOutcome {
         let granted = attempt.claim.granted
         if attempt.memberLeftOfNotch || (granted && (attempt.oracle.seesMember || attempt.oracle.seesChevron)) { return .noGo }
         if attempt.cadence != nil || attempt.oracle.inconclusive || attempt.oracle.chevronNotEvaluable { return .inconclusive }
@@ -91,11 +88,7 @@ public enum AttemptJudge {
     }
 
     /// Q3: stop after the first attempt whose claim is granted, else after three.
-    public static func needsAnotherAttempt(_ attempts: [AttemptRecord], parameters: CadenceParameters = .preRegistered) -> Bool {
-        needsAnotherAttempt(claims: attempts.map(\.claim), parameters: parameters)
-    }
-
-    /// The same rule over the claims alone: the runner decides before the oracle has run.
+    /// Read on the claims alone: the runner decides before the oracle has run.
     public static func needsAnotherAttempt(claims: [ClaimOutcome], parameters: CadenceParameters = .preRegistered) -> Bool {
         claims.count < parameters.maxAttempts && !claims.contains { $0.granted }
     }

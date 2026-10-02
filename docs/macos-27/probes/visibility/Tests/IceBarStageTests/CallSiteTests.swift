@@ -13,13 +13,13 @@ import Testing
 
 enum Run {
     /// One step on a fresh fake bar; `setup` adjusts the world first.
-    static func step(_ kind: StepKind, members: Int = 2, coloured: Bool = false, faults: [Int: Fault] = [:],
+    static func step(_ kind: StepKind, members: Int = 2, faults: [Int: Fault] = [:],
                      setup: (FakeWorld) -> Void = { _ in }) -> (report: StepReport, step: IceBarStep, world: FakeWorld, evidence: FakeEvidence) {
         let world = FakeWorld(templates: StageFixtures.templates)
         setup(world)
         world.faults = faults
         let evidence = FakeEvidence()
-        let step = IceBarStep(environment: Fake.environment(world, evidence: evidence), plan: Fake.plan(kind, members: members, coloured: coloured),
+        let step = IceBarStep(environment: Fake.environment(world, evidence: evidence), plan: Fake.plan(kind, members: members),
                               templates: StageFixtures.templates)
         return (step.run(), step, world, evidence)
     }
@@ -29,6 +29,12 @@ enum Run {
         step.recorder.entries.firstIndex { $0.phase == phase }
     }
 
+    /// Clean runs are deterministic: each is run once and shared by every test that needs it.
+    static let cleanConfirm = step(.s1Confirm(144))
+    static let cleanS0 = step(.s0, setup: membersStay)
+    static let cleanSweep = step(.sAdvSweep(SAdvVariant(appearance: .dark, colouredMembers: false)))
+    static let cleanColouredSweep = step(.sAdvSweep(SAdvVariant(appearance: .dark, colouredMembers: true)))
+
     /// Members never pushed off: every hidden-state baseline is refused (they are drawn in the region).
     static let membersStay: (FakeWorld) -> Void = { $0.spacerPushes = false }
 }
@@ -37,7 +43,7 @@ enum Run {
 struct OverlapGuardCallSiteTests {
     @Test("exactly one bounds read per capture, every glyph helper listed; every judged capture judged once")
     func everyCapture() {
-        let run = Run.step(.s1Confirm(144))
+        let run = Run.cleanConfirm
         #expect(run.report.status == .completed)
         let entries = run.step.recorder.entries
         #expect(entries.count == run.world.captures)
@@ -47,21 +53,26 @@ struct OverlapGuardCallSiteTests {
         #expect(run.report.cycles.allSatisfy { !$0.controlMiss && $0.observations.allSatisfy { $0.outcome == .granted } })
     }
 
-    @Test("a missing window or a 0.6 pt overlap in an attempt makes that attempt inconclusive; 0.5 pt does not",
+    @Test("a missing window or a 0.6 pt overlap in an attempt makes that attempt inconclusive",
           arguments: [Fault.windowMissing("hidden2"), .windowMissing("reference"), .windowOverlap("hidden2", "hidden3", 0.6)])
     func attempt(fault: Fault) throws {
-        let clean = Run.step(.s1Confirm(144))
+        let clean = Run.cleanConfirm
         let index = try #require(Run.firstCapture("attempt", in: clean.step))
         let run = Run.step(.s1Confirm(144), faults: [index: fault])
         let first = try #require(run.report.cycles.first?.observations.first)
         #expect(first.outcome == .inconclusive)
+    }
+
+    @Test("a 0.5 pt overlap in an attempt is tolerated")
+    func tolerated() throws {
+        let index = try #require(Run.firstCapture("attempt", in: Run.cleanConfirm.step))
         let tolerated = Run.step(.s1Confirm(144), faults: [index: .windowOverlap("hidden2", "hidden3", 0.5)])
         #expect(tolerated.report.cycles.first?.observations.first?.outcome == .granted)
     }
 
     @Test("a missing window at a rest or restore control makes the cycle inconclusive", arguments: ["rest control", "restore control"])
     func control(phase: String) throws {
-        let clean = Run.step(.s1Confirm(144))
+        let clean = Run.cleanConfirm
         let index = try #require(Run.firstCapture(phase, in: clean.step))
         let run = Run.step(.s1Confirm(144), faults: [index: .windowMissing("hidden3")])
         #expect(run.report.cycles.first?.controlMiss == true)
@@ -71,7 +82,7 @@ struct OverlapGuardCallSiteTests {
     @Test("a missing window in an S-adv step's baseline makes that step inconclusive (not the endpoint)")
     func sAdvBaseline() throws {
         let variant = SAdvVariant(appearance: .dark, colouredMembers: false)
-        let clean = Run.step(.sAdvSweep(variant))
+        let clean = Run.cleanSweep
         #expect(clean.report.sweep == .pass, "\(clean.report.reason ?? "")")
         let steps = clean.evidence.log.filter { $0.hasPrefix("sAdv.step") }
         let index = try #require(Run.firstCapture("baseline", in: clean.step))
@@ -83,7 +94,7 @@ struct OverlapGuardCallSiteTests {
 
     @Test("C3 in S0: every helper listed and the visible helpers' bounds on their AX frames")
     func s0C3() throws {
-        let clean = Run.step(.s0, setup: Run.membersStay)
+        let clean = Run.cleanS0
         #expect(clean.report.s0?.c3 == .holds)
         let index = try #require(Run.firstCapture("baseline", in: clean.step))
         let run = Run.step(.s0, faults: [index: .windowMissing("alt")], setup: Run.membersStay)
@@ -95,7 +106,7 @@ struct OverlapGuardCallSiteTests {
 struct BControlCallSiteTests {
     @Test("S0: one BControl observation per judged capture, warm-up excluded")
     func s0Count() {
-        let run = Run.step(.s0, setup: Run.membersStay)
+        let run = Run.cleanS0
         #expect(run.report.s0?.outcome == .pass, "\(run.report.reason ?? "")")
         #expect(run.report.chevronObservations.count == run.step.judgedCaptures)
         #expect(run.report.chevronObservations.count == run.step.recorder.entries.filter { $0.phase != "warm-up" }.count)
@@ -104,7 +115,7 @@ struct BControlCallSiteTests {
     @Test("`«` read by AX but not drawn, in any S0 phase: BControl reports the mismatch and the sitting stops before S1",
           arguments: ["rest control", "baseline", "attempt", "restore control", "final control"])
     func s0Mismatch(phase: String) throws {
-        let clean = Run.step(.s0, setup: Run.membersStay)
+        let clean = Run.cleanS0
         let index = try #require(Run.firstCapture(phase, in: clean.step))
         let run = Run.step(.s0, faults: [index: .chevronOnlyInAX], setup: Run.membersStay)
         let outcome = BControl.evaluate(run.report.chevronObservations.map(\.observation))
@@ -115,9 +126,9 @@ struct BControlCallSiteTests {
     @Test("`«` read by AX but not drawn during an S-adv sweep: mismatch")
     func sweepMismatch() throws {
         let variant = SAdvVariant(appearance: .dark, colouredMembers: true)
-        let clean = Run.step(.sAdvSweep(variant), coloured: true)
+        let clean = Run.cleanColouredSweep
         let index = try #require(Run.firstCapture("attempt", in: clean.step))
-        let run = Run.step(.sAdvSweep(variant), coloured: true, faults: [index: .chevronOnlyInAX])
+        let run = Run.step(.sAdvSweep(variant), faults: [index: .chevronOnlyInAX])
         guard case .mismatch = BControl.evaluate(run.report.chevronObservations.map(\.observation)) else { Issue.record("no mismatch"); return }
     }
 
@@ -151,7 +162,7 @@ struct BControlCallSiteTests {
 struct StageRuleTests {
     @Test("a member not drawn at its rest control makes the cycle inconclusive")
     func restControlMiss() throws {
-        let clean = Run.step(.s1Confirm(144))
+        let clean = Run.cleanConfirm
         let index = try #require(Run.firstCapture("rest control", in: clean.step))
         let run = Run.step(.s1Confirm(144), faults: [index: .memberUndrawn("hidden2")])
         #expect(run.report.cycles.first?.controlMiss == true)
@@ -167,7 +178,7 @@ struct StageRuleTests {
 
     @Test("S0 passes when no claim is granted; it is NO-GO when one is")
     func s0Outcomes() {
-        #expect(Run.step(.s0, setup: Run.membersStay).report.s0?.outcome == .pass)
+        #expect(Run.cleanS0.report.s0?.outcome == .pass)
         let granted = Run.step(.s0)
         #expect(granted.report.s0?.outcome == .noGo)
         #expect(granted.report.status == .noGo)
@@ -175,7 +186,7 @@ struct StageRuleTests {
 
     @Test("an S-adv sweep passes on its variant; the other appearance is inconclusive")
     func sweeps() {
-        #expect(Run.step(.sAdvSweep(SAdvVariant(appearance: .dark, colouredMembers: true)), coloured: true).report.sweep == .pass)
+        #expect(Run.cleanColouredSweep.report.sweep == .pass)
         #expect(Run.step(.sAdvSweep(SAdvVariant(appearance: .light, colouredMembers: false))).report.sweep == .inconclusive)
     }
 

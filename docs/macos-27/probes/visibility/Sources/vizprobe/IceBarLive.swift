@@ -57,10 +57,10 @@ struct LiveIceBarLauncher: IceBarHelperLaunching {
 struct LiveWindowLister: IceBarWindowListing {
     let origin: CGPoint
 
-    func windows() -> [WindowEntry] {
-        guard let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else { return [] }
+    func windows(owners: Set<Int32>) -> [WindowEntry] {
+        guard let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [NSDictionary] else { return [] }
         return list.compactMap { info in
-            guard let pid = info[kCGWindowOwnerPID as String] as? Int32,
+            guard let pid = info[kCGWindowOwnerPID as String] as? Int32, owners.contains(pid),
                   let layer = info[kCGWindowLayer as String] as? Int,
                   let dictionary = info[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: dictionary)
@@ -87,7 +87,7 @@ final class LiveIceBarMenus: IceBarMenus {
     }
 
     func launchAndCalibrate(_ width: C2MenuWidth) -> String? {
-        guard let helper = launcher.launch(app: "Menus.app", bundleID: "com.icespike4.protected",
+        guard let helper = launcher.launch(app: Roster.menusApp, bundleID: Roster.otherBundleID,
                                            arguments: Roster.menusArguments(lifetimeSeconds: StepArguments.helperLifetimeSeconds)),
               helper.awaitUp(timeout: 5)
         else { return "Menus did not come up" }

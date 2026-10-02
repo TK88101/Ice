@@ -1,6 +1,7 @@
 // Route C part 3 (docs/plans/2026-10-03-icebar-c-runner.md, Q17, Q20): the
 // repeat rule of route C section 3, one S-adv sweep, the sitting's gates
 // between S0, S-adv and S1, and the Chinese lines of route C 7a.
+import C2Core
 import IceBarOracle
 
 public enum RepeatResult: String, Codable, Equatable, Sendable {
@@ -56,8 +57,8 @@ public enum SAdvSweepStatus: Equatable, Sendable {
 public struct SAdvSweep: Equatable, Sendable {
     public enum Phase: Equatable, Sendable { case up, down }
 
-    public static let stepPt = 16.0
-    public static let capPt = 1000.0
+    public static let stepPt = C2Band.coarseStepPt
+    public static let capPt = C2Band.maximumLengthPt
 
     public private(set) var phase = Phase.up
     public private(set) var status = SAdvSweepStatus.continuing
@@ -89,8 +90,6 @@ public struct SAdvSweep: Equatable, Sendable {
 }
 
 public struct SAdvVariant: Equatable, Sendable {
-    public enum Appearance: String, Equatable, Sendable { case dark, light }
-
     public let appearance: Appearance
     public let colouredMembers: Bool
 
@@ -102,7 +101,7 @@ public struct SAdvVariant: Equatable, Sendable {
     public var name: String { "\(appearance.rawValue)-\(colouredMembers ? "coloured" : "ordinary")" }
 
     public static let sweepsPerVariant = 2
-    public static let all = [Appearance.dark, .light].flatMap { appearance in
+    public static let all = [Appearance.dark, Appearance.light].flatMap { appearance in
         [false, true].map { SAdvVariant(appearance: appearance, colouredMembers: $0) }
     }
 }

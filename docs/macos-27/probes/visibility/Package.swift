@@ -137,7 +137,7 @@ let package = Package(
         ),
         // Route C part 3 (runner plan section 7): the pre-S0 freeze manifest
         // (`icebarfreeze write`) and its check before staging (`verify`).
-        .executableTarget(name: "icebarfreeze", dependencies: ["IceBarCorpus", "IceBarOracle", "VZGlyphs"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "icebarfreeze", dependencies: ["IceBarCorpus"], swiftSettings: [.swiftLanguageMode(.v5)]),
         // `vzcorpus freeze` / `vzcorpus check` (instrument plan section 4).
         .executableTarget(name: "vzcorpus", dependencies: ["IceBarCorpus", "IceBarOracle"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
