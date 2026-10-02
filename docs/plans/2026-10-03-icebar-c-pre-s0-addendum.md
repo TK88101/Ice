@@ -10,7 +10,7 @@ the runner plan section 9. Nothing here changes a rule, a threshold or an expect
 ## Pre-S0 freeze addendum (to be appended to section 9)
 
 **Manifest.** `docs/plans/2026-10-03-icebar-c-pre-s0-manifest.json`, sha256
-`1c26e31963ed6385e220dc0473d3362306c406d078d041146ccbeeea3226b587`, written by `icebarfreeze write` at git revision `a4efdbb74ac08ff1239b2b1e8d72f938dd5f1dd9` under
+`41b91f4db1622ca97fb7c3a9c6dd8c298e00c50c55868d04c13bcc2f075e5db5`, written by `icebarfreeze write` at git revision `1d671d324ad206e19866d73ac8a8c6b8ad52f4ca` under
 pre-registration `e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3`. It holds the sha256 of
 173 source files: section 6's list (the glyphs' source `VZGlyphs`, the
 generator `IceBarCorpus`, the oracle `IceBarOracle`) and `IceBarClaim`, and, fail-closed,
@@ -56,7 +56,8 @@ chevron template's alpha (`f34511e3e602f5151ffbd378d0eca4dec6dd1515db4438ef99dd1
 
 **Corpus 3** (run `20260930-123540-icebar-corpus3`): `freeze.json` `f8a64fbc81dd327897d54b0187e14e6a9af0fbc6dd960406a6bfb7994271853d`, `check.json`
 `1844ac22b38a002ac26f4528af9a60b95a21cd3db3f483bdcc6887c1763c7c09`, frozen under `e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3`; 5749/5749
-item PNGs re-hashed equal to `freeze.json`; the `VZGlyphs`, `IceBarCorpus` and
+item PNGs re-hashed equal to `freeze.json` and **listed one by one** in the
+manifest (`corpus3.pngs`, item id -> sha256: section 6's "every generated corpus image"); the `VZGlyphs`, `IceBarCorpus` and
 `IceBarOracle` sources, every rendering and the chevron equal to what corpus 3 recorded;
 K1-K4 (K3 included) equal to their recorded and pre-registered sha256.
 
