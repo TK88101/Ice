@@ -3,11 +3,11 @@
 // between S0, S-adv and S1, and the Chinese lines of route C 7a.
 import IceBarOracle
 
-public enum RepeatResult: String, Equatable, Sendable {
+public enum RepeatResult: String, Codable, Equatable, Sendable {
     case pass, noGo, inconclusive
 }
 
-public enum RepeatOutcome: Equatable, Sendable {
+public enum RepeatOutcome: Codable, Equatable, Sendable {
     case pass
     case noGo
     case notShown(String)
@@ -93,6 +93,11 @@ public struct SAdvVariant: Equatable, Sendable {
 
     public let appearance: Appearance
     public let colouredMembers: Bool
+
+    public init(appearance: Appearance, colouredMembers: Bool) {
+        self.appearance = appearance
+        self.colouredMembers = colouredMembers
+    }
 
     public var name: String { "\(appearance.rawValue)-\(colouredMembers ? "coloured" : "ordinary")" }
 
@@ -193,5 +198,42 @@ public enum ProgressLine {
     static func hoursMinutes(_ seconds: Int) -> String {
         let minutes = seconds % 3600 / 60
         return "\(seconds / 3600):\(minutes < 10 ? "0" : "")\(minutes)"
+    }
+}
+
+public enum SAdvStep: Equatable, Sendable {
+    case sweep(SAdvVariant)
+    case chevron(SAdvVariant)
+    case finished(RepeatOutcome)
+}
+
+/// Q17: each variant's two sweeps (route C: "two sweeps each way per
+/// variant"), an inconclusive sweep re-run at most twice, then the `«` rest
+/// state. One step process per sweep.
+public struct SAdvSequencer: Equatable, Sendable {
+    private var variantIndex = 0
+    private var results = [RepeatResult]()
+    private var outcome: RepeatOutcome?
+
+    public init() {}
+
+    public func next() -> SAdvStep {
+        if let outcome { return .finished(outcome) }
+        return variantIndex < SAdvVariant.all.count ? .sweep(SAdvVariant.all[variantIndex]) : .chevron(SAdvVariant.all[0])
+    }
+
+    public mutating func record(_ result: RepeatResult) {
+        guard outcome == nil else { return }
+        results.append(result)
+        let inSweeps = variantIndex < SAdvVariant.all.count
+        let name = inSweeps ? SAdvVariant.all[variantIndex].name : "«"
+        switch Repeats.judge(results, needed: inSweeps ? SAdvVariant.sweepsPerVariant : 1) {
+        case .noGo: outcome = .noGo
+        case .notShown(let why): outcome = .notShown("\(name): \(why)")
+        case .incomplete: break
+        case .pass:
+            results = []
+            if inSweeps { variantIndex += 1 } else { outcome = .pass }
+        }
     }
 }

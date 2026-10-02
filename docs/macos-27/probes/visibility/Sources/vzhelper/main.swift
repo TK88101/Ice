@@ -13,10 +13,13 @@
 //         rest         -> image = chevron, length = variableLength
 //
 //   vzhelper --controller <pid> --items 1|2 --identifiers none|<a>[,<b>]
-//            [--glyphs <g>[,<g>]] [--mimic-nodivider] [--autosave <name>]
+//            [--glyphs <g>[,<g>]] [--coloured] [--mimic-nodivider] [--autosave <name>]
 //            [--lifetime <seconds>]
 //       --glyphs      target | reference | alt, one per item (not needed
 //                     with --mimic-nodivider, which draws nothing)
+//       --coloured    route C (docs/plans/2026-10-03-icebar-c-runner.md, Q10):
+//                     each glyph is VZGlyphs' coloured variant, a non-template
+//                     image in sRGB (255, 0, 0), invisible to the detector's ink
 //       --identifiers `none` sets no AXIdentifier at all
 //       --mimic-nodivider  each item is put into Ice's `.noDivider` shown
 //                     state exactly as ControlItem.swift does it (af4baf1,
@@ -85,6 +88,8 @@ struct Config {
     /// C2's menus role (T2): no status item; a regular app whose own title
     /// menus (`menus <n>`) set the frontmost-menu width.
     var menus = false
+    /// Route C: draw VZGlyphs' coloured (non-template, red) variant.
+    var coloured = false
 }
 
 func parseConfig() -> Config {
@@ -143,7 +148,9 @@ func parseConfig() -> Config {
     if autosave != nil, count != 1 { usage("--autosave takes one item only") }
 
     let items = zip(identifiers, glyphs).map { ItemSpec(identifier: $0, glyph: $1) }
-    return Config(items: items, mimicNoDivider: mimic, autosave: autosave, lifetime: lifetime, spacer: false)
+    var itemsConfig = Config(items: items, mimicNoDivider: mimic, autosave: autosave, lifetime: lifetime, spacer: false)
+    itemsConfig.coloured = CommandLine.arguments.contains("--coloured")
+    return itemsConfig
 }
 
 // Plain globals, not `guard let` locals: the delegate class and the stdin
@@ -232,7 +239,7 @@ func makePlainItem(index: Int, spec: ItemSpec) -> HelperItem {
             button.setAccessibilityIdentifier(identifier)
         }
         if let glyph = spec.glyph {
-            button.image = Glyphs.image(glyph, side: itemLengthPt)
+            button.image = Glyphs.image(glyph, side: itemLengthPt, coloured: config.coloured)
         }
         button.imagePosition = .imageOnly
     }

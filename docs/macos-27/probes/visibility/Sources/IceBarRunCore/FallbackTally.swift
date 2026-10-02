@@ -2,7 +2,7 @@
 // rate of the pre-registration's section 4 at one length (U20).
 
 /// One cycle's observations, and whether a rest control made it inconclusive (Q8).
-public struct CycleRecord: Equatable, Sendable {
+public struct CycleRecord: Codable, Equatable, Sendable {
     public let observations: [ObservationRecord]
     public let controlMiss: Bool
 

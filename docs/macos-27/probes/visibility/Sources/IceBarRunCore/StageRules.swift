@@ -55,7 +55,7 @@ public struct ChevronEpisodes: Equatable, Sendable {
     }
 }
 
-public enum Section8Outcome: Equatable, Sendable {
+public enum Section8Outcome: Codable, Equatable, Sendable {
     case consistent
     /// Every S0 baseline with the number fails its section 3 inequality.
     case contradiction([String])
@@ -81,7 +81,7 @@ public enum Section8Check {
 
 public typealias S0CycleResult = RepeatResult
 
-public enum S0Outcome: Equatable, Sendable {
+public enum S0Outcome: Codable, Equatable, Sendable {
     case pass
     case noGo
     case notShown(String)
@@ -108,5 +108,60 @@ public enum S0Judge {
 
     public static func nextCycleNeeded(_ results: [S0CycleResult]) -> Bool {
         stage(results, finalControlPassed: true) == .incomplete
+    }
+}
+
+/// E5: the bar's appearance variant by its median luma outside the notch --
+/// the frozen `Ink.calibrated` measure (every second column and row, luma
+/// (r + g + b) / 3, the upper median), re-implemented because it is private
+/// there (as parts 1 and 2 re-implemented the frozen distance, D9).
+public enum Appearance: String, Codable, Equatable, Sendable {
+    case dark, light, neither
+
+    public static func of(_ image: StripImage, notch: PtSpan?, parameters: DetectorParameters = .preRegistered) -> Appearance {
+        let notchColumns = notch.map { OracleGeometry.notchColumns($0, scale: image.scale) } ?? 0..<0
+        var lumas = [Int]()
+        for y in stride(from: 0, to: image.height, by: 2) {
+            for x in stride(from: 0, to: image.width, by: 2) where !notchColumns.contains(x) {
+                let p = image.pixel(x: x, y: y)
+                lumas.append((Int(p.r) + Int(p.g) + Int(p.b)) / 3)
+            }
+        }
+        guard !lumas.isEmpty else { return .neither }
+        let median = lumas.sorted()[lumas.count / 2]
+        if median < parameters.inkDecisionBand.lowerBound { return .dark }
+        return median > parameters.inkDecisionBand.upperBound ? .light : .neither
+    }
+}
+
+/// Q8: the states a member control must share with the hold between them.
+public struct BarState: Codable, Equatable, Sendable {
+    public let appearance: Appearance
+    public let indicator: Bool
+
+    public init(appearance: Appearance, indicator: Bool) {
+        self.appearance = appearance
+        self.indicator = indicator
+    }
+
+    /// Any on-bar `MenuBarAgent` frame of the frozen pill width.
+    public static func indicator(_ frames: [AgentFrame], barHeightPt: Double, parameters: DetectorParameters = .preRegistered) -> Bool {
+        frames.contains { $0.minY >= 0 && $0.minY < barHeightPt && FoldWitness.isPill($0, parameters: parameters) }
+    }
+}
+
+extension ChevronEpisodes {
+    /// Q14: several step processes' observations as one sitting's -- each
+    /// process numbers its own episodes from 1 (0: before any `«` read), so
+    /// later processes' episodes are shifted past the earlier ones'.
+    public static func merged(_ processes: [[BObservation]]) -> [BObservation] {
+        var offset = 0
+        var all = [BObservation]()
+        for observations in processes {
+            let shifted = observations.map { BObservation(episode: $0.episode == 0 ? 0 : $0.episode + offset, axChevron: $0.axChevron, pixels: $0.pixels) }
+            offset = max(offset, shifted.map(\.episode).max() ?? 0)
+            all += shifted
+        }
+        return all
     }
 }

@@ -131,7 +131,7 @@ public struct C3Capture: Equatable, Sendable {
     }
 }
 
-public enum C3Outcome: Equatable, Sendable {
+public enum C3Outcome: Codable, Equatable, Sendable {
     case holds
     case notListed(String)
     case mismatch(String)

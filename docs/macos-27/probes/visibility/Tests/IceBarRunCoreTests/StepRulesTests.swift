@@ -205,6 +205,39 @@ struct Section8Tests {
     }
 }
 
+@Suite("Q8, Q18: the bar state a control must share with its hold")
+struct BarStateTests {
+    func strip(_ v: UInt8, notchFill: UInt8? = nil) -> StripImage {
+        let width = 40
+        var bytes = [UInt8]()
+        for _ in 0..<4 {
+            for x in 0..<width {
+                let c = notchFill.map { x < 30 ? $0 : v } ?? v
+                bytes += [c, c, c, 255]
+            }
+        }
+        return StripImage(width: width, height: 4, scale: 2, bytes: bytes)
+    }
+
+    @Test("E5: dark below 118, light above 138, neither inside the band; the notch is not counted")
+    func appearance() {
+        let notch = PtSpan(lo: 0, hi: 15)
+        #expect(Appearance.of(strip(117), notch: nil) == .dark)
+        #expect(Appearance.of(strip(118), notch: nil) == .neither)
+        #expect(Appearance.of(strip(138), notch: nil) == .neither)
+        #expect(Appearance.of(strip(139), notch: nil) == .light)
+        #expect(Appearance.of(strip(200, notchFill: 0), notch: notch) == .light)
+        #expect(Appearance.of(strip(200, notchFill: 0), notch: nil) == .dark)
+    }
+
+    @Test("the indicator state is any on-bar pill-width agent frame")
+    func indicator() {
+        #expect(BarState.indicator([AgentFrame(minX: 1300, minY: 0, width: 16)], barHeightPt: 32))
+        #expect(!BarState.indicator([AgentFrame(minX: 1300, minY: 40, width: 16)], barHeightPt: 32))
+        #expect(!BarState.indicator([AgentFrame(minX: 1300, minY: 0, width: 20)], barHeightPt: 32))
+    }
+}
+
 @Suite("Q15: S0")
 struct S0JudgeTests {
     @Test("a cycle: any granted claim is NO-GO; a control miss is inconclusive; otherwise it passes")

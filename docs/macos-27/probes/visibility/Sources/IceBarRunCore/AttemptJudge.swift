@@ -40,12 +40,12 @@ public enum AttemptClass: String, Equatable, Sendable {
     case noGo, inconclusive, granted, notGranted
 }
 
-public enum ObservationOutcome: String, Equatable, Sendable {
+public enum ObservationOutcome: String, Codable, Equatable, Sendable {
     case noGo, inconclusive, granted, notGranted
 }
 
 /// Section 4's split by cause (Q6).
-public enum ObservationCause: String, Equatable, Sendable, CaseIterable {
+public enum ObservationCause: String, Codable, Equatable, Sendable, CaseIterable {
     case noGo, inconclusive, timeout
     case baselineRefused = "baseline refused"
     case contrastGate = "contrast gate"
@@ -65,7 +65,7 @@ public enum BaselineStatus: Equatable, Sendable {
     case cadence(CadenceRefusal)
 }
 
-public struct ObservationRecord: Equatable, Sendable {
+public struct ObservationRecord: Codable, Equatable, Sendable {
     public let outcome: ObservationOutcome
     /// `nil` only for a granted observation.
     public let cause: ObservationCause?
@@ -92,7 +92,12 @@ public enum AttemptJudge {
 
     /// Q3: stop after the first attempt whose claim is granted, else after three.
     public static func needsAnotherAttempt(_ attempts: [AttemptRecord], parameters: CadenceParameters = .preRegistered) -> Bool {
-        attempts.count < parameters.maxAttempts && !attempts.contains { $0.claim.granted }
+        needsAnotherAttempt(claims: attempts.map(\.claim), parameters: parameters)
+    }
+
+    /// The same rule over the claims alone: the runner decides before the oracle has run.
+    public static func needsAnotherAttempt(claims: [ClaimOutcome], parameters: CadenceParameters = .preRegistered) -> Bool {
+        claims.count < parameters.maxAttempts && !claims.contains { $0.granted }
     }
 
     /// Q6.

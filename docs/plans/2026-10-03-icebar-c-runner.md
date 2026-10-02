@@ -221,6 +221,11 @@ record), in route C rule 6 (as each deviation's), and in section 9 here.
 
 | # | date | note |
 |---|---|---|
+| 1 | 2026-10-03 | T1-T4: tests written and seen failing (missing types) before code. T5: tests written first but compiled together with the code, no separate red run; T7: `IceBarStage` written before its integration tests (fake bar). Both are TDD-order lapses, stated here; T10's mutation checks are the evidence that those tests bite |
+| 2 | 2026-10-03 | Design fix found by the fake bar (T7): the oracle is slow (debug about 2-3 s per 800 px capture), and judging inline would stretch attempts past their cadence (Q3's 10 s, Q8's spacing). Captures are now taken on the cadence and judged after the cycle (S-adv: after each step), in capture order; the stop rule reads the claim only, as Q3 fixes. Stage tests run in release with `-enable-testing` (part 1's precedent for U21) |
+| 3 | 2026-10-03 | **Risk K6 (open, owner)**: with `«` listed by AX, its 17.5 pt frame is one of the attempt's on-bar agent frames, whose columns the oracle never sees (section 5 edge rule + instrument D6), so (b) is blind to a listed chevron by construction and deviation 2 C5's "(a) implies (b)" could never hold (pinned: `ChevronFrameTests`). For the C5 control only, the runner reads (b) as it is used -- a chevron AX does not list: the same oracle and templates, chevron-width frames left out of the context. The safety verdict keeps the registered context. A reading of a registered rule: goes to the owner with the addendum (thecure first) |
+| 4 | 2026-10-03 | Risk K4b (INFERRED): if 27 places pushed-off items' windows at one off-screen point, `OverlapGuard` reports them overlapping and every attempt is inconclusive (the fake bar first did exactly that). S0's records show it; no rule changes |
+| 5 | 2026-10-03 | `SAdvSequencer` (one process per sweep; the `«` rest state as its own step, re-run like a sweep) and `ChevronEpisodes.merged` (episodes renumbered across processes) added to `IceBarRunCore`, test first |
 
 ## Appendix. Review record
 

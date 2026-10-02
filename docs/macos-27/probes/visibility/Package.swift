@@ -112,6 +112,29 @@ let package = Package(
             name: "IceBarRunCoreTests",
             dependencies: ["IceBarRunCore", "IceBarOracle", "IceBarClaim", "C2Core", .product(name: "IceCore", package: "IceCore")]
         ),
+        // Route C part 3: one step process's orchestration (launch, placement,
+        // warm-up, cycles, S0 / S-adv / S1 bodies, teardown) behind
+        // `IceBarEnvironment`'s seams, so `IceBarStageTests` drives the real
+        // code on a fake bar. `vizprobe icebar-step` builds the live
+        // environment. No AppKit, no Accessibility here.
+        .target(
+            name: "IceBarStage",
+            dependencies: [
+                "IceBarRunCore", "IceBarClaim", "IceBarOracle", "C2Core",
+                .product(name: "IceCore", package: "IceCore"),
+                .product(name: "MenuBarCapture", package: "MenuBarCapture"),
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "IceBarStageTests",
+            dependencies: [
+                "IceBarStage", "IceBarRunCore", "IceBarClaim", "IceBarOracle", "C2Core", "VZGlyphs",
+                .product(name: "IceCore", package: "IceCore"),
+                .product(name: "MenuBarCapture", package: "MenuBarCapture"),
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         // `vzcorpus freeze` / `vzcorpus check` (instrument plan section 4).
         .executableTarget(name: "vzcorpus", dependencies: ["IceBarCorpus", "IceBarOracle"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
