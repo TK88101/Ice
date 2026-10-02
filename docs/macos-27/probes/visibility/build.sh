@@ -14,6 +14,10 @@ scratch=${1:-/private/tmp/claude-501/visibility-live}
 build=$scratch/build
 apps=$scratch/apps
 
+# U24 (docs/plans/2026-10-03-icebar-c-runner.md, T9): no build while A3/A4's
+# frozen files differ from af4baf1.
+"$here/../../../plans/checks/check-a3a4.sh"
+
 swift build -c release --package-path "$here" --scratch-path "$build"
 bin=$(swift build -c release --package-path "$here" --scratch-path "$build" --show-bin-path)
 

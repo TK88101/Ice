@@ -100,7 +100,7 @@ enum C2RunCommand {
 
     /// Whether this login session is the one on screen (fast user switching
     /// moves another session to the console).
-    private static func sessionOnConsole() -> Bool {
+    static func sessionOnConsole() -> Bool {
         guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
         return session[kCGSessionOnConsoleKey as String] as? Bool ?? false
     }
@@ -119,7 +119,7 @@ enum C2RunCommand {
     /// Runs one `c2-config`; if this session leaves the screen meanwhile, the
     /// child gets SIGTERM, which `GuardedStage` turns into its terminal
     /// safety teardown (helpers quit and reaped, verdict recorded).
-    private static func runChild(_ arguments: [String]) -> (code: Int32, leftConsole: Bool) {
+    static func runChild(_ arguments: [String]) -> (code: Int32, leftConsole: Bool) {
         let child = Process()
         child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
         child.arguments = arguments

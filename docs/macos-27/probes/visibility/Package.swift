@@ -154,6 +154,12 @@ let package = Package(
                 "C1Core",
                 "C1Live",
                 "C1Stage",
+                // Route C part 3: `icebar-run`, `icebar-step`, `icebar-dry`.
+                "IceBarStage",
+                "IceBarRunCore",
+                "IceBarOracle",
+                "IceBarCorpus",
+                "IceBarClaim",
                 .product(name: "IceCore", package: "IceCore"),
                 .product(name: "MenuBarCapture", package: "MenuBarCapture"),
                 .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),

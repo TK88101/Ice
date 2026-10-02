@@ -40,6 +40,8 @@ public enum S1StepResult: Equatable, Sendable {
     /// Settled readings (the step retries an inconclusive cycle itself, `C2Retry`).
     case bracket(points: [C2Point], completed: Bool, noGo: Bool)
     case confirm(cycles: [CycleRecord], completed: Bool)
+    /// The step judged a NO-GO outside its cycles' records (a control or baseline capture).
+    case noGo(String)
     case safetyStop(String)
 }
 
@@ -86,6 +88,8 @@ public struct S1Sequencer: Equatable, Sendable {
         switch (result, phase) {
         case (.safetyStop(let why), _):
             verdict = .safetyStop(why)
+        case (.noGo(let why), _):
+            verdict = .noGo("\(profile.id): \(why)")
         case (.bracket(let measured, let completed, let noGo), .bracket):
             if noGo {
                 verdict = .noGo("\(profile.id) during the band scan")

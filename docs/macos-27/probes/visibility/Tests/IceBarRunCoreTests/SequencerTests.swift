@@ -318,3 +318,14 @@ struct SittingTests {
         #expect(ProgressLine.final(.safetyStop("x"), directory: "/d") == "結果：安全停止｜x｜/d")
     }
 }
+
+@Suite("Q19: a NO-GO reported outside the cycles")
+struct S1NoGoResultTests {
+    @Test("a step's own NO-GO ends S1 whatever its purpose")
+    func noGo() {
+        var sequencer = S1Sequencer()
+        _ = sequencer.next()
+        sequencer.record(.noGo("member left of the notch at 520 pt"))
+        #expect(sequencer.next() == .finished(.noGo("k1-short: member left of the notch at 520 pt")))
+    }
+}
