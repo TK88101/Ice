@@ -43,6 +43,8 @@ struct PreS0Manifest: Codable {
         let preregistrationAtFreeze: String
         let items: Int
         let pngsVerified: Int
+        /// Section 6: "every generated corpus image" -- item id -> its PNG's sha256, each re-hashed equal to `freeze.json`'s.
+        let pngs: [String: String]
         let sourcesMatchFreeze: Bool
         let renderingsMatchFreeze: Bool
         let chevronMatchesFreeze: Bool
@@ -128,11 +130,14 @@ func write() throws {
     let freeze = try JSONDecoder().decode(FreezeManifest.self, from: Data(contentsOf: freezeURL))
     if freeze.preregistrationSHA256 != preregistrationBefore { problems.append("corpus 3 was frozen under \(freeze.preregistrationSHA256)") }
 
-    var verified = 0
+    var pngs = [String: String]()
     for record in freeze.items {
         let png = corpusDir.appendingPathComponent("items/\(record.spec.id).png")
-        if let data = try? Data(contentsOf: png), Digest.sha256(data) == record.pngSHA256 { verified += 1 } else { problems.append("png \(record.spec.id)") }
+        guard let data = try? Data(contentsOf: png) else { problems.append("png \(record.spec.id) missing"); continue }
+        let hash = Digest.sha256(data)
+        if hash == record.pngSHA256 { pngs[record.spec.id] = hash } else { problems.append("png \(record.spec.id) changed") }
     }
+    let verified = pngs.count
     let sources = sourceHashes()
     let frozenDirs = ["Sources/VZGlyphs", "Sources/IceBarCorpus", "Sources/IceBarOracle"]
     let prefix = relative(packageDir) + "/"
@@ -160,7 +165,7 @@ func write() throws {
         gitRevision: git(["rev-parse", "HEAD"]), preregistrationSHA256Before: preregistrationBefore, sources: sources,
         renderings: built.renderings, chevronAlphaSHA256: built.chevronTemplate.alphaSHA256,
         corpus3: .init(run: corpus3Run, freezeSHA256: corpus3Freeze, checkSHA256: corpus3Check, preregistrationAtFreeze: freeze.preregistrationSHA256,
-                       items: freeze.items.count, pngsVerified: verified, sourcesMatchFreeze: sourcesMatch,
+                       items: freeze.items.count, pngsVerified: verified, pngs: pngs, sourcesMatchFreeze: sourcesMatch,
                        renderingsMatchFreeze: renderingsMatch, chevronMatchesFreeze: chevronMatch, kInputs: kChecks)
     )
     let encoder = JSONEncoder()
