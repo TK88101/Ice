@@ -166,3 +166,19 @@ copies in `vizprobe` / `icewatch`); `SAdvStep.variant` as a driver-private helpe
 signal check at the top of the sitting loop; `pictureThenStep` on `drive`'s event log;
 a dynamic or per-Space wallpaper comes back as a static file on the current Space
 (INFERRED; the sitting's account uses a system picture).
+
+### Second addendum review (Codex gpt-5.6-terra, thecure), round cap two
+
+Manifest v2 `docs/plans/2026-10-03-icebar-c-pre-s0-manifest-v2.json`, sha256
+`18187e2c9f217497ad4e12ccf10a9c04747fa84a7ff5d3ba555149580b8955c5`, revision `d8e05a5`;
+`icebarfreeze verify` exit 0; seven source hashes differ from v1 (the files git lists as
+changed since `1d671d3`), `renderings`, `chevronAlphaSHA256` and `corpus3` equal.
+
+| round | finding | ruling |
+|---|---|---|
+| 1 | P1 "seven source hashes, nothing else" ignores the revision and pre-registration hash fields | accepted, reworded |
+| 1 | P1 "the whole change" ignores three changed test files | accepted: scoped to what the manifest freezes, the test files listed |
+| 2 | none -- CONVERGED; every hash, the equalities and each row's description confirmed in round 1 | -- |
+
+**Stopped for the owner**: draft `2026-10-03-icebar-c-pre-s0-addendum-2.md` needs approval
+before T8.
