@@ -14,6 +14,11 @@ owner=$(id -un)
 [[ $isolated != $owner ]] || { echo "stage-icebar: the isolated account must not be $owner" >&2; exit 2; }
 
 here=${0:A:h}
+# Runner plan section 7: nothing is staged unless every frozen source still
+# equals the pre-S0 manifest (written before S0, its sha256 in the
+# pre-registration's section 9 addendum).
+swift run --package-path "$here" --scratch-path "$scratch/build" -c release icebarfreeze verify \
+    --manifest "$here/../../../plans/2026-10-03-icebar-c-pre-s0-manifest.json"
 "$here/build.sh" "$scratch"
 
 k1=$HOME/IceReverse-evidence/20260918-204150-m-mid/captures/00011-probe-mid-20.png
