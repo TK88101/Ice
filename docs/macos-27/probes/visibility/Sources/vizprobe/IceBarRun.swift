@@ -22,12 +22,6 @@ import IceCore
 import MenuBarCapture
 import VZGlyphs
 
-/// Risk K2 (open, owner): how S-adv's dark and light bar are produced within
-/// one sitting (E3 vs E5). Until the owner decides, S-adv does not run.
-enum AppearanceDecision {
-    static let decided = false
-}
-
 enum IceBarStepCommand {
     static func run(_ arguments: [String]) -> Never {
         let step: StepArguments
@@ -156,11 +150,14 @@ final class IceBarSitting {
     }
 
     func run() -> SittingResult {
-        var driver = SittingDriver(appearanceDecided: AppearanceDecision.decided)
+        var driver = SittingDriver()
+        let desktop = LiveDesktopPicture(directory: directory, log: log)
         while true {
             switch driver.next() {
             case .finished(let result):
                 return result
+            case .setDesktopPicture(let appearance):
+                driver.desktopPictureSet(desktop?.set(appearance) ?? false)
             case .run(let request):
                 switch runStep(request) {
                 case .ended(let result): driver.end(result)

@@ -37,30 +37,44 @@ struct SittingDriverTests {
         }
     }
 
-    static func drive(_ driver: inout SittingDriver, answer: (SittingRequest) -> StepReport = answer) -> (SittingResult, [SittingRequest]) {
+    static func drive(_ driver: inout SittingDriver, answer: (SittingRequest) -> StepReport = answer,
+                      pictureSet: Bool = true) -> (SittingResult, [SittingRequest], [Appearance?]) {
         var requests = [SittingRequest]()
+        var pictures = [Appearance?]()
         while true {
             switch driver.next() {
-            case .finished(let result): return (result, requests)
+            case .finished(let result): return (result, requests, pictures)
             case .run(let request):
                 requests.append(request)
                 driver.record(answer(request))
+            case .setDesktopPicture(let appearance):
+                pictures.append(appearance)
+                driver.desktopPictureSet(pictureSet)
             }
         }
     }
 
-    @Test("S0 first, with two members and a long menu; until K2 is decided the sitting ends there")
-    func undecided() {
-        var driver = SittingDriver(appearanceDecided: false)
-        let (result, requests) = Self.drive(&driver)
-        #expect(requests == [SittingRequest(kind: .s0, members: 2, menu: .long, name: "S0")])
-        #expect(result == .interrupted("S-adv waits for the owner's decision on the appearance variants (E3, K2)"))
+    @Test("deviation 5 D5.2: the desktop picture is set before each S-adv appearance and restored before S1")
+    func pictures() {
+        var driver = SittingDriver()
+        let (result, requests, pictures) = Self.drive(&driver)
+        #expect(result == .completed("S1 capacity 16"))
+        #expect(requests.first == SittingRequest(kind: .s0, members: 2, menu: .long, name: "S0"))
+        #expect(pictures == [.dark, .light, .dark, nil])
+    }
+
+    @Test("D5.2: a desktop picture that cannot be set ends the sitting")
+    func pictureFails() {
+        var driver = SittingDriver()
+        let (result, requests, _) = Self.drive(&driver, pictureSet: false)
+        #expect(result == .interrupted("the desktop picture could not be set (deviation 5 D5.2)"))
+        #expect(requests.count == 1)
     }
 
     @Test("decided: S0, four variants x two sweeps, the `«` rest state, then S1 to its capacity")
     func whole() {
-        var driver = SittingDriver(appearanceDecided: true)
-        let (result, requests) = Self.drive(&driver)
+        var driver = SittingDriver()
+        let (result, requests, _) = Self.drive(&driver)
         #expect(result == .completed("S1 capacity 16"))
         #expect(requests.filter { if case .sAdvSweep = $0.kind { true } else { false } }.count == 8)
         #expect(requests.filter { if case .sAdvChevron = $0.kind { true } else { false } }.count == 1)
@@ -70,8 +84,8 @@ struct SittingDriverTests {
 
     @Test("`«` episodes of the separate S0 and S-adv processes are merged before BControl")
     func merged() {
-        var driver = SittingDriver(appearanceDecided: true)
-        let (result, _) = Self.drive(&driver) { request in
+        var driver = SittingDriver()
+        let (result, _, _) = Self.drive(&driver) { request in
             switch request.kind {
             case .s0: return Self.report(s0: Self.s0Pass, b: Array(Self.chevronSeen.prefix(5)))
             case .sAdvChevron: return Self.report(sweep: .pass, b: Array(Self.chevronSeen.prefix(5)))
@@ -79,8 +93,8 @@ struct SittingDriverTests {
             }
         }
         #expect(result == .completed("S1 capacity 16"))
-        var mismatch = SittingDriver(appearanceDecided: true)
-        let (stopped, _) = Self.drive(&mismatch) { request in
+        var mismatch = SittingDriver()
+        let (stopped, _, _) = Self.drive(&mismatch) { request in
             if case .sAdvChevron = request.kind { return Self.report(sweep: .pass, b: [BObservation(episode: 1, axChevron: true, pixels: .absent)]) }
             return Self.answer(request)
         }
@@ -89,19 +103,19 @@ struct SittingDriverTests {
 
     @Test("S0's gates; a step without its S0 report is S0 not shown")
     func s0Gates() {
-        var noGo = SittingDriver(appearanceDecided: true)
+        var noGo = SittingDriver()
         #expect(Self.drive(&noGo) { _ in Self.report(.noGo, s0: S0Report(outcome: .noGo, c3: .holds, section8: .consistent)) }.0
             == .failed("S0: the claim was granted with a long menu"))
-        var missing = SittingDriver(appearanceDecided: true)
+        var missing = SittingDriver()
         #expect(Self.drive(&missing) { _ in var r = Self.report(.inconclusive); r.reason = "placement gate: missing(\"ell\")"; return r }.0
             == .failed("S0 not shown: placement gate: missing(\"ell\")"))
     }
 
     @Test("a safety stop in any step, or a step the runner ended, ends the sitting")
     func ends() {
-        var safety = SittingDriver(appearanceDecided: true)
+        var safety = SittingDriver()
         #expect(Self.drive(&safety) { _ in var r = Self.report(.safetyStop); r.reason = "foreign item"; return r }.0 == .safetyStop("S0: foreign item"))
-        var ended = SittingDriver(appearanceDecided: true)
+        var ended = SittingDriver()
         _ = ended.next()
         ended.end(.interrupted("this session left the screen during step 1"))
         #expect(ended.next() == .finished(.interrupted("this session left the screen during step 1")))
@@ -109,8 +123,8 @@ struct SittingDriverTests {
 
     @Test("S-adv NO-GO fails the sitting")
     func sAdvNoGo() {
-        var driver = SittingDriver(appearanceDecided: true)
-        let (result, _) = Self.drive(&driver) { request in
+        var driver = SittingDriver()
+        let (result, _, _) = Self.drive(&driver) { request in
             if case .sAdvSweep = request.kind { return Self.report(.noGo, sweep: .noGo) }
             return Self.answer(request)
         }

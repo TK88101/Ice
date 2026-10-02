@@ -142,11 +142,6 @@ public enum Sitting {
         }
     }
 
-    /// Q18, risk K2: S-adv needs both appearance variants; how is the owner's decision.
-    public static func beforeSAdv(appearanceDecided: Bool) -> SittingDecision {
-        appearanceDecided ? .proceed : .end(.interrupted("S-adv waits for the owner's decision on the appearance variants (E3, K2)"))
-    }
-
     public static func afterSAdv(_ outcome: RepeatOutcome, bControl: BOutcome) -> SittingDecision {
         switch outcome {
         case .noGo: return .end(.failed("S-adv: the claim was granted while the oracle saw a member or «"))
@@ -204,6 +199,13 @@ public enum SAdvStep: Equatable, Sendable {
     case sweep(SAdvVariant)
     case chevron(SAdvVariant)
     case finished(RepeatOutcome)
+
+    public var variant: SAdvVariant? {
+        switch self {
+        case .sweep(let variant), .chevron(let variant): variant
+        case .finished: nil
+        }
+    }
 }
 
 /// Q17: each variant's two sweeps (route C: "two sweeps each way per

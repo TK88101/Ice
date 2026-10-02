@@ -283,12 +283,6 @@ struct SittingTests {
         #expect(Sitting.afterS0(.incomplete, c3: .holds, section8: .consistent) == .end(.failed("S0 not shown: ended before 5 cycles")))
     }
 
-    @Test("S-adv cannot run until the owner decides how the appearance variants are produced (K2)")
-    func appearanceGate() {
-        #expect(Sitting.beforeSAdv(appearanceDecided: false) == .end(.interrupted("S-adv waits for the owner's decision on the appearance variants (E3, K2)")))
-        #expect(Sitting.beforeSAdv(appearanceDecided: true) == .proceed)
-    }
-
     @Test("S-adv's gates: NO-GO fails; BControl must be valid before S1")
     func afterSAdv() {
         #expect(Sitting.afterSAdv(.pass, bControl: .valid(captures: 10, episodes: 2)) == .proceed)

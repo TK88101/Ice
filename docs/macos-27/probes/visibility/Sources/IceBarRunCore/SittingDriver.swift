@@ -22,6 +22,9 @@ public struct SittingRequest: Equatable, Sendable {
 
 public enum SittingNext: Equatable, Sendable {
     case run(SittingRequest)
+    /// Deviation 5 D5.2: set the desktop picture to the staged image of this
+    /// appearance (`nil`: restore the original), then call `desktopPictureSet`.
+    case setDesktopPicture(Appearance?)
     case finished(SittingResult)
 }
 
@@ -38,25 +41,27 @@ public struct SittingDriver: Sendable {
         case done(SittingResult)
     }
 
-    private let appearanceDecided: Bool
     private var phase = Phase.s0
+    /// The staged picture now on the desktop; `nil`: the original.
+    private var picture: Appearance?
+    private var pendingPicture: Appearance?
     private var current: SittingRequest?
     /// Each process's `«` observations, merged before `BControl` (Q14).
     private var observations = [[BObservation]]()
 
-    /// `appearanceDecided`: risk K2 -- S-adv runs only once the owner decided how its variants are produced.
-    public init(appearanceDecided: Bool) {
-        self.appearanceDecided = appearanceDecided
-    }
+    public init() {}
 
     public mutating func next() -> SittingNext {
         switch phase {
         case .done(let result):
-            return .finished(result)
+            // The original picture back whatever ended the sitting.
+            return picture == nil ? .finished(result) : requestPicture(nil)
         case .s0:
             return run(Self.s0)
         case .sAdv(let sequencer):
-            switch sequencer.next() {
+            let step = sequencer.next()
+            if let variant = step.variant, picture != variant.appearance { return requestPicture(variant.appearance) }
+            switch step {
             case .sweep(let variant):
                 return run(SittingRequest(kind: .sAdvSweep(variant), members: Self.sAdvMembers, menu: Self.sAdvMenu, name: "S-adv \(variant.name)"))
             case .chevron(let variant):
@@ -69,6 +74,8 @@ public struct SittingDriver: Sendable {
                 return next()
             }
         case .s1(let sequencer, _):
+            // D5.2: the original picture is restored before S1.
+            if picture != nil { return requestPicture(nil) }
             switch sequencer.next() {
             case .finished(let verdict):
                 phase = .done(Sitting.afterS1(verdict))
@@ -93,7 +100,6 @@ public struct SittingDriver: Sendable {
             observations.append(report.chevronObservations.map(\.observation))
             guard let s0 = report.s0 else { return end(.failed("S0 not shown: \(report.reason ?? "no S0 report")")) }
             if case .end(let result) = Sitting.afterS0(s0.outcome, c3: s0.c3, section8: s0.section8) { return end(result) }
-            if case .end(let result) = Sitting.beforeSAdv(appearanceDecided: appearanceDecided) { return end(result) }
             phase = .sAdv(SAdvSequencer())
         case .sAdv(var sequencer):
             observations.append(report.chevronObservations.map(\.observation))
@@ -103,6 +109,23 @@ public struct SittingDriver: Sendable {
             sequencer.record(ReportReading.s1(report, purpose: purpose))
             phase = .s1(sequencer, purpose: purpose)
         }
+    }
+
+    /// D5.2: whether the requested desktop picture was set. A failure ends the
+    /// sitting (a failed restore at its end keeps the result already reached).
+    public mutating func desktopPictureSet(_ ok: Bool) {
+        if ok {
+            picture = pendingPicture
+            return
+        }
+        picture = nil
+        if case .done = phase { return }
+        end(.interrupted("the desktop picture could not be set (deviation 5 D5.2)"))
+    }
+
+    private mutating func requestPicture(_ appearance: Appearance?) -> SittingNext {
+        pendingPicture = appearance
+        return .setDesktopPicture(appearance)
     }
 
     /// The runner ended the step itself (console left, no verified report).
