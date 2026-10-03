@@ -25,24 +25,30 @@ extension SpikeStage {
 
     /// Up to three brackets at rest, a settle apart, until one shows every member and visible helper.
     func restControl() -> Bool {
-        var notBefore = lastChange + plan.settle
+        var notBefore = lastChange + settle
         for _ in 0..<Self.restControlAttempts {
             if let read = bracket("rest-control", notBefore: notBefore), read.controlPassed { return true }
-            notBefore = clock.now() + plan.settle
+            notBefore = clock.now() + settle
         }
         return false
+    }
+
+    /// The hiding read: two brackets, the first a settle after the last change, the second a gap later.
+    func twoBrackets(_ name: String) -> [StepObservation] {
+        var brackets = [StepObservation]()
+        for i in 1...2 {
+            let notBefore = i == 1 ? lastChange + settle : clock.now() + SpikeStagePlan.bracketGap
+            if let read = bracket("\(name)-\(i)", notBefore: notBefore) { brackets.append(read.observation) }
+        }
+        return brackets
     }
 
     func step(_ length: Double) -> StepRecord {
         let name = "L\(Band.format(length))"
         setLength(length)
-        var brackets = [StepObservation]()
-        for i in 1...2 {
-            let notBefore = i == 1 ? lastChange + plan.settle : clock.now() + plan.bracketGap
-            if let read = bracket("\(name)-\(i)", notBefore: notBefore) { brackets.append(read.observation) }
-        }
+        let brackets = twoBrackets(name)
         rest()
-        let control = bracket("\(name)-restore", notBefore: lastChange + plan.settle)?.controlPassed ?? false
+        let control = bracket("\(name)-restore", notBefore: lastChange + settle)?.controlPassed ?? false
         let outcome = SpikeRules.outcome(brackets, controlPassed: control)
         evidence.record("step", ["length": length, "outcome": "\(outcome)"])
         return StepRecord(length: length, outcome: outcome)

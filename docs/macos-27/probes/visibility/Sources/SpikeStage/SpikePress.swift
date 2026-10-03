@@ -18,52 +18,62 @@ extension SpikeStage {
         guard let member = members.first, let helper = launched.first(where: { $0.id == member })?.helper, let pid = pids[member],
               let identifier = roster.first(where: { $0.id == member })?.identifier
         else { return (nil, "no member") }
+        // The helper's `menu` lines are one of the two signs of the menu; a
+        // helper that cannot be read for them is refused, not silently ignored.
+        guard let replies = helper as? SpikeReplyReading else { return (nil, "the member helper cannot report its menu") }
         setLength(target.length)
         guard hiddenNow("B-hidden") else { return (nil, "the member is not hidden clean at \(Band.format(target.length)) pt") }
+        let press = PressSubject(helper: helper, replies: replies, pid: pid, identifier: identifier)
         var pushedOff = [PressTrial]()
         for i in 1...SpikeBRules.trials {
-            pushedOff.append(trial(helper, pid: pid, identifier: identifier, label: "off-\(i)"))
-            clock.sleep(until: clock.now() + plan.trialGap)
+            pushedOff.append(trial(press, label: "off-\(i)"))
+            clock.sleep(until: clock.now() + SpikeStagePlan.trialGap)
         }
         var fallback = [PressTrial]()
         if SpikeBRules.openedCount(pushedOff) < SpikeBRules.needed {
             for i in 1...SpikeBRules.trials {
                 rest()
-                clock.sleep(until: lastChange + plan.settle)
-                fallback.append(trial(helper, pid: pid, identifier: identifier, label: "shown-\(i)"))
+                clock.sleep(until: lastChange + settle)
+                fallback.append(trial(press, label: "shown-\(i)"))
                 setLength(target.length)
                 let hidden = hiddenNow("B-rehide-\(i)")
                 evidence.record("rehide", ["trial": i, "hidden": hidden])
-                clock.sleep(until: clock.now() + plan.trialGap)
+                clock.sleep(until: clock.now() + SpikeStagePlan.trialGap)
             }
         }
         rest()
         return (SpikeBResult(length: target.length, pushedOff: pushedOff, fallback: fallback), nil)
     }
 
+    /// The member being pressed and the channels its menu is seen on.
+    private struct PressSubject {
+        let helper: IceBarHelper
+        let replies: SpikeReplyReading
+        let pid: pid_t
+        let identifier: String
+    }
+
     /// Two brackets after the settle read hidden clean.
     private func hiddenNow(_ label: String) -> Bool {
-        var brackets = [StepObservation]()
-        for i in 1...2 {
-            let notBefore = i == 1 ? lastChange + plan.settle : clock.now() + plan.bracketGap
-            if let read = bracket("\(label)-\(i)", notBefore: notBefore) { brackets.append(read.observation) }
-        }
-        let outcome = SpikeRules.outcome(brackets, controlPassed: true)
+        let outcome = SpikeRules.hidden(twoBrackets(label))
         evidence.record("hidden", ["label": label, "outcome": "\(outcome)"])
         return outcome.isClean
     }
 
     /// One press: watch the helper's `menu open` line and the window server
     /// for a pop-up menu window of its pid, then close the menu again.
-    private func trial(_ helper: IceBarHelper, pid: pid_t, identifier: String, label: String) -> PressTrial {
-        let replies = helper as? SpikeReplyReading
+    private func trial(_ subject: PressSubject, label: String) -> PressTrial {
+        let (helper, replies, pid, identifier) = (subject.helper, subject.replies, subject.pid, subject.identifier)
         let start = clock.now()
         press.beginPress(pid: pid, identifier: identifier)
         var openedAfter: Double?
         var signals = [String]()
         let deadline = start + SpikeBRules.openTimeout + 0.5
+        // `awaitReply` itself waits up to a poll period for the helper's line;
+        // the window list is read right after it, and the loop sleeps only
+        // once the helper's line has come (nothing left to wait on there).
         while clock.now() <= deadline, signals.count < 2 {
-            if !signals.contains("helper"), let reply = replies?.awaitReply(SpikeHelperFlags.menuReply, timeout: Self.pollSeconds),
+            if !signals.contains("helper"), let reply = replies.awaitReply(SpikeHelperFlags.menuReply, timeout: Self.pollSeconds),
                reply["event"] as? String == "open" {
                 signals.append("helper")
                 openedAfter = openedAfter ?? clock.now() - start
@@ -73,7 +83,7 @@ extension SpikeStage {
                 signals.append("window")
                 openedAfter = openedAfter ?? clock.now() - start
             }
-            if signals.count < 2 { clock.sleep(until: clock.now() + Self.pollSeconds) }
+            if signals.contains("helper"), signals.count < 2 { clock.sleep(until: clock.now() + Self.pollSeconds) }
         }
         if let image = environment.capturer.capture() {
             sequence += 1
@@ -82,7 +92,7 @@ extension SpikeStage {
         helper.send(SpikeHelperFlags.closeMenu)
         var closed = false
         if openedAfter != nil {
-            closed = replies?.awaitReply(SpikeHelperFlags.menuReply, timeout: 1.0)?["event"] as? String == "close"
+            closed = replies.awaitReply(SpikeHelperFlags.menuReply, timeout: 1.0)?["event"] as? String == "close"
         }
         var result = press.pressResult()
         let resultDeadline = clock.now() + Self.pressResultWait

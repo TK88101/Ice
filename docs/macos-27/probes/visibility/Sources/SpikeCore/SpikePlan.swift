@@ -3,7 +3,7 @@
 // lengths it jumps to from rest. Pure.
 import C2Core
 
-public struct SpikeProfile: Equatable, Hashable, Sendable, Codable {
+public struct SpikeProfile: Equatable, Sendable, Codable {
     public let members: Int
     public let menu: C2MenuWidth
 
@@ -50,9 +50,8 @@ public enum SpikeAPlan {
     }
 }
 
-/// The lengths of one sweep, inside vzhelper's `length` range (0...1000).
+/// The lengths of one sweep, inside vzhelper's `length` range (`C2Band`'s bounds).
 public struct SpikeLengths: Equatable, Sendable, Codable {
-    public static let maxLengthPt = 1000.0
     /// On C1's grid (600, 616, ..., 728, 840 are all on it), up to vzhelper's cap.
     public static let standard = SpikeLengths(from: 408, through: 1000, step: 16)!
 
@@ -61,7 +60,7 @@ public struct SpikeLengths: Equatable, Sendable, Codable {
     public let step: Double
 
     public init?(from: Double, through: Double, step: Double) {
-        guard from >= 0, through <= Self.maxLengthPt, from <= through, step > 0 else { return nil }
+        guard from >= C2Band.minimumLengthPt, through <= C2Band.maximumLengthPt, from <= through, step > 0 else { return nil }
         self.from = from
         self.through = through
         self.step = step

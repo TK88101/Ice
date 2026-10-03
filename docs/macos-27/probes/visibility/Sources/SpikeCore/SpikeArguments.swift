@@ -1,6 +1,7 @@
 // T0: `vizprobe spike-run`'s arguments, and the vzhelper flag and lines
 // spike B relies on (one place, so vzhelper and the stage agree).
 import C2Core
+import IceBarRunCore
 
 public enum SpikeHelperFlags {
     /// vzhelper: give the item a one-item menu and report it opening and closing.
@@ -15,9 +16,8 @@ public enum SpikeHelperFlags {
 }
 
 public struct SpikeArguments: Equatable, Sendable {
-    /// vzhelper's `--lifetime` cap is 1800 s; `Roster.maxMembers` is 16.
-    public static let maxMembers = 16
-    public static let allowedMenus: [C2MenuWidth] = [.short, .mid]
+    public static let maxMembers = Roster.maxMembers
+    public static let allowedMenus = SpikeAPlan.standardMenus
 
     public let appsPath: String
     public let evidenceRoot: String

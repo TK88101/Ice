@@ -44,8 +44,15 @@ enum SpikeRunCommand {
         guard C2Guards.rosterAllowed(bundleIDs: BarScan.items().map(\.bundleID)) else { fail("spike-run: refused -- the bar has a non-system item") }
 
         let apps = URL(fileURLWithPath: parsed.appsPath)
+        // As `icebar-run`: the run's directory is created strictly (no
+        // intermediate directories, fails if anything is already at that
+        // path -- the evidence root is world-writable), and the evidence
+        // itself goes in a child of it.
         let directory = URL(fileURLWithPath: parsed.evidenceRoot).appendingPathComponent("\(LiveEvidence.timestamp(Date(), format: "yyyyMMdd-HHmmss"))-spike")
-        LiveEvidence.directoryOverride = directory
+        do { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false) } catch {
+            fail("spike-run: cannot create \(directory.path): \(error)")
+        }
+        LiveEvidence.directoryOverride = directory.appendingPathComponent("run")
         let binaries = ["vizprobe": URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath(),
                         "vzhelper": apps.appendingPathComponent("Target.app/Contents/MacOS/vzhelper")]
         let evidence: LiveEvidence
@@ -62,11 +69,11 @@ enum SpikeRunCommand {
             registry.requestQuitAll()
             finisher.finish(lines: ["結果：中斷｜watchdog after \(Int(watchdogMinutes)) min"], code: 2)
         }
+        // `-w`: caffeinate ends with this process, however it exits.
         let caffeinate = Process()
         caffeinate.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
         caffeinate.arguments = ["-d", "-i", "-w", "\(getpid())"]
         try? caffeinate.run()
-        defer { caffeinate.terminate() }
         do {
             let environment = try IceBarLiveWiring.environment(apps: apps, evidence: evidence, registry: registry)
             let templates = try IceBarLiveWiring.templates()
@@ -89,17 +96,20 @@ enum SpikeRunCommand {
     }
 }
 
-/// Writes `result.json`, `lines.txt` and the hashed final manifest exactly once, whoever gets there first.
+/// Writes `result.json`, `lines.txt` (both inside the evidence directory, so
+/// the hashed final manifest covers them) exactly once, whoever gets there first.
 final class SpikeFinisher: @unchecked Sendable {
     struct Written: Codable {
         let a: SpikeAResult
         let b: SpikeBResult?
         let bProblem: String?
+        let runB: Bool
         let lines: [String]
         let stopQuestion: String?
     }
 
     private let evidence: LiveEvidence
+    /// The run's directory (the evidence directory's parent), named in the final line.
     private let directory: URL
     private let lock = NSLock()
     private var done = false
@@ -124,9 +134,9 @@ final class SpikeFinisher: @unchecked Sendable {
     func write(_ result: SpikeRunResult) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let written = Written(a: result.a, b: result.b, bProblem: result.bProblem, lines: result.lines, stopQuestion: result.stopQuestion)
+        let written = Written(a: result.a, b: result.b, bProblem: result.bProblem, runB: result.runB, lines: result.lines, stopQuestion: result.stopQuestion)
         if let data = try? encoder.encode(written) {
-            try? data.write(to: directory.appendingPathComponent("result.json"))
+            try? data.write(to: evidence.directory.appendingPathComponent("result.json"))
         }
     }
 
@@ -137,7 +147,7 @@ final class SpikeFinisher: @unchecked Sendable {
             while true { sleep(60) }
         }
         done = true
-        try? (lines.joined(separator: "\n") + "\n").write(to: directory.appendingPathComponent("lines.txt"), atomically: true, encoding: .utf8)
+        try? (lines.joined(separator: "\n") + "\n").write(to: evidence.directory.appendingPathComponent("lines.txt"), atomically: true, encoding: .utf8)
         evidence.record("spike.result", ["lines": lines, "code": Int(code)])
         evidence.close()
         for line in lines { print(line) }

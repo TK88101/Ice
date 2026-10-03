@@ -44,6 +44,8 @@ public final class SpikeStage {
     var members: [String] { roster.filter { $0.role == .member }.map(\.id) }
     var visible: [String] { roster.filter { $0.role == .visible }.map(\.id) }
     var barHeight: Double { environment.geometry.heightPt }
+    /// Route C's settle after a spacer write or a helper change (`SpikeStagePlan.cadence`).
+    var settle: Double { SpikeStagePlan.cadence.settle }
     var clock: any IceBarClock { environment.clock }
     var evidence: any IceBarEvidence { environment.evidence }
 
@@ -64,10 +66,10 @@ public final class SpikeStage {
         if plan.runB, let target = a.pressTarget {
             progress("spike B \(target.profile.name) @ \(Band.format(target.length)) pt 開始")
             (b, bProblem) = pressStage(target)
-            evidence.record("spike.b", ["clickLine": SpikeBRules.clickLine(b), "problem": bProblem ?? ""])
+            evidence.record("spike.b", ["clickLine": SpikeVerdict.clickLine(a: a, b: b, bProblem: bProblem, runB: plan.runB), "problem": bProblem ?? ""])
             progress("spike B 結束：" + (b.map { "\(SpikeBRules.path($0).rawValue)" } ?? "沒跑完（\(bProblem ?? "")）"))
         }
-        return SpikeRunResult(a: a, b: b, bProblem: bProblem)
+        return SpikeRunResult(a: a, b: b, bProblem: bProblem, runB: plan.runB)
     }
 
     // MARK: - Launch and teardown (as `IceBarStep`, Q11 and Q21)
@@ -145,10 +147,10 @@ public final class SpikeStage {
 
     private func warmUp() -> Bool {
         var next = clock.now()
-        for _ in 0..<plan.warmUpCaptures {
+        for _ in 0..<SpikeStagePlan.cadence.warmUpCaptures {
             clock.sleep(until: next)
             guard environment.capturer.capture() != nil else { return false }
-            next = clock.now() + plan.warmUpSpacing
+            next = clock.now() + SpikeStagePlan.cadence.warmUpSpacing
         }
         return true
     }

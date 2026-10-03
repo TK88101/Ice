@@ -1,8 +1,11 @@
-// T0: the band of one profile -- the widest contiguous run of clean lengths.
+// T0: the band of one profile -- the widest contiguous run of clean lengths,
+// by C2's own rule (`C2Band.band`: widest, a tie to the lower run).
+import C2Core
 
 public struct Band: Equatable, Sendable, Codable {
     public let lo: Double
     public let hi: Double
+    /// Clean lengths inside the run.
     public let count: Int
 
     public init(lo: Double, hi: Double, count: Int) {
@@ -22,24 +25,12 @@ public struct Band: Equatable, Sendable, Codable {
 }
 
 public enum SpikeBand {
-    /// Contiguous (in record order) runs of `hiddenClean`.
-    public static func runs(_ records: [StepRecord]) -> [Band] {
-        var bands = [Band]()
-        var open: (lo: Double, hi: Double, count: Int)?
-        for record in records {
-            if record.outcome.isClean {
-                open = open.map { ($0.lo, record.length, $0.count + 1) } ?? (record.length, record.length, 1)
-            } else if let run = open {
-                bands.append(Band(lo: run.lo, hi: run.hi, count: run.count))
-                open = nil
-            }
-        }
-        if let run = open { bands.append(Band(lo: run.lo, hi: run.hi, count: run.count)) }
-        return bands
-    }
-
-    /// The widest run; a tie goes to the lower one.
+    /// `C2Band.band` over the records (`hiddenClean` is C2's `hiddenNoFold`;
+    /// anything else splits a run, an `unknown` included -- fail closed).
     public static func widest(_ records: [StepRecord]) -> Band? {
-        runs(records).max { a, b in a.count < b.count || (a.count == b.count && a.lo > b.lo) }
+        let points = records.map { C2Point(length: $0.length, reading: $0.outcome.isClean ? .hiddenNoFold : .notShown) }
+        guard let span = C2Band.band(points) else { return nil }
+        let count = records.filter { $0.outcome.isClean && $0.length >= span.lo && $0.length <= span.hi }.count
+        return Band(lo: span.lo, hi: span.hi, count: count)
     }
 }

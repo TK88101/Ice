@@ -75,20 +75,27 @@ struct SpikeReportTests {
             == "點得開嗎：擠出去時點不開（5 次 0 次）；先顯示、再按、再藏回去這條路點得開，5 次有 4 次在 1 秒內開了選單（700 pt）。")
         #expect(SpikeBRules.clickLine(SpikeBResult(length: 700, pushedOff: [never, never, never, never, never], fallback: [never, never, never, never, never]))
             == "點得開嗎：點不開。擠出去時 5 次 0 次；先顯示再按這條路 5 次 0 次（700 pt）。")
-        #expect(SpikeBRules.clickLine(nil) == "點得開嗎：沒測（spike A 在 k=1 找不到區間，spike B 沒跑）。")
+        let none = result([(1, .short, nil), (1, .mid, nil)])
+        let some = result([(1, .short, Band(lo: 600, hi: 800, count: 13))])
+        #expect(SpikeVerdict.clickLine(a: none, b: nil, bProblem: nil, runB: true) == "點得開嗎：沒測（spike A 在 k=1 找不到區間，spike B 沒跑）。")
+        #expect(SpikeVerdict.clickLine(a: some, b: nil, bProblem: nil, runB: false) == "點得開嗎：沒測（這次用 --no-b 跳過 spike B）。")
+        #expect(SpikeVerdict.clickLine(a: some, b: nil, bProblem: "menus: calibration failed", runB: true) == "點得開嗎：沒測成（menus: calibration failed）。")
     }
 
     @Test("the stop question is one sentence, yes or no, only when a stop rule fires")
     func stopQuestion() {
         let a = result([(1, .short, nil), (1, .mid, nil)])
-        #expect(SpikeVerdict.stopQuestion(a: a, b: nil) == "k=1 找不到藏得住的長度，要不要繼續做 IceBar？（是／否）")
+        #expect(SpikeVerdict.stopQuestion(a: a, b: nil, bProblem: nil, runB: true) == "k=1 找不到藏得住的長度，要不要繼續做 IceBar？（是／否）")
         let ok = result([(1, .short, Band(lo: 600, hi: 800, count: 13))])
         let never = PressTrial(pressError: nil, openedAfter: nil, signals: [], closed: false)
         let bNone = SpikeBResult(length: 700, pushedOff: Array(repeating: never, count: 5), fallback: Array(repeating: never, count: 5))
-        #expect(SpikeVerdict.stopQuestion(a: ok, b: bNone) == "找不到可用的點擊方式，要不要繼續做 IceBar？（是／否）")
+        #expect(SpikeVerdict.stopQuestion(a: ok, b: bNone, bProblem: nil, runB: true) == "找不到可用的點擊方式，要不要繼續做 IceBar？（是／否）")
         let opened = PressTrial(pressError: 0, openedAfter: 0.2, signals: ["helper"], closed: true)
         let bOK = SpikeBResult(length: 700, pushedOff: Array(repeating: opened, count: 5), fallback: [])
-        #expect(SpikeVerdict.stopQuestion(a: ok, b: bOK) == nil)
-        #expect(SpikeVerdict.stopQuestion(a: ok, b: nil) == "spike B 沒跑完，要不要繼續做 IceBar？（是／否）")
+        #expect(SpikeVerdict.stopQuestion(a: ok, b: bOK, bProblem: nil, runB: true) == nil)
+        #expect(SpikeVerdict.stopQuestion(a: ok, b: nil, bProblem: "the member is not hidden clean at 700 pt", runB: true)
+            == "spike B 沒跑完（the member is not hidden clean at 700 pt），要不要繼續做 IceBar？（是／否）")
+        #expect(SpikeVerdict.stopQuestion(a: ok, b: nil, bProblem: nil, runB: false) == nil)
+        #expect(SpikeVerdict.lines(a: ok, b: nil, bProblem: nil, runB: false).count == 2)
     }
 }

@@ -477,14 +477,14 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The button's action, as Ice wires it; nothing here ever clicks it.
     @objc func performAction() {}
 
-    // T0 spike B: the menu's own report of opening and closing, with the
-    // process uptime so the controller can place it against its press.
+    // T0 spike B: the menu's own report of opening and closing (the
+    // controller times them against its press with its own clock).
     func menuWillOpen(_ menu: NSMenu) {
-        reply(SpikeHelperFlags.menuReply, ["event": "open", "uptime": ProcessInfo.processInfo.systemUptime])
+        reply(SpikeHelperFlags.menuReply, ["event": "open"])
     }
 
     func menuDidClose(_ menu: NSMenu) {
-        reply(SpikeHelperFlags.menuReply, ["event": "close", "uptime": ProcessInfo.processInfo.systemUptime])
+        reply(SpikeHelperFlags.menuReply, ["event": "close"])
     }
 
     func closeMenus() {

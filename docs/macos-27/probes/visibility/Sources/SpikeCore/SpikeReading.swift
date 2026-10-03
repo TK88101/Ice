@@ -1,18 +1,13 @@
 // T0: what one length's brackets showed, and the outcome the band is built
 // from. Fail closed: a length is clean only when every source agrees.
-
-public enum ChevronRead: String, Equatable, Sendable, Codable {
-    case present
-    case absent
-    case notEvaluable
-}
+import IceBarOracle
 
 /// One bracket (capture, AX read, capture) after the oracle.
 public struct StepObservation: Equatable, Sendable {
     /// An on-bar `MenuBarAgent` frame of the chevron width was listed.
     public var axChevron: Bool
     /// The oracle's chevron sighting per capture.
-    public var pixelChevron: [ChevronRead]
+    public var pixelChevron: [ChevronSighting]
     /// Members the oracle identified (drawn, full) in either capture.
     public var membersSeen: [String]
     /// Visible helpers not drawn where AX puts them.
@@ -20,7 +15,7 @@ public struct StepObservation: Equatable, Sendable {
     /// The oracle could not tell two helpers apart.
     public var ambiguous: Bool
 
-    public init(axChevron: Bool, pixelChevron: [ChevronRead], membersSeen: [String], visibleMissing: [String], ambiguous: Bool) {
+    public init(axChevron: Bool, pixelChevron: [ChevronSighting], membersSeen: [String], visibleMissing: [String], ambiguous: Bool) {
         self.axChevron = axChevron
         self.pixelChevron = pixelChevron
         self.membersSeen = membersSeen
@@ -61,5 +56,10 @@ public enum SpikeRules {
         let folded = brackets.contains { $0.axChevron || $0.pixelChevron.contains(.present) }
         if folded { return .folded(drawn: drawn) }
         return drawn.isEmpty ? .hiddenClean : .drawn(drawn)
+    }
+
+    /// The brackets alone, with no restore control to pass (spike B's "still hidden?" read).
+    public static func hidden(_ brackets: [StepObservation]) -> StepOutcome {
+        outcome(brackets, controlPassed: true)
     }
 }

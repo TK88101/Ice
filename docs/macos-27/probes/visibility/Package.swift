@@ -177,9 +177,10 @@ let package = Package(
         // IceBar build plan T0 (docs/plans/2026-10-03-icebar-build.md, section
         // 7 note 1): spike A's plan, readings, band and report, spike B's
         // press verdict, the `spike-run` arguments and vzhelper's `--menu`
-        // flag -- pure (standard library plus C2Core's width classes).
-        .target(name: "SpikeCore", dependencies: ["C2Core"]),
-        .testTarget(name: "SpikeCoreTests", dependencies: ["SpikeCore", "C2Core"]),
+        // flag -- pure (standard library plus C2Core's width classes and
+        // band rule, IceBarRunCore's roster bound, the oracle's chevron type).
+        .target(name: "SpikeCore", dependencies: ["C2Core", "IceBarRunCore", "IceBarOracle"]),
+        .testTarget(name: "SpikeCoreTests", dependencies: ["SpikeCore", "C2Core", "IceBarOracle"]),
         // T0: the two spikes' orchestration behind route C's
         // `IceBarEnvironment` seams (launch, placement, sweep, press,
         // teardown), so `SpikeStageTests` drives the real code on a fake bar.

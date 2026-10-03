@@ -84,7 +84,11 @@ final class SpikeFakeWorld {
         let g = Self.geometry
         let width = g.widthPx
         let height = g.heightPx
-        var bytes = [UInt8](repeating: 255, count: width * height * 4)
+        // The backdrop in one fill; only the notch and the stamps are painted after.
+        var bytes = [UInt8](unsafeUninitializedCapacity: width * height * 4) { buffer, count in
+            for i in 0..<(width * height) { (buffer[i * 4], buffer[i * 4 + 1], buffer[i * 4 + 2], buffer[i * 4 + 3]) = (40, 40, 40, 255) }
+            count = width * height * 4
+        }
         func set(_ x: Int, _ y: Int, _ c: (UInt8, UInt8, UInt8)) {
             guard x >= 0, x < width, y >= 0, y < height else { return }
             let i = (y * width + x) * 4
@@ -92,7 +96,6 @@ final class SpikeFakeWorld {
             bytes[i + 1] = c.1
             bytes[i + 2] = c.2
         }
-        for y in 0..<height { for x in 0..<width { set(x, y, (40, 40, 40)) } }
         let notch = OracleGeometry.notchColumns(g.notch!, scale: g.scale)
         for y in 0..<height { for x in notch { set(x, y, (0, 0, 0)) } }
         func stamp(_ t: OracleTemplate, atPt x: Double) {

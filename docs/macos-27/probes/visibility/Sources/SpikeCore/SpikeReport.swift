@@ -50,7 +50,7 @@ public struct SpikeAResult: Equatable, Sendable, Codable {
 
     /// Spike B's profile and length: k = 1 short's midpoint, else mid's.
     public var pressTarget: PressTarget? {
-        for menu in [C2MenuWidth.short, .mid] {
+        for menu in SpikeAPlan.standardMenus {
             if let band = band(members: 1, menu: menu) { return PressTarget(profile: SpikeProfile(members: 1, menu: menu), length: band.midpoint) }
         }
         return nil
@@ -147,9 +147,8 @@ public enum SpikeBRules {
         return .none
     }
 
-    /// 點得開嗎.
-    public static func clickLine(_ result: SpikeBResult?) -> String {
-        guard let result else { return "點得開嗎：沒測（spike A 在 k=1 找不到區間，spike B 沒跑）。" }
+    /// 點得開嗎, for a spike B that ran its trials.
+    public static func clickLine(_ result: SpikeBResult) -> String {
         let length = "\(Band.format(result.length)) pt"
         let off = (result.pushedOff.count, openedCount(result.pushedOff))
         let back = (result.fallback.count, openedCount(result.fallback))
@@ -165,16 +164,27 @@ public enum SpikeBRules {
     }
 }
 
+/// The run's two lines and the stop question, from spike A, spike B (or why
+/// it has no result: not asked for, no k = 1 band, or `bProblem`).
 public enum SpikeVerdict {
+    public static func clickLine(a: SpikeAResult, b: SpikeBResult?, bProblem: String?, runB: Bool) -> String {
+        if let b { return SpikeBRules.clickLine(b) }
+        if !runB { return "點得開嗎：沒測（這次用 --no-b 跳過 spike B）。" }
+        if a.noBandAtOne { return "點得開嗎：沒測（spike A 在 k=1 找不到區間，spike B 沒跑）。" }
+        return "點得開嗎：沒測成（\(bProblem ?? "原因不明")）。"
+    }
+
     /// The plan's T0 stop rules, as one yes-or-no question; `nil` when T1 may follow.
-    public static func stopQuestion(a: SpikeAResult, b: SpikeBResult?) -> String? {
+    public static func stopQuestion(a: SpikeAResult, b: SpikeBResult?, bProblem: String?, runB: Bool) -> String? {
         if a.noBandAtOne { return "k=1 找不到藏得住的長度，要不要繼續做 IceBar？（是／否）" }
-        guard let b else { return "spike B 沒跑完，要不要繼續做 IceBar？（是／否）" }
+        guard runB else { return nil }
+        guard let b else { return "spike B 沒跑完（\(bProblem ?? "原因不明")），要不要繼續做 IceBar？（是／否）" }
         if SpikeBRules.path(b) == .none { return "找不到可用的點擊方式，要不要繼續做 IceBar？（是／否）" }
         return nil
     }
 
-    public static func lines(a: SpikeAResult, b: SpikeBResult?) -> [String] {
-        [a.hideLine, SpikeBRules.clickLine(b)] + (stopQuestion(a: a, b: b).map { [$0] } ?? [])
+    public static func lines(a: SpikeAResult, b: SpikeBResult?, bProblem: String?, runB: Bool) -> [String] {
+        [a.hideLine, clickLine(a: a, b: b, bProblem: bProblem, runB: runB)]
+            + (stopQuestion(a: a, b: b, bProblem: bProblem, runB: runB).map { [$0] } ?? [])
     }
 }

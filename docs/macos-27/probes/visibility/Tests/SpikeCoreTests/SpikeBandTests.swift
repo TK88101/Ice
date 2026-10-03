@@ -8,10 +8,9 @@ struct SpikeBandTests {
         outcomes.enumerated().map { StepRecord(length: from + Double($0.offset) * 16, outcome: $0.element) }
     }
 
-    @Test("contiguous clean runs become bands; the widest wins")
-    func runs() {
+    @Test("the widest contiguous clean run is the band, with its count")
+    func widest() {
         let r = records([.folded(drawn: []), .hiddenClean, .hiddenClean, .drawn(["ell"]), .hiddenClean, .hiddenClean, .hiddenClean, .unknown("x")])
-        #expect(SpikeBand.runs(r) == [Band(lo: 416, hi: 432, count: 2), Band(lo: 464, hi: 496, count: 3)])
         #expect(SpikeBand.widest(r) == Band(lo: 464, hi: 496, count: 3))
     }
 
@@ -29,9 +28,10 @@ struct SpikeBandTests {
         #expect(Band(lo: 400, hi: 416, count: 2).midpoint == 408)
     }
 
-    @Test("an unknown length breaks a run (fail closed)")
+    @Test("an unknown length breaks a run (fail closed); records in any order")
     func unknownBreaks() {
         let r = records([.hiddenClean, .unknown("control"), .hiddenClean])
-        #expect(SpikeBand.runs(r) == [Band(lo: 400, hi: 400, count: 1), Band(lo: 432, hi: 432, count: 1)])
+        #expect(SpikeBand.widest(r) == Band(lo: 400, hi: 400, count: 1))
+        #expect(SpikeBand.widest(r.reversed()) == Band(lo: 400, hi: 400, count: 1))
     }
 }

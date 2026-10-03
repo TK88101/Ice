@@ -4,6 +4,7 @@
 // Nothing here imports AppKit or Accessibility; `vizprobe` supplies the live
 // implementations.
 import Darwin
+import IceBarRunCore
 import SpikeCore
 
 public protocol SpikePressing {
@@ -28,13 +29,12 @@ public struct SpikeStagePlan {
     /// `Glyph.allCases` names (`Roster.entries`).
     public var glyphOrder: [String]
     public var helperLifetimeSeconds: Int
-    /// Route C's warm-up (the capture indicator settles); 24 x 0.25 s.
-    public var warmUpCaptures = 24
-    public var warmUpSpacing = 0.25
-    /// After a spacer write or a helper change, before the first bracket.
-    public var settle = 1.0
-    public var bracketGap = 0.5
-    public var trialGap = 1.0
+
+    /// Route C's cadence: the warm-up (the capture indicator settles) and the
+    /// settle after a spacer write or a helper change.
+    public static let cadence = CadenceParameters.preRegistered
+    public static let bracketGap = 0.5
+    public static let trialGap = 1.0
 
     public init(profiles: [SpikeProfile], lengths: SpikeLengths, runB: Bool, glyphOrder: [String], helperLifetimeSeconds: Int) {
         self.profiles = profiles
@@ -50,17 +50,18 @@ public struct SpikeRunResult: Equatable {
     public let b: SpikeBResult?
     /// Why spike B could not run to its trials (launch, calibration, not hidden at the length).
     public let bProblem: String?
+    /// Whether spike B was asked for at all (`--no-b` skips it).
+    public let runB: Bool
 
-    public init(a: SpikeAResult, b: SpikeBResult?, bProblem: String?) {
+    public init(a: SpikeAResult, b: SpikeBResult?, bProblem: String?, runB: Bool) {
         self.a = a
         self.b = b
         self.bProblem = bProblem
+        self.runB = runB
     }
 
     /// The owner's lines: 藏得住幾個, 點得開嗎, and the stop question if one applies.
-    public var lines: [String] {
-        SpikeVerdict.lines(a: a, b: b) + (bProblem.map { ["spike B 沒跑完：\($0)"] } ?? [])
-    }
+    public var lines: [String] { SpikeVerdict.lines(a: a, b: b, bProblem: bProblem, runB: runB) }
 
-    public var stopQuestion: String? { SpikeVerdict.stopQuestion(a: a, b: b) }
+    public var stopQuestion: String? { SpikeVerdict.stopQuestion(a: a, b: b, bProblem: bProblem, runB: runB) }
 }
