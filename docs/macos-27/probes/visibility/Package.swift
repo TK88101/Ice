@@ -103,6 +103,41 @@ let package = Package(
             name: "IceBarClaimTests",
             dependencies: ["IceBarClaim", "IceBarOracle", "IceBarCorpus", .product(name: "IceCore", package: "IceCore")]
         ),
+        // Route C part 3 (docs/plans/2026-10-03-icebar-c-runner.md): cadence,
+        // attempts, fallback accounting and the sitting's sequencing -- every
+        // decision of the runner, pure. Standard library plus IceCore, the
+        // oracle, the claim and C2Core's band/retry rules.
+        .target(name: "IceBarRunCore", dependencies: ["IceBarOracle", "IceBarClaim", "C2Core", .product(name: "IceCore", package: "IceCore")]),
+        .testTarget(
+            name: "IceBarRunCoreTests",
+            dependencies: ["IceBarRunCore", "IceBarOracle", "IceBarClaim", "C2Core", .product(name: "IceCore", package: "IceCore")]
+        ),
+        // Route C part 3: one step process's orchestration (launch, placement,
+        // warm-up, cycles, S0 / S-adv / S1 bodies, teardown) behind
+        // `IceBarEnvironment`'s seams, so `IceBarStageTests` drives the real
+        // code on a fake bar. `vizprobe icebar-step` builds the live
+        // environment. No AppKit, no Accessibility here.
+        .target(
+            name: "IceBarStage",
+            dependencies: [
+                "IceBarRunCore", "IceBarClaim", "IceBarOracle", "C2Core",
+                .product(name: "IceCore", package: "IceCore"),
+                .product(name: "MenuBarCapture", package: "MenuBarCapture"),
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "IceBarStageTests",
+            dependencies: [
+                "IceBarStage", "IceBarRunCore", "IceBarClaim", "IceBarOracle", "C2Core", "VZGlyphs",
+                .product(name: "IceCore", package: "IceCore"),
+                .product(name: "MenuBarCapture", package: "MenuBarCapture"),
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        // Route C part 3 (runner plan section 7): the pre-S0 freeze manifest
+        // (`icebarfreeze write`) and its check before staging (`verify`).
+        .executableTarget(name: "icebarfreeze", dependencies: ["IceBarCorpus"], swiftSettings: [.swiftLanguageMode(.v5)]),
         // `vzcorpus freeze` / `vzcorpus check` (instrument plan section 4).
         .executableTarget(name: "vzcorpus", dependencies: ["IceBarCorpus", "IceBarOracle"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
@@ -122,6 +157,12 @@ let package = Package(
                 "C1Core",
                 "C1Live",
                 "C1Stage",
+                // Route C part 3: `icebar-run`, `icebar-step`, `icebar-dry`.
+                "IceBarStage",
+                "IceBarRunCore",
+                "IceBarOracle",
+                "IceBarCorpus",
+                "IceBarClaim",
                 .product(name: "IceCore", package: "IceCore"),
                 .product(name: "MenuBarCapture", package: "MenuBarCapture"),
                 .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),

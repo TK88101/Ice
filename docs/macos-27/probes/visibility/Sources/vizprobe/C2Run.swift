@@ -100,7 +100,7 @@ enum C2RunCommand {
 
     /// Whether this login session is the one on screen (fast user switching
     /// moves another session to the console).
-    private static func sessionOnConsole() -> Bool {
+    static func sessionOnConsole() -> Bool {
         guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
         return session[kCGSessionOnConsoleKey as String] as? Bool ?? false
     }
@@ -119,16 +119,24 @@ enum C2RunCommand {
     /// Runs one `c2-config`; if this session leaves the screen meanwhile, the
     /// child gets SIGTERM, which `GuardedStage` turns into its terminal
     /// safety teardown (helpers quit and reaped, verdict recorded).
-    private static func runChild(_ arguments: [String]) -> (code: Int32, leftConsole: Bool) {
+    /// `stop`: polled with the console; once true the child gets SIGTERM too.
+    static func runChild(_ arguments: [String], stop: () -> Bool = { false }) -> (code: Int32, leftConsole: Bool) {
         let child = Process()
         child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
         child.arguments = arguments
         do { try child.run() } catch { return (-1, false) }
         var leftConsole = false
+        var terminated = false
         while child.isRunning {
             sleep(consolePollSeconds)
-            if !leftConsole, child.isRunning, !sessionOnConsole() {
-                leftConsole = true
+            guard child.isRunning else { continue }
+            if !terminated {
+                leftConsole = !sessionOnConsole()
+                terminated = leftConsole || stop()
+                if terminated { child.terminate() }
+            } else if !leftConsole {
+                // `stop`'s caller ignores the signals itself, and a child inherits that until its
+                // own handlers are installed: SIGTERM is sent again at every poll until it is reaped.
                 child.terminate()
             }
         }
@@ -139,12 +147,7 @@ enum C2RunCommand {
     /// A process's result, only through its verified final manifest; a
     /// missing or mismatching one is a safety stop (fail closed).
     static func readBack(_ directory: URL) -> C2ProcessResult {
-        let finalURL = directory.appendingPathComponent("manifest.final.json")
-        guard let data = try? Data(contentsOf: finalURL),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let recorded = object["files"] as? [String: String],
-              C2Manifest.verify(recorded: recorded, actual: hashes(of: directory))
-        else { return C2ProcessResult(status: .safetyStop, points: []) }
+        guard let object = verifiedFinalManifest(directory) else { return C2ProcessResult(status: .safetyStop, points: []) }
         let status = C2ProcessResult.Status(verdict: object["verdict"] as? String)
         let lines = (try? String(contentsOf: directory.appendingPathComponent("samples.jsonl"), encoding: .utf8))?.split(separator: "\n") ?? []
         let points = lines.compactMap { line -> C2Point? in
@@ -156,6 +159,16 @@ enum C2RunCommand {
             return C2Point(length: length, reading: reading)
         }
         return C2ProcessResult(status: status, points: points)
+    }
+
+    /// A step directory's `manifest.final.json`, only when every file it lists still hashes the same.
+    static func verifiedFinalManifest(_ directory: URL) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: directory.appendingPathComponent("manifest.final.json")),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let recorded = object["files"] as? [String: String],
+              C2Manifest.verify(recorded: recorded, actual: hashes(of: directory))
+        else { return nil }
+        return object
     }
 
     static func hashes(of directory: URL) -> [String: String] {
@@ -172,7 +185,8 @@ enum C2RunCommand {
 }
 
 /// `runner.jsonl`, one record per event, then `runner.final.json` (atomic).
-private final class RunnerLog {
+/// Shared by `c2-run` and route C's `icebar-run`.
+final class RunnerLog {
     private let directory: URL
     private var lines = [String]()
 
@@ -190,10 +204,16 @@ private final class RunnerLog {
 
     func finish(sitting: String, verdict: C2Verdict) {
         record(["event": "verdict", "verdict": "\(verdict)"])
-        let final: [String: Any] = ["sitting": sitting, "verdict": "\(verdict)", "files": C2RunCommand.hashes(of: directory)]
+        writeFinal(["sitting": sitting, "verdict": "\(verdict)"])
+        print("c2-run: sitting \(sitting): \(verdict)")
+    }
+
+    /// `runner.final.json`: `fields` plus every file's sha256.
+    func writeFinal(_ fields: [String: Any]) {
+        var final = fields
+        final["files"] = C2RunCommand.hashes(of: directory)
         if let data = try? JSONSerialization.data(withJSONObject: final, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: directory.appendingPathComponent("runner.final.json"), options: .atomic)
         }
-        print("c2-run: sitting \(sitting): \(verdict)")
     }
 }

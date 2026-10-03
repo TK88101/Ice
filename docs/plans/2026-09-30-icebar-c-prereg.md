@@ -1,6 +1,6 @@
 # Route C pre-registration: hidden-state baseline, `RegionClear`, oracle
 
-2026-09-30 · branch `wip/icebar-c` · v3, converged (Codex round 3); deviations 1-4 (2026-10-01) ·
+2026-09-30 · branch `wip/icebar-c` · v3, converged (Codex round 3); deviations 1-4 (2026-10-01), deviation 5 and the pre-S0 addendum (2026-10-03) ·
 the artifact required by `2026-09-30-icebar-route-c.md` section 4.0 rules 6 and 7.
 Its sha256 is recorded in that plan's rule 6 once review has converged; from then
 on, any change here is a deviation, logged in section 9 with its reason and a new
@@ -292,6 +292,138 @@ harness reports, from S0's captures only: the maximum kept-capture pixel distanc
 | 2 | 2026-10-01 | Oracle and corpus revised by `2026-10-01-icebar-c-deviation2.md` (sha256 `7b44dfc24e98ec2b9dcfbf206ef88c91016bbf6e3245b191c29eca209356126e`), whose text is part of this document: C1 identity only from `full`, `partial`/`edge` as anonymous sightings, unexplained sightings count as a member seen; C2 hit/false tests unchanged, texture bound added to rule 1 (every region pixel within `T_o`/2 of M_x); C3 overlap guard on window-server bounds of every helper, S0 measures it; C4 fail-closed predicate for out-of-scope textures; C5 `«` (b) qualified by S14/K1/K4 before S0 and live ((a) implies (b), >= 10 captures, >= 2 episodes) before S1; C6 corpus 2 with new seeds, frozen before its single check, freeze 1 kept; C7 section 6's gate reads "every item meets its written expectation". Approved by the owner 2026-10-01 | freeze 1 (run `20260930-102852-icebar-corpus`): 2144/5749 mislabelled from rule-level causes (shared strokes at cuts, overlap, heavy texture, K2 texture); Codex 3 rounds + thecure converged | recorded in `2026-09-30-icebar-route-c.md` rule 6 |
 | 3 | 2026-10-01 | `2026-10-01-icebar-c-deviation3.md` (sha256 `493fb02e042c8e89138f2863f0500cb5ef5f251b92a99c5f3a39fcaf1f1b17c6`), part of this document: D3.1 a chevron `partial`/`edge` match sharing a hit pixel with a helper-template sighting is not `«` but an unexplained sighting by definition (never explained); D3.2 a glyph with 4 <= n < all of P meets its expectation by being identified `full` as itself within 2 pt or by an overlapping unexplained sighting. Approved by the owner 2026-10-01 | development corpus run `20260930-113108-icebar-dev` (allowed by deviation 2 C6): 7/5749 failing from these two gaps; corpus 2 not yet generated; Codex thecure converged |  recorded in `2026-09-30-icebar-route-c.md` rule 6 |
 | 4 | 2026-10-01 | `2026-10-01-icebar-c-deviation4.md` (sha256 `7e754b061a9d81f9ceeec4b864cb7255f048b0186433a5a79a4a0e668631b25b`), part of this document: D4.1 replaces deviation 2's C4 -- an out-of-scope corpus item is expected to be refused by the texture bound (rule 1's region and exclusions); no oracle behaviour is expected or validated on refused textures. D4.2 corpus 3 (salt `corpus-3`) supersedes corpus 2, frozen before its single check; freezes 1 and 2 kept. Approved by the owner 2026-10-01 | checker defect voided corpus 2's result for 2780 items; development corpus falsified C4 (37 A = 32 items clean with a cut member); Codex thecure converged | recorded in `2026-09-30-icebar-route-c.md` rule 6 |
+| 5 | 2026-10-03 | `2026-10-03-icebar-c-deviation5.md` (sha256 `2a8901d1b47e7db30cfaae39070bf0b2800670e95b50282651618750811a79c5`), part of this document: D5.1 for deviation 2 C5's live control only, (b) is evaluated with every chevron-width AX frame left out of the oracle's agent frames (a listed `«`'s own frame hides it from (b), so C5 could never pass); the attempt's safety verdict keeps the registered context. D5.2 E3 holds within each stage profile and S-adv variant; between S-adv variants only the desktop picture is set to one of two staged solid images (path and sha256 recorded), followed by the 24-capture warm-up and the settle; the variant is named by E5; the original picture is restored before S1. Approved by the owner 2026-10-03 | F1 MEASURED (`ChevronFrameTests`): (b) blind inside a listed chevron's own frame; F2 registered E3 vs route C S-adv and O3; Codex thecure judged both right | recorded in `2026-09-30-icebar-route-c.md` rule 6 |
+
+### Pre-S0 freeze addendum (section 6), approved by the owner 2026-10-03
+
+**Manifest.** `docs/plans/2026-10-03-icebar-c-pre-s0-manifest.json`, sha256
+`41b91f4db1622ca97fb7c3a9c6dd8c298e00c50c55868d04c13bcc2f075e5db5`, written by `icebarfreeze write` at git revision `1d671d324ad206e19866d73ac8a8c6b8ad52f4ca` under
+pre-registration `e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3`. It holds the sha256 of
+173 source files: section 6's list (the glyphs' source `VZGlyphs`, the
+generator `IceBarCorpus`, the oracle `IceBarOracle`) and `IceBarClaim`, and, fail-closed,
+everything that runs in a sitting (`IceBarRunCore`, `IceBarStage`, `vizprobe`, `vzhelper`,
+`C1Core`, `C1Live`, `C1Stage`, `C2Core`, `icebarfreeze`, the local packages' sources,
+`Package.swift`, `build.sh`, `stage-icebar.sh`, `run-icebar.sh`, `check-a3a4.sh`);
+`stage-icebar.sh` refuses to stage unless every one still matches (`icebarfreeze verify`).
+
+**Section 6's sources and `IceBarClaim`** (paths under `docs/macos-27/probes/visibility/`):
+
+| file | sha256 |
+|---|---|
+| `Sources/IceBarClaim/Claim.swift` | `3a9a54bb68e290979c3a370fd37f7a29a69da6c1977072aa25c9b114ea372314` |
+| `Sources/IceBarClaim/ClaimParameters.swift` | `d911c13c7552048454cbcbe2890d35a7be10cc8f22f169e94ad9b0f7d7d94780` |
+| `Sources/IceBarClaim/ClaimRegion.swift` | `8f7659a8c5ac86cb001fd82bc739c80b0fb9b613f4188d35bb84e1a5498beaf2` |
+| `Sources/IceBarClaim/ContrastGate.swift` | `ec7a3c9286e5c14408cc36c455786c0946c8a56756d56103d4dee9ec23f0b834` |
+| `Sources/IceBarClaim/HiddenBaseline.swift` | `b9bb8c605fd485c9f9b58cf401dc8101e0ef94a5b2fddcfc4e0df299ef964cfa` |
+| `Sources/IceBarClaim/PixelKit.swift` | `89a8673518119f8dd780d7f4f9b1bd5c40351ac390eea7e7ed4ef70514c1afd2` |
+| `Sources/IceBarClaim/RegionClear.swift` | `980ed1f6c61947a93b505523fc1fc6ad964ae2c7bca43c7a0c94794120a7d000` |
+| `Sources/IceBarCorpus/CorpusGeometry.swift` | `25830bf9f0604ecc7511a3b4b39d0de2ec17684773ee1deb23fa510a07968cac` |
+| `Sources/IceBarCorpus/CorpusRecipe.swift` | `6e0a3007009e26b1deec25ac717160f146b448da5b20072df640fa2ad662e109` |
+| `Sources/IceBarCorpus/CorpusRenderer.swift` | `3a7c03c111ebee428b60d7696818044b41e98885d3b34e5424c1c3f3f3ddf709` |
+| `Sources/IceBarCorpus/CorpusRows.swift` | `9b98970210a9aa2fc79af7e5bc774d5fc98f9416e880228aac9f75f1407f2dc0` |
+| `Sources/IceBarCorpus/CorpusSpec.swift` | `d4108d5595b8bcd56965f8ec98dee23c98ffa07be8eb85ed75a9c251281e4874` |
+| `Sources/IceBarCorpus/CorpusTemplates.swift` | `54902bf9472b4d71b38310caeb662b39727d49db6a375743de2226ade20733b0` |
+| `Sources/IceBarCorpus/Freeze.swift` | `269a343a368b141ab1453eb53c3e2da3ba2d9a1c95b651857a56c4ea61030595` |
+| `Sources/IceBarCorpus/S13Rows.swift` | `2b3bad3ff8235748e328922ac7fd93d4e73f28803bf12ed679f81c52a9b61618` |
+| `Sources/IceBarCorpus/Support.swift` | `b1caa48ed9cf906cb2918c79319a8c0bfa5084dd578f501dffd266ffd050608b` |
+| `Sources/IceBarOracle/Chevron.swift` | `92b0dc43decdd782af114fa759cc582b0b6445a49b2de46cd3e6749856f09993` |
+| `Sources/IceBarOracle/Controls.swift` | `0efecfdeb2238df28db4a484004849faf9ca383d64549d65fe6c009dd0e62923` |
+| `Sources/IceBarOracle/Kernels.swift` | `b8ad973911facff9dc28e1c62e8cb46a128f9519b06897f08688f7d7179a882e` |
+| `Sources/IceBarOracle/Oracle.swift` | `e099da52d32bb17968a93c5b7855f60ec241a89545abd1dac178eaf753b9c8cf` |
+| `Sources/IceBarOracle/OracleGeometry.swift` | `b39b44698d6f0314d891d638f63148712f662272a45253db786f4946896ca547` |
+| `Sources/IceBarOracle/OracleTypes.swift` | `b26a10c3e8206e70931f976b2f1516b968e26c180b70dc18fed203a41ddd5f0c` |
+| `Sources/IceBarOracle/Searcher.swift` | `04b881d6053d313b28a1d80cc7d2207b928d2b429afa29a1667b9f34fc7e058a` |
+| `Sources/VZGlyphs/GlyphCheck.swift` | `86f3a52fc228a244ecc8a85910b00749096229d900de88add60a76fa0ddc61b7` |
+| `Sources/VZGlyphs/GlyphRenderer.swift` | `6ce3f91ffc57610a5980c3cf662a95fe9807295f443b88d91b8c52370986a77a` |
+| `Sources/VZGlyphs/Glyphs.swift` | `96e6ebaafa6fdf55f8836f619c9561d6c6085e54c2913423776e36e67386652f` |
+
+**Renderings and chevron.** Each glyph's 1x/2x ordinary alpha and coloured RGB rendering
+(38 records, `GlyphRenderer`; canonical JSON of the list, sha256 `871fc1df2a18b49296b56caef36e0d5e41d58dd2194563d51940b28d0d4eb7e5`) and the K1
+chevron template's alpha (`f34511e3e602f5151ffbd378d0eca4dec6dd1515db4438ef99dd1a7cfe352209`), each equal to corpus 3's record.
+
+**Corpus 3** (run `20260930-123540-icebar-corpus3`): `freeze.json` `f8a64fbc81dd327897d54b0187e14e6a9af0fbc6dd960406a6bfb7994271853d`, `check.json`
+`1844ac22b38a002ac26f4528af9a60b95a21cd3db3f483bdcc6887c1763c7c09`, frozen under `e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3`; 5749/5749
+item PNGs re-hashed equal to `freeze.json` and **listed one by one** in the
+manifest (`corpus3.pngs`, item id -> sha256: section 6's "every generated corpus image"); the `VZGlyphs`, `IceBarCorpus` and
+`IceBarOracle` sources, every rendering and the chevron equal to what corpus 3 recorded;
+K1-K4 (K3 included) equal to their recorded and pre-registered sha256.
+
+**R15 (part 2, owner-approved; claim plan section 8 row 5).** U5's and U8's "accepted"
+cases mean the named clause (rule 1 (b); the contrast gate's row clause) accepts; the
+texture bound (deviation 2 C2) stays an added, independent refusal, so for those inputs
+the whole baseline verdict is `.texture`; no threshold, expectation or refusal is loosened.
+
+**Corpus 3 is not re-checked (claim plan section 8 row 6).** Its single check ran under
+`e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3` (instrument plan section 8 row 12) and is the result
+(deviation 2 C6, deviation 4 D4.2); a re-run would be a second experiment. After this
+re-hash `vzcorpus check` refuses corpus 3 by design (`Sources/vzcorpus/main.swift:109-111`)
+and is not run; corpus 3 stands on the equalities above, recorded before the re-hash.
+
+### Second pre-S0 freeze addendum (section 6, manifest v2), approved by the owner 2026-10-03
+
+**Why.** Deviation 5 D5.2 (approved; `2026-10-03-icebar-c-deviation5.md`) has the runner
+set the desktop picture between S-adv variants and restore it before S1. Its
+implementation changes runner sources that the first pre-S0 manifest froze, so
+`icebarfreeze verify` refuses to stage (as designed) until a manifest of the new
+sources is registered.
+
+**Manifest.** `docs/plans/2026-10-03-icebar-c-pre-s0-manifest-v2.json`, sha256
+`18187e2c9f217497ad4e12ccf10a9c04747fa84a7ff5d3ba555149580b8955c5`, written by
+`icebarfreeze write` at git revision `d8e05a5e4ec8cd6d3d90e1e198281a492459876c` under
+pre-registration `a4e8b31b714b3acf2972fbfb3573f08ea41f9935ccaa25561606b6d6346fa572`. It
+**replaces** the first manifest (`2026-10-03-icebar-c-pre-s0-manifest.json`, sha256
+`41b91f4db1622ca97fb7c3a9c6dd8c298e00c50c55868d04c13bcc2f075e5db5`, revision `1d671d3`,
+kept in the repository unchanged) as the one `stage-icebar.sh` verifies against. Same
+173 source files, same tool, same fields.
+
+**What differs from the first manifest.** Exactly seven source hashes, listed below; the
+recorded git revision and pre-registration hash, as stated above; every other field is
+equal. Paths under `docs/macos-27/probes/visibility/`:
+
+| file | first manifest | this manifest | change |
+|---|---|---|---|
+| `Sources/IceBarRunCore/Sitting.swift` | `64e2a86158869a02b252c3fa26536f7f0d950e67b8e7a8fa3f5bdb8b9f0b91bd` | `8ae60edca695ef3358ba765f24b3fd1437ce611a8ad3af841e0639a721cf43f0` | the K2 gate (`beforeSAdv`) removed; `SAdvStep.variant` |
+| `Sources/IceBarRunCore/SittingDriver.swift` | `ca1ed1c95fc053ac484e6310557913b653a5b0a3b8609b4e2a31c553f3583d0d` | `2e83bd7450179f63182a5728e7d575d708a34fca0706946ec22d4c318fbcdf85` | D5.2's sequencing: the staged picture before each S-adv appearance, the original before S1 and at the sitting's end; a failed change interrupts |
+| `Sources/vizprobe/IceBarLive.swift` | `2603ec593a300e8481f782bc98f813bc7fa588f2f105388650d32e24e6d7f819` | `ef1779024eefcbd39ec0f0fa6b22aaa4ee214baf33f817e81299858fed73c6c6` | `LiveDesktopPicture`: the two staged solid images (grey 30, grey 225), path, sha256 and time recorded, the restore |
+| `Sources/vizprobe/IceBarRun.swift` | `6377d6f78aad03a427ccdfe406147fb25105f4f7a8728ff0e72a44abba564ee5` | `08f2330b8870981da29559563c477ed38af4591c63c3ddc950b4dac3edd91747` | the sitting performs the driver's picture requests; an unreadable original is refused before S0; SIGINT/SIGTERM/SIGHUP end the sitting on the path that restores |
+| `Sources/vizprobe/C2Run.swift` | `9326dfe1a50e1207d26411fd2302a25f97d7009764a6ee815d68c6526ebb0765` | `9236958371cc204ad753c88f11188653e45a18f5fcff8135412527a9ff53454a` | `runChild(stop:)`: the step in progress is terminated on such a signal (default: never; C2's own use unchanged) |
+| `Sources/icebarfreeze/main.swift` | `70550b633d2702ea401f7f90cde838afe92583701f6cfec6d0e59f8c731990ba` | `e3a40e38be71963b1fdb92f931d2567ac1db89052804ba19247f373dbe9a055b` | the freeze tool names two pre-registration hashes: the one corpus 3 was frozen under (`e693654c…`) and the current one (`a4e8b31b…`) |
+| `stage-icebar.sh` | `327587fbc3c4c771ee74235397322b9b844f75d06b0a5bbd39984c4622194906` | `fb68b84475730b8b34fae6f1f8dfe8100ceb2de3a97f1afda94d1c5535ba9051` | verifies against this manifest's file |
+
+D5.2's implementation is the whole change to what the manifest freezes: the first five
+rows are it, the last two are what registering it requires (the tool that writes the
+manifest, the script that reads it). The same commits also change three test files,
+which the manifest does not freeze (`Tests/IceBarRunCoreTests/SequencerTests.swift`,
+`SittingDriverTests.swift`: the driver's picture sequencing and its failure paths;
+`Tests/IceBarStageTests/CallSiteTests.swift`: every step warms up before any baseline). The other 166 source hashes equal the first manifest's, among them every file of
+section 6's list and `IceBarClaim` (`VZGlyphs`, `IceBarCorpus`, `IceBarOracle`,
+`IceBarClaim`), `IceBarStage`, `vzhelper`, `C1Core`, `C1Live`, `C1Stage`, `C2Core`, the
+local packages' sources, `Package.swift`, `build.sh`, `run-icebar.sh` and
+`check-a3a4.sh`. No rule, threshold, cadence, oracle, claim or accounting code changes.
+
+**Renderings, chevron and corpus 3: equal to the first manifest's.** The 38 glyph
+renderings (canonical JSON sha256
+`871fc1df2a18b49296b56caef36e0d5e41d58dd2194563d51940b28d0d4eb7e5`), the K1 chevron
+template's alpha (`f34511e3e602f5151ffbd378d0eca4dec6dd1515db4438ef99dd1a7cfe352209`) and
+the whole corpus 3 record (run `20260930-123540-icebar-corpus3`: `freeze.json`
+`f8a64fbc81dd327897d54b0187e14e6a9af0fbc6dd960406a6bfb7994271853d`, `check.json`
+`1844ac22b38a002ac26f4528af9a60b95a21cd3db3f483bdcc6887c1763c7c09`, frozen under
+`e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3`; 5749/5749 item PNGs
+re-hashed equal and listed one by one; sources, renderings and chevron equal to its
+freeze; K1-K4 equal to their recorded and pre-registered sha256) were recomputed at this
+write and are field-for-field equal to the first manifest's.
+
+**Corpus 3 is still not re-checked.** As the first addendum registers: its single check
+(0 of 5749) ran under `e693654c…` and is the result; a re-run would be a second
+experiment; `vzcorpus check` refuses corpus 3 after a re-hash by design and is not run.
+None of the seven changed files is a corpus-3 source, a rendering path, the oracle or
+the claim, and the equalities above are the ones corpus 3 stands on.
+
+**Limit of D5.2's restore, recorded with it.** The original desktop picture is restored
+before S1 and whenever the sitting ends on its normal path (a failed or safety-stopped
+step, a console loss, a failed picture change, SIGINT/SIGTERM/SIGHUP to `icebar-run`).
+SIGKILL, a crash or a power loss cannot restore it; the sitting's first log record
+holds the original's path and sha256.
 
 ## Appendix. Review record (Codex gpt-5.6-terra)
 

@@ -151,6 +151,11 @@ measurement.
    cut-glyph identity; `2026-10-01-icebar-c-deviation3.md`): sha256 `bde8a4bf5176249ae95c65de6f15abb3611a972202e0e31b55e3a46b08b8bfb8`.
    **Deviation 4, 2026-10-01** (owner approved; out-of-scope textures refused,
    corpus 3; `2026-10-01-icebar-c-deviation4.md`): sha256 `e693654c39f61313ce37fb36a547b3cf9a30083136960ea2cbdbcb39e63eb7e3`.
+   **Deviation 5 and the pre-S0 freeze addendum, 2026-10-03** (owner approved; `«` (b) for C5's live
+   control without the chevron's own frame, appearance variants between S-adv variants;
+   `2026-10-03-icebar-c-deviation5.md`; manifest `2026-10-03-icebar-c-pre-s0-manifest.json`): sha256 `a4e8b31b714b3acf2972fbfb3573f08ea41f9935ccaa25561606b6d6346fa572`.
+   **Second pre-S0 freeze addendum, 2026-10-03** (owner approved; manifest v2 for D5.2's
+   runner sources, `2026-10-03-icebar-c-pre-s0-manifest-v2.json`; no rule changes): sha256 `0780e997b7b5ed5eae6ea69f5df451413c99d48ec5e51a94c3e7617edb8e5420`.
 7. **The oracle is validated before it certifies anything.** Offline: a frozen
    corpus of labelled strip images (every zone including left of the notch and
    right of the references, ordinary and coloured glyphs, 1x and 2x, partial
