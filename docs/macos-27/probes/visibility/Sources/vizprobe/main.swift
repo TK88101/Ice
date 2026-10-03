@@ -93,6 +93,11 @@ if arguments.first == "icebar-run" { IceBarRunCommand.run(arguments) }
 if arguments.first == "icebar-step" { IceBarStepCommand.run(arguments) }
 if arguments.first == "icebar-dry" { IceBarDryCommand.run(arguments) }
 
+// IceBar build plan T0 (docs/plans/2026-10-03-icebar-build.md): the two
+// spikes in one run, and the owner-account dry check (`SpikeRun.swift`).
+if arguments.first == "spike-run" { SpikeRunCommand.run(arguments) }
+if arguments.first == "spike-dry" { SpikeDryCommand.run(arguments) }
+
 // I5: `vizprobe c1` (docs/plans/2026-09-26-c1-protocol.md, Amendment v4).
 // `--dry` never sends `length` (C1ExpansionDriver, C1Live) -- the one part
 // of this stage that is safe to run before the owner names a time.

@@ -56,6 +56,7 @@ import AppKit
 import ApplicationServices
 import C1Core
 import C2Core
+import SpikeCore
 import VZGlyphs
 
 func option(_ name: String) -> String? {
@@ -67,7 +68,7 @@ func option(_ name: String) -> String? {
 }
 
 func usage(_ problem: String) -> Never {
-    FileHandle.standardError.write(Data("vzhelper: \(problem)\nusage: vzhelper --controller <pid> (--role target|reference|twin|spacer | --items 1|2 --identifiers none|<a>[,<b>] [--glyphs <g>[,<g>]] [--mimic-nodivider] [--autosave <name>]) [--lifetime <s>]\n".utf8))
+    FileHandle.standardError.write(Data("vzhelper: \(problem)\nusage: vzhelper --controller <pid> (--role target|reference|twin|spacer | --items 1|2 --identifiers none|<a>[,<b>] [--glyphs <g>[,<g>]] [--mimic-nodivider] [--autosave <name>] [--menu]) [--lifetime <s>]\n".utf8))
     exit(64)
 }
 
@@ -90,6 +91,10 @@ struct Config {
     var menus = false
     /// Route C: draw VZGlyphs' coloured (non-template, red) variant.
     var coloured = false
+    /// IceBar build plan T0, spike B: the item gets a one-item menu; its
+    /// opening and closing are reported on stdout (`menu {"event": ...}`)
+    /// and `closemenu` cancels it.
+    var menu = false
 }
 
 func parseConfig() -> Config {
@@ -150,6 +155,7 @@ func parseConfig() -> Config {
     let items = zip(identifiers, glyphs).map { ItemSpec(identifier: $0, glyph: $1) }
     var itemsConfig = Config(items: items, mimicNoDivider: mimic, autosave: autosave, lifetime: lifetime, spacer: false)
     itemsConfig.coloured = CommandLine.arguments.contains("--coloured")
+    itemsConfig.menu = CommandLine.arguments.contains(SpikeHelperFlags.menu)
     return itemsConfig
 }
 
@@ -229,7 +235,7 @@ final class HelperItem {
 /// A plain status item with a glyph. With --autosave, the name is set right
 /// after creation, as `ControlItem.swift:69-70` does, then the identifier
 /// inside `if let button`, where plan 4.4 puts D9's line.
-func makePlainItem(index: Int, spec: ItemSpec) -> HelperItem {
+func makePlainItem(index: Int, spec: ItemSpec, menuTarget: Delegate? = nil) -> HelperItem {
     let item = NSStatusBar.system.statusItem(withLength: itemLengthPt)
     if let autosave = config.autosave {
         item.autosaveName = autosave
@@ -242,6 +248,17 @@ func makePlainItem(index: Int, spec: ItemSpec) -> HelperItem {
             button.image = Glyphs.image(glyph, side: itemLengthPt, coloured: config.coloured)
         }
         button.imagePosition = .imageOnly
+    }
+    // T0 spike B: a one-item menu, so a press has something to open. The
+    // item's action is the delegate's no-op, which keeps it enabled.
+    if config.menu, let target = menuTarget {
+        let menu = NSMenu(title: SpikeHelperFlags.menuItemTitle)
+        let entry = NSMenuItem(title: SpikeHelperFlags.menuItemTitle, action: #selector(Delegate.performAction), keyEquivalent: "")
+        entry.target = target
+        menu.addItem(entry)
+        menu.delegate = target
+        item.menu = menu
+        target.menus.append(menu)
     }
     item.isVisible = true
     return HelperItem(index: index, spec: spec, statusItem: item, constraint: nil)
@@ -417,9 +434,11 @@ final class SpacerItem {
     }()
 }
 
-final class Delegate: NSObject, NSApplicationDelegate {
+final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var items = [HelperItem]()
     var spacer: SpacerItem?
+    /// T0 spike B: the items' menus (`--menu`), for `closemenu`.
+    var menus = [NSMenu]()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !config.menus else {
@@ -435,7 +454,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
         }
         guard config.mimicNoDivider else {
             for (index, spec) in config.items.enumerated() {
-                items.append(makePlainItem(index: index, spec: spec))
+                items.append(makePlainItem(index: index, spec: spec, menuTarget: self))
             }
             reply("up", ["pid": Int(getpid()), "items": items.count, "mimicNoDivider": false])
             return
@@ -457,6 +476,20 @@ final class Delegate: NSObject, NSApplicationDelegate {
 
     /// The button's action, as Ice wires it; nothing here ever clicks it.
     @objc func performAction() {}
+
+    // T0 spike B: the menu's own report of opening and closing, with the
+    // process uptime so the controller can place it against its press.
+    func menuWillOpen(_ menu: NSMenu) {
+        reply(SpikeHelperFlags.menuReply, ["event": "open", "uptime": ProcessInfo.processInfo.systemUptime])
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        reply(SpikeHelperFlags.menuReply, ["event": "close", "uptime": ProcessInfo.processInfo.systemUptime])
+    }
+
+    func closeMenus() {
+        for menu in menus { menu.cancelTracking() }
+    }
 
     func setVisible(_ visible: Bool, index: Int?) {
         for item in items where index == nil || item.index == index {
@@ -548,6 +581,9 @@ stdinSource.setEventHandler {
             }
             MenusRole.show(count: count)
             reply("menus", ["count": count])
+        case SpikeHelperFlags.closeMenu:
+            // T0 spike B: cancels an open menu; `menuDidClose` reports it.
+            delegate.closeMenus()
         case "quit": exit(0)
         default: break
         }

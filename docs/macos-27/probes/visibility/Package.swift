@@ -146,7 +146,7 @@ let package = Package(
             // parsed by C1Core's own pure parser, not reimplemented here.
             // C2 (T2): the hidden-<n>/menus roles and the `menus <n>`
             // command are parsed by C2Core, likewise.
-            dependencies: ["VZGlyphs", "C1Core", "C2Core"],
+            dependencies: ["VZGlyphs", "C1Core", "C2Core", "SpikeCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         // T13/T14: the live protocol's controller.
@@ -163,10 +163,41 @@ let package = Package(
                 "IceBarOracle",
                 "IceBarCorpus",
                 "IceBarClaim",
+                // IceBar build plan T0 (docs/plans/2026-10-03-icebar-build.md):
+                // `spike-run`, `spike-dry`.
+                "SpikeCore",
+                "SpikeStage",
                 .product(name: "IceCore", package: "IceCore"),
                 .product(name: "MenuBarCapture", package: "MenuBarCapture"),
                 .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),
                 .product(name: "MenuBarDetectorFeed", package: "MenuBarDiscovery"),
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        // IceBar build plan T0 (docs/plans/2026-10-03-icebar-build.md, section
+        // 7 note 1): spike A's plan, readings, band and report, spike B's
+        // press verdict, the `spike-run` arguments and vzhelper's `--menu`
+        // flag -- pure (standard library plus C2Core's width classes).
+        .target(name: "SpikeCore", dependencies: ["C2Core"]),
+        .testTarget(name: "SpikeCoreTests", dependencies: ["SpikeCore", "C2Core"]),
+        // T0: the two spikes' orchestration behind route C's
+        // `IceBarEnvironment` seams (launch, placement, sweep, press,
+        // teardown), so `SpikeStageTests` drives the real code on a fake bar.
+        .target(
+            name: "SpikeStage",
+            dependencies: [
+                "SpikeCore", "IceBarStage", "IceBarRunCore", "IceBarOracle", "C2Core",
+                .product(name: "IceCore", package: "IceCore"),
+                .product(name: "MenuBarCapture", package: "MenuBarCapture"),
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "SpikeStageTests",
+            dependencies: [
+                "SpikeStage", "SpikeCore", "IceBarStage", "IceBarRunCore", "IceBarOracle", "C2Core", "VZGlyphs",
+                .product(name: "IceCore", package: "IceCore"),
+                .product(name: "MenuBarCapture", package: "MenuBarCapture"),
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
