@@ -95,6 +95,16 @@ cd /private/tmp/claude-501/visibility-live/apps
 ./vizprobe verify --apps .                    # steps 1, 2, 3, 5, 6, 11
 ```
 
+IceBar build plan T0 (`docs/plans/2026-10-03-icebar-build.md`, section 7):
+`vizprobe spike-run` (spike A, the no-fold band per k = 1, 2, 4, 8 and short/mid
+menus, each length a jump from rest; then spike B, `kAXPressAction` on the
+pushed-off member with a one-item menu, `vzhelper --menu`) and `vizprobe
+spike-dry` (the owner-account check: bundles, templates, scale, the plan;
+launches nothing). `stage-spike.sh icetest` builds, stages to
+`/Users/Shared/IceReverse-spike` and runs the dry check; `run-spike.sh` is the
+one command the isolated account runs. Rules in `Sources/SpikeCore` (tested),
+orchestration in `Sources/SpikeStage` (tested on a fake bar).
+
 Both live stages check the bundle ids and that no helper is already running
 before anything else, delete and verify-empty a helper's defaults domain before
 every launch, check for `«` or a privacy pill before and after every launch and
