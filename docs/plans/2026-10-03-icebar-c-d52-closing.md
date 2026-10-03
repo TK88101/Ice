@@ -182,3 +182,7 @@ changed since `1d671d3`), `renderings`, `chevronAlphaSHA256` and `corpus3` equal
 
 **Stopped for the owner**: draft `2026-10-03-icebar-c-pre-s0-addendum-2.md` needs approval
 before T8.
+
+**T8 done 2026-10-03**: approved; written under the pre-registration's section 9;
+sha256 `a4e8b31b…` -> `0780e997b7b5ed5eae6ea69f5df451413c99d48ec5e51a94c3e7617edb8e5420`, recorded in the claim plan section 8 row 5, route C
+rule 6 and the runner plan section 9 row 15.

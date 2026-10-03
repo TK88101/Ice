@@ -1,6 +1,6 @@
 # Route C pre-registration, second pre-S0 addendum (draft for review)
 
-2026-10-03 · branch `wip/icebar-runner` · **draft, not yet approved by the owner**. It
+2026-10-03 · branch `wip/icebar-runner` · **approved by the owner 2026-10-03 and written to the pre-registration's section 9** (sha256 now `0780e997b7b5ed5eae6ea69f5df451413c99d48ec5e51a94c3e7617edb8e5420`); this file is the reviewed draft, kept as written. It
 replaces the pre-S0 freeze manifest only. After review and the owner's approval it is
 appended under section 9's ledger of `2026-09-30-icebar-c-prereg.md` (sha256 now
 `a4e8b31b714b3acf2972fbfb3573f08ea41f9935ccaa25561606b6d6346fa572`), the pre-registration is
