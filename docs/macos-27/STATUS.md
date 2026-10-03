@@ -60,4 +60,17 @@ ends left of the notch, shown on the bar otherwise
 (`docs/plans/2026-09-30-icebar-route-c.md`). If it ends NO-GO, this fork will
 state that macOS 27 support is read-only.
 
+Route C's first sitting (S0 -> S-adv -> S1, isolated account, run
+`20261003-134859-icebar`, macOS 27.0.1 26A434, 2026-10-03):
+
+| what | status | tag |
+|---|---|---|
+| Sitting result | `結果：失敗｜S0 not shown: a cycle inconclusive three times`; ended after S0 (1 min 55 s); S-adv and S1 not run | MEASURED, run `20261003-134859-icebar`, 2026-10-03 |
+| Why S0 was not shown | all 130 captures inconclusive: the window server listed no single status window for the visible helper `reference` (`OverlapGuard`: `missing("reference")`), so every control failed and three cycles at 728 pt were inconclusive. No claim was granted (no NO-GO) | MEASURED, same run |
+| C3 (window-server bounds usable) | does not hold: `notListed(reference)` (the first helper unlisted; the runner records no per-helper list) | MEASURED, same run |
+| Section 8 numbers | unmeasured: every S0 baseline refused at the frozen fold (`unreadable`), as risk K1 expected | MEASURED, same run |
+| `«` (b) control, S1 capacity | not reached | -- |
+| Replication of that S0 failure | not run | -- |
+| Can this instrument certify route C on macOS 27 | no: C3 needs a window per helper, and macOS 27 lists none (0 bar-shaped windows); without C3 the oracle misses an overlapped member in 16,874 of 160,740 synthetic overlap cases (10.5 %). Route C's continuation is the owner's decision | MEASURED, 26A434 window list and an offline sweep, 2026-10-03 |
+
 Not verifiable on this machine: macOS 14 to 26 (the machine runs 27 only).
