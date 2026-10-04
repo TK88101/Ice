@@ -90,3 +90,4 @@ Not verifiable on this machine: macOS 14 to 26 (the machine runs 27 only).
 | IceBar cells | the owning app's icon, desaturated; else the item's title, else a generic glyph | INFERRED (code), not seen |
 | Clicking an IceBar cell | presses the item over Accessibility where it is; a press that fails dims the cell ("Cannot open on macOS 27"); right click does nothing | INFERRED (code), not run |
 | macOS 26 and IceBar mode off on 27 | unchanged | INFERRED (diff review) |
+| The first run of all this on a bar (T7) | prepared, not run: `stage-t7.sh` staged the build and helpers for the isolated account, `run-t7.sh` is the one command (dry check passed) | MEASURED (staging and dry check), 26A434, 2026-10-05 |

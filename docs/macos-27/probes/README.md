@@ -105,6 +105,16 @@ launches nothing). `stage-spike.sh icetest` builds, stages to
 one command the isolated account runs. Rules in `Sources/SpikeCore` (tested),
 orchestration in `Sources/SpikeStage` (tested on a fake bar).
 
+IceBar build plan T7 (same plan, section 10): `stage-t7.sh icetest` builds the
+probes and Ice (ad-hoc), stages them to `/Users/Shared/IceReverse-t7`, exports the
+owner's Ice preferences and runs `run-t7.sh --dry-run` (starts neither Ice nor a
+helper). `run-t7.sh` is the one command the isolated account runs: it starts the
+staged Ice by path (its os_log copied to stderr) and `vzhelper` members with menus,
+walks the checklist with the owner, and on every exit path stops them, restores
+`com.jordanbaird.Ice` and prints the report. `t7-lib.zsh` holds the shared
+functions; `test-t7.sh` tests all three against stubs (side effects: none; a
+sacrificial defaults domain, deleted).
+
 Both live stages check the bundle ids and that no helper is already running
 before anything else, delete and verify-empty a helper's defaults domain before
 every launch, check for `«` or a privacy pill before and after every launch and

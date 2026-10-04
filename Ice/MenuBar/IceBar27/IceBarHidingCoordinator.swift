@@ -168,13 +168,21 @@ final class IceBarHidingCoordinator {
             work?.cancel()
             work = Task {
                 let ok = await observer?.takeBaseline(sectionMap: sectionMap) ?? false
+                // Read by the T7 report (probes/visibility/t7-lib.zsh); a
+                // cancelled result is not one.
+                if !Task.isCancelled {
+                    logger.info("IceBar baseline: ok \(ok, privacy: .public)")
+                }
                 send(.baseline(token: token, ok: ok))
             }
-        case .observe(let token, _):
+        case .observe(let token, let length):
             let observer = currentObserver()
             work?.cancel()
             work = Task {
                 let outcome = await observer?.observe() ?? .unknown
+                if !Task.isCancelled {
+                    logger.info("IceBar trial: length \(length, privacy: .public) outcome \(String(describing: outcome), privacy: .public)")
+                }
                 send(.observed(token: token, outcome: outcome))
             }
         case .report(let status):

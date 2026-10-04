@@ -175,6 +175,7 @@ chain.
 
 | 6 | 2026-10-04 | **T4-T6 built** (MEASURED, owner's account, nothing launched; on `wip/icebar-build` from `35d705b`). Section 9 reviewed by Codex round 1 (1 P0 + 5 P1 + 2 P2, all ruled, see the Appendix); round 2 stopped on Codex's usage limit and was replaced by the main session's re-read (stated there), with a Codex re-run queued after 14:11. Deviations from section 9, each for testability or a fact found while building: the observer (`HiddenLengthObserver`) and the AX-only `ChevronReader` live in `MenuBarDetectorFeed`, not `Ice/`, so they are tested on the package's fakes; `PressOutcome` (IceCore) decides a press: success, or a messaging timeout after >= 1 s (the menu was up, T0), is accepted, anything else fails -- section 9.5's three values reduce to "pending until the call returns, then accepted or failed"; `observed` carries the outcome only (the machine knows the length it asked for); a rest dwell (1 s) separates two trials; the icon is desaturated but not tinted (a multiply by the bar's black text would make a silhouette). New files: IceCore `HiddenLengthOutcomeRule`, `LayoutSignature`, `IceBarHidingMachine`, `PressTargetRule` (+ `PressOutcome`); `MenuBarDetectorFeed` `ChevronReader`, `HiddenLengthObserver`; `Ice/MenuBar/IceBar27/` coordinator, presser, fallback glyph, manager extension. Edited: `ControlItem.swift`, `MenuBarItemManager.swift`, `IceBar.swift`, `HidingVerifier.swift`, `AppState+HidingCheck.swift`, `HidingVerificationLive.swift`, `a10-ControlItem.expected`. Each new suite seen red before green. Tests: IceCore 466 in 52 suites green; MenuBarDiscovery 85 + 61 green; MenuBarCapture 30 green; line coverage 100 % (IceCore's four new files), 100 % `ChevronReader`, 97.6 % `HiddenLengthObserver`; app builds (`CODE_SIGNING_ALLOWED=NO`); `check-a3a4.sh` and `check-a10.sh` pass. Not run: probes (untouched), anything on a bar (T7/T8) |
 | 7 | 2026-10-04 | **T4-T6 Phase 3** (/simcodex, cap two rounds; checkpoints `03db3a7`, `cb1420f`, `aec4187` on `wip/icebar-build`, local only). Round 1: simplify (four angles) 9 P1 taken -- the IceBar offer gate moved into `MenuBarSection.show` before any state change and the panel closed when hiding stops resting; one length rule in `ControlItem` (`isAtStandardLength` derived from `iceBarLength`); the accessibility cell in its own view (`IceBarAccessibilityCell`), `IceBar.swift` keeps one dispatch; agent-only chevron polling (`AgentOnlyApps`: no process walk each second); app icons cached per pid; the derivable `memberCount` removed and `parameters` stored on the machine; the observer's own `ChevronReader` shared with the rest watch; the presser walks children through `LiveExtrasReader.childElements` (type-checked) -- plus P2 one-liners (timer tolerance, no `Set` building while nothing is disabled, one display-origin helper). Codex code review (`review --base 35d705b`) 1 P1 taken: turning IceBar mode on while the section was shown left the divider at `.showSection`, where no calibrated length applies; the coordinator now keeps the hidden divider at `.hideSection` in IceBar mode except during a drag (this also covers Codex plan round 2's drag finding). Round 2: simplify 1 P1 taken -- round 1 had filtered windowless items inside the shared `cacheFailed`, which also feeds the layout pane; reverted, and the IceBar skips that check with `#unavailable(macOS 27)` -- and 1 P2 (the cell takes `isDisabled` from its parent); Codex 0. Trend: 10 P1 -> 1 P1 -> 0 (Codex). Security review: not dispatched (no authentication, personal data, cryptography, file or network change). Deferred P2: the chevron rule's on-bar and finite checks copy `FoldWitness.verdict` (frozen, so a shared helper cannot include it); `hidingCheckStatus` shared by two writers ordered by the mode (an own property would change the a10-pinned pane); the menu frame re-read every second while resting; `verify` and the chevron read run one after the other; machine phase split (`calibrating` with or without a trial) and `Phase` helpers; `IceBarIconChoice` called with constant arguments in the glyph; a shared `screenWithActiveMenuBar ?? main` accessor; the panel-close check could sit in `setLength(nil)`. AC4 by diff review: new files all `@available(macOS 27, *)`; edits in upstream files behind `#available`/`#unavailable(macOS 27)`, or additive declarations only written from 27 code (stored properties cannot carry availability; `HidingCheckStatus(message:)`; `IceBarItemClickView` made internal). Full tests on `aec4187`: IceCore 466 / 52 suites, MenuBarDiscovery 85 + 61, MenuBarCapture 30 green; app builds; `check-a3a4.sh`, `test-check-a3a4.sh`, `check-a10.sh` pass; probes (`docs/macos-27/probes/visibility`, cap 90 min, output to a file) exit 0 in 62 min (14:26-15:28), 13 test runs all passed (13, 8, 21, 25, 29, 43, 44, 54, 55, 60, 82, 97, 154 tests); `IceBarCorpusTests` was built and the run exited 0, so it ran -- INFERRED, the log does not name bundles |
+| 8 | 2026-10-05 | **T7 prepared** (MEASURED in the owner's account; neither Ice nor a helper was started; nothing ran on a bar). Section 10 reviewed by Codex in two rounds (2 P1 + 3 P2, then 1 P1; Appendix). Built: `t7-lib.zsh`, `stage-t7.sh`, `run-t7.sh`, `test-t7.sh` in `docs/macos-27/probes/visibility/`, and two `info` log lines in `IceBarHidingCoordinator.swift` (a baseline's result, a trial's length and outcome; not logged for a cancelled task). `test-t7.sh` was seen failing before the scripts existed and is green with 77 checks (stubs only). **Signing and permissions, as found**: the `CODE_SIGNING_ALLOWED=NO` build is `adhoc,linker-signed` with no team, which is enough; Ice started by path from Terminal is judged by Terminal's grants, so the owner grants nothing new -- `icewatch preflight` in the owner's account answered `axTrusted` and `screenCapture` true, and the run repeats that check in `icetest` before it starts anything; INFERRED for `icetest` until then. **Deviations from section 10 as first written**, each from the Phase 3 review: `run-t7.sh` takes nothing from the environment (it locates itself; the domains it may rewrite are in `t7.env`, which is read as words and never sourced; the library is sourced only after the ownership check); the staged `Ice.app` is checked as one digest of every file and link, sorted in the C locale (a Debug build's code is in `Ice.debug.dylib`; the digest differed between the C and en_US locales, MEASURED, which would have refused the run in an account with another locale); the scratch directory and its parent must be the owner's own; `evidence/` is 1777 and the staging record 0700 (`icetest` is in the owner's group); SIGQUIT and any other exit also clean up; a phase that cannot go on (a helper that does not start or reaches its 30 min cap, the end of input) is reported as not completed and the run ends with status 3; the report says how many of Ice's IceBar lines it understood, and `test-t7.sh` checks that Ice's sources still contain the wording the summary reads. In a dry run the user, running-process and writability guards are reported only (the owner's account runs it; the release Ice may be running there), ownership, digests and the preflight are enforced. Phase 3 (/simcodex, cap two rounds): round 1 Codex 1 P1 (staged files sourced before they were checked), simplify 8 P1 (test configuration by environment, the log wording unpinned, duplicated `t7.env` writer, derivable state, an unreadable expression, assertion boilerplate), security review 0 CRITICAL, 1 HIGH (scratch under `/private/tmp` trusted), 2 MEDIUM (the owner's export group-readable; environment overrides), 8 LOW of which 6 taken; round 2 Codex 0 P0/P1 and 2 P2 taken (helper start failures and phase failures were swallowed), simplify 2 P1 taken (the locale, cancelled results logged). Trend: 10 P1 + 1 HIGH -> 2 P1 -> fixed and covered by tests; round 2's fixes were not sent to Codex again (cap). Deferred P2: `ask` also polices liveness and only between questions; pid identity is a path match without the start time; no positive control for the `lsregister -dump` parse; `stage-t7.sh` has no test of its own; the staged-binary list is written in three places; `build.sh` could copy `icewatch`; the three older `stage-*.sh` repeat the ownership loop; 0.2 s poll intervals; the two builds run one after the other; `t7_prefs_is_empty` compares `plutil -p` text; a helper may rewrite its defaults domain between its SIGTERM and the delete (the report would show it); `~/IceReverse-evidence` itself is 0755 and so readable from `icetest` (left as it is: the owner's directory). Tests on the checkpoint: IceCore 466 / 52 suites, MenuBarDiscovery 85 + 61, MenuBarCapture 30 green; `check-a3a4.sh`, `test-check-a3a4.sh`, `check-a10.sh` pass; the app builds (inside `stage-t7.sh`); probes' full run not repeated (10.1 A6: no Swift source of the package changed). Staged with `stage-t7.sh icetest` from the checkpoint commit: `/Users/Shared/IceReverse-t7` (`Ice.app`, `apps/`, `run-t7.sh`, `t7-lib.zsh`, `t7.env`, `evidence/` empty); the dry check passed; Ice and helper processes before and after: 0. **Stopped for the owner's time** (10.6) |
 
 ## 8. T1-T3 detail (2026-10-04, after T0)
 
@@ -532,6 +533,216 @@ the items are pushed off (`HIDEventManager` sets `isDraggingMenuBarItem` from Co
 + the mouse in the bar): TBD, T7. Rollback: delete the new files, revert the six
 edits.
 
+## 10. T7 preparation (2026-10-05, after T4-T6; from `df8d078`)
+
+Scope: everything up to "the owner runs one command in `icetest`". Nothing is launched
+here: no Ice, no helper, no experiment on the owner's bar. T7 itself and T8 are not
+part of this step. Done in the main session as one chain (no parallel candidates).
+
+### 10.0 Facts (MEASURED unless marked)
+
+- **Signing.** A `CODE_SIGNING_ALLOWED=NO` build is ad-hoc, linker-signed, no team
+  (`codesign -dv`, first-run plan M1). That is enough to run. What it costs: Ice's XPC
+  service refuses its peer (both ends need the same team), `start()` fails in 45 ms and
+  setup goes on (FINDINGS "Ice itself on the user's bar"). The service is still
+  attempted on 27 (`AppState.swift:71-73`); what is measured is only that its failure
+  is quick and does not block setup, so the run keeps a 20 s start-up guard.
+- **Permissions.** An Ice executed directly by path from a terminal is checked by tccd
+  against **the terminal** (the responsible process), with Ice only the requester; Ice
+  logged `Passed all permissions checks`, no prompt, no TCC row written (FINDINGS
+  `:209`, run `20260925-092244-icerun`, the owner's account). In `icetest`, Terminal
+  already has Accessibility and Screen Recording: `vizprobe`, ad-hoc and started from
+  that Terminal, read Accessibility and captured the bar for 20 min (run
+  `20261004-105226-spike`). INFERRED: the same holds for Ice in `icetest`. So the owner
+  grants **nothing new**; the two Terminal switches in `icetest` (Accessibility, Screen
+  Recording) must still be on, and the run command checks both before it starts
+  anything (`icewatch preflight`, non-prompting, same process chain). Not possible, and
+  not attempted: giving Ice its own TCC rows (an ad-hoc build under the release's
+  bundle id; project memory: never click Grant in a local build's Permissions window).
+  If the Permissions window appears, the run stops.
+- **Preferences.** `com.jordanbaird.Ice` is a per-user domain: a run in `icetest`
+  writes `icetest`'s copy, not the owner's (INFERRED from how user defaults work; the
+  owner's `~/Library` is `drwx------`). Both are exported anyway: the owner's at
+  staging, `icetest`'s by the run command, which also restores it on every exit path.
+  `icetest` is in the owner's group (`staff`) and the owner's home is `drwxr-x---`, so
+  files the owner leaves group-readable under the home can be read from `icetest`: the
+  staging record is created 0700.
+- **Ice's log.** `icetest` is not an administrator (`dseditgroup`), and Ice writes
+  os_log only. With `OS_ACTIVITY_DT_MODE=YES` os_log lines are copied to stderr, with
+  `OS_ACTIVITY_MODE=debug` the debug lines too (a throwaway `Logger` binary on 26A434,
+  2026-10-05). The run command starts Ice with both and keeps stderr as the log.
+- **What Ice logs today** (`IceBarHidingCoordinator.swift:150,181`,
+  `MenuBarItemManager+IceBar27.swift:42`): each status change (`IceBar hiding:
+  checking | active | shown(...) | off`), a fold seen at rest, a failed press. It does
+  **not** log a trial's outcome, so "is the 4-capture warm-up often `unknown`" cannot
+  be read from anything today.
+- **Turning IceBar mode off resets the machine** (`IceBarHidingMachine.swift:228-233`:
+  a new machine, cache and rate limit included), so every off/on toggle is a full cold
+  calibration: quiet 3 s, baseline, about 15 lengths x about 4.5 s (settle 1 s, 4
+  captures, rest dwell 1 s) -- roughly 75 s (INFERRED from 9.3's numbers).
+- **Helpers.** `vzhelper --items 1 --identifiers <id> --glyphs <g> --menu` is T0's
+  member (one-item menu, `menu {"event":"open"}` on stdout); it needs `--controller
+  <pid>`, exits on stdin EOF or the controller's exit, and caps `--lifetime` at 1800 s.
+  `--role menus` is a regular app whose title menus are set by `menus <n>` (0-40).
+  New status items take the leftmost place (no stored position: the helper domains are
+  deleted before every launch, as T0 did), which is left of Ice's hidden divider.
+  INFERRED; checked as the first row of the checklist.
+- **`icewatch preflight`** prints `AXIsProcessTrusted` and
+  `CGPreflightScreenCaptureAccess` for its own process chain without prompting
+  (`icewatch/Commands.swift:8-21`). `build.sh` builds `icewatch` but does not copy it.
+- **`/Users/Shared` is world-writable.** `stage-spike.sh:24-35` refuses a staging
+  directory that is a symlink or not the owner's; `icewatch` restores preferences by
+  import-and-verify first and deletes the domain only if that fails
+  (`Supervisor.swift:367`).
+
+### 10.1 Assumptions (stated, not asked)
+
+- A1. One "toggle" of AC1 is: Ice Settings > General > **Use Ice Bar** off, then on,
+  and wait for `active` -- the owner's own way into IceBar mode. Ten per k, three k:
+  about 40 min of the sitting is waiting for calibrations (10.0).
+- A2. AC2's "9 of 10" is ten presses per k, taken round-robin over the cells (30 in
+  all), not ten per cell.
+- A3. Two `info` log lines are added to `IceBarHidingCoordinator` (the baseline's
+  result; each trial's length and outcome). No behaviour changes; without them the
+  owner's second question has no answer. This is the only edit under `Ice/`.
+- A4. The sitting is four phases, each with freshly launched helpers (the 1800 s
+  cap): k = 1, k = 2, k = 4 (AC1 + AC2 each), then k = 2 for AC3 and the Command-drag.
+  `--phase <n>` repeats one.
+- A5. The always-hidden section is off, show-on-hover and show-on-scroll are off for
+  the run (an accidental scroll or hover over the bar would count as interaction and
+  restart a calibration); IceBar mode starts on. Everything else is Ice's default,
+  made so by starting from an empty domain: after the export the run deletes
+  `com.jordanbaird.Ice`, writes exactly `UseIceBar` true and `ShowOnHover`,
+  `ShowOnScroll`, `EnableAlwaysHiddenSection` false, and reads the four back.
+- A6. The probes package's Swift sources are not edited (only shell files added
+  next to `stage-spike.sh`), so its 60 min test run is not repeated; it was green on
+  `aec4187`.
+
+### 10.2 Files (new unless marked)
+
+| file | what |
+|---|---|
+| `docs/macos-27/probes/visibility/t7-lib.zsh` | functions shared by the two scripts and tested alone: preferences export / restore / verify, the staged-file check (`Ice.app` as one digest of every file and link: a Debug build's code is in `Ice.debug.dylib`), `t7.env`'s writer, the log summary |
+| `docs/macos-27/probes/visibility/stage-t7.sh` | owner's account: builds the probes (`build.sh`, U24 first) and Ice (the CLAUDE.md command) into a scratch directory outside `~/Documents`, copies them to `/Users/Shared/IceReverse-t7` (its own directory; `IceReverse-spike`, `-icebar`, `-c2` untouched), records sha256 and the revision in `t7.env`, exports the owner's `com.jordanbaird.Ice` to `~/IceReverse-evidence/<ts>-t7-stage/`, runs the dry check. Everything staged is the owner's, mode 0755/0644, symlink-free (checked as `stage-spike.sh` does); only `evidence/` is writable by `icetest` (1777). The scratch directory and its parent must be the owner's own (`/private/tmp` is emptied at boot). `t7.env` also names the two domains the run may rewrite, so `run-t7.sh` takes nothing from the environment. A LaunchServices record for the staged `Ice.app` is unregistered (`lsregister -u`) and its presence afterwards fails the staging |
+| `docs/macos-27/probes/visibility/run-t7.sh` | the one command, `icetest`'s Terminal; `--dry-run` launches nothing |
+| `docs/macos-27/probes/visibility/test-t7.sh` | the scripts' tests (zsh, as `test-check-a3a4.sh`), against stub binaries in a throwaway directory |
+| `Ice/MenuBar/IceBar27/IceBarHidingCoordinator.swift` (edit) | A3's two log lines |
+| this plan, `docs/macos-27/probes/README.md` (edit) | section 10, note 8; one paragraph |
+
+### 10.3 `run-t7.sh`
+
+Order, each step logged with a wall-clock time to `<run>/timeline.txt`:
+
+1. **Guards** (any failure: exit 2, nothing started): `t7.env` is read as words, never
+   sourced, and `t7-lib.zsh` is sourced only after the ownership check (Codex code
+   review); the user is `EXPECT_USER`; no
+   process whose image is an `Ice.app` and no `vzhelper` in this account; the staged
+   Ice, `vzhelper` and `icewatch` match `t7.env`'s sha256; `icewatch preflight` says
+   `axTrusted` and `screenCapture` both true; the staging directory and its files
+   are `OWNER_USER`'s and not writable by this account.
+2. **Run directory** `/Users/Shared/IceReverse-t7/evidence/<yyyyMMdd-HHmmss>-t7`
+   (created strictly; Claude copies it to `~/IceReverse-evidence/` afterwards).
+3. **Preferences**: export `com.jordanbaird.Ice` to
+   `~/IceReverse-t7-backup/<run id>/prefs-before.plist` (`icetest`'s home, directory
+   0700: the export never sits in the shared directory, and the script never deletes
+   it), print the manual restore line, then delete the domain, write A5's four keys
+   and read them back (a mismatch: cleanup, exit 1). From here every exit path (normal
+   end, Ctrl-C, SIGTERM, SIGHUP, SIGQUIT, any other exit) runs **cleanup**: Ice gets SIGTERM (only the
+   pid this script started, its image path checked; SIGKILL after 5 s), the helpers'
+   stdin is closed, the export imported and the domain compared with it; only if that
+   differs, the domain is deleted, imported again and compared again (`icewatch`'s
+   order) -- `verified`, or `FAILED` with the backup's path and the manual lines (also
+   when Ice could not be stopped: a running Ice writes its settings back); an
+   export that was empty (no domain before) is restored by deleting the domain; the
+   two helper domains deleted, the report printed.
+4. **Ice**: the staged `Ice.app/Contents/MacOS/Ice -SUEnableAutomaticChecks NO
+   -SUAutomaticallyUpdate NO`, by path, with the two `OS_ACTIVITY` variables, stderr
+   to `<run>/ice.log`; lines containing `IceBar` are echoed to the Terminal. Within
+   20 s the log must say `Passed all permissions checks` or `Passed required`; `Failed
+   required permissions checks` or silence -> cleanup, exit 1.
+5. **Phases** (A4). Each: delete the helper domains, launch k members (stdout to `<run>/helper-p<n>-<i>.log`), then
+   walk the checklist rows of that phase: the script prints the row ("do X, expect
+   Y"), the owner does it and types what was seen (a count, or y/n); the answer and
+   the time go to `<run>/answers.txt`. Phase 4 also starts the Menus helper and sends
+   `menus <n>` (default 24, INFERRED to cross the notch; another count can be typed if
+   the log does not show `longMenu`). A phase ends by closing its helpers.
+6. **Report**: between two marker lines, per phase: the owner's answers; from
+   `ice.log`: how many `active`, the seconds from each `checking` to the next `active`
+   (median, min, max), `shown(...)` by reason, folds at rest, failed presses, trial
+   outcomes by kind and baselines ok / failed, and how many of Ice's IceBar lines were
+   understood (a log whose wording changed must not read as "nothing happened";
+   `test-t7.sh` also checks that Ice's sources still contain the wording); from the
+   helpers' logs: menu opens;
+   then the restore verdict and the helper domains' state.
+
+`--dry-run`: runs the guards (the user and ownership checks reported, not enforced,
+so the owner's account can run it), prints the phases and every command it would
+run, and exits; no export, no write; the only program it executes from the staging
+is `icewatch preflight` -- never Ice, never a helper. Watchdog: 30 min per phase (the helpers'
+own cap), 150 min for the run.
+
+### 10.4 Tests and DoD
+
+Tests first (`test-t7.sh`, seen failing before the scripts exist): the dry run starts
+neither Ice nor a helper (stubs that leave a marker if executed) and calls the stub
+`icewatch` with `preflight` only; a wrong user, a changed staged binary, a file added
+to `Ice.app`, a false preflight, a command in `t7.env`, a rewritable or symlinked
+library each exit 2 with nothing run; the preferences round trip on a sacrificial domain
+(`com.icespike4.t7test`: export, change and add keys, restore, identical; an absent
+domain stays absent; an import that does not give the export back falls through to
+delete-and-import), the domain deleted afterwards; the summary on a synthetic log
+gives the expected counts and durations; cleanup runs on end of input and on
+SIGINT, SIGTERM, SIGHUP, SIGQUIT (stub child killed, restore done). 80 % coverage is not measurable for zsh; every function
+in `t7-lib.zsh` has at least one test.
+
+DoD: `test-t7.sh` green; `stage-t7.sh icetest` ends with the dry check passing and no
+Ice or `vzhelper` process before or after; IceCore, MenuBarDiscovery, MenuBarCapture
+tests green; the app builds; `check-a3a4.sh`, `test-check-a3a4.sh`, `check-a10.sh`
+pass; the checklist and the owner's steps are in this plan. Not run: the probes' full
+test run (A6), anything on a bar.
+
+### 10.5 檢查清單（T7 當天，run-t7.sh 會逐條提示；「應看到」不成立就照實填）
+
+| # | 階段 | 做 X | 應看到 Y | 對應 |
+|---|---|---|---|---|
+| 1 | 每階段開頭 | 等 helper 出現、Terminal 顯示 `active` | helper 圖示先出現在列上最左側，約 1 分鐘內閃動後消失；列上沒有 «；Ice 圖示還在 | AC1 前提 |
+| 2 | 1-3（k = 1、2、4） | 右鍵 Ice 圖示 > Ice Settings… > General，把 **Use Ice Bar** 關掉再打開；等 Terminal 顯示 `active`；做 10 次 | 每次打開後：helper 全部消失、列上沒有 «；10 次至少 9 次 | AC1 |
+| 3 | 1-3 | 左鍵點 Ice 圖示 | Ice 圖示下方出現 IceBar，格數 = k，每格有圖示（helper 沒有自己的 app 圖示，會是同一個灰階通用圖示） | AC2 |
+| 4 | 1-3 | 點 IceBar 的一格；按 Esc 關選單；輪流點各格共 10 次 | 每次 1 秒內出現只有一項「Spike」的選單；10 次至少 9 次；沒有任何一格變灰 | AC2 |
+| 5 | 4（k = 2） | 點 Dock 上的 Menus（腳本已把它的選單設成很長），停 10 秒 | helper 回到列上並留著；Terminal 顯示 `shown(...longMenu)`；點 Ice 圖示不出現 IceBar | AC3 |
+| 6 | 4 | 點回 Terminal 視窗，等 | 幾秒安靜期後開始閃動，約 1 分鐘內 helper 再次消失，Terminal 顯示 `active` | AC3 |
+| 7 | 4 | 在 Terminal 按 Enter（腳本 3 秒後啟動一個新 helper），盯著列 | 新圖示一出現，原本藏起來的 helper 立刻回到列上；之後重新校準，全部（現在 3 個）再消失 | AC3 |
+| 8 | 4 | 按住 Command 把一個 helper 從最左側拖到 Ice 圖示右邊，放開 | 拖的時候 helper 全部回到列上；放開後重新校準，IceBar 只剩 2 格，被拖走的那個留在列上 | 觀察 3 |
+| 9 | 4 | 再用 Command 把它拖回最左側 | 重新校準後 IceBar 回到 3 格 | 觀察 3 |
+
+另外三件要回報的事，腳本會問，也會從紀錄算：
+
+1. **切換 app 與首次校準**：第 6 列裡 helper 在列上停了幾秒才再消失；第 1 列的首次校準閃了多久（腳本報 `checking -> active` 秒數，另請填目測）。
+2. **warm-up**：不用目測；腳本報每次試長度的結果分佈（`hiddenClean / folded / drawn / unknown`）與 baseline 成功次數。
+3. **Command-drag**：第 8、9 列能不能拖（y/n）、拖時 helper 有沒有回到列上（y/n）、放開後有沒有回到 IceBar（y/n）。
+
+### 10.6 我的步驟（T7 當天，由我指定時間）
+
+在自己的帳號先確認 Claude 已回報 staging 完成（`/Users/Shared/IceReverse-t7`，自己帳號的 release 版 Ice 偏好已匯出到 `~/IceReverse-evidence/<ts>-t7-stage/prefs-owner.plist`）。切到 `icetest`：選單列只有系統項目、螢幕不上鎖、接電源；系統設定 > 隱私權與安全性裡 Terminal 的「輔助使用」和「螢幕與系統錄音」兩個開關都開著（T0 當時開過；腳本會檢查，沒開會直接停）。在 Terminal 執行唯一一條命令 `/Users/Shared/IceReverse-t7/run-t7.sh`，它會自己匯出 `icetest` 這邊的 Ice 偏好、啟動 Ice 和 helper，然後逐條提示上面的檢查清單，照做並輸入看到的結果；全程約 75 分鐘。不要按 Ice 任何「Grant」按鈕，不要開 Ice 的其他設定，出現 Ice 的權限視窗就按 Ctrl-C。要中止：在 Terminal 按 Ctrl-C（一次），等它印出 `偏好還原：verified`；不要 `kill -9`，不要直接關 Terminal 視窗。結束（或中止）時腳本會結束 Ice 和 helper、還原偏好並印出報告。回報給 Claude：`==== T7 回報 ====` 到 `==== 結束 ====` 之間的全部行（最後兩行是 `偏好還原：…` 和 `helper 設定：…`）。若 `偏好還原` 不是 `verified`，在同一個 Terminal 執行腳本印出的那一行 `defaults import …`。切回自己的帳號後 Claude 用 `ditto` 把證據複製到 `~/IceReverse-evidence/<run id>/`（內容由 `icetest` 產生，不跟隨連結）、刪掉 `/Users/Shared/IceReverse-t7/Ice.app`，並把結果寫進本 Plan 與 `STATUS.md`。
+
+### 10.7 Risks
+
+- R9 the staged `Ice.app` (build 1121, the release's bundle id) under `/Users/Shared`
+  could be picked by LaunchServices instead of the release if it is ever registered
+  (INFERRED; `xcodebuild` registers its own product, which is `in-temp-dir` and never
+  picked, first-run plan M2; a copy by `ditto` and a launch by path are not known to
+  register). Enforced at staging (10.2: unregister, then fail if a record for the
+  staged path remains) and kept short-lived: removed after T7.
+- R10 Terminal's grants in `icetest` were switched off since T0 -> guard 1 stops the
+  run before anything starts; the owner turns the two switches on (Terminal's own
+  rows, not Ice's).
+- R11 the helpers land right of Ice's divider (not hidden) -> row 1 fails at once;
+  the owner Command-drags them left (row 8's gesture) and the phase goes on, noted.
+- R12 stderr mirroring changes Ice's timing slightly (every debug line is written
+  twice) -> accepted; T8 runs without it.
+- Rollback: delete the four new files and `/Users/Shared/IceReverse-t7`; revert A3's
+  two lines.
+
 ## Appendix. Review record
 
 ### Round 1 (Codex gpt-5.6-terra): 6 P1, 2 P2 -- all accepted
@@ -608,3 +819,25 @@ confirmed in the code and accepted:
 Trend: 1 P0 + 5 P1 + 2 P2 -> 2 P1 (both closed in code). Cap three rounds; round 3
 is folded into the Phase 3 Codex code review of the same change rather than run on
 the plan text again (review-loop stop rule).
+
+### Section 10 (T7 preparation), 2026-10-05, cap two rounds
+
+Round 1 (Codex gpt-5.6-terra, medium): 0 P0, 2 P1, 3 P2. Each checked against the code.
+
+| finding | ruling | change |
+|---|---|---|
+| P1 the preferences export sits under world-writable `/Users/Shared`; the staged build's LaunchServices record is only observed | accepted in part: the export moves to `icetest`'s home (0700) rather than being redacted (it is the restore source and must be whole); the ownership rule is `stage-spike.sh`'s, now written down and re-checked by the run; a record for the staged path is unregistered and fails the staging if it stays | 10.0, 10.2, 10.3 steps 1 and 3, R9 |
+| P1 `icewatch dry-run` has no lifetime or shutdown rule (60 s default, `main.swift:63-65`) | accepted, by removal: no row of the checklist reads its frames; `icewatch` is staged for `preflight` only | 10.0, 10.3 step 5 |
+| P2 "the 27 path does not use the service" | accepted (`AppState.swift:71-73` awaits it on 26+) | 10.0 wording; the 20 s guard stays |
+| P2 dry run "runs the guards" but the test forbids executing `icewatch` | accepted | dry run executes `icewatch preflight` and nothing else from the staging; the test pins that |
+| P2 restore deletes before verifying | modified: `icewatch`'s own order (`Supervisor.swift:367`) -- import and compare first, delete-and-import only on a difference; the backup is private and never deleted | 10.3 step 3, 10.4 |
+
+Round 2 (Codex): the five round-1 findings CLOSED, both modified rulings upheld; 1 new
+P1, accepted: the settings baseline was not deterministic ("everything else is
+default" over whatever `icetest`'s domain already held) -> the run starts from an
+empty domain and reads its four keys back (A5, 10.3 step 3). Trend: 2 P1 + 3 P2 ->
+1 P1 (closed in the text as Codex suggested). Cap reached; no third plan round
+(review-loop stop rule) -- the scripts go through the Phase 3 Codex code review.
+
+Phase 3 of this step (code review of the scripts) is recorded in section 7 note 8.
+
