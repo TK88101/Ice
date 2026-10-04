@@ -177,7 +177,7 @@ public struct LiveExtrasReader: ExtrasReading {
     /// matches. For a malformed answer the records no longer account for the
     /// snapshot, and `ReadClassifier` fails the read as `.partialWalk` instead of
     /// the walk reaching into it.
-    static func childElements(_ value: CFTypeRef?) -> [AXUIElement] {
+    public static func childElements(_ value: CFTypeRef?) -> [AXUIElement] {
         guard let value, CFGetTypeID(value) == CFArrayGetTypeID() else { return [] }
         let array = unsafeDowncast(value, to: CFArray.self)
         return (0..<CFArrayGetCount(array)).compactMap { index in

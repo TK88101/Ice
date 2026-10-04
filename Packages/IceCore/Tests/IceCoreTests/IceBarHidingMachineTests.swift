@@ -25,16 +25,14 @@ struct IceBarHidingMachineTests {
         menu: MenuWidthVerdict = .fits,
         interacting: Bool = false,
         dragging: Bool = false,
-        boundaryUsable: Bool = true,
-        members: Int = 2
+        boundaryUsable: Bool = true
     ) -> IceBarHidingSample {
         IceBarHidingSample(
             signature: signature,
             menuVerdict: menu,
             isInteracting: interacting,
             isDragging: dragging,
-            boundaryUsable: boundaryUsable,
-            memberCount: members
+            boundaryUsable: boundaryUsable
         )
     }
 
@@ -279,7 +277,7 @@ struct IceBarHidingMachineTests {
     @Test("an empty hidden section is shown as such and nothing is tried")
     func noMembersShows() {
         var driver = Driver()
-        driver.settle(Self.sample(members: 0))
+        driver.settle(Self.sample(Self.signature(hidden: [])))
         #expect(driver.machine.phase == .shown(.noMembers))
         #expect(driver.baselines == 0)
     }
@@ -337,7 +335,7 @@ struct IceBarHidingMachineTests {
 
     @Test("a new layout signature restores the standard length at once, in every phase")
     func signatureChangeRestores() {
-        let other = Self.sample(Self.signature(hidden: ["h1", "h2", "h3"]), members: 3)
+        let other = Self.sample(Self.signature(hidden: ["h1", "h2", "h3"]))
 
         var resting = Driver()
         resting.settle()

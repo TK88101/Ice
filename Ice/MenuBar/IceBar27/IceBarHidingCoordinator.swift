@@ -17,6 +17,7 @@ import OSLog
 @MainActor
 final class IceBarHidingCoordinator {
     private static let tickInterval: TimeInterval = 1
+    private static let tickTolerance: TimeInterval = 0.2
 
     private weak var appState: AppState?
     private var machine = IceBarHidingMachine()
@@ -26,10 +27,10 @@ final class IceBarHidingCoordinator {
     /// The baseline or observation under way.
     private var work: Task<Void, Never>?
     private var isSampling = false
+    private var wasDragging = false
     private var isWatching = false
 
     private var observer: (displayID: CGDirectDisplayID, observer: HiddenLengthObserver)?
-    private var chevron: (displayID: CGDirectDisplayID, reader: ChevronReader)?
 
     private let logger = Logger(category: "IceBarHiding")
 
@@ -59,6 +60,7 @@ final class IceBarHidingCoordinator {
                 self?.tick()
             }
         }
+        timer?.tolerance = Self.tickTolerance
     }
 
     // MARK: - Events
@@ -68,6 +70,10 @@ final class IceBarHidingCoordinator {
         machine = next
         for command in commands {
             execute(command)
+        }
+        // The items are back on the bar: an open IceBar would list them twice.
+        if !isResting, let appState, appState.navigationState.isIceBarPresented {
+            appState.menuBarManager.iceBarPanel.close()
         }
     }
 
@@ -83,9 +89,10 @@ final class IceBarHidingCoordinator {
             guard let appState else {
                 return
             }
+            restoreDividersAfterDrag(appState: appState)
             send(.sample(sample(appState: appState, screen: screen, menuMaxX: menuMaxX)))
             if isResting {
-                watchChevron(screen: screen)
+                watchChevron()
             }
         }
     }
@@ -111,13 +118,24 @@ final class IceBarHidingCoordinator {
             menuVerdict: MenuWidthRule.verdict(menuMaxX: menuEdge, notchMinX: screen.frameOfNotch.map { Double($0.minX) }),
             isInteracting: isMouseOnBar || appState.navigationState.isIceBarPresented,
             isDragging: appState.isDraggingMenuBarItem,
-            boundaryUsable: appState.itemManager.hiddenBoundaryUsable,
-            memberCount: cache[.hidden].count
+            boundaryUsable: appState.itemManager.hiddenBoundaryUsable
         )
     }
 
-    private func watchChevron(screen: NSScreen) {
-        guard !isWatching, let reader = chevronReader(for: screen) else {
+    /// A Command-drag shows every section (`showAllSectionsOnUserDrag`) and
+    /// nothing hides them again when it ends; in IceBar mode the calibrated
+    /// length applies only to a hidden divider, so put the dividers back.
+    private func restoreDividersAfterDrag(appState: AppState) {
+        let isDragging = appState.isDraggingMenuBarItem
+        defer { wasDragging = isDragging }
+        guard wasDragging, !isDragging, appState.settings.general.useIceBar else {
+            return
+        }
+        appState.menuBarManager.section(withName: .hidden)?.hide()
+    }
+
+    private func watchChevron() {
+        guard !isWatching, let reader = currentObserver()?.chevron else {
             return
         }
         isWatching = true
@@ -172,17 +190,6 @@ final class IceBarHidingCoordinator {
             return nil
         }
         observer = (screen.displayID, fresh)
-        return fresh
-    }
-
-    private func chevronReader(for screen: NSScreen) -> ChevronReader? {
-        if let chevron, chevron.displayID == screen.displayID {
-            return chevron.reader
-        }
-        guard let fresh = ChevronReader.live(screen: screen) else {
-            return nil
-        }
-        chevron = (screen.displayID, fresh)
         return fresh
     }
 }

@@ -162,6 +162,13 @@ final class MenuBarSection {
         }
 
         if useIceBar {
+            // On macOS 27 the IceBar is offered only while the hidden section
+            // is hidden cleanly; otherwise its items are on the bar and the
+            // layout pane says why (plan 2026-10-03-icebar-build, 9.3).
+            if #available(macOS 27, *), appState?.itemManager.isIceBarOffered != true {
+                return
+            }
+
             // Make sure hidden and always-hidden control items are collapsed.
             // Still update the visible control item (Ice icon) state to show
             // its alternate icon.

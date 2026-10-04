@@ -107,22 +107,19 @@ public struct IceBarHidingSample: Equatable, Sendable {
     /// The hidden divider decided the sections in a cache pass since the
     /// length last became standard.
     public let boundaryUsable: Bool
-    public let memberCount: Int
 
     public init(
         signature: LayoutSignature,
         menuVerdict: MenuWidthVerdict,
         isInteracting: Bool,
         isDragging: Bool,
-        boundaryUsable: Bool,
-        memberCount: Int
+        boundaryUsable: Bool
     ) {
         self.signature = signature
         self.menuVerdict = menuVerdict
         self.isInteracting = isInteracting
         self.isDragging = isDragging
         self.boundaryUsable = boundaryUsable
-        self.memberCount = memberCount
     }
 }
 
@@ -169,6 +166,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         case resting(length: Double)
     }
 
+    public let parameters: IceBarHidingParameters
     public private(set) var phase = Phase.off
 
     /// The signature the current phase was entered with.
@@ -184,33 +182,33 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     private var lastStart: Double?
     private var lastToken = 0
 
-    public init() {}
+    public init(parameters: IceBarHidingParameters = .standard) {
+        self.parameters = parameters
+    }
 
     var cachedLengthCount: Int { cache.count }
 
     /// The machine after `event`, and what Ice must do, in order.
     public func step(
         _ event: IceBarHidingEvent,
-        now: Double,
-        parameters: IceBarHidingParameters = .standard
+        now: Double
     ) -> (machine: IceBarHidingMachine, commands: [IceBarHidingCommand]) {
         var next = self
-        let commands = next.apply(event, now: now, parameters: parameters)
+        let commands = next.apply(event, now: now)
         return (next, commands)
     }
 
     private mutating func apply(
         _ event: IceBarHidingEvent,
-        now: Double,
-        parameters: IceBarHidingParameters
+        now: Double
     ) -> [IceBarHidingCommand] {
         switch event {
         case .mode(let isIceBar):
             return setMode(isIceBar, now: now)
         case .sample(let sample):
-            return phase == .off ? [] : handle(sample, now: now, parameters: parameters)
+            return phase == .off ? [] : handle(sample, now: now)
         case .baseline(let token, let ok):
-            return baselineTaken(token: token, ok: ok, now: now, parameters: parameters)
+            return baselineTaken(token: token, ok: ok, now: now)
         case .observed(let token, let outcome):
             return observed(token: token, outcome: outcome, now: now)
         case .chevronSeenAtRest:
@@ -230,7 +228,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         case (false, false):
             // Tokens never restart: a late answer must not match a new request.
             let token = lastToken
-            self = IceBarHidingMachine()
+            self = IceBarHidingMachine(parameters: parameters)
             lastToken = token
             return [.setLength(nil), .report(.off)]
         default:
@@ -240,8 +238,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
 
     private mutating func handle(
         _ sample: IceBarHidingSample,
-        now: Double,
-        parameters: IceBarHidingParameters
+        now: Double
     ) -> [IceBarHidingCommand] {
         var commands = [IceBarHidingCommand]()
         if signature != sample.signature {
@@ -252,7 +249,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         // The owner is arranging items: they need the real divider.
         if sample.isDragging { return commands + enterQuiet(now) }
         if let reason = Self.blocker(in: sample) { return commands + enterShown(reason) }
-        return commands + advance(sample, now: now, parameters: parameters)
+        return commands + advance(sample, now: now)
     }
 
     /// What makes hiding pointless or unreadable whatever the length.
@@ -260,14 +257,13 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         switch sample.menuVerdict {
         case .crossesNotch: return .longMenu
         case .unreadable: return .menuUnreadable
-        case .fits: return sample.memberCount == 0 ? .noMembers : nil
+        case .fits: return sample.signature.hidden.isEmpty ? .noMembers : nil
         }
     }
 
     private mutating func advance(
         _ sample: IceBarHidingSample,
-        now: Double,
-        parameters: IceBarHidingParameters
+        now: Double
     ) -> [IceBarHidingCommand] {
         switch phase {
         case .off, .resting, .shown(.unstableLayout):
@@ -276,16 +272,16 @@ public struct IceBarHidingMachine: Equatable, Sendable {
             // The blocker is gone.
             return enterQuiet(now)
         case .shown(.cannotAssess), .shown(.noCleanLength):
-            return start(sample, now: now, parameters: parameters)
+            return start(sample, now: now)
         case .quiet(let since):
             guard now - since >= parameters.quietPeriod else { return [] }
-            return start(sample, now: now, parameters: parameters)
+            return start(sample, now: now)
         case .baselining, .confirming:
             return sample.isInteracting ? enterQuiet(now) : []
         case .calibrating(let observations, let pending, let restedAt):
             if sample.isInteracting { return enterQuiet(now) }
             guard pending == nil, now - restedAt >= parameters.restDwell else { return [] }
-            return propose(after: observations, now: now, parameters: parameters)
+            return propose(after: observations, now: now)
         }
     }
 
@@ -293,8 +289,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
 
     private mutating func start(
         _ sample: IceBarHidingSample,
-        now: Double,
-        parameters: IceBarHidingParameters
+        now: Double
     ) -> [IceBarHidingCommand] {
         guard !sample.isInteracting, sample.boundaryUsable else { return [] }
         if let lastStart, now - lastStart < parameters.minInterval { return [] }
@@ -308,11 +303,10 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     private mutating func baselineTaken(
         token: Int,
         ok: Bool,
-        now: Double,
-        parameters: IceBarHidingParameters
+        now: Double
     ) -> [IceBarHidingCommand] {
         guard phase == .baselining(token: token) else { return [] }
-        guard ok else { return fail(.cannotAssess, parameters: parameters) }
+        guard ok else { return fail(.cannotAssess) }
         if let cached = signature.flatMap({ cache[$0] }) {
             anchor = cached
             let trial = Trial(token: takeToken(), length: cached)
@@ -349,8 +343,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
 
     private mutating func propose(
         after observations: [HiddenLengthObservation],
-        now: Double,
-        parameters: IceBarHidingParameters
+        now: Double
     ) -> [IceBarHidingCommand] {
         let proposal = HiddenLengthCalibrator.next(
             observations: observations,
@@ -368,13 +361,13 @@ public struct IceBarHidingMachine: Equatable, Sendable {
                 let lo = clean.min(), let hi = clean.max(),
                 length - lo >= parameters.restMargin, hi - length >= parameters.restMargin
             else {
-                return fail(.noCleanLength(.noBand), parameters: parameters)
+                return fail(.noCleanLength(.noBand))
             }
-            remember(length, parameters: parameters)
+            remember(length)
             phase = .resting(length: length)
             return [.setLength(length), .report(.active)]
         case .giveUp(let reason):
-            return fail(reason == .unknownOutcome ? .cannotAssess : .noCleanLength(reason), parameters: parameters)
+            return fail(reason == .unknownOutcome ? .cannotAssess : .noCleanLength(reason))
         }
     }
 
@@ -392,12 +385,12 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         return [.setLength(nil), .report(.shown(reason))]
     }
 
-    private mutating func fail(_ reason: IceBarShownReason, parameters: IceBarHidingParameters) -> [IceBarHidingCommand] {
+    private mutating func fail(_ reason: IceBarShownReason) -> [IceBarHidingCommand] {
         failures += 1
         return enterShown(failures >= parameters.maxFailures ? .unstableLayout : reason)
     }
 
-    private mutating func remember(_ length: Double, parameters: IceBarHidingParameters) {
+    private mutating func remember(_ length: Double) {
         guard let signature else { return }
         if cache.count >= parameters.maxCachedLengths { cache.removeAll() }
         cache[signature] = length

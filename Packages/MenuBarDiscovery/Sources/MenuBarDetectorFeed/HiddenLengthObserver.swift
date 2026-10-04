@@ -6,7 +6,8 @@ import IceCore
 /// length Ice tries, whether the members are gone and no `«` is up.
 public actor HiddenLengthObserver {
     private let verification: HidingVerification
-    private let chevron: ChevronReader
+    /// Also read on its own, at rest, by IceBar's hiding.
+    public nonisolated let chevron: ChevronReader
     private let settle: Double
     private let sleep: @Sendable (Double) async -> Void
     private var prepared: PreparedVerification?

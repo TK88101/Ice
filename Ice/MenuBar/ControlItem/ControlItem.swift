@@ -456,7 +456,14 @@ final class ControlItem {
     /// calibrated or standard length (plan 2026-10-03-icebar-build, 9.3),
     /// otherwise the identifier's.
     private func length(for state: HidingState) -> CGFloat {
-        if #available(macOS 27, *), let length = iceBarLength(for: state) {
+        if
+            #available(macOS 27, *),
+            let length = iceBarLength(
+                for: state,
+                calibratedLength: calibratedHiddenLength,
+                useIceBar: appState?.settings.general.useIceBar == true
+            )
+        {
             return length
         }
         return identifier.length(for: state)
@@ -464,15 +471,17 @@ final class ControlItem {
 
     /// On macOS 27 IceBar mode hides only the hidden section, at the length
     /// the coordinator calibrated; the always-hidden divider stays at standard
-    /// length (product rule r1). `nil` outside IceBar mode.
+    /// length (product rule r1). `nil` outside IceBar mode. Takes its inputs
+    /// so the divider tracking can ask with the values `@Published` is about
+    /// to set.
     @available(macOS 27, *)
-    private func iceBarLength(for state: HidingState) -> CGFloat? {
-        guard state == .hideSection, appState?.settings.general.useIceBar == true else {
+    private func iceBarLength(for state: HidingState, calibratedLength: CGFloat?, useIceBar: Bool) -> CGFloat? {
+        guard state == .hideSection, useIceBar else {
             return nil
         }
         switch identifier {
         case .visible: return nil
-        case .hidden: return calibratedHiddenLength ?? Lengths.standard
+        case .hidden: return calibratedLength ?? Lengths.standard
         case .alwaysHidden: return Lengths.standard
         }
     }
@@ -482,13 +491,8 @@ final class ControlItem {
     /// exactly `.showSection`, as before.
     @available(macOS 27, *)
     func isAtStandardLength(state: HidingState, calibratedLength: CGFloat?, useIceBar: Bool) -> Bool {
-        if state == .showSection {
-            return true
-        }
-        guard useIceBar else {
-            return false
-        }
-        return identifier == .alwaysHidden || calibratedLength == nil
+        state == .showSection
+            || iceBarLength(for: state, calibratedLength: calibratedLength, useIceBar: useIceBar) == Lengths.standard
     }
 
     /// Adds the control item to the menu bar.

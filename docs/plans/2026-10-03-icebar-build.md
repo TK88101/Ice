@@ -593,3 +593,17 @@ equals `state == .showSection`, so nothing changes there; every touched function
 `MenuBarItemManager` is already `@available(macOS 27, *)`. No new finding. Codex
 round 2 is re-run in the background after 14:11; a P0/P1 from it stops the
 implementation and reopens this section.
+
+Round 2, Codex (re-run 14:13, after the quota came back; it read the plan and the code
+as built at `a2daee0`): of the round-1 findings, 7 CLOSED (both modified rulings
+upheld: the indicator margin, the press outcome) and 1 still open; 2 new P1, both
+confirmed in the code and accepted:
+
+| finding | change |
+|---|---|
+| P1 `boundaryUsable` is stale: set only when a pass publishes, never cleared when the hidden divider's length changes (round-1 finding still open) | `recordDividerState` clears it whenever the hidden divider's standard-length state changes; only a pass after the settle sets it again |
+| P1 a Command-drag shows every section (`HIDEventManager.swift:321-325`, `showAllSectionsOnUserDrag` on by default) and nothing hides them when it ends, so in IceBar mode the calibrated length would never apply again | on the drag's end, in IceBar mode, the coordinator hides the hidden section (dividers back to `.hideSection`) |
+
+Trend: 1 P0 + 5 P1 + 2 P2 -> 2 P1 (both closed in code). Cap three rounds; round 3
+is folded into the Phase 3 Codex code review of the same change rather than run on
+the plan text again (review-loop stop rule).

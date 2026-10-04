@@ -6,6 +6,7 @@
 import ApplicationServices
 import Foundation
 import IceCore
+import MenuBarDiscovery
 
 /// Opens a menu bar item from the IceBar on macOS 27 by pressing it over
 /// Accessibility while it stays pushed off the bar (plan
@@ -30,12 +31,11 @@ enum MenuBarItemPresser {
     private static func pressNow(_ key: ItemKey) -> PressOutcome {
         let app = AXUIElementCreateApplication(key.pid)
         AXUIElementSetMessagingTimeout(app, readTimeout)
-        guard
-            let bar = element(app, "AXExtrasMenuBar"),
-            let children = elements(bar, kAXChildrenAttribute)
-        else {
+        guard let bar = element(app, "AXExtrasMenuBar") else {
             return .failed
         }
+        // Type-checked one by one: another process chose these values.
+        let children = LiveExtrasReader.childElements(attribute(bar, kAXChildrenAttribute))
         let identifiers = children.map { child -> String? in
             AXUIElementSetMessagingTimeout(child, readTimeout)
             guard string(child, kAXRoleAttribute) == "AXMenuBarItem" else {
@@ -57,32 +57,22 @@ enum MenuBarItemPresser {
         )
     }
 
-    private static func element(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
+    private static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
         var value: CFTypeRef?
-        guard
-            AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
-            let value,
-            CFGetTypeID(value) == AXUIElementGetTypeID()
-        else {
+        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else {
             return nil
         }
-        // swiftlint:disable:next force_cast
-        return (value as! AXUIElement)
+        return value
     }
 
-    private static func elements(_ element: AXUIElement, _ attribute: String) -> [AXUIElement]? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+    private static func element(_ element: AXUIElement, _ name: String) -> AXUIElement? {
+        guard let value = attribute(element, name), CFGetTypeID(value) == AXUIElementGetTypeID() else {
             return nil
         }
-        return value as? [AXUIElement]
+        return unsafeDowncast(value, to: AXUIElement.self)
     }
 
-    private static func string(_ element: AXUIElement, _ attribute: String) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
-            return nil
-        }
-        return value as? String
+    private static func string(_ element: AXUIElement, _ name: String) -> String? {
+        attribute(element, name) as? String
     }
 }

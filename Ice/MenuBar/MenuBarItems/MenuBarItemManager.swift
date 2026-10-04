@@ -152,6 +152,10 @@ final class MenuBarItemManager: ObservableObject {
     @available(macOS 27, *)
     private func recordDividerState(isCollapsed: Bool, for name: MenuBarSection.Name) {
         let previous = dividerSnapshots[name]
+        if name == .hidden, previous?.isCollapsed != isCollapsed {
+            // Sections read before this change no longer count (plan 9.3, Codex round 2).
+            hiddenBoundaryUsable = false
+        }
         // A redundant assignment (hiding assigns all three items) bumps the
         // generation but does not restart the settle.
         let changedAt = previous.flatMap { $0.isCollapsed == isCollapsed ? $0.changedAt : nil }
@@ -583,7 +587,7 @@ extension MenuBarItemManager {
             hiddenBoundaryUsable = !publication.notes.contains { note in
                 if case .hidden = note { true } else { false }
             }
-            if Set(cache.managedItems.map(\.id)) != Set(itemCache.managedItems.map(\.id)) {
+            if !unpressableItems.isEmpty, Set(cache.managedItems.map(\.id)) != Set(itemCache.managedItems.map(\.id)) {
                 // A failed press is retried once the set of items changes.
                 unpressableItems = []
             }

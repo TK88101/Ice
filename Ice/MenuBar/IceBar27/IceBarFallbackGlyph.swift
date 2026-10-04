@@ -15,10 +15,13 @@ struct IceBarFallbackGlyph: View {
     private static let maxTitleLength = 12
     private static let horizontalPadding: CGFloat = 4
 
+    /// App icons by pid, so a redraw does not look the app up again.
+    private static let icons = NSCache<NSNumber, NSImage>()
+
     let item: MenuBarItem
 
     var body: some View {
-        let icon = NSRunningApplication(processIdentifier: item.ownerPID)?.icon
+        let icon = Self.icon(for: item.ownerPID)
         let choice = IceBarIconChoice.choose(
             hasCachedImage: false,
             isAccessibilitySource: true,
@@ -50,6 +53,18 @@ struct IceBarFallbackGlyph: View {
         }
         .padding(.horizontal, Self.horizontalPadding)
         .frame(maxHeight: .infinity)
+    }
+
+    private static func icon(for pid: pid_t) -> NSImage? {
+        let key = NSNumber(value: pid)
+        if let icon = icons.object(forKey: key) {
+            return icon
+        }
+        guard let icon = NSRunningApplication(processIdentifier: pid)?.icon else {
+            return nil
+        }
+        icons.setObject(icon, forKey: key)
+        return icon
     }
 
     private static func truncated(_ title: String) -> String {

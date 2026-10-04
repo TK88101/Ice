@@ -36,8 +36,7 @@ extension HidingVerification {
             ownIdentifiers: ownIdentifiers,
             now: { ProcessInfo.processInfo.systemUptime }
         )
-        let originPoint = CGDisplayBounds(screen.directDisplayID ?? CGMainDisplayID()).origin
-        let liveOrigin = DiscoveryOrigin(x: Double(originPoint.x), y: Double(originPoint.y))
+        let liveOrigin = Self.origin(of: screen)
 
         return HidingVerification(
             discoverer: discoverer,
@@ -65,11 +64,11 @@ extension ChevronReader {
     /// them; `nil` without a bar geometry.
     public static func live(screen: NSScreen) -> ChevronReader? {
         guard let geometry = BarGeometry(screen: screen) else { return nil }
-        let originPoint = CGDisplayBounds(screen.directDisplayID ?? CGMainDisplayID()).origin
+        // Polled every second at rest: the agent only, never the process list.
         let reader = DiscoveredFrameReader(
             extras: LiveExtrasReader(readsLabels: false),
-            apps: LiveRunningApps(),
-            origin: DiscoveryOrigin(x: Double(originPoint.x), y: Double(originPoint.y))
+            apps: AgentOnlyApps(),
+            origin: HidingVerification.origin(of: screen)
         )
         return ChevronReader(reader: reader, barHeight: geometry.heightPt)
     }
@@ -85,6 +84,36 @@ extension HiddenLengthObserver {
         guard let chevron = ChevronReader.live(screen: screen) else { return nil }
         let verification = HidingVerification.live(screen: screen, ownIdentifiers: ownIdentifiers, warmUpCount: liveWarmUpCount)
         return HiddenLengthObserver(verification: verification, chevron: chevron)
+    }
+}
+
+extension HidingVerification {
+    /// The display's origin in global coordinates, as discovery reports frames.
+    static func origin(of screen: NSScreen) -> DiscoveryOrigin {
+        let point = CGDisplayBounds(screen.directDisplayID ?? CGMainDisplayID()).origin
+        return DiscoveryOrigin(x: Double(point.x), y: Double(point.y))
+    }
+}
+
+/// The chevron read's processes: none listed (it reads only `MenuBarAgent`),
+/// and the agent's pid kept until that process is gone, instead of walking
+/// every running application each second.
+private final class AgentOnlyApps: RunningAppsProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private var agent: Int32?
+
+    func processes() -> [ProcessInfoRecord] {
+        []
+    }
+
+    func agentPID() -> Int32? {
+        lock.withLock {
+            if let agent, NSRunningApplication(processIdentifier: agent)?.isTerminated == false {
+                return agent
+            }
+            agent = LiveRunningApps().agentPID()
+            return agent
+        }
     }
 }
 
