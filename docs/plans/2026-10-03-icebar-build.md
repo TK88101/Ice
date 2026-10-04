@@ -171,6 +171,95 @@ chain.
 
 | 4 | 2026-10-04 | **T0 result** (MEASURED, `icetest`, macOS 27.0.1 26A434, run `20261004-105226-spike`, started by the owner 10:52, 20 min 50 s; evidence copied to `~/IceReverse-evidence/20261004-105226-spike`, `ditto` + `diff -r` identical, `run/manifest.final.json` 1855 files, 0 sha256 mismatches). **Spike A**: every profile (k = 1, 2, 4, 8 x short, mid) has the same band, 632-840 pt (14 clean lengths of 38), so capacity is at least 8 in both menus (16 not measured). **Spike B** at 736 pt (k = 1 short midpoint): path `pushedOff`, 5/5 opened, first sign 10.5-14.5 ms after the press, both signs (helper `menu open` and a layer-101 window) each time, `AXError` 0, menu closed each time; the fallback was not needed. Stop rules: neither fires; T1-T3 may follow. Afterwards: both helper domains `{}` in `icetest` (owner's `defaults read`), no `vzhelper` in the owner's account |
 
+| 5 | 2026-10-04 | **T1-T3 built** (MEASURED, owner's account, nothing launched; uncommitted on `wip/icebar-build` at `7261666`). Section 8 reviewed by Codex in two rounds (2 P1 + 1 P2 -> CONVERGED). Six new files in `Packages/IceCore`, each suite seen red against a stub before green; one test expectation was wrong (edges 616/856 are on T0's grid, not the grid anchored at 736) and corrected with the plan. Phase 3 (/simcodex, cap two rounds): round 1 simplify 2 P1 (the trim re-used `IdentifierText.trimmed`; the `Result`/`Refusal` wrapper replaced by `isUntrusted` + an optional history) and 3 P2 taken, Codex 1 P2 taken (proposals and accepted observations now share one bound policy, `Grid.inLimits`; test seen red first); round 2 simplify 2 P1 in tests taken, Codex 0. Tests: IceCore 407 in 47 suites green; coverage 96.1 % / 100 % / 100 % (calibrator / menu rule / icon choice); MenuBarDiscovery and MenuBarCapture green; app builds (`CODE_SIGNING_ALLOWED=NO`); `check-a3a4.sh` passes. Probes (`docs/macos-27/probes/visibility`, untouched by T1-T3): 6 test bundles green (13, 8, 29, 44, 25, 97 tests), `IceBarCorpusTests` not run -- the run was stopped (SIGTERM) at a 60 min cap because the 25-test bundle took 2677 s instead of about 7 min (INFERRED: CPU contention with another project's `swift test` running at the same time). Deferred P2: one helper for the three outcome filters; `private` for `Grid`/`decide`/`approach`; integer index limits in `Grid` (16 pt steps are exact, so no misfire today); `IdentifierText` named for identifiers but used for a title; redundant `isFinite` checks kept to mirror rule 1 |
+
+## 8. T1-T3 detail (2026-10-04, after T0)
+
+Scope: three new source files and three new test files in `Packages/IceCore`, nothing
+else (no Ice wiring: that is T4-T6; no frozen file; `Package.swift` unchanged). All
+types `public`, `Sendable`, `Equatable`; no AppKit/CoreGraphics import (IceCore's rule,
+`Package.swift`). Tests use Swift Testing, as the package does. Done in the main
+session, one unit after another (each is about a hundred lines; worktrees under the
+iCloud-managed `~/Documents` invite duplicate files, project memory).
+
+### T1 `HiddenLengthCalibrator.swift`
+- `HiddenLengthOutcome`: `folded` / `hiddenClean` / `drawn` / `unknown` (D1's four).
+- `HiddenLengthObservation { length: Double; outcome }`.
+- `HiddenLengthParameters { step, minLength, maxLength, defaultStart, maxObservations }`,
+  `.standard` = 16 pt, 408, 1000, 736, 24. MEASURED basis (note 4): grid 408-1000 by 16,
+  band 632-840, midpoint 736. 24 = the 14 clean lengths + 2 edges + 8 steps of approach
+  (INFERRED; a bound, not a measurement). The initialiser checks finite values,
+  `step > 0`, `minLength <= defaultStart <= maxLength`, `maxObservations > 0`
+  (`precondition`, as `PtSpan`).
+- `HiddenLengthProposal`: `tryLength(Double)` / `rest(Double)` / `giveUp(Reason)`,
+  `Reason` = `unknownOutcome` / `noBand` / `inconsistent` / `stepBound`.
+- `HiddenLengthCalibrator.next(observations:lastGood:parameters:) -> HiddenLengthProposal`,
+  a stateless function of the whole observation list (the latest observation of a length
+  wins), so the caller keeps no phase:
+  1. any `unknown`, or an observation whose length is non-finite or outside
+     `[minLength, maxLength]` -> `giveUp(.unknownOutcome)` (fail open, D1);
+  2. start = `lastGood` if finite and inside `[minLength, maxLength]`, else
+     `defaultStart`; the grid is `start + n * step` (anchored at the start, so a last
+     good off T0's 408 + 16n grid is still walked exactly); an observation off that grid
+     -> `giveUp(.inconsistent)`; no observations -> `tryLength(start)`;
+  3. no clean length yet: only `folded` seen -> try the highest observed + step; only
+     `drawn` seen -> try the lowest observed - step; outside the limits, or both kinds
+     seen with no clean between them -> `giveUp(.noBand)`;
+  4. clean lengths seen, `lo`/`hi` the lowest/highest: **every** grid point from `lo`
+     to `hi` must have a latest outcome `hiddenClean` -- an unobserved one ->
+     `tryLength(it)`, a non-clean one -> `giveUp(.inconsistent)`; the lower edge is
+     bracketed when `lo - step` was observed non-clean or lies below `minLength`, the
+     upper likewise with `maxLength`; unbracketed lower -> `tryLength(lo - step)`, then
+     upper -> `tryLength(hi + step)`; both bracketed -> `rest((lo + hi) / 2)`, the exact
+     midpoint (C1/C2's; inside the verified run, never rounded out of it);
+  5. the count of distinct observed lengths reaching `maxObservations` without a `rest`
+     -> `giveUp(.stepBound)`.
+- Not here (T4): the jump from rest between lengths, the baseline, the signature and the
+  quiet period.
+- Tests (red first): first proposal is the default start; restart from a valid last
+  good, and a non-finite or out-of-range last good falls back; a clean start walks down
+  then up and rests at the midpoint (the T0 band from 736 -> `rest(736)`, edges 624 and
+  848 tried -- corrected 2026-10-04 from "616 and 856", which lie on T0's 408 + 16n
+  grid, not on the grid anchored at 736); a folded start walks up into the band, a drawn start walks down; a run
+  reaching a grid limit is bracketed by the limit; `unknown` anywhere gives up at once;
+  folded then drawn with no clean -> `noBand`; walking off a limit without a clean ->
+  `noBand`; a non-clean between cleans -> `inconsistent`; a missing interior grid point
+  is tried, not assumed; an off-grid observation -> `inconsistent`; NaN, infinite and
+  out-of-range observation lengths give up; a fractional step rests at the exact
+  midpoint; the bound -> `stepBound`; a repeated length keeps the latest outcome; a
+  one-length band rests on that length.
+
+### T2 `MenuWidthRule.swift`
+- `MenuWidthVerdict`: `fits` / `crossesNotch` / `unreadable`.
+- `MenuWidthRule.verdict(menuMaxX: Double?, notchMinX: Double?) -> MenuWidthVerdict`:
+  either value missing or non-finite -> `unreadable`; `menuMaxX > notchMinX` ->
+  `crossesNotch`; else `fits`. No margin constant: menus ending at 758 pt with the
+  notch at 771.5 hid cleanly (MEASURED, FINDINGS "The safe width"), so touching or
+  stopping short of the edge fits. A screen without a notch gives `notchMinX == nil`
+  -> `unreadable`: IceBar on a notch-less display is unmeasured (non-goal: second
+  display), and T4 shows the section for anything but `fits` (fail open).
+- Tests: short menu fits; ending exactly at the edge fits; one point over crosses;
+  missing menu, missing notch, NaN and infinity are unreadable.
+
+### T3 `IceBarIconChoice.swift`
+- `IceBarIconChoice`: `cachedImage` / `appIcon` / `title(String)` / `genericGlyph` /
+  `none`.
+- `IceBarIconChoice.choose(hasCachedImage:isAccessibilitySource:hasAppIcon:title:)`:
+  a cached image wins for either source; otherwise a window-sourced item gives `none`
+  (today's behaviour on 26, `IceBar.swift:452-456`: no image, no cell); an
+  accessibility-sourced item gives `appIcon` if there is one, else the AX title trimmed
+  of whitespace if non-empty, else `genericGlyph`. Truncating a long title is the
+  view's concern (T5).
+- Tests: each branch, the 26 path unchanged, whitespace-only and `nil` titles fall to
+  the glyph, the title is trimmed.
+
+### DoD and acceptance for this step
+`swift test --package-path Packages/IceCore --enable-code-coverage --scratch-path
+<outside ~/Documents>`: every suite green (old and new); line coverage of each new file
+>= 80 % (`llvm-cov report`); each new test seen failing first;
+`docs/plans/checks/check-a3a4.sh` passes; `git diff --stat` lists only the six new
+files and this plan. Rollback: delete the six files.
+
 ## Appendix. Review record
 
 ### Round 1 (Codex gpt-5.6-terra): 6 P1, 2 P2 -- all accepted
@@ -189,3 +278,16 @@ chain.
 ### Round 2: 0 P0, 0 P1 -- CONVERGED
 
 Codex confirmed each round-1 change closes its finding against the plan and the cited code. Trend: 6 P1 + 2 P2 -> none.
+
+### Section 8 (T1-T3 detail), 2026-10-04, cap two rounds
+
+Round 1 (Codex gpt-5.6-terra, medium): 0 P0, 2 P1, 1 P2 -- all accepted, each with a
+concrete counter-example (re-checked one by one, not taken wholesale).
+
+| finding | change |
+|---|---|
+| P1 rounding the midpoint can leave the clean run (fractional step) | rest at the exact midpoint |
+| P1 an unobserved interior grid point is assumed clean | grid anchored at the start; every point lo..hi must be observed clean (unobserved -> tried, non-clean -> `inconsistent`); off-grid -> `inconsistent` |
+| P2 observation length not validated | non-finite or out-of-range -> `giveUp(.unknownOutcome)` |
+
+Round 2: CONVERGED. Trend: 2 P1 + 1 P2 -> none.
