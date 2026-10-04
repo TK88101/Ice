@@ -27,7 +27,6 @@ final class IceBarHidingCoordinator {
     /// The baseline or observation under way.
     private var work: Task<Void, Never>?
     private var isSampling = false
-    private var wasDragging = false
     private var isWatching = false
 
     private var observer: (displayID: CGDirectDisplayID, observer: HiddenLengthObserver)?
@@ -89,7 +88,7 @@ final class IceBarHidingCoordinator {
             guard let appState else {
                 return
             }
-            restoreDividersAfterDrag(appState: appState)
+            keepDividersHidden(appState: appState)
             send(.sample(sample(appState: appState, screen: screen, menuMaxX: menuMaxX)))
             if isResting {
                 watchChevron()
@@ -122,16 +121,21 @@ final class IceBarHidingCoordinator {
         )
     }
 
-    /// A Command-drag shows every section (`showAllSectionsOnUserDrag`) and
-    /// nothing hides them again when it ends; in IceBar mode the calibrated
-    /// length applies only to a hidden divider, so put the dividers back.
-    private func restoreDividersAfterDrag(appState: AppState) {
-        let isDragging = appState.isDraggingMenuBarItem
-        defer { wasDragging = isDragging }
-        guard wasDragging, !isDragging, appState.settings.general.useIceBar else {
+    /// In IceBar mode the dividers stay at `.hideSection` (`MenuBarSection.show`
+    /// keeps them there), and the calibrated length applies only then. Some
+    /// paths leave them shown: IceBar mode turned on while the section was
+    /// shown, or a Command-drag that showed every section and ended. Put them
+    /// back, except during a drag (Codex review of plan 9.3 and of the code).
+    private func keepDividersHidden(appState: AppState) {
+        guard
+            appState.settings.general.useIceBar,
+            !appState.isDraggingMenuBarItem,
+            let hidden = appState.menuBarManager.section(withName: .hidden),
+            hidden.controlItem.state == .showSection
+        else {
             return
         }
-        appState.menuBarManager.section(withName: .hidden)?.hide()
+        hidden.hide()
     }
 
     private func watchChevron() {
