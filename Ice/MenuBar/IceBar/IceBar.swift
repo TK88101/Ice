@@ -378,7 +378,9 @@ private struct IceBarContentView: View {
                     .controlSize(.small)
             }
             .padding(.horizontal, 10)
-        } else if imageCache.cacheFailed(for: section) {
+        } else if #unavailable(macOS 27), imageCache.cacheFailed(for: section) {
+            // macOS 27 captures no item images; its cells fall back to app
+            // icons instead (plan 2026-10-03-icebar-build, 9.4).
             Text("Unable to display menu bar items")
                 .padding(.horizontal, 10)
         } else {
@@ -472,7 +474,13 @@ private struct IceBarItemView: View {
                 .accessibilityAction(named: "right click", rightClickAction)
         } else if #available(macOS 27, *), case .accessibility = item.source {
             // No window to capture on macOS 27 (plan 2026-10-03-icebar-build, 9.4-9.5).
-            IceBarAccessibilityCell(itemManager: itemManager, menuBarManager: menuBarManager, item: item, section: section)
+            IceBarAccessibilityCell(
+                itemManager: itemManager,
+                menuBarManager: menuBarManager,
+                item: item,
+                section: section,
+                isDisabled: itemManager.unpressableItems.contains(item.id)
+            )
         }
     }
 }

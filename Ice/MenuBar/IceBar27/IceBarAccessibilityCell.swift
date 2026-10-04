@@ -14,10 +14,12 @@ import SwiftUI
 struct IceBarAccessibilityCell: View {
     private static let disabledOpacity = 0.4
 
-    @ObservedObject var itemManager: MenuBarItemManager
+    let itemManager: MenuBarItemManager
     let menuBarManager: MenuBarManager
     let item: MenuBarItem
     let section: MenuBarSection.Name
+    /// The item's press failed; read by the parent, which observes the manager.
+    let isDisabled: Bool
 
     /// Hiding the section closes the IceBar and, in IceBar mode, leaves the
     /// hidden length alone.
@@ -29,7 +31,6 @@ struct IceBarAccessibilityCell: View {
     }
 
     var body: some View {
-        let isDisabled = itemManager.unpressableItems.contains(item.id)
         IceBarFallbackGlyph(item: item)
             .contentShape(Rectangle())
             .opacity(isDisabled ? Self.disabledOpacity : 1)

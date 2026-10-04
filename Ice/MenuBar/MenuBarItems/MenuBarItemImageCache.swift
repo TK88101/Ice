@@ -343,9 +343,7 @@ final class MenuBarItemImageCache: ObservableObject {
         guard ScreenCapture.cachedCheckPermissions() else {
             return true
         }
-        // An item without a window (macOS 27) cannot have an image; its IceBar
-        // cell falls back to its app's icon (plan 2026-10-03-icebar-build, 9.4).
-        let items = (appState?.itemManager.itemCache[section] ?? []).filter { $0.source.windowID != nil }
+        let items = appState?.itemManager.itemCache[section] ?? []
         guard !items.isEmpty else {
             return false
         }
