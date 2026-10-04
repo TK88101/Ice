@@ -74,3 +74,10 @@ Route C's first sitting (S0 -> S-adv -> S1, isolated account, run
 | Can this instrument certify route C on macOS 27 | no: C3 needs a window per helper, and macOS 27 lists none (0 bar-shaped windows); without C3 the oracle misses an overlapped member in 16,874 of 160,740 synthetic overlap cases (10.5 %). Route C's continuation is the owner's decision | MEASURED, 26A434 window list and an offline sweep, 2026-10-03 |
 
 Not verifiable on this machine: macOS 14 to 26 (the machine runs 27 only).
+
+## IceBar spikes (T0, 2026-10-04)
+
+| what | status | tag |
+|---|---|---|
+| A spacer hides 1 to 8 helper items without `«` | one band, 632-840 pt, for k = 1, 2, 4, 8 under short and mid frontmost menus; isolated account, helpers only | MEASURED, 26A434, run `20261004-105226-spike` |
+| AXPress opens a pushed-off item's menu | 5 of 5 within 15 ms at 736 pt; no need to show the item first | MEASURED, 26A434, run `20261004-105226-spike` |
