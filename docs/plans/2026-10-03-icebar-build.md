@@ -173,6 +173,8 @@ chain.
 
 | 5 | 2026-10-04 | **T1-T3 built** (MEASURED, owner's account, nothing launched; uncommitted on `wip/icebar-build` at `7261666`). Section 8 reviewed by Codex in two rounds (2 P1 + 1 P2 -> CONVERGED). Six new files in `Packages/IceCore`, each suite seen red against a stub before green; one test expectation was wrong (edges 616/856 are on T0's grid, not the grid anchored at 736) and corrected with the plan. Phase 3 (/simcodex, cap two rounds): round 1 simplify 2 P1 (the trim re-used `IdentifierText.trimmed`; the `Result`/`Refusal` wrapper replaced by `isUntrusted` + an optional history) and 3 P2 taken, Codex 1 P2 taken (proposals and accepted observations now share one bound policy, `Grid.inLimits`; test seen red first); round 2 simplify 2 P1 in tests taken, Codex 0. Tests: IceCore 407 in 47 suites green; coverage 96.1 % / 100 % / 100 % (calibrator / menu rule / icon choice); MenuBarDiscovery and MenuBarCapture green; app builds (`CODE_SIGNING_ALLOWED=NO`); `check-a3a4.sh` passes. Probes (`docs/macos-27/probes/visibility`, untouched by T1-T3): 6 test bundles green (13, 8, 29, 44, 25, 97 tests), `IceBarCorpusTests` not run -- the run was stopped (SIGTERM) at a 60 min cap because the 25-test bundle took 2677 s instead of about 7 min (INFERRED: CPU contention with another project's `swift test` running at the same time). Deferred P2: one helper for the three outcome filters; `private` for `Grid`/`decide`/`approach`; integer index limits in `Grid` (16 pt steps are exact, so no misfire today); `IdentifierText` named for identifiers but used for a title; redundant `isFinite` checks kept to mirror rule 1 |
 
+| 6 | 2026-10-04 | **T4-T6 built** (MEASURED, owner's account, nothing launched; on `wip/icebar-build` from `35d705b`). Section 9 reviewed by Codex round 1 (1 P0 + 5 P1 + 2 P2, all ruled, see the Appendix); round 2 stopped on Codex's usage limit and was replaced by the main session's re-read (stated there), with a Codex re-run queued after 14:11. Deviations from section 9, each for testability or a fact found while building: the observer (`HiddenLengthObserver`) and the AX-only `ChevronReader` live in `MenuBarDetectorFeed`, not `Ice/`, so they are tested on the package's fakes; `PressOutcome` (IceCore) decides a press: success, or a messaging timeout after >= 1 s (the menu was up, T0), is accepted, anything else fails -- section 9.5's three values reduce to "pending until the call returns, then accepted or failed"; `observed` carries the outcome only (the machine knows the length it asked for); a rest dwell (1 s) separates two trials; the icon is desaturated but not tinted (a multiply by the bar's black text would make a silhouette). New files: IceCore `HiddenLengthOutcomeRule`, `LayoutSignature`, `IceBarHidingMachine`, `PressTargetRule` (+ `PressOutcome`); `MenuBarDetectorFeed` `ChevronReader`, `HiddenLengthObserver`; `Ice/MenuBar/IceBar27/` coordinator, presser, fallback glyph, manager extension. Edited: `ControlItem.swift`, `MenuBarItemManager.swift`, `IceBar.swift`, `HidingVerifier.swift`, `AppState+HidingCheck.swift`, `HidingVerificationLive.swift`, `a10-ControlItem.expected`. Each new suite seen red before green. Tests: IceCore 466 in 52 suites green; MenuBarDiscovery 85 + 61 green; MenuBarCapture 30 green; line coverage 100 % (IceCore's four new files), 100 % `ChevronReader`, 97.6 % `HiddenLengthObserver`; app builds (`CODE_SIGNING_ALLOWED=NO`); `check-a3a4.sh` and `check-a10.sh` pass. Not run: probes (untouched), anything on a bar (T7/T8) |
+
 ## 8. T1-T3 detail (2026-10-04, after T0)
 
 Scope: three new source files and three new test files in `Packages/IceCore`, nothing
@@ -260,6 +262,275 @@ iCloud-managed `~/Documents` invite duplicate files, project memory).
 `docs/plans/checks/check-a3a4.sh` passes; `git diff --stat` lists only the six new
 files and this plan. Rollback: delete the six files.
 
+## 9. T4-T6 detail (2026-10-04, after T1-T3; from `35d705b`)
+
+Scope: wire the three IceCore units into Ice. Nothing is launched and no live
+experiment runs in this step (T7/T8 are the owner's). Done in the main session as one
+chain (T4 -> T5 -> T6 touch neighbouring files; no parallel candidates).
+
+### 9.0 Facts the design rests on (MEASURED in the tree at `35d705b`)
+
+- `Ice.xcodeproj` has no test target (targets `Ice`, `MenuBarItemService`). Whatever can
+  be decided without AppKit therefore goes into new `Packages/IceCore` files and is
+  tested there; the Ice side stays thin adapters, checked by the build and by T7.
+- `ControlItem.Identifier.length(for:)` (`ControlItem.swift:34-44`) is the only place a
+  length is chosen; `updateStatusItemVisibility` (`:414-436`) applies it.
+- In IceBar mode `MenuBarSection.show()` keeps the hidden and always-hidden control
+  items at `.hideSection` and opens the panel (`MenuBarSection.swift:164-190`), so the
+  hidden control item is `.hideSection` for as long as IceBar mode is on.
+- `HidingVerifier` only reports `skip(.iceBarMode)` in IceBar mode
+  (`VerificationTrigger.swift`), so it takes no captures there. Its seam,
+  `HidingVerification.prepare`/`verify` (`MenuBarDetectorFeed`, not frozen), gives a
+  shown baseline and per-item `SectionItemCheck`; `verify` warms up with 24 captures
+  0.25 s apart (6 s) before it reads.
+- `MenuBarAgent`'s items are never discovered items (`ItemCatalog.swift:14`), so the
+  capture indicator is not in `itemCache`; capturing the bar summons that indicator
+  (FINDINGS, 2026-09-19).
+- `DiscoveredFrameReader.read(items: [:])` returns `MenuBarAgent`'s frames without a
+  capture; `FoldWitness.isChevron` is the 17.5 +- 0.5 pt rule.
+- The expanded hidden divider pushes everything left of it, the always-hidden divider
+  and its items included; T0's members were all of those (k up to 8).
+- `IceBarContentView` shows "Unable to display menu bar items" when no item of the
+  section has a cached image (`MenuBarItemImageCache.swift:342-355`), which is always
+  the case on 27.
+- On 27 a divider decides sections only while its control item is `.showSection`
+  (`MenuBarItemManager.swift:129`, `DiscoveredCachePlan.swift:187`: `.expanded` ->
+  no boundary); otherwise an item keeps its previous section and a new one defaults to
+  visible (`:123-146`). In IceBar mode the dividers are `.hideSection` throughout, so
+  today the hidden section's membership is never refreshed there (r1 of this section).
+- `check-a10.sh` (the 2026-09-23 plan's acceptance) pins the diff of `ControlItem.swift`,
+  `AppState.swift` and the layout pane against `af4baf1`; it passes today.
+
+### 9.1 Assumptions (stated, not asked)
+
+- A1. The calibrated length applies on 27 **only in IceBar mode**. With IceBar mode off,
+  27 behaves as it does today (10 000, which hides nothing, STATUS). Basis: D1/r1 speak
+  of IceBar mode; the goal is the IceBar.
+- A2. D4's status line has no task number; T4 includes it by reusing the existing
+  `hidingCheckStatus` line (no change to the layout pane), because the product rule
+  says the pane gives the reason.
+- A3. `check-a10.sh`'s expected file for `ControlItem.swift` is regenerated with T4's
+  added lines (an older plan's check that pins this file; `AppState.swift` and the pane
+  are not touched, so their expectations stand).
+- A4. A right click on an IceBar cell on 27 does nothing (r1): only AXPress was
+  measured, and a secondary action is not redefined silently. Stated in the limits line.
+
+### 9.2 New pure units in `Packages/IceCore` (new files only; tests first)
+
+**`HiddenLengthOutcomeRule.swift`** -- one length's outcome from what was read:
+`outcome(chevronListed: Bool?, checks: [SectionItemCheck], memberCount: Int)`.
+`chevronListed == nil` (agent read failed or empty) -> `unknown`; `true` -> `folded`;
+any `.checked(.hidden(folded: true))` -> `folded` (pixels see a fold AX has not listed
+yet); any `.checked(.stillDrawn)` -> `drawn`; `memberCount > 0`, `checks.count ==
+memberCount` and every check `.checked(.hidden(folded: false))` -> `hiddenClean`;
+anything else (a skip, a refusal at baseline, an unverifiable, a count mismatch, no
+members) -> `unknown`.
+
+**`LayoutSignature.swift`** -- `Equatable`, `Sendable`: ordered item ids of the visible,
+hidden and always-hidden sections; frontmost pid; the menu's right edge rounded to a
+whole point (`nil` when unreadable); display id; space id. Not in it: frames of items
+(they move with the divider, which would make Ice invalidate itself) and
+`MenuBarAgent`'s items (not discovered; and Ice's own captures summon the indicator).
+D1's "capture indicator appearing" trigger is not a signature field -- a deviation
+from D1's wording, for the reason just given. What stands in for it (r1): the rest
+margin of rule 4 (a length is rested at only when the lengths 32 pt either side of it
+were also clean, more than the indicator's measured 20 pt, since every observation is
+taken with the indicator up and the rest is not) and the rest watch of rule 6. An item
+that peeks at rest without a `«` is not noticed: section 1's stated limit.
+
+**`IceBarHidingMachine.swift`** -- a pure reducer, `step(state, event, now, parameters)
+-> (state, [command])`; the caller (Ice) only executes commands and feeds events.
+- States: `off` (not IceBar mode) / `shown(reason)` / `quiet(since)` /
+  `baselining` / `calibrating(observations, trying)` / `confirming(length)` /
+  `resting(length)`. Reasons: `longMenu`, `menuUnreadable`, `noCleanLength(Reason)`,
+  `cannotAssess`, `noMembers`, `unstableLayout`.
+- Events: `mode(isIceBar)`, `sample(signature, menuVerdict, isInteracting, isDragging,
+  boundaryUsable, memberCount)` (one per tick), `baseline(token, ok: Bool)`,
+  `observed(token, HiddenLengthObservation)`, `chevronSeenAtRest`.
+- Commands: `setLength(Double?)` (`nil` = standard), `takeBaseline(token)`,
+  `observe(token, length)`, `report(Status)`.
+- Tokens (r1): every `takeBaseline`/`observe` carries a fresh integer; the machine
+  keeps the one it is waiting for and ignores a `baseline`/`observed` with any other
+  (a result that arrives after a signature change, an interaction or `mode(false)` is
+  dropped, whatever the detector's queue was doing).
+- Rules:
+  1. a signature different from the one the current state was entered with ->
+     `setLength(nil)` at once, state `quiet(now)`, in every state but `off`;
+  2. `menuVerdict != .fits` -> `setLength(nil)`, `shown(longMenu | menuUnreadable)`
+     (MenuWidthRule; fail open); `memberCount == 0` -> `shown(noMembers)`;
+  3. `quiet` -> after `quietPeriod` with an unchanged signature, no interaction,
+     `boundaryUsable` (the hidden divider decided the sections in a cache pass since
+     the length last became standard, 9.3) and `minInterval` since the last calibration
+     start: a cached length for the identical
+     signature -> `confirming(length)` with `observe(length)` (one observation;
+     `hiddenClean` -> `resting`, anything else drops the cache entry and goes to 4);
+     otherwise 4;
+  4. `takeBaseline` (section shown) -> `baseline(ok: false)` -> `shown(cannotAssess)`;
+     ok -> `calibrating`, driven by `HiddenLengthCalibrator.next`: `tryLength(l)` ->
+     `setLength(l)`, `observe(token, l)`; on its `observed` -> `setLength(nil)` first
+     (so the next trial is again a jump from rest, as T0 measured), then the next
+     proposal;
+     `rest(l)` -> only if `l - 32` and `l + 32` are among the clean observations (the
+     rest margin; else `shown(noCleanLength(.noBand))`): `setLength(l)`, `resting(l)`,
+     cache `[signature: l]`;
+     `giveUp(r)` -> `setLength(nil)`, `shown(noCleanLength(r))`
+     (`unknownOutcome` -> `cannotAssess`);
+  5. interaction starting while `baselining`/`calibrating`/`confirming` ->
+     `setLength(nil)`, back to `quiet(now)`;
+  6. `chevronSeenAtRest` in `resting` -> `setLength(nil)`, cache entry dropped,
+     `quiet(now)`;
+  7. rate limit: `maxFailures` (3) calibrations ending in `shown(...)` for one
+     signature -> `shown(unstableLayout)` until the signature changes; `minInterval`
+     between calibration starts;
+  8. `mode(false)` -> `setLength(nil)`, `off`;
+  9. `isDragging` (a Command-drag on the bar) in any state but `off` ->
+     `setLength(nil)`, `quiet(now)`: the owner arranges items across the real divider,
+     and the sections are read again before the next calibration.
+- Parameters `.standard`: `quietPeriod` 3 s, `minInterval` 30 s, `maxFailures` 3
+  (INFERRED constants, judged in T7; not measurements).
+- Status text per state lives here too (`Status.message`): "IceBar active" / "Items
+  shown: the frontmost app's menus reach the notch" / "Items shown: no clean hiding
+  length found" / "Items shown: an item could not be assessed" / ..., each followed by
+  the limits line (app icons; long menus).
+
+**`PressTargetRule.swift`** -- which child of an `AXExtrasMenuBar` an item key names:
+`index(for key: ItemKey, identifiers: [String]) -> Int?`: a positional key -> its
+`childIndex` if in range; otherwise the one child whose trimmed identifier equals the
+key's; none or several -> `nil` (the cell is disabled; never a guess).
+
+Tests (Swift Testing, red before green, >= 80 % line coverage per new file): every
+branch of the outcome rule; signature equality and what it ignores; the machine's
+rules 1-8 as event sequences (including: a signature change in each state restores
+standard first; a cached length confirmed and refused; T0's band walked to
+`resting(736)`; a band too narrow for the rest margin -> shown; a stale token ignored
+in each waiting state; interaction aborts; a drag at rest restores standard; no
+calibration before `boundaryUsable`; three failures -> `unstableLayout`; `mode(false)`
+from each state); the press rule's four cases.
+
+### 9.3 T4 Ice wiring (every edit behind `#available(macOS 27, *)`)
+
+- `ControlItem.swift` (edit): a 27-only `calibratedHiddenLength: CGFloat?` (set by the
+  coordinator; setting it calls `updateStatusItem()`); in
+  `updateStatusItemVisibility(true)`, on 27 **and** IceBar mode: `.hidden` in
+  `.hideSection` -> `calibratedHiddenLength ?? Lengths.standard`; `.alwaysHidden` in
+  `.hideSection` -> `Lengths.standard` (product rule: one section). Otherwise
+  `identifier.length(for: state)` as today. 26 and earlier: unchanged path.
+- Divider tracking (edit, `MenuBarItemManager.configureDividerTracking` /
+  `recordDividerState` / `dividerSnapshot`, all already 27-only; r1): a divider counts
+  as collapsed when it is **physically** at standard length -- `.showSection`, or, in
+  IceBar mode, the hidden divider with `calibratedHiddenLength == nil` and the
+  always-hidden divider always. `ControlItem` publishes that as one 27-only value;
+  the settle clock (`DiscoveredCachePlan.settleSeconds`, 1 s) restarts whenever it
+  turns true. The manager keeps whether the last published pass had a usable hidden
+  boundary (`boundaryUsable`). With IceBar mode off nothing changes (`.showSection`
+  is the only way to be at standard length there).
+- `Ice/MenuBar/IceBar27/IceBarHidingCoordinator.swift` (new, `@available(macOS 27, *)`,
+  `@MainActor`): owns the machine's state; a 1 s tick builds the `sample` event
+  (signature from `itemManager.itemCache`, `NSWorkspace.frontmostApplication`,
+  `screen.getApplicationMenuFrame()`, `MenuWidthRule.verdict` against the notch's left
+  edge, `appState.activeSpace`, the active-menu-bar display id; `isInteracting` = mouse
+  inside the menu bar, `isDraggingMenuBarItem`, or the IceBar presented); executes the
+  commands; while `resting`, each tick also reads the agent frames (AX only, no
+  capture) and sends `chevronSeenAtRest` when one is a chevron. Created and owned by
+  `MenuBarItemManager` in its existing 27 branch (`configureCancellables`), so
+  `AppState.swift` is not edited.
+- `Ice/MenuBar/IceBar27/HiddenLengthObserver.swift` (new): the adapter of D1.
+  `takeBaseline`: `HidingVerification.prepare(sections: [.hidden], sectionMap:,
+  explicitCandidates: nil, reusing: nil)` (r1: the members are the hidden section's
+  items; always-hidden items are pushed along with them but are not members, so one
+  of them that cannot be assessed does not block the IceBar -- a fold among them is
+  still a `«`) on a
+  `HidingVerification.live` of its own; ok only when `.ready`, no member is in
+  `planSkipped` or `baselineRejections`, and `checkableTargets` covers every member.
+  `observe(length)`: wait `settle` (1 s, T0's), `verify(prepared)`, read the agent
+  frames, apply `HiddenLengthOutcomeRule`. Any cancellation or failure -> `unknown`.
+- Verification warm-up: `HidingVerification.live` gains a `warmUpCount` parameter
+  (default 24, unchanged for the existing caller); the observer passes 4 (1 s).
+  INFERRED, to be judged in T7. Expected cost of a first calibration per signature:
+  15 lengths (13 clean + 2 edges from 736) x about 3.5 s, each a visible jump from
+  rest -> roughly 1 min of the hidden items flickering (R3); a signature seen before
+  costs one observation.
+- `IceBarPanel.show` (edit, 27 only): when the coordinator is not `resting`, the panel
+  is not opened (the items are on the bar); the status line says why.
+- Status: the coordinator writes `appState.hidingCheckStatus` through a new
+  `HidingCheckStatus(message:)` initialiser (`HidingVerifier.swift`, additive). One
+  writer at a time (r1): in IceBar mode the verifier's `report` closure
+  (`AppState+HidingCheck.swift`, 27-only) drops its `skip(.iceBarMode)` lines; on
+  `mode(false)` the coordinator clears its line.
+- Quit: unchanged; the status item is removed with the app (T8's abort path).
+
+### 9.4 T5 IceBar cell image (edits in `IceBar.swift`, 27 / `.accessibility` only)
+
+- `IceBarItemView.body`: `IceBarIconChoice.choose(hasCachedImage:,
+  isAccessibilitySource:, hasAppIcon:, title: item.title)`; `cachedImage` and `none`
+  keep today's code path; `appIcon` -> the app's icon desaturated (CoreImage
+  `CIColorControls`, saturation 0) and multiplied by the IceBar's foreground colour
+  (route C F2: "desaturated, tinted", not a template -- a template of an app icon is a
+  filled squircle), 18 pt, cached per pid in the view model for the panel's lifetime;
+  `title` -> `Text`, one line, truncated at 12 characters; `genericGlyph` -> SF Symbol
+  `app.dashed`. Each cell keeps the click overlay, tooltip and accessibility label.
+- `IceBarContentView.content`: on 27 the `imageCache.cacheFailed(for:)` branch is
+  skipped (it is always true there).
+
+### 9.5 T6 click on 27
+
+- `Ice/MenuBar/IceBar27/MenuBarItemPresser.swift` (new, 27 only): decode the item's
+  key from `MenuBarItem.ID.accessibility`; app element -> `AXExtrasMenuBar` ->
+  children -> identifiers (messaging timeout on each element, as `LiveExtrasReader`);
+  `PressTargetRule.index`; `AXUIElementPerformAction(child, kAXPressAction)` on a
+  background queue (T0: the call may not return until the menu closes). Result (r1), three
+  values and no claim that anything opened: `failed` = no target, or the call returned
+  an error, whenever it returns; `accepted` = it returned success; `pending` = it has
+  not returned yet (T0: with a menu the call returns only when the menu closes, so a
+  working press is `pending` for as long as the menu is up -- a timeout cannot mean
+  failure). One press per item at a time: a click on a `pending` item is ignored. No
+  show-press-rehide fallback (not needed in T0; the owner's rule).
+- `IceBarItemView` (edit): for `.accessibility` items the left-click action calls the
+  presser after `section.hide()`; the right-click action does nothing (A4) (which leaves the length alone in IceBar mode); a
+  `failed` result adds the item id to a `@Published` set on `MenuBarItemManager`
+  (`unpressableItems`, 27 only); such a cell is drawn at 40 % opacity, its click
+  overlay removed, tooltip "Cannot open on macOS 27". The set is cleared when the item
+  cache changes. `MenuBarItemManager.click`/`temporarilyShow` are not edited.
+
+### 9.6 Files
+
+| new | edited |
+|---|---|
+| `Packages/IceCore/Sources/IceCore/{HiddenLengthOutcomeRule,LayoutSignature,IceBarHidingMachine,PressTargetRule}.swift` and their four test files | `Ice/MenuBar/ControlItem/ControlItem.swift` |
+| `Ice/MenuBar/IceBar27/{IceBarHidingCoordinator,HiddenLengthObserver,MenuBarItemPresser}.swift` | `Ice/MenuBar/IceBar/IceBar.swift` |
+| | `Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift` (owns the coordinator, `unpressableItems`) |
+| | `Ice/MenuBar/Verification/HidingVerifier.swift` (`HidingCheckStatus(message:)`), `Ice/Main/AppState+HidingCheck.swift` (one status writer) |
+| | `Packages/MenuBarDiscovery/Sources/MenuBarDetectorFeed/HidingVerificationLive.swift` (`warmUpCount`) |
+| | `docs/plans/checks/a10-ControlItem.expected`, this plan, `docs/macos-27/STATUS.md` |
+
+Not touched: the ten frozen detector files, `Packages/MenuBarCapture`, `Shared/`,
+`MenuBarItemService/`, `AppState.swift`, the layout pane, `MenuBarItemManager.click` /
+`temporarilyShow`, anything on the 26 path.
+
+### 9.7 DoD and acceptance for this step
+
+1. IceCore: `swift test --package-path Packages/IceCore --enable-code-coverage` green
+   (old and new suites); each new file >= 80 % line coverage; each new suite seen red.
+2. `MenuBarDiscovery` tests green (the `warmUpCount` default keeps the existing ones).
+3. App builds: `xcodebuild -project Ice.xcodeproj -scheme Ice -configuration Debug
+   CODE_SIGNING_ALLOWED=NO -derivedDataPath <outside ~/Documents> build`.
+4. `check-a3a4.sh` passes; `check-a10.sh` passes with the regenerated ControlItem
+   expectation, the other two unchanged.
+5. AC4 by diff review: every edited line in `Ice/` is inside `#available(macOS 27, *)`,
+   an `@available(macOS 27, *)` declaration, or a `.accessibility` case.
+6. Not in this step: AC1-AC3 and AC6 (they need T7/T8); the probes' full test run
+   (untouched by T4-T6; if run, capped at 90 min with output to a file).
+
+Risks: R5 the machine's signature flips because of Ice's own length change (a section
+re-assignment while expanded) -> rule 7 bounds it to three tries, then shown with
+`unstableLayout`; seen only in T7. R6 the 4-capture warm-up reads less reliably than
+24 -> more `unknown` -> items shown (fail open), judged in T7. R7 an app whose status
+item opens a popover rather than a menu: AXPress still succeeds or fails by its error
+code, no menu window is required. R8 whether a Command-drag is detected on 27 while
+the items are pushed off (`HIDEventManager` sets `isDraggingMenuBarItem` from Command
++ the mouse in the bar): TBD, T7. Rollback: delete the new files, revert the six
+edits.
+
 ## Appendix. Review record
 
 ### Round 1 (Codex gpt-5.6-terra): 6 P1, 2 P2 -- all accepted
@@ -291,3 +562,34 @@ concrete counter-example (re-checked one by one, not taken wholesale).
 | P2 observation length not validated | non-finite or out-of-range -> `giveUp(.unknownOutcome)` |
 
 Round 2: CONVERGED. Trend: 2 P1 + 1 P2 -> none.
+
+### Section 9 (T4-T6 detail), 2026-10-04, cap three rounds
+
+A first call reviewed the file before section 9 was on disk (an edit hook had refused
+the write); its one finding ("section 9 missing") is void and not counted.
+
+Round 1 (Codex gpt-5.6-terra, medium): 1 P0, 5 P1, 2 P2. Each checked against the code.
+
+| finding | ruling | change |
+|---|---|---|
+| P0 a trial length is never applied (`setLength(nil)` then `observe`) | accepted (the text said it) | rule 4: `setLength(l)`, observe, `setLength(nil)` |
+| P1 stale `baseline`/`observed` results after an invalidation | accepted | a token per request; others ignored |
+| P1 in IceBar mode the dividers are `.hideSection`, so sections are only carried and a new item is "visible" (`MenuBarItemManager.swift:129`, `DiscoveredCachePlan.swift:123-187`) | accepted, confirmed in the code | 9.0 fact; divider tracking by physical length; `boundaryUsable` gates a calibration; rule 9 (drag) |
+| P1 observations are taken with the capture indicator up, the rest is not | modified: the indicator cannot be a signature field (Ice's own captures summon it, FINDINGS 2026-09-19), so the suggestion to invalidate on its transitions would invalidate every observation | rest margin of 32 pt either side (> the measured 20 pt); rest watch kept; a peek without `«` stays section 1's limit |
+| P1 always-hidden items in the all-or-nothing roster | accepted, with the fact that they are pushed along physically | members = the hidden section only |
+| P1 "still running after 1 s = opened" | modified: a timeout as failure is refuted by T0 (the call returns only when the menu closes; `AXError` 0 on 5/5), so it would disable every working menu cell | three results `failed` / `accepted` / `pending`, no "opened" claim, one press per item at a time |
+| P2 right click redefined as AXPress | accepted | right click does nothing on 27 |
+| P2 two writers of `hidingCheckStatus` | accepted | the verifier's `iceBarMode` skips are dropped in IceBar mode |
+
+
+Round 2: Codex stopped mid-run on its usage limit (13:17, back at 14:11), with no
+verdict; its last message before the cut said the two modified rulings are grounded in
+the cited measurements. Degraded as the workflow prescribes: round 2 here is the main
+session's own re-read, **not an adversarial review**. It checked the revision's new
+parts against the code: a divider reading's usability depends on its frame's position
+only (`DiscoveredItem.swift:24-29`), so a hidden divider at standard length in
+`.hideSection` is a usable boundary; outside IceBar mode the physical-length rule
+equals `state == .showSection`, so nothing changes there; every touched function in
+`MenuBarItemManager` is already `@available(macOS 27, *)`. No new finding. Codex
+round 2 is re-run in the background after 14:11; a P0/P1 from it stops the
+implementation and reopens this section.

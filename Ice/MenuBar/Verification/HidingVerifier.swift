@@ -17,6 +17,11 @@ struct HidingCheckStatus: Equatable {
     /// <reason names>" alone when nothing was observed; "No items to check" when the section was empty.
     let message: String
 
+    /// A line from IceBar's hiding on macOS 27 (plan 2026-10-03-icebar-build, D4).
+    init(message: String) {
+        self.message = message
+    }
+
     init(summary: VerificationSummary) {
         let reasons = Set(summary.skipped.keys)
             .union(summary.refused.keys)

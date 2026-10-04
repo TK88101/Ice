@@ -41,6 +41,20 @@ final class MenuBarItemManager: ObservableObject {
     /// `configureCancellables`, and that pass reads the dividers directly.
     private var dividerSnapshots = [MenuBarSection.Name: DividerSnapshot]()
 
+    /// Whether the last macOS 27 pass could place items by the hidden divider
+    /// (plan 2026-10-03-icebar-build, 9.3): IceBar's hiding calibrates only
+    /// after the sections were read at standard length.
+    private(set) var hiddenBoundaryUsable = false
+
+    /// IceBar on macOS 27: items whose press failed, shown disabled in the
+    /// IceBar, and items whose press has not returned yet (plan 9.5).
+    @Published var unpressableItems = Set<MenuBarItem.ID>()
+    var pendingPresses = Set<MenuBarItem.ID>()
+
+    /// IceBar's hiding on macOS 27 (`IceBarHidingCoordinator`), kept untyped
+    /// because the type exists only there.
+    var iceBarHidingStorage: AnyObject?
+
     /// Logger for the menu bar item manager.
     private nonisolated let logger = Logger.menuBarItemManager
 
@@ -106,29 +120,38 @@ final class MenuBarItemManager: ObservableObject {
 
         if #available(macOS 27, *) {
             configureDividerTracking(with: appState, storingIn: &c)
+            configureIceBarHiding(with: appState)
         }
 
         cancellables = c
     }
 
     /// Keeps `dividerSnapshots` live from Ice's own control-item state (D10,
-    /// macOS 27 only).
+    /// macOS 27 only). A divider counts as collapsed while it is at standard
+    /// length, which in IceBar mode includes `.hideSection` at an uncalibrated
+    /// length (plan 2026-10-03-icebar-build, 9.3).
     @available(macOS 27, *)
     private func configureDividerTracking(with appState: AppState, storingIn c: inout Set<AnyCancellable>) {
         for name: MenuBarSection.Name in [.hidden, .alwaysHidden] {
-            appState.menuBarManager.section(withName: name)?.controlItem.$state
+            guard let controlItem = appState.menuBarManager.section(withName: name)?.controlItem else {
+                continue
+            }
+            controlItem.$state
+                .combineLatest(controlItem.$calibratedHiddenLength, appState.settings.general.$useIceBar)
+                .map { [weak controlItem] state, length, useIceBar in
+                    controlItem?.isAtStandardLength(state: state, calibratedLength: length, useIceBar: useIceBar) ?? false
+                }
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] state in
-                    self?.recordDividerState(state, for: name)
+                .sink { [weak self] isCollapsed in
+                    self?.recordDividerState(isCollapsed: isCollapsed, for: name)
                 }
                 .store(in: &c)
         }
     }
 
     @available(macOS 27, *)
-    private func recordDividerState(_ state: ControlItem.HidingState, for name: MenuBarSection.Name) {
+    private func recordDividerState(isCollapsed: Bool, for name: MenuBarSection.Name) {
         let previous = dividerSnapshots[name]
-        let isCollapsed = state == .showSection
         // A redundant assignment (hiding assigns all three items) bumps the
         // generation but does not restart the settle.
         let changedAt = previous.flatMap { $0.isCollapsed == isCollapsed ? $0.changedAt : nil }
@@ -557,6 +580,13 @@ extension MenuBarItemManager {
             if discoveredSectionMap != publication.sectionMap {
                 discoveredSectionMap = publication.sectionMap
             }
+            hiddenBoundaryUsable = !publication.notes.contains { note in
+                if case .hidden = note { true } else { false }
+            }
+            if Set(cache.managedItems.map(\.id)) != Set(itemCache.managedItems.map(\.id)) {
+                // A failed press is retried once the set of items changes.
+                unpressableItems = []
+            }
             if itemCache != cache {
                 itemCache = cache
             }
@@ -583,7 +613,14 @@ extension MenuBarItemManager {
         if let stored = dividerSnapshots[name] {
             return stored
         }
-        let isCollapsed = appState?.menuBarManager.section(withName: name)?.controlItem.state == .showSection
+        var isCollapsed = false
+        if let appState, let controlItem = appState.menuBarManager.section(withName: name)?.controlItem {
+            isCollapsed = controlItem.isAtStandardLength(
+                state: controlItem.state,
+                calibratedLength: controlItem.calibratedHiddenLength,
+                useIceBar: appState.settings.general.useIceBar
+            )
+        }
         return DividerSnapshot(isCollapsed: isCollapsed, changedAt: ProcessInfo.processInfo.systemUptime, generation: 0)
     }
 

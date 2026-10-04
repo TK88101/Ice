@@ -173,6 +173,13 @@ final class IceBarPanel: NSPanel {
             return
         }
 
+        // On macOS 27 the IceBar is offered only while the hidden section is
+        // hidden cleanly; otherwise its items are on the bar and the layout
+        // pane says why (plan 2026-10-03-icebar-build, 9.3).
+        if #available(macOS 27, *), !appState.itemManager.isIceBarOffered {
+            return
+        }
+
         // IMPORTANT: We must set the navigation state and current section
         // before updating the caches.
         appState.navigationState.isIceBarPresented = true
@@ -326,6 +333,15 @@ private struct IceBarContentView: View {
         configuration.current.hasShadow ? 0.5 : 0.33
     }
 
+    /// macOS 27 captures no item images; its cells fall back to app icons
+    /// (plan 2026-10-03-icebar-build, 9.4) instead of failing the bar.
+    private static var usesFallbackImages: Bool {
+        if #available(macOS 27, *) {
+            return true
+        }
+        return false
+    }
+
     var body: some View {
         ZStack {
             content
@@ -378,7 +394,7 @@ private struct IceBarContentView: View {
                     .controlSize(.small)
             }
             .padding(.horizontal, 10)
-        } else if imageCache.cacheFailed(for: section) {
+        } else if imageCache.cacheFailed(for: section), !Self.usesFallbackImages {
             Text("Unable to display menu bar items")
                 .padding(.horizontal, 10)
         } else {
@@ -416,6 +432,9 @@ private struct IceBarItemView: View {
     let section: MenuBarSection.Name
 
     private var leftClickAction: () -> Void {
+        if #available(macOS 27, *), case .accessibility = item.source {
+            return pressAction
+        }
         return { [weak itemManager, weak menuBarManager] in
             guard let itemManager, let menuBarManager else {
                 return
@@ -433,6 +452,10 @@ private struct IceBarItemView: View {
     }
 
     private var rightClickAction: () -> Void {
+        if #available(macOS 27, *), case .accessibility = item.source {
+            // Only the press was measured on macOS 27 (plan 9.1, A4).
+            return { }
+        }
         return { [weak itemManager, weak menuBarManager] in
             guard let itemManager, let menuBarManager else {
                 return
@@ -446,6 +469,17 @@ private struct IceBarItemView: View {
                     await itemManager.temporarilyShow(item: item, clickingWith: .right)
                 }
             }
+        }
+    }
+
+    /// macOS 27: presses the item where it is, pushed off the bar (plan
+    /// 2026-10-03-icebar-build, 9.5). Hiding the section closes the IceBar
+    /// and leaves the length alone in IceBar mode.
+    @available(macOS 27, *)
+    private var pressAction: () -> Void {
+        return { [weak itemManager, weak menuBarManager] in
+            menuBarManager?.section(withName: section)?.hide()
+            itemManager?.pressFromIceBar(item)
         }
     }
 
@@ -470,7 +504,32 @@ private struct IceBarItemView: View {
                 .accessibilityLabel(item.displayName)
                 .accessibilityAction(named: "left click", leftClickAction)
                 .accessibilityAction(named: "right click", rightClickAction)
+        } else if #available(macOS 27, *), case .accessibility = item.source {
+            fallbackCell
         }
+    }
+
+    /// macOS 27: the app's icon, title or a glyph (plan 9.4); a cell whose
+    /// press failed is dimmed and no longer clickable (plan 9.5).
+    @available(macOS 27, *)
+    @ViewBuilder
+    private var fallbackCell: some View {
+        let isDisabled = itemManager.unpressableItems.contains(item.id)
+        IceBarFallbackGlyph(item: item)
+            .contentShape(Rectangle())
+            .opacity(isDisabled ? 0.4 : 1)
+            .overlay {
+                if !isDisabled {
+                    IceBarItemClickView(
+                        item: item,
+                        leftClickAction: leftClickAction,
+                        rightClickAction: rightClickAction
+                    )
+                }
+            }
+            .help(isDisabled ? "Cannot open on macOS 27" : item.displayName)
+            .accessibilityLabel(item.displayName)
+            .accessibilityAction(named: "left click", isDisabled ? {} : leftClickAction)
     }
 }
 

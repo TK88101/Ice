@@ -17,7 +17,10 @@ import MenuBarDiscovery
 /// factory") -- untested here, touching a real screen, real Accessibility,
 /// or real AppKit; exercised only by T8b's live run.
 extension HidingVerification {
-    public static func live(screen: NSScreen, ownIdentifiers: OwnIdentifiers) -> HidingVerification {
+    /// - Parameter warmUpCount: the captures that settle the strip before a
+    ///   session reads it; the hiding check keeps the default, IceBar's
+    ///   hidden-length observer passes fewer (plan 2026-10-03-icebar-build, 9.3).
+    public static func live(screen: NSScreen, ownIdentifiers: OwnIdentifiers, warmUpCount: Int = 24) -> HidingVerification {
         // `NSScreen` is not `Sendable`; every seam below only ever reads its
         // frame/scale/notch geometry, which does not change across a run, so
         // boxing it `@unchecked` is safe here.
@@ -51,8 +54,37 @@ extension HidingVerification {
                 }
                 let reader = DiscoveredFrameReader(extras: extras, apps: LiveRunningApps(), origin: liveOrigin)
                 return Preflight.run(capturer: capturer, axReader: reader, geometry: geometry)
-            }
+            },
+            warmUpCount: warmUpCount
         )
+    }
+}
+
+extension ChevronReader {
+    /// `MenuBarAgent`'s frames on `screen`'s bar, read as the detector reads
+    /// them; `nil` without a bar geometry.
+    public static func live(screen: NSScreen) -> ChevronReader? {
+        guard let geometry = BarGeometry(screen: screen) else { return nil }
+        let originPoint = CGDisplayBounds(screen.directDisplayID ?? CGMainDisplayID()).origin
+        let reader = DiscoveredFrameReader(
+            extras: LiveExtrasReader(readsLabels: false),
+            apps: LiveRunningApps(),
+            origin: DiscoveryOrigin(x: Double(originPoint.x), y: Double(originPoint.y))
+        )
+        return ChevronReader(reader: reader, barHeight: geometry.heightPt)
+    }
+}
+
+extension HiddenLengthObserver {
+    /// One second of warm-up instead of the hiding check's six: a calibration
+    /// takes about fifteen observations. INFERRED, judged in T7 (plan 9.3, R6).
+    public static let liveWarmUpCount = 4
+
+    /// The live observer for `screen`; `nil` without a bar geometry.
+    public static func live(screen: NSScreen, ownIdentifiers: OwnIdentifiers) -> HiddenLengthObserver? {
+        guard let chevron = ChevronReader.live(screen: screen) else { return nil }
+        let verification = HidingVerification.live(screen: screen, ownIdentifiers: ownIdentifiers, warmUpCount: liveWarmUpCount)
+        return HiddenLengthObserver(verification: verification, chevron: chevron)
     }
 }
 

@@ -132,6 +132,11 @@ final class ControlItem {
     /// The control item's frame, if it is onscreen (`@Published`).
     @Published private(set) var onScreenFrame: CGRect?
 
+    /// macOS 27, IceBar mode: the hidden section's length while it is hidden,
+    /// set by `IceBarHidingCoordinator`; `nil` keeps the section at standard
+    /// length (plan 2026-10-03-icebar-build, 9.3). Never set on earlier systems.
+    @Published var calibratedHiddenLength: CGFloat?
+
     /// The control item's identifier.
     let identifier: Identifier
 
@@ -317,6 +322,18 @@ final class ControlItem {
                     .store(in: &c)
             }
 
+            if #available(macOS 27, *), isSectionDivider {
+                // The divider's length on 27 depends on IceBar mode and the
+                // calibrated length (plan 2026-10-03-icebar-build, 9.3).
+                $calibratedHiddenLength.removeDuplicates()
+                    .combineLatest(appState.settings.general.$useIceBar.removeDuplicates())
+                    .receive(on: DispatchQueue.main)
+                    .sink { [weak self] _ in
+                        self?.updateStatusItem()
+                    }
+                    .store(in: &c)
+            }
+
             if isSectionDivider {
                 appState.settings.advanced.$sectionDividerStyle
                     .removeDuplicates()
@@ -418,7 +435,7 @@ final class ControlItem {
 
         if isVisible {
             constraint?.isActive = true
-            statusItem.length = identifier.length(for: state)
+            statusItem.length = length(for: state)
         } else {
             let showOnDrag = appState.settings.advanced.showAllSectionsOnUserDrag
             let isDragging = appState.isDraggingMenuBarItem
@@ -433,6 +450,45 @@ final class ControlItem {
                 window.setContentSize(size)
             }
         }
+    }
+
+    /// The length for the given hiding state: on macOS 27 in IceBar mode the
+    /// calibrated or standard length (plan 2026-10-03-icebar-build, 9.3),
+    /// otherwise the identifier's.
+    private func length(for state: HidingState) -> CGFloat {
+        if #available(macOS 27, *), let length = iceBarLength(for: state) {
+            return length
+        }
+        return identifier.length(for: state)
+    }
+
+    /// On macOS 27 IceBar mode hides only the hidden section, at the length
+    /// the coordinator calibrated; the always-hidden divider stays at standard
+    /// length (product rule r1). `nil` outside IceBar mode.
+    @available(macOS 27, *)
+    private func iceBarLength(for state: HidingState) -> CGFloat? {
+        guard state == .hideSection, appState?.settings.general.useIceBar == true else {
+            return nil
+        }
+        switch identifier {
+        case .visible: return nil
+        case .hidden: return calibratedHiddenLength ?? Lengths.standard
+        case .alwaysHidden: return Lengths.standard
+        }
+    }
+
+    /// Whether a divider with these inputs is at standard length, so its frame
+    /// bounds a section (macOS 27, plan 9.3). Outside IceBar mode that is
+    /// exactly `.showSection`, as before.
+    @available(macOS 27, *)
+    func isAtStandardLength(state: HidingState, calibratedLength: CGFloat?, useIceBar: Bool) -> Bool {
+        if state == .showSection {
+            return true
+        }
+        guard useIceBar else {
+            return false
+        }
+        return identifier == .alwaysHidden || calibratedLength == nil
     }
 
     /// Adds the control item to the menu bar.

@@ -54,6 +54,11 @@ extension AppState {
                 return verification
             },
             report: { [weak self] status in
+                // In IceBar mode the line is IceBar's hiding's (plan
+                // 2026-10-03-icebar-build, 9.3); this check only skips there.
+                guard self?.settings.general.useIceBar != true else {
+                    return
+                }
                 // An unchanged status must not invalidate every view of AppState.
                 if self?.hidingCheckStatus != status {
                     self?.hidingCheckStatus = status
