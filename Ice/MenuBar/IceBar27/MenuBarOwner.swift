@@ -15,13 +15,12 @@ import MenuBarDetectorFeed
 enum MenuBarOwner {
     static let pid = MenuBarOwnerPID(initial: nil)
 
-    /// Reads the current owner at once (a cold launch has no change to wait
-    /// for), then follows every change on the main actor.
+    /// Follows the owner. `.initial` delivers the current one synchronously,
+    /// inside this call, so a cold launch with no change has a pid at once; the
+    /// holder is locked, so a change may arrive on any thread.
     @MainActor
     static func observe() -> AnyCancellable {
-        pid.update(NSWorkspace.shared.menuBarOwningApplication?.processIdentifier)
-        return NSWorkspace.shared.publisher(for: \.menuBarOwningApplication, options: [.initial, .new])
-            .receive(on: DispatchQueue.main)
+        NSWorkspace.shared.publisher(for: \.menuBarOwningApplication, options: [.initial, .new])
             .sink { app in
                 pid.update(app?.processIdentifier)
             }

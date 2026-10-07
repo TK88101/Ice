@@ -5,6 +5,7 @@
 
 import Combine
 import MenuBarDetectorFeed
+import MenuBarDiscovery
 import SwiftUI
 
 // MARK: - Bundle
@@ -581,9 +582,7 @@ extension NSScreen {
     /// owner's own `AXMenuBar` there (plan 2026-10-07-icebar-menu-frame-fix, F1).
     private func readApplicationMenuFrame() -> CGRect? {
         if #available(macOS 27, *) {
-            return ApplicationMenuReader.live.frame(owningPID: MenuBarOwner.pid.current).map { frame in
-                CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height)
-            }
+            return ApplicationMenuReader.live.frame(owningPID: MenuBarOwner.pid.current)?.cgRect
         }
 
         let displayBounds = CGDisplayBounds(displayID)

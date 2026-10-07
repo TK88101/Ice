@@ -11,6 +11,6 @@ public enum ApplicationMenuHitRule {
             return false
         }
         return x >= screenMinX && x < menuFrame.maxX
-            && y >= menuFrame.minY && y < menuFrame.minY + menuFrame.height
+            && y >= menuFrame.minY && y < menuFrame.maxY
     }
 }

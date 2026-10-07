@@ -36,13 +36,9 @@ enum MenuFrame {
         let notchMinX = screen?.auxiliaryTopLeftArea.map { Double($0.maxX) }
         let displayWidth = screen.map { Double($0.frame.width) }
         let barHeight = screen.map { Double($0.frame.maxY - $0.visibleFrame.maxY) }
-        let verdict = switch MenuWidthRule.verdict(menuMaxX: menuMaxX, notchMinX: notchMinX) {
-        case .fits: "fits"
-        case .crossesNotch: "crossesNotch"
-        case .unreadable: "unreadable"
-        }
-        print(MenuFrameReport.line(menuMaxX: menuMaxX, notchMinX: notchMinX, displayWidth: displayWidth, barHeight: barHeight, verdict: verdict))
-        return MenuFrameReport.exitCode(verdict: verdict)
+        let verdict = MenuWidthRule.verdict(menuMaxX: menuMaxX, notchMinX: notchMinX)
+        print(MenuFrameReport.line(menuMaxX: menuMaxX, notchMinX: notchMinX, displayWidth: displayWidth, barHeight: barHeight, verdict: verdict.rawValue))
+        return verdict == .fits ? 0 : 1
     }
 }
 

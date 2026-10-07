@@ -49,6 +49,6 @@ struct LiveApplicationMenuAXReader: ApplicationMenuAXReading {
         guard AXValueGetValue(unsafeDowncast(value, to: AXValue.self), .cgRect, &rect) else {
             return nil
         }
-        return BarRect(minX: Double(rect.minX), minY: Double(rect.minY), width: Double(rect.width), height: Double(rect.height))
+        return BarRect(rect)
     }
 }

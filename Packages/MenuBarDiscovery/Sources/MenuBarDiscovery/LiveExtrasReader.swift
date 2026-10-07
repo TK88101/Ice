@@ -271,8 +271,7 @@ public struct LiveExtrasReader: ExtrasReading {
         var rect = CGRect.zero
         // swiftlint:disable:next force_cast
         AXValueGetValue(value as! AXValue, .cgRect, &rect)
-        let barRect = BarRect(minX: Double(rect.minX), minY: Double(rect.minY), width: Double(rect.width), height: Double(rect.height))
-        return TimedRead(value: barRect, rawError: "success", elapsed: elapsed)
+        return TimedRead(value: BarRect(rect), rawError: "success", elapsed: elapsed)
     }
 }
 

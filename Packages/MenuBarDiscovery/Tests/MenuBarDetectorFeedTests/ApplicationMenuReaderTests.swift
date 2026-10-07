@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 import Darwin
 import Foundation
@@ -64,6 +65,8 @@ struct ApplicationMenuReaderTests {
         #expect(frame([Self.child(10, 30, enabled: false)]) == nil)
         #expect(frame([ApplicationMenuChild(isEnabled: true, frame: nil)]) == nil)
         #expect(frame([Self.child(10, 0)]) == nil)
+        #expect(frame([Self.child(-1e308, 1), Self.child(1e308, 1)]) == nil)
+        #expect(frame([Self.child(1e308, 1e308)]) == nil)
     }
 
     @Test("no pid reads nothing; a pid is read once, with the messaging timeout")
@@ -103,15 +106,7 @@ struct LiveApplicationMenuAXReaderTests {
     }
 
     static var finderPID: pid_t? {
-        let pipe = Pipe()
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        process.arguments = ["-x", "Finder"]
-        process.standardOutput = pipe
-        guard (try? process.run()) != nil else { return nil }
-        process.waitUntilExit()
-        let text = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        return text.split(separator: "\n").first.flatMap { pid_t($0) }
+        NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier
     }
 }
 

@@ -4,7 +4,7 @@
 /// IceBar is not offered until the menus are short again.
 
 /// Whether the frontmost app's menus leave the notch alone.
-public enum MenuWidthVerdict: Equatable, Sendable {
+public enum MenuWidthVerdict: String, Equatable, Sendable {
     case fits
     case crossesNotch
     /// No menu frame, no notch, or a value that is not a number. Ice shows the

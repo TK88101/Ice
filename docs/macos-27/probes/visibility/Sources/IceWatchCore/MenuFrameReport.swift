@@ -19,9 +19,4 @@ public enum MenuFrameReport {
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }
-
-    /// Only `fits` lets the run start.
-    public static func exitCode(verdict: String) -> Int32 {
-        verdict == "fits" ? 0 : 1
-    }
 }

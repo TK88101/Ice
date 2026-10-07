@@ -52,18 +52,20 @@ public struct ApplicationMenuReader: Sendable {
             return nil
         }
         let union = frames.dropFirst().reduce(first, Self.union)
-        return union.width > 0 ? union : nil
+        // Two extreme finite frames can unite to an infinite width.
+        return Self.usable(union).flatMap { $0.width > 0 ? $0 : nil }
     }
 
+    /// Every edge a number: a finite origin and size can still end at infinity.
     private static func usable(_ frame: BarRect) -> BarRect? {
-        [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) ? frame : nil
+        [frame.minX, frame.minY, frame.width, frame.height, frame.maxX, frame.maxY].allSatisfy(\.isFinite) ? frame : nil
     }
 
     private static func union(_ lhs: BarRect, _ rhs: BarRect) -> BarRect {
         let minX = min(lhs.minX, rhs.minX)
         let minY = min(lhs.minY, rhs.minY)
         let maxX = max(lhs.maxX, rhs.maxX)
-        let maxY = max(lhs.minY + lhs.height, rhs.minY + rhs.height)
+        let maxY = max(lhs.maxY, rhs.maxY)
         return BarRect(minX: minX, minY: minY, width: maxX - minX, height: maxY - minY)
     }
 }

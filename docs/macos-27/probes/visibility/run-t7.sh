@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/zsh -f
 # IceBar build plan T7 (docs/plans/2026-10-03-icebar-build.md section 10.3): the
 # ONE command the owner runs, in the isolated account's Terminal, at the time
 # the owner named. It starts the staged Ice and the sacrificial helpers, walks
@@ -8,13 +8,12 @@
 #   /Users/Shared/IceReverse-t7/run-t7.sh [--phase 1|2|3|4]
 #   /Users/Shared/IceReverse-t7/run-t7.sh --dry-run     starts neither Ice nor a helper
 #
-# --test-limits <seconds> <seconds> shortens the wait for `active` and the
-# grace of a blocking status; only test-t7.sh passes it.
-#
 # Everything it trusts is in its own directory, written by stage-t7.sh: no
 # environment variable changes what it does.
 set -uo pipefail
 umask 022
+# The tools it calls come from the system, not from this account's PATH.
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
 
 shared=${0:a:h}
 ice=$shared/Ice.app/Contents/MacOS/Ice
@@ -28,12 +27,6 @@ helper_lifetime=1800
 run_limit=9000
 start_timeout=20
 long_menus=24
-# Plan 2026-10-07-icebar-menu-frame-fix F2: how long a phase waits for Ice's
-# first `active` (T0: a full sweep took about 2.7 min), and how long a status
-# that stops hiding must stay the latest before the phase is given up.
-status_limit=300
-blocking_grace=10
-blocking_reasons=(menuUnreadable cannotAssess noCleanLength)
 # F3: how long a helper's `selfread` reply may take. F2b: how long the owner
 # watches for an IceBar after the click.
 selfread_wait=2
@@ -49,11 +42,6 @@ while (( $# )); do
             [[ ${2:-} == [1-4] ]] || { print -u2 -- $usage; exit 64; }
             phases=($2)
             shift ;;
-        --test-limits)
-            [[ ${2:-} == <-> && ${3:-} == <-> ]] || { print -u2 -- $usage; exit 64; }
-            status_limit=$2
-            blocking_grace=$3
-            shift 2 ;;
         *) print -u2 -- $usage; exit 64 ;;
     esac
     shift
@@ -75,8 +63,13 @@ guard() { # <enforced in a dry run: 0|1> <message>
 # the checks below have passed.
 BACKUP_ROOT=$HOME/IceReverse-t7-backup
 NEW_ITEM_DELAY=3
+# Plan 2026-10-07-icebar-menu-frame-fix F2: how long a phase waits for Ice's
+# first `active` (T0: a full sweep took about 2.7 min), and how long a status
+# that stops hiding must stay the latest before the phase is given up.
+STATUS_LIMIT=300
+BLOCKING_GRACE=10
 required=(EXPECT_USER OWNER_USER GIT_REV DOMAIN HELPER_DOMAINS ICE_SHA TARGET_SHA MENUS_SHA ICEWATCH_SHA)
-optional=(BACKUP_ROOT NEW_ITEM_DELAY)
+optional=(BACKUP_ROOT NEW_ITEM_DELAY STATUS_LIMIT BLOCKING_GRACE)
 allowed=($required $optional)
 seen=()
 while IFS='=' read -r key value; do
@@ -91,6 +84,7 @@ for key in $required; do
     (( ${seen[(Ie)$key]} )) || { print -u2 -- "run-t7: t7.env 缺少 $key，停止。"; exit 2; }
 done
 domain=$DOMAIN
+[[ $STATUS_LIMIT == <1-> && $BLOCKING_GRACE == <-> ]] || { print -u2 -- "run-t7: t7.env 的 STATUS_LIMIT/BLOCKING_GRACE 不是整數，停止。"; exit 2; }
 helper_domains=(${(s:,:)HELPER_DOMAINS})
 backup_root=$BACKUP_ROOT
 
@@ -145,7 +139,6 @@ helper_fds=()
 helper_pids=()
 # The current phase's members, for the placement snapshots (plan F3).
 member_fds=()
-member_logs=()
 member_ids=()
 member_names=()
 member_x=()
@@ -173,7 +166,6 @@ close_helpers() {
     helper_fds=()
     helper_pids=()
     member_fds=()
-    member_logs=()
     member_ids=()
     member_names=()
     member_x=()
@@ -320,7 +312,6 @@ launch_member() { # <index> <glyph>
     launch_helper Target.app $log --items 1 --identifiers vz-t7-$2 --glyphs $2 --menu || return 1
     note "phase $current_phase member $1 ($2) launched"
     member_fds+=($helper_fds[-1])
-    member_logs+=($log)
     member_ids+=(vz-t7-$2)
     member_names+=($1)
     snapshot_member ${#member_fds} 啟動後
@@ -337,11 +328,12 @@ launch_member() { # <index> <glyph>
 # Returns t7_placement's 0 (on the bar), 1 (off) or 2 (unknown).
 snapshot_member() { # <member index> <label>
     local i=$1 before line place rc
-    before=$(grep -c '^selfread ' $member_logs[i])
+    local log=$run/helper-p$current_phase-$member_names[i].log
+    before=$(grep -c '^selfread ' $log)
     print -u $member_fds[i] -- selfread
     for _ in {1..$((selfread_wait * 5))}; do
-        if (( $(grep -c '^selfread ' $member_logs[i]) > before )); then
-            line=$(grep '^selfread ' $member_logs[i] | tail -1)
+        if (( $(grep -c '^selfread ' $log) > before )); then
+            line=$(grep '^selfread ' $log | tail -1)
             break
         fi
         sleep 0.2
@@ -367,7 +359,6 @@ stop_phase() { # <reason>
     print -- "$1，本輪無效"
     print -r -- "p$current_phase $1" >> $run/stops.txt
     note "phase $current_phase stopped: $1"
-    phase_to[$current_phase]=$(log_lines)
     finish 3
 }
 
@@ -376,20 +367,20 @@ stop_phase() { # <reason>
 # or Ice ending stops the run.
 wait_for_phase_status() {
     local started=$SECONDS blocked_since= latest
-    print -- "【看終端】等 Ice 校準：等到上面出現 [Ice …] IceBar hiding: active（最多 $status_limit 秒，期間選單列上的 helper 圖示會閃）。不用輸入。"
+    print -- "【看終端】等 Ice 校準：等到上面出現 [Ice …] IceBar hiding: active（最多 $STATUS_LIMIT 秒，期間選單列上的 helper 圖示會閃）。不用輸入。"
     while true; do
         kill -0 $ice_pid 2>/dev/null || { print -- "Ice 已經結束，中止。"; finish 1; }
         # Any `active` since the phase began counts: Ice may have moved on
         # (a long menu, a quiet period) before this loop looked.
-        t7_log_has $run/ice.log ${phase_from[$current_phase]} 'IceBar hiding: active' && return 0
+        t7_log_has $run/ice.log ${phase_from[$current_phase]} "${t7_ice_status_prefix}active\$" && return 0
         latest=$(t7_latest_status $run/ice.log ${phase_from[$current_phase]})
-        if [[ $latest == shown:* ]] && (( ${blocking_reasons[(Ie)${latest#shown:}]} )); then
+        if [[ $latest == shown:(menuUnreadable|cannotAssess|noCleanLength) ]]; then
             [[ -n $blocked_since ]] || blocked_since=$SECONDS
-            (( SECONDS - blocked_since >= blocking_grace )) && stop_phase "Ice 沒有在隱藏（原因：${latest#shown:}）"
+            (( SECONDS - blocked_since >= BLOCKING_GRACE )) && stop_phase "Ice 沒有在隱藏（原因：${latest#shown:}）"
         else
             blocked_since=
         fi
-        (( SECONDS - started >= status_limit )) && stop_phase "Ice 沒有在隱藏（原因：$status_limit 秒內沒有 active）"
+        (( SECONDS - started >= STATUS_LIMIT )) && stop_phase "Ice 沒有在隱藏（原因：$STATUS_LIMIT 秒內沒有 active）"
         sleep 0.5
     done
 }

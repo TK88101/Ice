@@ -30,6 +30,7 @@ public struct BarRect: Equatable, Hashable, Sendable {
     }
 
     public var maxX: Double { minX + width }
+    public var maxY: Double { minY + height }
     public var midX: Double { minX + width / 2 }
 }
 

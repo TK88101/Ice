@@ -62,7 +62,7 @@ t7_json_get() { # <json> <key path>
 }
 
 t7_is_number() { # <text>
-    [[ $1 =~ '^-?[0-9]+(\.[0-9]+)?$' ]]
+    [[ ${1-} =~ '^-?[0-9]+(\.[0-9]+)?$' ]]
 }
 
 # `icewatch menu-frame`'s line (plan 2026-10-07-icebar-menu-frame-fix, F4):
@@ -71,7 +71,7 @@ t7_menu_frame_ok() { # <line>
     local key value
     [[ $(t7_json_get "$1" verdict) == fits ]] || return 1
     for key in menuMaxX notchMinX displayWidth barHeight; do
-        value=$(t7_json_get "$1" $key) && t7_is_number $value || return 1
+        value=$(t7_json_get "$1" $key) && t7_is_number "$value" || return 1
     done
 }
 
@@ -85,7 +85,7 @@ t7_placement() { # <selfread json> <identifier> <display width> <bar height>
         [[ $(t7_json_get "$json" children.$i.identifier) == $2 ]] || continue
         x=$(t7_json_get "$json" children.$i.frame.0) && y=$(t7_json_get "$json" children.$i.frame.1) \
             && w=$(t7_json_get "$json" children.$i.frame.2) && h=$(t7_json_get "$json" children.$i.frame.3) \
-            && t7_is_number $x && t7_is_number $y && t7_is_number $w && t7_is_number $h \
+            && t7_is_number "$x" && t7_is_number "$y" && t7_is_number "$w" && t7_is_number "$h" \
             || { print -r -- "unknown 讀不到 $2 的位置"; return 2; }
         if (( w > 0 && h > 0 && x >= 0 && x + w <= $3 && y >= 0 && y + h <= $4 )); then
             printf 'on %g\n' $x
@@ -173,16 +173,22 @@ t7_log_has() { # <log> <first line> <extended regex>
 }
 
 t7_log_has_long_menu() { # <log> <first line>
-    t7_log_has $1 $2 'IceBar hiding: shown[(].*longMenu'
+    t7_log_has $1 $2 "${t7_ice_status_prefix}shown[(].*longMenu"
 }
+
+# The start of one of Ice's own status lines, from the log line's date to the
+# status: another app's text that Ice logs (an item's title) cannot pass for
+# one in the middle of a line (security review, plan 2026-10-07 Phase 3).
+# Best effort: such text with a newline in it could still start a line.
+t7_ice_status_prefix='^[0-9-]+ [0-9:.+-]+ Ice[[][0-9:]+[]] [[]IceBarHiding[]] IceBar hiding: '
 
 # The latest `IceBar hiding:` status between two lines: active, checking, off,
 # shown:<reason>, or nothing (plan 2026-10-07-icebar-menu-frame-fix, F2).
 t7_latest_status() { # <log> <first line> [last line]
-    awk -v from=$2 -v to=${3:-0} '
-    NR >= from && (to == 0 || NR <= to) && /\[IceBarHiding\] IceBar hiding: / {
+    awk -v from=$2 -v to=${3:-0} -v prefix="$t7_ice_status_prefix" '
+    NR >= from && (to == 0 || NR <= to) && $0 ~ prefix {
         status = $0
-        sub(/.*IceBar hiding: /, "", status)
+        sub(prefix, "", status)
         if (status ~ /^shown[(]/) {
             sub(/.*IceBarShownReason\./, "", status)
             sub(/[^A-Za-z].*/, "", status)

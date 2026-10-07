@@ -97,6 +97,14 @@ print "{\"axTrusted\":${T7_STUB_AX:-true},\"pid\":1,\"screenCapture\":true}"'
     chmod -R a-w $shared
     chmod 1777 $shared/evidence
 }
+# Rewrites t7.env with shorter limits for the wait for `active` (plan
+# 2026-10-07 F2), as the staging would write them.
+set_limits() { # <status limit> <blocking grace>
+    chmod u+w $shared $shared/t7.env
+    t7_write_env $shared $(id -un) $(id -un) test $domain $helper_domain BACKUP_ROOT=$tmp/backup NEW_ITEM_DELAY=0 STATUS_LIMIT=$1 BLOCKING_GRACE=$2
+    chmod -R a-w $shared
+    chmod 1777 $shared/evidence
+}
 # Changes one staged file the way another account could not: for the guards.
 tamper() { # <file> <line to append>
     chmod u+w ${1:h} $1 2>/dev/null
@@ -192,6 +200,12 @@ t7_log_has_long_menu $tmp/ice.log 1; expect "long menu found in the log"
 [[ $(t7_latest_status $tmp/ice.log 5) == shown:longMenu && $(t7_latest_status $tmp/ice.log 1 7) == checking ]]; expect "latest status: within a slice"
 [[ $(t7_latest_status $tmp/ice.log 1 5) == active ]]; expect "latest status: active"
 [[ -z $(t7_latest_status $tmp/ice.log 12) ]]; expect "latest status: none after the last line"
+# Only Ice's own status lines count: another app's text that Ice logs cannot
+# fake one; the wording of a real run's line (20261007-012252-t7) is read.
+print -r -- '2026-10-05 10:03:00.000000+0900 Ice[1:1] [IceBarPress] Press failed for x [IceBarHiding] IceBar hiding: active' > $tmp/forged.log
+[[ -z $(t7_latest_status $tmp/forged.log 1) ]] && ! t7_log_has $tmp/forged.log 1 "${t7_ice_status_prefix}active\$"; expect "a status inside another line is not a status"
+print -r -- '2026-10-07 01:22:54.415703+0900 Ice[63912:8710749] [IceBarHiding] IceBar hiding: shown(IceCore.IceBarShownReason.menuUnreadable)' > $tmp/real.log
+[[ $(t7_latest_status $tmp/real.log 1) == shown:menuUnreadable ]]; expect "a real run's status line is read"
 fits='{"barHeight":33,"displayWidth":1728,"menuMaxX":574,"notchMinX":771.5,"verdict":"fits"}'
 t7_menu_frame_ok $fits; expect "menu-frame: fits with every number is ok"
 for bad in '{"barHeight":33,"displayWidth":1728,"menuMaxX":null,"notchMinX":771.5,"verdict":"unreadable"}' \
@@ -267,6 +281,9 @@ build_staging
 tamper $shared/t7.env "X=\$(touch $T7_STUB_MARKS/pwned)"
 run /dev/null --dry-run; refused; expect "a command in t7.env exits 2 and is not run"
 build_staging
+tamper $shared/t7.env "STATUS_LIMIT=abc"
+run /dev/null --dry-run; refused; expect "a limit in t7.env that is not a number exits 2"
+build_staging
 chmod u+w $shared/t7-lib.zsh && print -r -- ": > $T7_STUB_MARKS/pwned" >> $shared/t7-lib.zsh
 run /dev/null; refused; expect "a library this account can rewrite exits 2 and is not sourced"
 build_staging
@@ -302,31 +319,38 @@ stops_cleanly() { # <exit code wanted>
     [[ $? == $1 ]] && grep -q '偏好還原：verified' $tmp/out.txt && ! stub_ice_running && ! grep -q '【第 1 列】' $tmp/out.txt
 }
 build_staging
-T7_STUB_STATUS="checking shown:menuUnreadable" run /dev/null --phase 1 --test-limits 30 1
+set_limits 30 1
+T7_STUB_STATUS="checking shown:menuUnreadable" run /dev/null --phase 1
 stops_cleanly 3 && grep -q 'Ice 沒有在隱藏（原因：menuUnreadable），本輪無效' $tmp/out.txt; expect "menuUnreadable that stays: exit 3, said, no row prompt"
 grep -q -- '-- 階段 1（k = 1）未完成' $tmp/out.txt && grep -q '本輪無效：Ice 沒有在隱藏（原因：menuUnreadable）' $tmp/out.txt; expect "the report says why the phase stopped"
 build_staging
 answer_when_active $tmp/answers y 60 '' y 10 1 y 10 n
-T7_STUB_STATUS="checking shown:menuUnreadable active" run $tmp/answers --phase 1 --test-limits 30 5; expect "menuUnreadable then active within the grace: the phase goes on"
+set_limits 30 5
+T7_STUB_STATUS="checking shown:menuUnreadable active" run $tmp/answers --phase 1; expect "menuUnreadable then active within the grace: the phase goes on"
 build_staging
-T7_STUB_STATUS="checking" run /dev/null --phase 1 --test-limits 2 1
+set_limits 2 1
+T7_STUB_STATUS="checking" run /dev/null --phase 1
 stops_cleanly 3 && grep -q 'Ice 沒有在隱藏（原因：2 秒內沒有 active），本輪無效' $tmp/out.txt; expect "no active within the limit: exit 3"
 build_staging
-T7_STUB_STATUS="checking exit" run /dev/null --phase 1 --test-limits 30 1
+set_limits 30 1
+T7_STUB_STATUS="checking exit" run /dev/null --phase 1
 stops_cleanly 1 && grep -q 'Ice 已經結束' $tmp/out.txt; expect "Ice ends while waiting: exit 1"
 for reason in cannotAssess noCleanLength; do
     build_staging
-    T7_STUB_STATUS="checking shown:$reason" run /dev/null --phase 1 --test-limits 30 1
+    set_limits 30 1
+    T7_STUB_STATUS="checking shown:$reason" run /dev/null --phase 1
     stops_cleanly 3 && grep -q "原因：$reason" $tmp/out.txt; expect "$reason that stays: exit 3"
 done
 
 # --- where the helper is: the first snapshot gates the phase (plan F3) ---------------------
 build_staging
-T7_STUB_SELFREAD=offbar run /dev/null --phase 1 --test-limits 30 1
+set_limits 30 1
+T7_STUB_SELFREAD=offbar run /dev/null --phase 1
 stops_cleanly 3 && grep -q 'helper 不在選單列上，本輪無效' $tmp/out.txt && grep -q 'helper p1-1 啟動後 不在列上（1200,300,24,32）' $tmp/out.txt; expect "a helper below the bar: exit 3 before any row"
 for mode in malformed wrongid none; do
     build_staging
-    T7_STUB_SELFREAD=$mode run /dev/null --phase 1 --test-limits 30 1
+    set_limits 30 1
+    T7_STUB_SELFREAD=$mode run /dev/null --phase 1
     stops_cleanly 3 && grep -q 'helper p1-1 啟動後 unknown' $tmp/out.txt && [[ $(grep -c -x selfread $T7_STUB_MARKS/vzhelper-stdin) == 2 ]]; expect "selfread $mode: asked twice, then exit 3"
 done
 build_staging
@@ -340,7 +364,8 @@ build_staging
 # IceBar), row 6, row 7 (Enter, two answers), row 8, row 9. A longMenu after the
 # first active is not a stop.
 answer_when_active $tmp/answers y '' y y 20 '' y y y y y y
-T7_STUB_STATUS="checking active shown:longMenu" run $tmp/answers --phase 4 --test-limits 20 1; expect "phase 4 runs to the end"
+set_limits 20 1
+T7_STUB_STATUS="checking active shown:longMenu" run $tmp/answers --phase 4; expect "phase 4 runs to the end"
 grep -q -- '--role menus' $T7_STUB_MARKS/vzhelper && grep -q -x 'menus 24' $T7_STUB_MARKS/vzhelper-stdin; expect "the menus helper got its count"
 [[ $(grep -c -- '--menu ' $T7_STUB_MARKS/vzhelper) == 3 ]] && grep -q 'vz-t7-gamma' $T7_STUB_MARKS/vzhelper; expect "two members and the new item were started"
 grep -q 'p4.row9.backToThree = y' $tmp/out.txt; expect "the report lists phase 4's answers"

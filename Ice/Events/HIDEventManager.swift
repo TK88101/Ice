@@ -6,6 +6,7 @@
 import Cocoa
 import Combine
 import IceCore
+import MenuBarDiscovery
 
 /// Manager that monitors input events and implements the features
 /// that are triggered by them, such as showing hidden items on
@@ -486,9 +487,7 @@ extension HIDEventManager {
         return ApplicationMenuHitRule.contains(
             x: Double(mouseLocation.x),
             y: Double(mouseLocation.y),
-            menuFrame: screen.getApplicationMenuFrame().map { frame in
-                BarRect(minX: Double(frame.minX), minY: Double(frame.minY), width: Double(frame.width), height: Double(frame.height))
-            },
+            menuFrame: screen.getApplicationMenuFrame().map(BarRect.init),
             screenMinX: Double(screen.frame.origin.x)
         )
     }

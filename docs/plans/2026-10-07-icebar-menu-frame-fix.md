@@ -230,6 +230,29 @@ MEASURED in the owner's account; nothing ran on a bar. Each suite seen red befor
   first 2 s would stop the phase as "not on the bar"; the quiet period makes it
   unlikely, and the stop names it rather than hiding it.
 
+## 9. Phase 3 review (/simcodex, cap two rounds)
+
+| Round | Source | Found | Taken |
+|---|---|---|---|
+| 1 | simplify (4 angles) | no P0; P1-grade: test-only CLI flag, a redundant first read in `MenuBarOwner`, a dead `phase_to` write, an array lookup for three reasons, a string round trip for the exit code, three hand-written rect conversions, `pgrep` in a test, a derivable `member_logs` | all: limits as `t7.env` keys `STATUS_LIMIT`/`BLOCKING_GRACE` (the `NEW_ITEM_DELAY` precedent), `.initial` alone, a pattern match, `verdict == .fits`, `BarRect(_:)`/`cgRect`, `BarRect.maxY`, `NSRunningApplication`; plus a bug the fixes introduced (`local` read `i` before setting it), caught by `test-t7.sh` |
+| 1 | Codex (`review --commit b77d424`) | 0 | - |
+| 1 | security review | 0 CRITICAL/HIGH/MEDIUM, 7 LOW | L1 quoting under `set -u`, L2 Ice's status lines matched by their log prefix only (best effort: text with a newline could still start a line), L4 fixed `PATH`, L6 an infinite union refused; L3 gone with the flag; L5 (no overall AX deadline) and L7 (the pid one hop stale) deferred |
+| 2 | simplify (4 angles) | no P0/P1 | P2 taken as one-liners: the long-menu match anchored too, `MenuWidthVerdict: String` (`rawValue` in the JSON), one `usable()` for every edge incl. `maxX`/`maxY`, the rect bridge moved to `MenuBarDiscovery` (now also `LiveExtrasReader`), `#!/bin/zsh -f`, `STATUS_LIMIT` >= 1 |
+| 2 | Codex (`review --uncommitted`) | 0 | - |
+
+Trend: round 1 9 P1-grade + 4 LOW, round 2 0 P0/P1. Round 2's last edits (the
+P2 one-liners above) landed while Codex round 2 ran and were not sent back
+(cap); each is covered by a test. Deferred P2: a short cache for the menu
+frame (only matters with a hung app); an overall AX deadline (L5); the pid
+read on the main actor before a detached read (L7); placement judged in Swift
+(`icewatch placement`) instead of zsh; a tag parameter for `ask` instead of the
+literal tags; one awk helper for the shown reason; a `write_env` helper in the
+tests. Tests after round 2: IceCore 471 / 53; MenuBarDiscovery 86 + 70;
+MenuBarCapture 30; `IceWatchCoreTests` 46; `test-t7.sh` 127; coverage
+`ApplicationMenuReader` 100 %, `LiveApplicationMenuAXReader` 91.3 %,
+`ApplicationMenuHitRule` 100 %, `BarRect+CoreGraphics` 100 %; app builds; A3/A4,
+A8, A10 pass; `icewatch menu-frame` live `fits`.
+
 ## Appendix: plan review
 
 | Round | Finding | Ruling |
