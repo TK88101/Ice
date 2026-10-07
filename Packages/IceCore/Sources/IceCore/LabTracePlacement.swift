@@ -5,15 +5,21 @@
 /// judged on a single snapshot.
 public struct LabTracePlacement: Equatable, Sendable {
     public let icon: BarRect?
+    /// The icon's own position is `.onBar` or `.stacked`; when it is not,
+    /// `iconPlacement` is `.iconUnreadable` whatever the frame says.
+    public let iconOnBar: Bool
     public let hiddenDivider: BarRect?
     public let hiddenDividerUsable: Bool
     public let alwaysHiddenDivider: BarRect?
     public let alwaysHiddenDividerUsable: Bool
-    /// `PreferenceHidingPreconditions.iconPlacement`: `nil` when the icon is
-    /// right of the hidden divider.
+    /// `PreferenceHidingPreconditions.iconPlacement` on the discovered icon:
+    /// `nil` when it is on the bar and right of the hidden divider.
     public let iconPlacement: PreferenceHidingIconPlacement?
-    /// On the bar, mid-x left of the divider's minX, the section boundary:
-    /// what the hidden section would hold.
+    /// On the bar, mid-x left of the hidden divider's boundary
+    /// (`DividerReading.boundaryMinX`). Geometry of this pass only: the
+    /// membership rule shares the boundary and the on-bar condition but also
+    /// asks for a trusted divider state and remembers previous members, so
+    /// this is not "membership resolves to these". Needs no icon.
     public let othersLeftOfHiddenDivider: Int
     /// On the bar, from the divider's minX up to the icon's mid-x.
     public let othersBetween: Int
@@ -27,17 +33,22 @@ public struct LabTracePlacement: Equatable, Sendable {
     /// them by.
     public let othersUnplaced: Int
     public let isComplete: Bool
+    /// How many processes' reads failed in an incomplete pass; a number, so
+    /// a failed run says why without naming anything.
+    public let failedReads: Int
     public let ownReadOk: Bool
 
     public init(set: DiscoveredItemSet) {
         let iconFrame = set.visibleControlItem?.frame
         icon = iconFrame
+        iconOnBar = set.visibleControlItem?.position.isOnBar ?? false
         hiddenDivider = set.hiddenDivider?.frame
         hiddenDividerUsable = set.hiddenDivider?.isUsable ?? false
         alwaysHiddenDivider = set.alwaysHiddenDivider?.frame
         alwaysHiddenDividerUsable = set.alwaysHiddenDivider?.isUsable ?? false
-        iconPlacement = PreferenceHidingPreconditions.iconPlacement(icon: iconFrame, divider: set.hiddenDivider)
+        iconPlacement = PreferenceHidingPreconditions.iconPlacement(icon: set.visibleControlItem, divider: set.hiddenDivider)
         isComplete = set.completeness == .complete
+        failedReads = if case .incomplete(let failedPIDs) = set.completeness { failedPIDs.count } else { 0 }
         ownReadOk = set.ownRead == .ok
 
         let regions = set.items.map { Self.region(of: $0, icon: iconFrame, divider: set.hiddenDivider) }
@@ -48,7 +59,7 @@ public struct LabTracePlacement: Equatable, Sendable {
         othersBetween = count(.between)
         othersRightOfIcon = count(.rightOfIcon)
         othersUnplaced = count(.unplaced)
-        othersOnBar = set.items.count { $0.position == .onBar || $0.position == .stacked }
+        othersOnBar = set.items.count(where: \.position.isOnBar)
     }
 
     private enum Region {
@@ -59,15 +70,11 @@ public struct LabTracePlacement: Equatable, Sendable {
     }
 
     private static func region(of item: DiscoveredItem, icon: BarRect?, divider: DividerReading?) -> Region {
-        guard
-            item.position != .parked,
-            let frame = item.frame, frame.hasFiniteComponents,
-            let icon, icon.hasFiniteComponents,
-            let divider, divider.isUsable, let dividerFrame = divider.frame, dividerFrame.hasFiniteComponents
-        else {
+        guard item.position.isOnBar, let midX = item.frame?.midX, midX.isFinite, let boundary = divider?.boundaryMinX else {
             return .unplaced
         }
-        if frame.midX < dividerFrame.minX { return .leftOfHiddenDivider }
-        return frame.midX < icon.midX ? .between : .rightOfIcon
+        if midX < boundary { return .leftOfHiddenDivider }
+        guard let icon, icon.hasFiniteComponents else { return .unplaced }
+        return midX < icon.midX ? .between : .rightOfIcon
     }
 }

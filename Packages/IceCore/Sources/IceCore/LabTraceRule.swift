@@ -4,6 +4,9 @@
 /// of that lifecycle, so where the icon's seed is lost (P2) is read from Ice
 /// itself rather than from a stand-in whose lifecycle differs (P3).
 ///
+/// Since T2a (S2 design) it also reads where those items and the other status
+/// items sit: one discovery pass before the control items exist, two after.
+///
 /// The mode adds three status items for a few seconds and writes the defaults
 /// of whatever identity it runs under, so it is off unless asked for at launch
 /// and refuses any identity that is not a disposable lab one.
@@ -31,9 +34,11 @@ public enum LabTraceStep: String, Sendable {
     /// settings models only: their persistence subscribers are installed by
     /// their `performSetup`, which is not called.
     case setSettingsInMemory
-    /// One discovery pass before any control item exists: how many other
+    /// A discovery pass before any control item exists: how many other
     /// items are on the bar, so the placement oracle can tell whether Ice's
-    /// items pushed one off it (plan S2 design, T2a). Read only.
+    /// items pushed one off it (plan S2 design, T2a). Read only. Repeated up
+    /// to `LabTracePlan.baselineAttempts` times until one is complete: a
+    /// process's first pass is often not.
     case readBaseline
     /// `MenuBarSection.performSetup(with:)` on the three sections, which
     /// creates the control items.
@@ -49,7 +54,7 @@ public enum LabTraceReading: String, Sendable {
     /// `LabTracePlan.discoveryPasses` times: every placement verdict comes
     /// from one pass's set, and passes that disagree make the run
     /// indeterminate. The item manager itself is still not started.
-    case discoverTwice
+    case discover
 }
 
 /// One trace run's settings. The always-hidden section runs both ways: off is
@@ -69,16 +74,17 @@ public struct LabTracePlan: Equatable, Sendable {
 
     public static let steps: [LabTraceStep] = [.stopPermissionChecks, .setSettingsInMemory, .readBaseline, .setUpSections]
 
-    public static let readings: [LabTraceReading] = [.ownExtras, .discoverTwice]
+    public static let readings: [LabTraceReading] = [.ownExtras, .discover]
 
     /// How long after the control items are created the bar is read: past
     /// the main-queue turns that add, remove and size them.
     public static let settleSeconds = 3.0
     public static let discoveryPasses = 2
+    public static let baselineAttempts = 2
     public static let discoveryGapSeconds = 1.0
 
     /// The trace quits by itself after this long, whatever it has read.
-    public static let capSeconds = 15.0
+    public static let capSeconds = 20.0
 }
 
 public enum LabTraceRefusal: Equatable, Sendable {

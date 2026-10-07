@@ -51,13 +51,17 @@ check "guard: something that is not a store does not pass" 1 python3 -I $tool gu
 check "usage: wrong arguments exit 2" 2 python3 -I $tool guard $tmp/before.json
 
 start() { # [always-hidden: true|false] [bundle id]: the start event a trace announces
-    print -- "{\"event\":\"start\",\"mode\":\"IceLabTrace-start-v1\",\"bundleID\":\"${2:-$lab}\",\"alwaysHiddenSection\":${1:-false},\"steps\":[\"stopPermissionChecks\",\"setSettingsInMemory\",\"readBaseline\",\"setUpSections\"],\"points\":[\"beforeSeed\",\"afterSeed\",\"afterStatusItem\",\"afterAutosaveName\",\"afterMainQueueTurn\"],\"items\":[\"Ice.ControlItem.Visible\",\"Ice.ControlItem.Hidden\",\"Ice.ControlItem.AlwaysHidden\"],\"readings\":[\"ownExtras\",\"discoverTwice\"],\"discoveryPasses\":2,\"t\":0}"
+    print -- "{\"event\":\"start\",\"mode\":\"IceLabTrace-start-v1\",\"bundleID\":\"${2:-$lab}\",\"alwaysHiddenSection\":${1:-false},\"steps\":[\"stopPermissionChecks\",\"setSettingsInMemory\",\"readBaseline\",\"setUpSections\"],\"points\":[\"beforeSeed\",\"afterSeed\",\"afterStatusItem\",\"afterAutosaveName\",\"afterMainQueueTurn\"],\"items\":[\"Ice.ControlItem.Visible\",\"Ice.ControlItem.Hidden\",\"Ice.ControlItem.AlwaysHidden\"],\"readings\":[\"ownExtras\",\"discover\"],\"discoveryPasses\":2,\"t\":0}"
 }
 placement() { # <pass> <icon minX> <hidden minX> <always-hidden minX|null> <others left> <between> [extra json fields]: one discovery pass
-    local icon=$2 hidden=$3 always=null usable=false verdict=right
+    local icon=$2 hidden=$3 always=null usable=false verdict=null
     [[ $4 != null ]] && { always="[$4,4.5,18,24]"; usable=true; }
-    (( icon + 17.5 > hidden )) || verdict=iconLeftOfDivider
-    print -- "{\"event\":\"placement\",\"pass\":$1,\"discovered\":true,\"icon\":[$icon,4.5,35,24],\"hiddenDivider\":[$hidden,4.5,18,24],\"hiddenDividerUsable\":true,\"alwaysHiddenDivider\":$always,\"alwaysHiddenDividerUsable\":$usable,\"iconPlacement\":\"$verdict\",\"othersLeftOfHiddenDivider\":$5,\"othersBetween\":$6,\"othersRightOfIcon\":2,\"othersUnplaced\":0,\"othersOnBar\":$(($5 + $6 + 2)),\"complete\":true,\"ownReadOk\":true${7:+,$7},\"t\":4}"
+    (( icon + 17.5 > hidden )) || verdict='\"iconLeftOfDivider\"'
+    print -- "{\"event\":\"placement\",\"pass\":$1,\"discovered\":true,\"icon\":[$icon,4.5,35,24],\"iconOnBar\":true,\"hiddenDivider\":[$hidden,4.5,18,24],\"hiddenDividerUsable\":true,\"alwaysHiddenDivider\":$always,\"alwaysHiddenDividerUsable\":$usable,\"iconPlacement\":$verdict,\"othersLeftOfHiddenDivider\":$5,\"othersBetween\":$6,\"othersRightOfIcon\":2,\"othersUnplaced\":0,\"othersOnBar\":$(($5 + $6 + 2)),\"complete\":true,\"ownReadOk\":true${7:+,$7},\"t\":4}"
+}
+both() { # <placement's arguments after the pass>: two agreeing passes
+    placement 1 "$@"
+    placement 2 "$@"
 }
 trace() { # <always-hidden: true|false> <placement lines...>: a finished trace with the given passes
     local always=$1
@@ -87,8 +91,7 @@ points() { # the five points of all three control items
     print -- '{"event":"window","item":"Ice.ControlItem.Hidden","isAddedToMenuBar":true,"frame":[1469,0,20,24],"t":3}'
     print -- '{"event":"ax","trusted":true,"items":[{"identifier":"Ice.ControlItem.Visible","frame":[1285,0,25,24]},{"identifier":"Ice.ControlItem.Hidden","frame":[1469,0,20,24]}],"t":3.1}'
     print -- '{"event":"baseline","discovered":true,"othersOnBar":11,"othersUnplaced":11,"complete":true,"t":1}'
-    placement 1 1285 1469 null 9 0
-    placement 2 1285 1469 null 9 0
+    both 1285 1469 null 9 0
     print -- '{"event":"done","t":3.2}'
 } > $tmp/left.jsonl
 check "summary: a complete trace with P2's layout exits 1: the placement oracle fails" 1 python3 -I $tool summary $tmp/left.jsonl $lab off
@@ -125,7 +128,7 @@ fi
     points
     print -- '{"event":"window","item":"Ice.ControlItem.Visible","isAddedToMenuBar":true,"frame":[1500,0,25,24],"t":3}'
     print -- '{"event":"window","item":"Ice.ControlItem.Hidden","isAddedToMenuBar":true,"frame":[1469,0,20,24],"t":3}'
-    print -- '{"event":"cap","seconds":10,"t":10}'
+    print -- '{"event":"cap","seconds":20,"t":20}'
 } > $tmp/capped.jsonl
 check "summary: a trace that never finished exits 1" 1 python3 -I $tool summary $tmp/capped.jsonl $lab off
 contains "summary: the cap is reported" '"event": "cap"'
@@ -133,18 +136,18 @@ contains "summary: right of the divider is recognised" '"layoutWindow": "iconRig
 contains "summary: no AX read is unknown, not a verdict" '"layoutAX": "unknown"'
 
 # The placement oracle (S2 design, T2a): hidden divider | the other items | icon.
-trace false "$(placement 1 1508 1009 null 0 12)" "$(placement 2 1508 1009 null 0 12)" > $tmp/good-off.jsonl
+trace false "$(both 1508 1009 null 0 12)" > $tmp/good-off.jsonl
 check "placement: divider, others, icon in two agreeing passes exits 0" 0 python3 -I $tool summary $tmp/good-off.jsonl $lab off
 contains "placement: the verdict is said" '"placement": "dividerOthersIcon"'
 contains "placement: no clause failed" '"failedClauses": []'
-trace true "$(placement 1 1508 1009 990 0 12)" "$(placement 2 1508 1009 990 0 12)" > $tmp/good-on.jsonl
+trace true "$(both 1508 1009 990 0 12)" > $tmp/good-on.jsonl
 check "placement: with the always-hidden divider left of the hidden one, on exits 0" 0 python3 -I $tool summary $tmp/good-on.jsonl $lab on
-trace true "$(placement 1 1508 1009 1100 0 12)" "$(placement 2 1508 1009 1100 0 12)" > $tmp/on-reversed.jsonl
+trace true "$(both 1508 1009 1100 0 12)" > $tmp/on-reversed.jsonl
 check "placement: an always-hidden divider right of the hidden one fails on" 1 python3 -I $tool summary $tmp/on-reversed.jsonl $lab on
 contains "placement: that clause is named" '"alwaysHiddenLeftOfHidden"'
-trace true "$(placement 1 1508 1009 null 0 12)" "$(placement 2 1508 1009 null 0 12)" > $tmp/on-missing.jsonl
+trace true "$(both 1508 1009 null 0 12)" > $tmp/on-missing.jsonl
 check "placement: no always-hidden divider in the pass fails on" 1 python3 -I $tool summary $tmp/on-missing.jsonl $lab on
-trace false "$(placement 1 1508 1492 null 14 0)" "$(placement 2 1508 1492 null 14 0)" > $tmp/t1.jsonl
+trace false "$(both 1508 1492 null 14 0)" > $tmp/t1.jsonl
 check "placement: T1's layout (everything left of the divider) fails" 1 python3 -I $tool summary $tmp/t1.jsonl $lab off
 contains "placement: others left of the divider are named" '"noOthersLeftOfDivider"'
 contains "placement: nothing between is named" '"othersBetween"'
@@ -153,29 +156,36 @@ trace false "$(placement 1 1508 1009 null 0 12)" "$(placement 2 1508 1009 null 0
 check "placement: two passes that disagree are indeterminate, exit 1" 1 python3 -I $tool summary $tmp/disagree.jsonl $lab off
 contains "placement: indeterminate is said" '"placement": "indeterminate"'
 trace false "$(placement 1 1508 1009 null 0 12)" > $tmp/one-pass.jsonl
+trace false "$(placement 1 1508 1009 null 0 12)" "$(placement 1 1508 1009 null 0 12)" > $tmp/same-pass.jsonl
+check "placement: two events of the same pass are not two passes" 1 python3 -I $tool summary $tmp/same-pass.jsonl $lab off
+contains "placement: the misnumbered passes are missing" '"placement": "missing"'
 check "placement: one pass where two were declared exits 1" 1 python3 -I $tool summary $tmp/one-pass.jsonl $lab off
 contains "placement: the missing pass is said" '"placement": "missing"'
 trace false "$(placement 1 1508 1009 null 0 12)" '{"event":"placement","pass":2,"discovered":false,"t":4}' > $tmp/undiscovered.jsonl
 check "placement: a pass that returned nothing exits 1" 1 python3 -I $tool summary $tmp/undiscovered.jsonl $lab off
-incomplete='"complete":false'
-trace false "$(placement 1 1508 1009 null 0 12 | sed 's/"complete":true/"complete":false/')" "$(placement 2 1508 1009 null 0 12 | sed 's/"complete":true/"complete":false/')" > $tmp/incomplete.jsonl
+trace false "$(both 1508 1009 null 0 12)" | sed '/"event":"placement"/s/"complete":true/"complete":false/' > $tmp/incomplete.jsonl
 check "placement: an incomplete discovery pass fails" 1 python3 -I $tool summary $tmp/incomplete.jsonl $lab off
 contains "placement: the pass clause is named" '"passComplete"'
-trace false "$(placement 1 1508 1009 null 0 12 | sed 's/"hiddenDividerUsable":true/"hiddenDividerUsable":false/')" "$(placement 2 1508 1009 null 0 12 | sed 's/"hiddenDividerUsable":true/"hiddenDividerUsable":false/')" > $tmp/unusable.jsonl
+trace false "$(both 1508 1009 null 0 12)" | sed 's/"hiddenDividerUsable":true/"hiddenDividerUsable":false/' > $tmp/unusable.jsonl
 check "placement: an unusable hidden divider fails" 1 python3 -I $tool summary $tmp/unusable.jsonl $lab off
 contains "placement: the on-bar clause is named" '"controlItemsOnBar"'
-trace false "$(placement 1 1508 1009 null 0 12)" "$(placement 2 1508 1009 null 0 12)" | sed 's/"item":"Ice.ControlItem.Hidden","isAddedToMenuBar":true/"item":"Ice.ControlItem.Hidden","isAddedToMenuBar":false/' > $tmp/off-bar.jsonl
+trace false "$(both 1508 1009 null 0 12)" | sed 's/"item":"Ice.ControlItem.Hidden","isAddedToMenuBar":true/"item":"Ice.ControlItem.Hidden","isAddedToMenuBar":false/' > $tmp/off-bar.jsonl
 check "placement: a hidden divider not added to the bar fails" 1 python3 -I $tool summary $tmp/off-bar.jsonl $lab off
-grep -v '"readings"' $tmp/good-off.jsonl > /dev/null # (the start line carries the declaration)
-baseline_on_bar=15 trace false "$(placement 1 1508 1009 null 0 12)" "$(placement 2 1508 1009 null 0 12)" > $tmp/displaced.jsonl
+trace false "$(both 1508 1009 null 0 12)" | sed 's/"iconOnBar":true/"iconOnBar":false/' > $tmp/icon-parked.jsonl
+check "placement: an icon whose frame is right of the divider but which is not on the bar fails" 1 python3 -I $tool summary $tmp/icon-parked.jsonl $lab off
+contains "placement: the on-bar clause is named for the icon" '"controlItemsOnBar"'
+baseline_on_bar=15 trace false "$(both 1508 1009 null 0 12)" > $tmp/displaced.jsonl
 check "placement: fewer items on the bar than before Ice's items existed fails" 1 python3 -I $tool summary $tmp/displaced.jsonl $lab off
 contains "placement: the displacement clause is named" '"noneDisplaced"'
 grep -v '"event":"baseline"' $tmp/good-off.jsonl > $tmp/no-baseline.jsonl
 check "placement: no baseline read exits 1" 1 python3 -I $tool summary $tmp/no-baseline.jsonl $lab off
 sed 's/"event":"baseline","discovered":true/"event":"baseline","discovered":false/' $tmp/good-off.jsonl > $tmp/baseline-undiscovered.jsonl
 check "placement: a baseline pass that returned nothing exits 1" 1 python3 -I $tool summary $tmp/baseline-undiscovered.jsonl $lab off
-sed 's/,"readings":\["ownExtras","discoverTwice"\],"discoveryPasses":2//' $tmp/good-off.jsonl > $tmp/undeclared.jsonl
+sed 's/,"readings":\["ownExtras","discover"\],"discoveryPasses":2//' $tmp/good-off.jsonl > $tmp/undeclared.jsonl
 check "placement: a trace that declares no discovery passes (a T1 build) exits 1" 1 python3 -I $tool summary $tmp/undeclared.jsonl $lab off
+sed 's/"discoveryPasses":2/"discoveryPasses":1/' $tmp/one-pass.jsonl > $tmp/declares-one.jsonl
+check "placement: a build that declares and runs one pass exits 1: the count is the tool's" 1 python3 -I $tool summary $tmp/declares-one.jsonl $lab off
+contains "placement: the pass-count mismatch is named" '"discoveryPasses"'
 
 print -- "$failures failure(s)"
 exit $((failures > 0))

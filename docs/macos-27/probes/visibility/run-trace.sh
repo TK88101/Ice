@@ -73,7 +73,7 @@ unstage() { # <stage directory>
 }
 
 launch() { # <app> <always-hidden YES|NO> <out directory> -> the trace's exit status
-    perl -e 'alarm 20; exec @ARGV' $1/Contents/MacOS/Ice -IceLabTrace YES -IceLabTraceAlwaysHidden $2 \
+    perl -e 'alarm 30; exec @ARGV' $1/Contents/MacOS/Ice -IceLabTrace YES -IceLabTraceAlwaysHidden $2 \
         > $3/trace.jsonl 2> $3/stderr.log &
     local pid=$! tries=0
     until head -1 $3/trace.jsonl 2> /dev/null | grep -qF $marker; do
@@ -131,7 +131,7 @@ trace_one() { # <variant: off|on> <n>; stops the runner when the store guard fai
     local guard_code=0 summary_code=0
     python3 -I $tool guard $out/store-before.json $out/store-after.json $id > $out/guard.json || guard_code=$?
     python3 -I $tool summary $out/trace.jsonl $id $variant > $out/summary.json 2> $out/summary.txt || summary_code=$?
-    print -- "$variant$n id=$id exit=$code guard=$([[ $guard_code == 0 ]] && echo pass || echo FAIL) complete=$([[ $summary_code == 0 ]] && echo yes || echo NO) labDefaults=$([[ $defaults_code == 0 ]] && echo exported+removed || echo FAIL)"
+    print -- "$variant$n id=$id exit=$code guard=$([[ $guard_code == 0 ]] && echo pass || echo FAIL) summary=$([[ $summary_code == 0 ]] && echo pass || echo FAIL) labDefaults=$([[ $defaults_code == 0 ]] && echo exported+removed || echo FAIL)"
     cat $out/summary.txt
     [[ $code == 0 ]] || print -- "   stderr: $(head -1 $out/stderr.log)"
     [[ $guard_code == 0 ]] || stop "MenuBarAgent's store changed outside the lab identity ($out/guard.json)"
@@ -146,5 +146,5 @@ for variant in off on; do
     done
 done
 rmdir $work 2> /dev/null || true
-print -- "run-trace: $([[ $failed == 0 ]] && echo 'all runs complete, guard passed' || echo 'a run FAILED') ($evidence)"
+print -- "run-trace: $([[ $failed == 0 ]] && echo 'every run complete with the placement oracle holding, guard passed' || echo 'a run FAILED') ($evidence)"
 exit $failed

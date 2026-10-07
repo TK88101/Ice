@@ -62,16 +62,25 @@ struct LabTraceRuleTests {
         #expect(LabTracePlan.steps == [.stopPermissionChecks, .setSettingsInMemory, .readBaseline, .setUpSections])
     }
 
-    @Test("after the settle the trace reads the bar by two discovery passes and nothing else (S2 design, T2a)")
+    @Test("after the settle the trace reads its own extras, then the bar by two discovery passes, and nothing else (S2 design, T2a)")
     func readings() {
-        #expect(LabTracePlan.readings == [.ownExtras, .discoverTwice])
+        #expect(LabTracePlan.readings == [.ownExtras, .discover])
         #expect(LabTracePlan.discoveryPasses == 2)
         #expect(LabTracePlan.discoveryGapSeconds == 1)
-        // Creation settles, then two passes a gap apart, inside the cap.
-        // A pass was measured at about 1 s here (2026-10-08): the baseline, the
-        // settle and two passes a gap apart leave room inside the cap.
-        let passSeconds = 1.5
-        let needed = LabTracePlan.settleSeconds + LabTracePlan.discoveryGapSeconds + passSeconds * Double(LabTracePlan.discoveryPasses + 1)
+        // The worst case fits the cap: a pass is bounded by the discoverer's
+        // 2 s deadline plus one in-flight read (0.25 s); the own-extras read by
+        // its 1 s timeout; the baseline pass comes before the settle. A pass
+        // was measured at about 1 s here (2026-10-08).
+        let worstPassSeconds = 2.25
+        let ownExtrasSeconds = 1.0
+        // The baseline is read up to `baselineAttempts` times, a gap apart: a
+        // process's first pass is often incomplete (STATUS, "Discovery keeps
+        // up": only the cold launch pass; run 20261008-004012-dze20T-trace).
+        #expect(LabTracePlan.baselineAttempts == 2)
+        let passes = Double(LabTracePlan.discoveryPasses + LabTracePlan.baselineAttempts)
+        let gaps = Double(LabTracePlan.discoveryPasses - 1 + LabTracePlan.baselineAttempts - 1)
+        let needed = worstPassSeconds * passes + LabTracePlan.discoveryGapSeconds * gaps
+            + LabTracePlan.settleSeconds + ownExtrasSeconds
         #expect(needed < LabTracePlan.capSeconds)
     }
 

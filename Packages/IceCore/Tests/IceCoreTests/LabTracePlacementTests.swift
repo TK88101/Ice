@@ -84,16 +84,22 @@ struct LabTracePlacementTests {
         #expect(result.othersUnplaced == 4)
     }
 
-    @Test("without a usable divider or a readable icon nothing is placed", arguments: [true, false])
-    func noBoundaries(dividerMissing: Bool) {
-        let items = [other("a", minX: 100), other("b", minX: 700)]
-        let result = dividerMissing
-            ? placement(items, hiddenDivider: .some(DividerReading(frame: barFrame(minX: 500, width: 18), isUsable: false)))
-            : placement(items, icon: .some(nil))
+    @Test("without a usable divider nothing is placed")
+    func noDivider() {
+        let unusable = DividerReading(frame: barFrame(minX: 500, width: 18), isUsable: false)
+        let result = placement([other("a", minX: 100), other("b", minX: 700)], hiddenDivider: .some(unusable))
         #expect(result.othersUnplaced == 2)
         #expect(result.othersLeftOfHiddenDivider == 0)
         #expect(result.othersBetween == 0)
         #expect(result.othersRightOfIcon == 0)
+    }
+
+    @Test("left of the divider is the membership rule's and needs no icon; the rest cannot be placed without one")
+    func noIcon() {
+        let result = placement([other("a", minX: 100), other("b", minX: 700)], icon: .some(nil))
+        #expect(result.othersLeftOfHiddenDivider == 1)
+        #expect(result.othersUnplaced == 1)
+        #expect(result.othersBetween == 0)
     }
 
     @Test("the frames and verdicts are the pass's own")
@@ -101,6 +107,7 @@ struct LabTracePlacementTests {
         let alwaysHidden = DividerReading(frame: barFrame(minX: 80, width: 18), isUsable: true)
         let result = placement([], alwaysHiddenDivider: alwaysHidden)
         #expect(result.icon == barFrame(minX: 1000, width: 35))
+        #expect(result.iconOnBar)
         #expect(result.hiddenDivider == barFrame(minX: 500, width: 18))
         #expect(result.hiddenDividerUsable)
         #expect(result.alwaysHiddenDivider == barFrame(minX: 80, width: 18))
@@ -114,7 +121,26 @@ struct LabTracePlacementTests {
         #expect(poor.alwaysHiddenDivider == nil)
         #expect(!poor.alwaysHiddenDividerUsable)
         #expect(!poor.isComplete)
+        #expect(poor.failedReads == 1)
+        #expect(result.failedReads == 0)
+        #expect(placement([], completeness: .permissionDenied).failedReads == 0)
+        #expect(!placement([], completeness: .permissionDenied).isComplete)
         #expect(!poor.ownReadOk)
+    }
+
+    @Test("an icon that is parked, frameless or missing is not on the bar and its placement unreadable, whatever its frame says (Codex review, T2a)")
+    func iconOffBar() {
+        func icon(_ position: ItemPosition) -> DiscoveredItem {
+            let frame: BarRect? = position == .noFrame ? nil : barFrame(minX: 1000, width: 35)
+            return fixtureItem(identifier: "Ice.ControlItem.Visible", pid: 9, frame: frame, position: position, isSelf: true)
+        }
+        #expect(!placement([], icon: .some(icon(.parked))).iconOnBar)
+        #expect(placement([], icon: .some(icon(.parked))).iconPlacement == .iconUnreadable)
+        #expect(placement([], icon: .some(icon(.noFrame))).iconPlacement == .iconUnreadable)
+        #expect(placement([], icon: .some(icon(.stacked))).iconPlacement == nil)
+        #expect(!placement([], icon: .some(icon(.noFrame))).iconOnBar)
+        #expect(!placement([], icon: .some(nil)).iconOnBar)
+        #expect(placement([], icon: .some(icon(.stacked))).iconOnBar)
     }
 
     @Test("the icon's placement is the precondition rule's, not a second definition")

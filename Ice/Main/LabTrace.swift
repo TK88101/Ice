@@ -9,7 +9,8 @@ import MenuBarDiscovery
 
 /// Ice's trace mode (plan 2026-10-07-icebar-preference-hiding, S1): with
 /// `-IceLabTrace YES` under a lab identity, Ice creates its control items by
-/// its own code path in IceBar mode with uncalibrated dividers, writes one
+/// its own code path in IceBar mode with uncalibrated dividers, reads the bar
+/// by its own discovery pass before and after (S2 design, T2a), writes one
 /// JSON line per observation to standard output, and quits. Inert otherwise:
 /// `record` returns at once while no trace is running.
 @MainActor
@@ -80,7 +81,7 @@ enum LabTrace {
                     appState.settings.general.showIceIcon = plan.showIceIcon
                     appState.settings.advanced.enableAlwaysHiddenSection = plan.alwaysHiddenSection
                 case .readBaseline:
-                    session.emit("baseline", await discoverPlacement())
+                    session.emit("baseline", await readBaseline())
                 case .setUpSections:
                     for section in sections {
                         section.performSetup(with: appState)
@@ -88,16 +89,15 @@ enum LabTrace {
                 }
             }
 
+            // Not `Task.yield()`: the point is one turn of the main queue, behind
+            // whatever the sections' setup enqueued there.
             DispatchQueue.main.async {
                 for section in sections {
                     record(.afterMainQueueTurn, autosaveName: section.controlItem.identifier.rawValue)
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + LabTracePlan.settleSeconds) {
-                Task {
-                    await finish(session, sections: sections)
-                }
-            }
+            try? await Task.sleep(for: .seconds(LabTracePlan.settleSeconds))
+            await finish(session, sections: sections)
         }
     }
 
@@ -107,7 +107,7 @@ enum LabTrace {
             switch reading {
             case .ownExtras:
                 await readOwnExtras(session, sections: sections)
-            case .discoverTwice:
+            case .discover:
                 await readPlacements(session)
             }
         }
@@ -168,6 +168,23 @@ enum LabTrace {
         }
     }
 
+    /// The first complete pass of up to `LabTracePlan.baselineAttempts`, else
+    /// the last one, with how many were taken.
+    private static func readBaseline() async -> [String: Any] {
+        var baseline = [String: Any]()
+        for attempt in 1...LabTracePlan.baselineAttempts {
+            if attempt > 1 {
+                try? await Task.sleep(for: .seconds(LabTracePlan.discoveryGapSeconds))
+            }
+            baseline = await discoverPlacement()
+            baseline["attempts"] = attempt
+            if baseline["complete"] as? Bool == true {
+                break
+            }
+        }
+        return baseline
+    }
+
     /// One discovery pass by Ice's own entry point, described; only
     /// `discovered: false` when it returned nothing.
     private static func discoverPlacement() async -> [String: Any] {
@@ -184,17 +201,20 @@ enum LabTrace {
         return [
             "discovered": true,
             "icon": frame(placement.icon),
+            "iconOnBar": placement.iconOnBar,
             "hiddenDivider": frame(placement.hiddenDivider),
             "hiddenDividerUsable": placement.hiddenDividerUsable,
             "alwaysHiddenDivider": frame(placement.alwaysHiddenDivider),
             "alwaysHiddenDividerUsable": placement.alwaysHiddenDividerUsable,
-            "iconPlacement": placement.iconPlacement.map { String(describing: $0) } ?? "right",
+            // `null`: the icon is right of its hidden divider.
+            "iconPlacement": placement.iconPlacement.map { String(describing: $0) } ?? NSNull(),
             "othersLeftOfHiddenDivider": placement.othersLeftOfHiddenDivider,
             "othersBetween": placement.othersBetween,
             "othersRightOfIcon": placement.othersRightOfIcon,
             "othersUnplaced": placement.othersUnplaced,
             "othersOnBar": placement.othersOnBar,
             "complete": placement.isComplete,
+            "failedReads": placement.failedReads,
             "ownReadOk": placement.ownReadOk,
         ]
     }

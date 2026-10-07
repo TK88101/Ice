@@ -10,6 +10,11 @@ struct PreferenceHidingPreconditionsTests {
         BarRect(minX: midX - 10, minY: 4.5, width: 20, height: 24)
     }
 
+    /// Ice's icon as a pass reads it on the bar with this frame.
+    func iconItem(_ frame: BarRect?, position: ItemPosition = .onBar) -> DiscoveredItem {
+        fixtureItem(identifier: "Ice.ControlItem.Visible", pid: 9, frame: frame, position: position, isSelf: true)
+    }
+
     func divider(midX: Double, usable: Bool = true) -> DividerReading {
         DividerReading(frame: rect(midX: midX), isUsable: usable)
     }
@@ -27,7 +32,7 @@ struct PreferenceHidingPreconditionsTests {
         blockers: [PreferenceHidingBlocker] = []
     ) -> PreferenceHidingPreconditionResult {
         PreferenceHidingPreconditions.evaluate(
-            iceIcon: icon ?? rect(midX: 1500),
+            iceIcon: iconItem(icon ?? rect(midX: 1500)),
             hiddenDivider: hiddenDivider ?? divider(midX: 1469),
             completeness: completeness,
             ownRead: ownRead,
@@ -75,7 +80,7 @@ struct PreferenceHidingPreconditionsTests {
     @Test("D-c (a): a missing divider reading blocks")
     func missingDividerBlocks() {
         let result = PreferenceHidingPreconditions.evaluate(
-            iceIcon: rect(midX: 1500), hiddenDivider: nil, completeness: .complete, ownRead: .ok, blockers: []
+            iceIcon: iconItem(rect(midX: 1500)), hiddenDivider: nil, completeness: .complete, ownRead: .ok, blockers: []
         )
         #expect(result == .blocked([.iceIconNotRightOfDivider(.dividerUnusable)]))
     }
@@ -164,7 +169,7 @@ struct PreferenceHidingPreconditionsTests {
     func everyReasonIsReported() {
         let p = blocker("clock")
         let result = PreferenceHidingPreconditions.evaluate(
-            iceIcon: rect(midX: 100),
+            iceIcon: iconItem(rect(midX: 100)),
             hiddenDivider: divider(midX: 1469),
             completeness: .incomplete(failedPIDs: [5]),
             ownRead: .failed,
@@ -184,5 +189,26 @@ struct PreferenceHidingPreconditionsTests {
     func permissionDeniedNamesBothDiscoveryReasons() {
         let result = evaluate(completeness: .permissionDenied, ownRead: .notRead)
         #expect(result.reasons == [.discoveryIncomplete(.permissionDenied), .ownReadNotOk(.notRead)])
+    }
+
+    // MARK: - the discovered icon
+
+    @Test("D-c (a): a discovered icon that is not on the bar is unreadable, wherever its frame points; on the bar the frame rule decides", arguments: [
+        (ItemPosition.parked, 1500.0, PreferenceHidingIconPlacement?.some(.iconUnreadable)),
+        (.parked, 7.0, .some(.iconUnreadable)),
+        (.noFrame, 1500.0, .some(.iconUnreadable)),
+        (.onBar, 1500.0, nil),
+        (.stacked, 1500.0, nil),
+        (.onBar, 1297.5, .some(.iconLeftOfDivider)),
+    ])
+    func discoveredIcon(position: ItemPosition, midX: Double, expected: PreferenceHidingIconPlacement?) {
+        let frame: BarRect? = position == .noFrame ? nil : rect(midX: midX)
+        let icon = iconItem(frame, position: position)
+        #expect(PreferenceHidingPreconditions.iconPlacement(icon: icon, divider: divider(midX: 1469)) == expected)
+        let result = PreferenceHidingPreconditions.evaluate(
+            iceIcon: icon, hiddenDivider: divider(midX: 1469), completeness: .complete, ownRead: .ok, blockers: []
+        )
+        #expect(result == expected.map { .blocked([.iceIconNotRightOfDivider($0)]) } ?? .ok)
+        #expect(PreferenceHidingPreconditions.iconPlacement(icon: DiscoveredItem?.none, divider: divider(midX: 1469)) == .iconUnreadable)
     }
 }

@@ -5,7 +5,9 @@
 
 /// How Ice's icon failed to be right of its hidden divider (D-c a, S2).
 public enum PreferenceHidingIconPlacement: Equatable, Sendable {
-    /// The icon's reading is missing or a component of its frame is not finite.
+    /// The icon's reading is missing, a component of its frame is not finite,
+    /// or the icon is not on the bar (parked or frameless: its frame, if any,
+    /// says nothing about its side of the divider).
     case iconUnreadable
     /// The hidden divider's reading is missing, unusable or a component of its
     /// frame is not finite.
@@ -48,8 +50,11 @@ public enum PreferenceHidingPreconditionResult: Equatable, Sendable {
 
 public enum PreferenceHidingPreconditions {
     /// - Parameters:
-    ///   - iceIcon: the AX frame of Ice's visible control item; `nil` when it
-    ///     could not be read.
+    ///   - iceIcon: Ice's visible control item as the pass read it
+    ///     (`DiscoveredItemSet.visibleControlItem`); `nil` when it could not
+    ///     be read. The item, not its frame: an icon that is not on the bar
+    ///     (parked, e.g. overflowed past it) still has a frame, and that frame
+    ///     says nothing about its side of the divider.
     ///   - hiddenDivider: the hidden divider's reading; `nil` when the pass has
     ///     none. Ice's icon is right of it iff `icon.midX > divider.frame.minX`:
     ///     the divider's minX is the section boundary everywhere else in IceCore,
@@ -68,7 +73,7 @@ public enum PreferenceHidingPreconditions {
     ///     "What Ice cannot see at all it cannot protect").
     ///   - blockers: `PreferenceHidingMembership.blockers`.
     public static func evaluate(
-        iceIcon: BarRect?,
+        iceIcon: DiscoveredItem?,
         hiddenDivider: DividerReading?,
         completeness: Completeness,
         ownRead: OwnReadStatus,
@@ -90,14 +95,39 @@ public enum PreferenceHidingPreconditions {
         return reasons.isEmpty ? .ok : .blocked(reasons)
     }
 
+    /// The icon as a discovery pass read it: an icon that is not on the bar
+    /// (`.parked`, e.g. overflowed past it, or `.noFrame`) is unreadable
+    /// whatever its frame says; otherwise the frame rule below.
+    public static func iconPlacement(icon: DiscoveredItem?, divider: DividerReading?) -> PreferenceHidingIconPlacement? {
+        guard let icon, icon.position.isOnBar else { return .iconUnreadable }
+        return iconPlacement(icon: icon.frame, divider: divider)
+    }
+
     /// `nil` when the icon's mid-x is strictly right of the divider's minX: the
-    /// one definition of "Ice's icon is right of its hidden divider".
-    public static func iconPlacement(icon: BarRect?, divider: DividerReading?) -> PreferenceHidingIconPlacement? {
+    /// one definition of "Ice's icon is right of its hidden divider". Not
+    /// public: a caller has the discovered item and must not skip its position.
+    static func iconPlacement(icon: BarRect?, divider: DividerReading?) -> PreferenceHidingIconPlacement? {
         guard let icon, icon.hasFiniteComponents else { return .iconUnreadable }
-        guard let divider, divider.isUsable, let dividerFrame = divider.frame, dividerFrame.hasFiniteComponents else {
-            return .dividerUnusable
-        }
-        return icon.midX > dividerFrame.minX ? nil : .iconLeftOfDivider
+        guard let boundary = divider?.boundaryMinX else { return .dividerUnusable }
+        return icon.midX > boundary ? nil : .iconLeftOfDivider
+    }
+}
+
+extension ItemPosition {
+    /// Drawn-ness aside, the item occupies a slot of the bar: `.stacked` is
+    /// still on it; `.parked` and `.noFrame` are not.
+    var isOnBar: Bool {
+        self == .onBar || self == .stacked
+    }
+}
+
+extension DividerReading {
+    /// The section boundary this divider draws: its frame's `minX` iff the
+    /// reading is usable and every component of the frame is finite. Shared
+    /// by the preconditions, the membership rule and the trace's placement.
+    var boundaryMinX: Double? {
+        guard isUsable, let frame, frame.hasFiniteComponents else { return nil }
+        return frame.minX
     }
 }
 

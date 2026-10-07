@@ -66,6 +66,7 @@
 +        state == .showSection
 +            || iceBarLength(for: state, calibratedLength: calibratedLength, useIceBar: useIceBar) == Lengths.standard
 +    }
+-        // Visible and hidden control items should be added before
 -        // existing items in the status bar.
 -        if ControlItemDefaults[.preferredPosition, autosaveName] == nil {
 -            switch controlItem.identifier {
@@ -76,9 +77,12 @@
 -            case .alwaysHidden:
 -                break
 -            }
-+        // existing items in the status bar. The values are IceCore's: on
-+        // macOS 27 a position of 0 is read as none (plan
-+        // 2026-10-07-icebar-menu-frame-fix, section 13).
++        // Before macOS 27, visible and hidden control items are added
++        // before existing items in the status bar. The values are IceCore's:
++        // on 27 a position of 0 is read as none (plan
++        // 2026-10-07-icebar-menu-frame-fix, section 13) and the hidden
++        // divider gets no seed, so it lands leftmost (plan
++        // 2026-10-07-icebar-preference-hiding, S2 design).
 +        let item: ControlItemPositionSeed.Item = switch controlItem.identifier {
 +        case .visible: .visible
 +        case .hidden: .hidden

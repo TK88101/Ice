@@ -120,7 +120,7 @@ public struct PreferenceHidingMembership: Equatable, Sendable {
         previousMembers: [TagKey],
         childIdentifiersByPID: [Int32: [String?]]
     ) -> PreferenceHidingMembership {
-        guard let boundary = boundary(of: set.hiddenDivider) else {
+        guard let boundary = set.hiddenDivider?.boundaryMinX else {
             return resolve(
                 leftOfDivider: [], previousMembers: previousMembers, releasedTags: [],
                 childIdentifiersByPID: childIdentifiersByPID
@@ -227,13 +227,6 @@ public struct PreferenceHidingMembership: Equatable, Sendable {
     }
 
     // MARK: - private
-
-    /// The divider's `minX` iff the reading is usable and every component of its
-    /// frame is finite.
-    private static func boundary(of divider: DividerReading?) -> Double? {
-        guard let divider, divider.isUsable, let frame = divider.frame, frame.hasFiniteComponents else { return nil }
-        return frame.minX
-    }
 
     /// The item's tag with no child index: what a previous member is matched by,
     /// so a basis change (`.declared` to `.positional`) does not lose it.

@@ -175,11 +175,16 @@ the gate. Serial (each needs the one before); nothing is dispatched.
      read saw nothing and proves nothing);
   4. variant `on` only: `alwaysHiddenDivider.minX < hiddenDivider.minX`;
   5. every control item `isAddedToMenuBar` with a usable frame (not overflowed, not
-     under the notch), the discovery pass `complete`, the store guard passing.
+     under the notch; for the icon, its discovered position on the bar, not only its
+     frame -- Codex code review, T2a), the discovery pass `complete`, the store guard passing.
   6. (added 2026-10-08, Codex's re-review of clause 2) none displaced: a discovery
      pass taken **before** any control item exists (a fourth trace step,
      `.readBaseline`) counts the other items on the bar; the judged pass must count
      the same number, so a leftmost divider that pushed an item off the bar fails.
+     The baseline must be a complete pass; it is read up to two times, a gap apart,
+     because a process's first pass is often incomplete (STATUS "Discovery keeps
+     up"; run `20261008-004012-dze20T-trace` failed 6 of 6 on a single incomplete
+     baseline with the layout unchanged). The cap is 20 s for it.
   `othersRightOfIcon` is recorded, never judged (Apple's modules sit there).
 - One snapshot, not two reads stitched together (round 1): after the settle, trace
   mode runs Ice's own discovery entry point (`MenuBarItem.discoverItems(previous:)`,
@@ -254,8 +259,11 @@ the gate. Serial (each needs the one before); nothing is dispatched.
 **T2c The notice and the gate (macOS 27, IceBar mode).**
 
 - One definition of "right of": `PreferenceHidingPreconditions.misplacement` becomes
-  the public `iconPlacement(icon:divider:) -> PreferenceHidingIconPlacement?`
-  (unchanged logic; T3a's tests keep passing).
+  the public `iconPlacement(icon: DiscoveredItem?, divider:) -> PreferenceHidingIconPlacement?`
+  (done in T2a; as reviewed there, it and `evaluate(iceIcon:)` take the discovered
+  item, not a frame: an icon that is not on the bar, parked or frameless, is
+  `.iconUnreadable` whatever its frame says, so the notice below never asks the
+  owner to drag an icon that is not on the bar).
 - New pure rule `IcePlacementNotice.notice(placement:isIceBarMode:isDragging:)`:
   `.iconLeftOfDivider` in IceBar mode and not during a drag gives the notice; every
   other input gives none. An unreadable icon or unusable divider is **not** reported
@@ -527,3 +535,22 @@ revision is checked in the file before it is sent.
 
 Round 1: 2 P0 + 5 P1 + 1 P2. Round 2: 2 P1. Round 3: 0. Of round 1's eight, five
 taken as given, three modified with evidence and accepted.
+
+### T2a code review (/simcodex, 2026-10-08; 3 rounds, the stated cap)
+
+| Round | simplify (4 views) | Codex | Ruling |
+|---|---|---|---|
+| oracle | -- | re-review of clause 2 after the first run counted three parked items as left: ACCEPT, with "tell pre-existing parked items from displaced ones" | clause 2 counts on-bar items only; Codex's point taken as clause 6 (a baseline pass before Ice's items exist; equal on-bar counts) |
+| 1 | 4 P1: the divider boundary written a third time; the tool's T1 `layout()` on another boundary; the pass count in a case name; dead and copy-pasted test lines | 1 P2: a parked icon could pass | all taken: `DividerReading.boundaryMinX`, the reading `discover`, the count pinned in the tool, `iconOnBar` |
+| 2 | 3 P1: the parked-icon fix sat only in the trace; two texts stating what the code no longer does | 1 P1: reject `othersRightOfIcon > 0`; 1 P2: pass numbers unchecked | the parked icon moved into `iconPlacement`; texts fixed; P2 taken. Codex's P1 **rejected** (the plan's "recorded, never judged": such an item is in the visible section, `DiscoveredCachePlan.swift:128-141`, and Ice cannot pass items pinned further right) -- accepted by Codex in round 3 |
+| 3 | 2 P1: `evaluate(iceIcon:)` still took a frame, blind to parking; one docstring word | 0 P0/P1 | taken: `evaluate` takes the discovered icon, the frame overload is not public. Codex confirmed the late change: 0 P0/P1 |
+| after | -- | the final build's run failed 6 of 6 on one incomplete baseline pass (the process's first); retry-until-complete, at most two: 0 P0/P1 ("completeness gating, not cherry-picking") | taken; the clause itself not relaxed |
+
+Trend, P0/P1 per round: simplify 4, 3, 2; Codex 0, 1 (rejected), 0. Left as P2, for
+T2c, which reopens the oracle for `inv`: the oracle's clauses as one IceCore verdict
+instead of Python; raw string values for `PreferenceHidingIconPlacement`;
+`othersUnplaced` (derivable, and two meanings); `iconOnBar` now implied by
+`iconPlacement`; three frame encoders in `LabTrace.swift`; `left.jsonl` beside
+`trace()` in `test-trace.sh`; `boundaryMinX` not yet used by `DiscoveredCachePlan`
+and `CheckPlan`; a separate "off the bar" case beside `.iconUnreadable` for T3b's pane.
+

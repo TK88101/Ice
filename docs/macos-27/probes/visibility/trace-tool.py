@@ -7,14 +7,18 @@
   trace-tool.py summary <trace.jsonl> <lab bundle id> <off|on>
       one JSON object on stdout: the preferred positions per control item and
       point, the AX frames, the icon-versus-divider layout, and the placement
-      verdict; one line for a person on stderr. Exits 1 unless the trace is
+      verdict; two lines for a person on stderr. Exits 1 unless the trace is
       complete -- its "start" event is the one the runner asked for (marker,
-      identity, always-hidden variant, steps), every item it declared has
-      every point it declared, it reached "done", and the AX read gave a
-      layout -- and the placement oracle holds (plan S2 design, T2a): in the
-      discovery passes the trace declared, all agreeing, the hidden divider,
-      then every other item, then Ice's icon; on the bar; with "on", the
-      always-hidden divider left of the hidden one.
+      identity, always-hidden variant, steps, readings, the tool's own count
+      of discovery passes), every item it declared has every point it
+      declared, it reached "done", and the AX read gave a layout -- and the
+      placement oracle holds (plan S2 design, T2a): in the tool's two
+      discovery passes, agreeing, Ice's icon is right of its hidden divider,
+      no other on-bar item is left of that divider and at least one is
+      between the two; the control items are on the bar; with "on", the
+      always-hidden divider is left of the hidden one; and as many other
+      items are on the bar as in the baseline pass taken before Ice's items
+      existed.
 
 Standard library only; run with python3 -I.
 """
@@ -28,7 +32,8 @@ HIDDEN = "Ice.ControlItem.Hidden"
 ALWAYS_HIDDEN = "Ice.ControlItem.AlwaysHidden"
 MARKER = "IceLabTrace-start-v1"
 STEPS = ["stopPermissionChecks", "setSettingsInMemory", "readBaseline", "setUpSections"]
-READINGS = ["ownExtras", "discoverTwice"]
+READINGS = ["ownExtras", "discover"]
+DISCOVERY_PASSES = 2
 # The fields of a "placement" event that are not the pass's reading itself.
 PLACEMENT_ENVELOPE = ("event", "pass", "t")
 
@@ -94,10 +99,10 @@ def mid_x(frame):
 
 
 def layout(icon, divider):
-    """P2's question: is Ice's icon right of its hidden divider?"""
+    """P2's question: is Ice's icon right of its hidden divider? IceCore's boundary: the divider's minX."""
     if icon is None or divider is None:
         return "unknown"
-    return "iconRightOfDivider" if mid_x(icon) > mid_x(divider) else "iconLeftOfDivider"
+    return "iconRightOfDivider" if mid_x(icon) > divider[0] else "iconLeftOfDivider"
 
 
 def start_mismatches(start, bundle_id, variant):
@@ -108,6 +113,7 @@ def start_mismatches(start, bundle_id, variant):
         "alwaysHiddenSection": variant == "on",
         "steps": STEPS,
         "readings": READINGS,
+        "discoveryPasses": DISCOVERY_PASSES,
     }
     return [key for key, value in expected.items() if start.get(key) != value]
 
@@ -119,12 +125,14 @@ def failed_clauses(reading, baseline, on_bar, variant):
     always_hidden, hidden = reading.get("alwaysHiddenDivider"), reading.get("hiddenDivider")
     expected_on_bar = [VISIBLE, HIDDEN] + ([ALWAYS_HIDDEN] if variant == "on" else [])
     clauses = {
-        "iconRightOfDivider": reading.get("iconPlacement") == "right",
+        # null is IceCore's "right of the divider"; an absent key is not.
+        "iconRightOfDivider": "iconPlacement" in reading and reading["iconPlacement"] is None,
         "noOthersLeftOfDivider": reading.get("othersLeftOfHiddenDivider") == 0,
         # None between would mean the pass saw no other item and proves nothing.
         "othersBetween": (reading.get("othersBetween") or 0) >= 1,
         "alwaysHiddenLeftOfHidden": variant != "on" or bool(always_hidden and hidden and always_hidden[0] < hidden[0]),
         "controlItemsOnBar": all(on_bar.get(item) is True for item in expected_on_bar)
+        and reading.get("iconOnBar") is True
         and reading.get("hiddenDividerUsable") is True
         and (variant != "on" or reading.get("alwaysHiddenDividerUsable") is True),
         "passComplete": reading.get("complete") is True and reading.get("ownReadOk") is True,
@@ -135,13 +143,12 @@ def failed_clauses(reading, baseline, on_bar, variant):
     return [name for name, holds in clauses.items() if not holds]
 
 
-def placement(events, declared_passes, on_bar, variant):
+def placement(events, baseline, on_bar, variant):
     """(verdict, failed clauses, the readings): judged on the last pass, and only if every pass agrees."""
     passes = sorted((event for event in events if event.get("event") == "placement"), key=lambda event: event.get("pass", 0))
     readings = [{key: value for key, value in event.items() if key not in PLACEMENT_ENVELOPE} for event in passes]
-    baseline = next((event for event in events if event.get("event") == "baseline"), {})
-    discovered = [baseline] + readings
-    if not declared_passes or len(readings) != declared_passes or not all(reading.get("discovered") is True for reading in discovered):
+    numbered = [event.get("pass") for event in passes] == list(range(1, DISCOVERY_PASSES + 1))
+    if not numbered or not all(reading.get("discovered") is True for reading in [baseline] + readings):
         return "missing", [], readings
     if any(reading != readings[-1] for reading in readings):
         return "indeterminate", [], readings
@@ -170,8 +177,9 @@ def summary(path, bundle_id, variant):
     layout_ax = layout(ax_frames.get(VISIBLE), ax_frames.get(HIDDEN))
     complete = done and not missing and not mismatches and layout_ax != "unknown"
     on_bar = {item: event.get("isAddedToMenuBar") for item, event in windows.items()}
-    verdict, failed, readings = placement(events, start.get("discoveryPasses"), on_bar, variant)
-    baseline_on_bar = next((event.get("othersOnBar") for event in events if event.get("event") == "baseline"), None)
+    baseline = next((event for event in events if event.get("event") == "baseline"), {})
+    baseline_on_bar = baseline.get("othersOnBar")
+    verdict, failed, readings = placement(events, baseline, on_bar, variant)
     result = {
         "complete": complete,
         "done": done,
@@ -197,7 +205,8 @@ def summary(path, bundle_id, variant):
     print(f"   placement={verdict} failedClauses={failed} hiddenDivider={last.get('hiddenDivider')} icon={last.get('icon')} "
           f"alwaysHiddenDivider={last.get('alwaysHiddenDivider')} othersLeft={last.get('othersLeftOfHiddenDivider')} "
           f"between={last.get('othersBetween')} rightOfIcon={last.get('othersRightOfIcon')} unplaced={last.get('othersUnplaced')} "
-          f"onBar={last.get('othersOnBar')} onBarBefore={baseline_on_bar}",
+          f"onBar={last.get('othersOnBar')} onBarBefore={baseline_on_bar} baselineComplete={baseline.get('complete')} "
+          f"baselineAttempts={baseline.get('attempts')} baselineFailedReads={baseline.get('failedReads')}",
           file=sys.stderr)
     return 0 if complete and verdict == "dividerOthersIcon" else 1
 
