@@ -172,7 +172,7 @@ cat > $tmp/ice.log <<'LOG'
 2026-10-05 10:01:00.500000+0900 Ice[1:1] [IceBarHiding] IceBar hiding: checking
 2026-10-05 10:01:20.500000+0900 Ice[1:1] [IceBarHiding] IceBar hiding: active
 2026-10-05 10:02:00.000000+0900 Ice[1:1] [IceBarHiding] IceBar hiding: shown(IceCore.IceBarShownReason.longMenu)
-2026-10-05 10:02:30.000000+0900 Ice[1:1] [IceBarHiding] IceBar baseline: ok false
+2026-10-05 10:02:30.000000+0900 Ice[1:1] [IceBarHiding] IceBar baseline: ok false coverage incomplete targets=1 checkable=1 planSkipped=none rejected=noInk:1
 2026-10-05 10:02:31.000000+0900 Ice[1:1] [IceBarPress] Press failed, disabling the IceBar cell for x
 2026-10-05 10:02:40.000000+0900 Ice[1:1] [MenuBarItemManager] unrelated
 LOG
@@ -185,6 +185,7 @@ for line in \
     "按壓失敗 1 次" \
     "試長度結果：hiddenClean 1 / folded 0 / drawn 0 / unknown 1" \
     "baseline：成功 1 / 失敗 1" \
+    "baseline 失敗原因：incomplete targets=1 checkable=1 planSkipped=none rejected=noInk:1 ×1" \
     "Ice 的 IceBar 紀錄 11 行，讀懂 11 行"; do
     [[ $summary == *$line* ]] && [[ $summary != *讀不懂* ]]; expect "summary: $line"
 done
@@ -233,7 +234,7 @@ done
 # What t7_summary reads is what Ice's sources write.
 ice27=$repo/Ice/MenuBar/IceBar27
 core=$repo/Packages/IceCore/Sources/IceCore
-for literal in 'IceBar hiding: ' 'IceBar trial: length ' 'IceBar baseline: ok ' 'A fold appeared at rest' 'category: "IceBarHiding"'; do
+for literal in 'IceBar hiding: ' 'IceBar trial: length ' 'IceBar baseline: ok ' ') coverage ' 'A fold appeared at rest' 'category: "IceBarHiding"'; do
     grep -q -F -- $literal $ice27/IceBarHidingCoordinator.swift; expect "Ice still logs: $literal"
 done
 grep -q -F 'Press failed' "$ice27/MenuBarItemManager+IceBar27.swift" && grep -q -F 'category: "IceBarPress"' "$ice27/MenuBarItemManager+IceBar27.swift"

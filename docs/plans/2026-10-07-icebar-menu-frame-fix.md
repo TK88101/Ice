@@ -253,6 +253,30 @@ MenuBarCapture 30; `IceWatchCoreTests` 46; `test-t7.sh` 127; coverage
 `ApplicationMenuHitRule` 100 %, `BarRect+CoreGraphics` 100 %; app builds; A3/A4,
 A8, A10 pass; `icewatch menu-frame` live `fits`.
 
+## 10. Second attempt and a baseline diagnostic (2026-10-07)
+
+- E11 (MEASURED, run `20261007-160812-t7`, `icetest`, `d992dfa`, evidence copied
+  to `~/IceReverse-evidence/20261007-160812-t7/`, `diff -r` identical): the F1 fix
+  held (no `menuUnreadable`; `menu-frame` passed in the guard); the helper was on
+  the bar (`x=1316`); Ice: `checking` 16:08:13.67 -> `shown(noMembers)` ->
+  `checking` 16:08:15.85 -> `IceBar baseline: ok false` 16:08:19.68 ->
+  `shown(cannotAssess)`; `run-t7.sh` stopped the phase as F2 says; restore
+  `verified`, helper domains empty.
+- E12 (INFERRED, Codex): the baseline ran its whole 3.8 s (1 s warm-up plus the
+  four-sample baseline), so the early skips (geometry, divider plan, room,
+  preflight) are out; left: a baseline rejection of the member, a late
+  `skip(noReference)`, a plan skip / no checkable target, or a capture failure.
+  `Failed item image cache` is in older owner-account runs where capture
+  worked, so it says nothing here. Which one: TBD.
+- Change, diagnostic only (the owner agreed, after a Codex debate that agreed):
+  `HiddenLengthObserver.takeBaseline` returns a `BaselineCoverage` (covered, or
+  why not: the skip reason, no targets, cancelled, or the counts of plan skips
+  and rejections by reason with the target and checkable counts); only
+  `covered` keeps the baseline, exactly as `covers` did. The coordinator logs
+  `IceBar baseline: ok <bool> coverage <description>` (reasons and counts only,
+  no item names); `t7_summary` prints the reasons. Tests first.
+- Then: rebuild, restage, the owner runs `run-t7.sh --phase 1` only.
+
 ## Appendix: plan review
 
 | Round | Finding | Ruling |

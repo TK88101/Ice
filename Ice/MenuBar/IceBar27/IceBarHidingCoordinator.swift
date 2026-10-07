@@ -167,11 +167,13 @@ final class IceBarHidingCoordinator {
             let observer = currentObserver()
             work?.cancel()
             work = Task {
-                let ok = await observer?.takeBaseline(sectionMap: sectionMap) ?? false
+                let coverage = await observer?.takeBaseline(sectionMap: sectionMap)
+                let ok = coverage == .covered
                 // Read by the T7 report (probes/visibility/t7-lib.zsh); a
-                // cancelled result is not one.
+                // cancelled result is not one. The coverage says why a
+                // baseline failed: reasons and counts, no item names.
                 if !Task.isCancelled {
-                    logger.info("IceBar baseline: ok \(ok, privacy: .public)")
+                    logger.info("IceBar baseline: ok \(ok, privacy: .public) coverage \(coverage?.description ?? "noObserver", privacy: .public)")
                 }
                 send(.baseline(token: token, ok: ok))
             }

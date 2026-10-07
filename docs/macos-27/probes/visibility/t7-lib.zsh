@@ -232,7 +232,12 @@ t7_summary() {
     /Press failed/ { presses++; next }
     /IceBar trial: / { outcome[$NF]++; next }
     /IceBar baseline: ok true/ { baselineOK++; next }
-    /IceBar baseline: ok false/ { baselineFailed++; next }
+    /IceBar baseline: ok false/ {
+        baselineFailed++
+        # Why it failed (plan 2026-10-07 section 10); older builds log no reason.
+        if (index($0, " coverage ") > 0) why[substr($0, index($0, " coverage ") + 10)]++
+        next
+    }
     { known-- }
     END {
         printf "active %d 次\n", active
@@ -254,6 +259,7 @@ t7_summary() {
         printf "按壓失敗 %d 次\n", presses
         printf "試長度結果：hiddenClean %d / folded %d / drawn %d / unknown %d\n", outcome["hiddenClean"], outcome["folded"], outcome["drawn"], outcome["unknown"]
         printf "baseline：成功 %d / 失敗 %d\n", baselineOK, baselineFailed
+        for (reason in why) printf "baseline 失敗原因：%s ×%d\n", reason, why[reason]
         printf "Ice 的 IceBar 紀錄 %d 行，讀懂 %d 行%s\n", lines, known, (lines > known ? "（有讀不懂的行：上面的數字可能偏少，請把 ice.log 交給 Claude）" : "")
     }'
 }
