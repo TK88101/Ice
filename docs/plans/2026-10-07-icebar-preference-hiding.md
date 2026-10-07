@@ -28,7 +28,7 @@ images (accepted: app icon, monochrome).
 | P1 | Seven owner sittings in `icetest` on 2026-10-07; none reached `active` | MEASURED (runs `20261007-012252` ... `-213730`); "one defect per sitting" is a reading of them, INFERRED |
 | P2 | With a never-seen bundle id (`com.icespike4.ice`): divider x 1469, Ice's icon middle 1297.5 (left of it), both reference helpers right of both, two unnamed Apple items left of the divider | MEASURED (`20261007-213730-t7/references.txt`). That the divider and helpers "landed by their seeds" and the icon's 0.1 was lost or ignored: INFERRED until the values are read at creation (S1); cause TBD |
 | P3 | The helper rehearsal that predicted otherwise used separate processes and ordinary-length items; Ice creates three items in one process with `statusItem(withLength: 0)` then `autosaveName` (`ControlItem.swift:68-71`, `MenuBarManager.swift:54-58`) | MEASURED (code); that this difference is the cause: INFERRED |
-| P4 | macOS 27: a preferred position of 0 reads as none; positive values order from the right, smallest rightmost; MenuBarAgent remembers dragged positions per `status:<bundle id>::<autosave name>` outside the app's defaults, and they override an app seed | MEASURED (owner's account probes; the store file) / INFERRED (the override) |
+| P4 | macOS 27: a preferred position of 0 reads as none; positive values order from the right, smallest rightmost; MenuBarAgent remembers dragged positions per `status:<bundle id>::<autosave name>` (for our ad-hoc helpers the process name stands there instead, and undragged items are recorded too: T2b, 2026-10-08) outside the app's defaults, and they override an app seed | MEASURED (owner's account probes; the store file) / INFERRED (the override) |
 | P5 | The detector's baseline refuses without a "reference" (an identifiable item between Ice's divider and icon, `CheckPlan.swift:47-80`) and unless every hidden-section member is covered (`HiddenLengthObserver.coverage`) | MEASURED (code; run `-182404`) |
 | P6 | A length counts as hiding only if no `«` is listed and every member is checked gone (`HiddenLengthOutcomeRule.swift:11-18`); a `«` at rest shows the section again (`IceBarHidingCoordinator.swift:141-153`); a long frontmost menu shows it (`IceBarHidingMachine.swift:255-262`) | MEASURED (code) |
 | P7 | Membership = everything left of the hidden divider (`DiscoveredCachePlan.make`); in `icetest` Apple's input menu and `com.apple.campo` (basis `unnamed`) became members beside the helper | MEASURED (code; `references.txt`) |
@@ -243,7 +243,31 @@ the gate. Serial (each needs the one before); nothing is dispatched.
   frames as first read), and on any hardware input, any mismatch or an unreadable
   element it releases the button and Command at
   once, restores the cursor and ends as `aborted`; a watchdog and a `defer` release
-  both in every other exit. No countdown or confirmation: the run is unattended by
+  both in every other exit. (Corrected while building, 2026-10-08: "frames as first
+  read" and "adjacent" hold only until the button is down. A drag is the frames
+  changing: T follows the cursor and P gives way, so the literal rule would abort
+  every drag. After the button is down each event still re-checks the hardware
+  counter, the pid's bundle id and the one item of that identifier in it. And
+  "gap <= 2 pt" is not what adjacent AX frames show: the helpers' frames (14 pt)
+  are inset 7 pt in their 28 pt windows, so touching windows read as a 14 pt gap
+  (MEASURED, the helpers' own `frames` beside `dragown read`, 26A434); adjacent is
+  a gap of 14 +- 2 pt. The runner also waits, up to 90 s before each of the three
+  attempts, for the 5 s without hardware input. Put to Codex in T2b's code
+  review, Appendix: all three accepted. From that review, also: P is launched
+  first, so T, a new item, lands left of it (MEASURED, 2 of 2 smoke reads) and is
+  dragged to P's **right** -- a relaunched T on the left would be a fresh
+  placement, not a kept slot, so a slot on the left proves nothing; the seed's
+  place (0.1, rightmost) is right of P too, so Q3's and Q4's reads carry a fourth
+  value, whether T is beside P, and T's x. The slot is "beside P on its right":
+  Q3 says kept only for that (right but not beside: elsewhere; left: lost). Q4
+  needs Q3's kept slot as its control and says "the remembered slot wins" for
+  beside P, "not the slot, and where the seed would put it" for right but not
+  beside -- never "the seed wins": a placement that is not the slot does not show
+  what put it there (Codex, round 2) -- and "neither" for left. Before the press the element at the press point must be T's
+  process's and the one at the drop point T's or P's (an AX hit test: nothing
+  covers the bar there); the button and Command are let go under one lock that
+  every post takes, by the watchdog and the signals too; `dragown release` is the
+  runner's fail-safe for a `dragown` that died.) No countdown or confirmation: the run is unattended by
   the owner's choice. A refusal or abort is "not measured"; at most 3 attempts.
 - Runner `run-remembered.sh <apps dir> <scratch>`: preflight (no helper already
   running, both defaults domains empty), the four questions, the store read as
@@ -255,6 +279,21 @@ the gate. Serial (each needs the one before); nothing is dispatched.
 - The result changes no code path: it decides the wording of STATUS's "remembered
   positions" row (MEASURED instead of INFERRED) and whether the notice's repair text
   can promise that a drag sticks.
+
+- Result (2026-10-08, run `20261008-081444-y8GnWW-remembered`; STATUS "Remembered
+  positions"): Q1 measured once -- no entry at about 4 s, one for each undragged
+  helper item by 30 s, keyed by process name (`status:vzhelper::...`), not bundle
+  id; Q2-Q4 **not measured**: at that moment MenuBarAgent also changed 15 of the
+  owner's existing entries, and the guard stopped the run before any drag. T2b did
+  not complete its three runs; the persistence question stays INFERRED. Decided
+  with Codex (thecure, 2 rounds, "no objection" on the whole): the guard is not
+  relaxed and nothing is rerun without the owner's yes; the guard and the lookup
+  use the run's two exact keys; T2c goes on, its notice promising nothing about
+  persistence (the converged wording does not). Codex's rulings against the first
+  proposal, both taken: no "ad-hoc means process name" rule (an observation, the
+  rule unknown); no `status:vzhelper::` prefix (it would allow other helpers'
+  entries). Conceded by Codex on the store's evidence: the installed Ice is keyed
+  by bundle id, so a `status:Ice::` collision would be among lab copies only.
 
 **T2c The notice and the gate (macOS 27, IceBar mode).**
 
@@ -554,3 +593,21 @@ instead of Python; raw string values for `PreferenceHidingIconPlacement`;
 `trace()` in `test-trace.sh`; `boundaryMinX` not yet used by `DiscoveredCachePlan`
 and `CheckPlan`; a separate "off the bar" case beside `.iconUnreadable` for T3b's pane.
 
+
+### T2b code review (/simcodex, 2026-10-08; 3 rounds, the stated cap, then one Codex confirmation)
+
+| Round | simplify (4 views) | Codex | security-reviewer | Ruling |
+|---|---|---|---|---|
+| 1 | 6 P1: two dead things in `dragown`; Q1's last row mislabelled; the dragged side read twice; seed side and read count stated twice; **the experiment confounded** (T dragged to the left, where a relaunched T lands anyway) | 2 P0 (a `try()` lock could skip the release; held state recorded after the post) + 5 P1; the three corrections made while building (frames compared only until the press; adjacent = AX gap 14 +- 2; the wait for quiet) **ACCEPT** | 2 HIGH (nothing checked what is under the press point; exit paths that leave the button or Command held), 3 MEDIUM, 3 LOW | all taken, except: "seed side / read count stated twice" kept as P2 (a mismatch fails loudly as `readCount`), "no retry after `sameSide`" rejected (after the hit test the drop can only be on a harness item). The confound: P first, T dragged right, `adjacent` added to each read |
+| 2 | 6 P1: three stale headers, one unused file; `seedWins` stronger than its reads; P's last entry not marked as displaced | 0 P0 + 5 P1: `defaultBefore` read too early; `slotKept` without adjacency; `seedWins` unproven and without Q3 as control; `:A` resolves a link before the no-link check; the lab defaults' delete unverified. Round 1's rejected half (T's default need not still read 0.1: E5) **ACCEPT** | -- | all taken as given: Q4 says `seedCompatibleNotSlot`, never that the seed won, and needs Q3's `slotKept` |
+| 3 | 3 P1: a stale README row; Q1's ages mislabelled; one in T2a's test code (outside this diff, left as P2) | 2 P0 (a release without the lock lets a stuck post land after it; held flags cleared when an up event could not be made) + 2 P1 (the hit test compared only the process; `link//`); 4 of round 2's 5 VERIFIED | re-check: no CRITICAL/HIGH, the first eight FIXED; 2 MEDIUM + 4 LOW new (an untimed lock in the watchdog; `release` posting unconditionally) | all taken; ACLs, the directories above the apps directory and the milliseconds between the last hit test and the press are stated as not closed |
+| after | -- | confirmation of round 3's four: all **RESOLVED**, no new P0/P1, **CONVERGED** | -- | -- |
+
+Trend, P0/P1 per round: simplify 6, 6, 3; Codex 7, 5, 4, then 0. Left as P2: the
+per-event Accessibility reads (about ten a step; the watchdog bounds them); `stopping`
+(redundant with exiting under the lock); `runDrag` and `runRead` sharing their
+discovery; the helper launch code beside frozen `run-t7.sh`'s; `stop` and the
+store-before save in both runners; an explicit "something is right of P" reading (T's
+x is recorded instead); a retry after a `notMoved` attempt may drag T back;
+`placement()`'s unused seventh argument in `test-trace.sh`; `vzhelper`'s own comment
+on `--autosave`.

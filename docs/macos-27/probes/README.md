@@ -23,6 +23,7 @@ reject the result. For the same reason `swift test` in `Packages/IceCore` needs
 | `verify3.swift` | Are the helpers up, identifiable and stable? | none |
 | `watch3.swift` | Polls the helpers at 5Hz and reports any order change | none |
 | `inject3.swift` | Can a coordinate-only synthetic drag move another process's item? | **injects mouse events**; moves the cursor for ~2s then restores it |
+| `dragown.swift` | What does macOS 27 remember of a dragged status item? (the drag itself; run by `visibility/run-remembered.sh`) | `drag`: **injects mouse and Command events**, moves the cursor for ~2s then restores it; only ever the `com.icespike4.target` item across the adjacent `com.icespike4.protected` one, refused or aborted on any hardware input. `read`, `selftest`: none |
 
 `axspike2.swift` carries the accumulated edits from its final run — three probes
 plus a spacer, screenshots at each width. Read it before running it.
@@ -83,7 +84,7 @@ IceCore and are never changed from here.
 | target | what it is | side effects |
 |---|---|---|
 | `vzreplay` | offline replay of recorded strips (2026-09-19 T9) | none |
-| `vzhelper` | the sacrificial status items: `--role` (2026-09-19), or `--items 1\|2 --identifiers none\|a,b --glyphs target\|reference\|alt`, `--mimic-nodivider` (Ice's `.noDivider` shown state, reached as Ice reaches it, never expanded), `--autosave` (step 10 only); stdin commands `hide`, `show`, `frames`, `selfread`, `quit` | one or two status items under `com.icespike4.target` / `.protected` |
+| `vzhelper` | the sacrificial status items: `--role` (2026-09-19), or `--items 1\|2 --identifiers none\|a,b --glyphs target\|reference\|alt`, `--mimic-nodivider` (Ice's `.noDivider` shown state, reached as Ice reaches it, never expanded), `--autosave` (step 10; `run-remembered.sh`); stdin commands `hide`, `show`, `frames`, `selfread`, `quit` | one or two status items under `com.icespike4.target` / `.protected` |
 | `VZGlyphs` | the helpers' stroked glyphs, shared so the dry run can check them | none |
 | `vizprobe` | the live harness: `--dry-run` and `live` (2026-09-19); `discover` and `verify` (2026-09-23 section 6), each with its own `--dry-run` | launches helpers, captures the bar; never moves, clicks or resizes anything of the user's |
 
@@ -122,4 +123,14 @@ at every safety check, and stop on any unexpected verdict, quitting every
 helper (also on the watchdog, SIGINT, SIGTERM and SIGHUP). Evidence goes to
 `~/IceReverse-evidence/<run id>/`, outside the repo: captures show the user's
 bar. Results: `../FINDINGS.md`, "Discovery through Accessibility, in detail".
+
+Preference-hiding plan (`docs/plans/2026-10-07-icebar-preference-hiding.md`):
+`run-trace.sh <Ice.app> <scratch> [runs]` stages a built Ice under a fresh lab
+identity per run and judges its trace mode's placement (S1, S2 design T2a);
+`run-remembered.sh <apps> <scratch> [runs]` measures remembered positions with
+one `vzhelper --autosave` item under each helper id and `../dragown.swift`
+(S2 design T2b; side effects: the drag's, above, and MenuBarAgent's entries for
+the two helper ids, which stay). `store-lib.zsh` reads MenuBarAgent's store for
+both, `trace-tool.py` guards and judges, `test-trace.sh` tests the tool on
+synthetic input (side effects: none).
 

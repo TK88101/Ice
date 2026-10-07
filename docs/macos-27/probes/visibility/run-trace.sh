@@ -6,7 +6,10 @@
 # it with -IceLabTrace YES, both always-hidden variants, judges the placement
 # oracle of the plan's S2 design (hidden divider | the other items | icon;
 # trace-tool.py summary), and guards MenuBarAgent's store: any change outside the run's own position entries
-# fails the run and stops the runner. The store is read here, not in Ice: a
+# fails the run and stops the runner. ("Own" is entries under the lab bundle
+# id. MenuBarAgent keyed the ad-hoc helpers of run-remembered.sh by process
+# name instead; if it keys an ad-hoc Ice so too, nothing here is "own" and any
+# change to the store stops the runner. In these few seconds it has recorded nothing.) The store is read here, not in Ice: a
 # read of another app's group container from Ice could raise a privacy prompt
 # in the owner's session.
 #
@@ -29,6 +32,7 @@ umask 077
 here=${0:A:h}
 tool=$here/trace-tool.py
 source $here/t7-lib.zsh
+source $here/store-lib.zsh
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 built=${1:?built Ice.app}
 scratch=${2:?scratch directory outside ~/Documents}
@@ -41,21 +45,15 @@ runs=${3:-3}
 # Ice.debug.dylib), and killed at launch if its first line is not the marker.
 marker=IceLabTrace-start-v1
 handshake_tries=30 # x 0.1 s
-store_settle_tries=10 # x 1 s
 grep -rqaF $marker $built/Contents/MacOS || { print -u2 -- "run-trace: $built has no trace mode"; exit 2; }
 [[ ${scratch:A:l} != ${HOME:l}/documents* ]] || { print -u2 -- "run-trace: scratch must be outside ~/Documents (iCloud breaks codesign)"; exit 2; }
 # The staged copies are executed: not from a directory another account made or links.
 t7_private_directory $scratch || exit 2
 work=$(mktemp -d $scratch/icetrace.XXXXXX) || exit 2
-store="$HOME/Library/Group Containers/com.apple.MenuBar/Library/Preferences/com.apple.MenuBar"
 run_id=$(date +%Y%m%d-%H%M%S)-${work:t:e}
 evidence=$HOME/IceReverse-evidence/$run_id-trace
 mkdir -p $evidence
-defaults export "$store" $evidence/store-before.plist || { print -u2 -- "run-trace: MenuBarAgent's store could not be saved"; exit 1; }
-
-export_store() { # <output json>
-    defaults export "$store" - | plutil -convert json -o "$1" -
-}
+defaults export "$menubar_store" $evidence/store-before.plist || { print -u2 -- "run-trace: MenuBarAgent's store could not be saved"; exit 1; }
 
 stage() { # <bundle id> <stage directory> -> path of the staged app
     mkdir -- $2 || return 1
@@ -90,19 +88,6 @@ launch() { # <app> <always-hidden YES|NO> <out directory> -> the trace's exit st
     return $code
 }
 
-settled_store() { # <output json>: read until two reads a second apart agree
-    local previous=$1.previous tries=0
-    export_store $previous || return 1
-    while (( tries++ < store_settle_tries )); do
-        sleep 1
-        export_store $1 || return 1
-        cmp -s $previous $1 && { rm -f -- $previous; return 0; }
-        mv -- $1 $previous
-    done
-    print -u2 -- "run-trace: MenuBarAgent's store did not settle"
-    return 1
-}
-
 stop() { # <reason>: the owner's store may have changed; nothing more is launched
     print -u2 -- "run-trace: $1; stopped. The store as it was: $evidence/store-before.plist"
     exit 1
@@ -123,13 +108,18 @@ trace_one() { # <variant: off|on> <n>; stops the runner when the store guard fai
     launch $app $always $out || code=$?
     sleep 2 # let MenuBarAgent record the items' removal before the store is read again
     unstage $stage_dir
-    settled_store $out/store-after.json || stop "MenuBarAgent's store could not be read back"
+    settled_store $out/store-after.json || {
+        # The lab identity's defaults do not outlive the run, stopped or not.
+        defaults delete $id 2> /dev/null || true
+        t7_domain_is_empty $id || print -u2 -- "run-trace: $id still has defaults after the delete"
+        stop "MenuBarAgent's store could not be read back"
+    }
     local defaults_code=0
     t7_prefs_export $id $out/lab-defaults.plist || defaults_code=1
     defaults delete $id 2> /dev/null || true
     t7_domain_is_empty $id || { print -u2 -- "run-trace: $id still has defaults after the delete"; defaults_code=1; }
     local guard_code=0 summary_code=0
-    python3 -I $tool guard $out/store-before.json $out/store-after.json $id > $out/guard.json || guard_code=$?
+    python3 -I $tool guard $out/store-before.json $out/store-after.json "status:$id::" > $out/guard.json || guard_code=$?
     python3 -I $tool summary $out/trace.jsonl $id $variant > $out/summary.json 2> $out/summary.txt || summary_code=$?
     print -- "$variant$n id=$id exit=$code guard=$([[ $guard_code == 0 ]] && echo pass || echo FAIL) summary=$([[ $summary_code == 0 ]] && echo pass || echo FAIL) labDefaults=$([[ $defaults_code == 0 ]] && echo exported+removed || echo FAIL)"
     cat $out/summary.txt

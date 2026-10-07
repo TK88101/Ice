@@ -1,9 +1,30 @@
-"""Ice trace mode helpers for run-trace.sh (plan 2026-10-07-icebar-preference-hiding, S1).
+"""Helpers for run-trace.sh (Ice's trace mode: S1, S2 design T2a) and run-remembered.sh
+(remembered positions: S2 design T2b) of plan 2026-10-07-icebar-preference-hiding.
 
-  trace-tool.py guard <store-before.json> <store-after.json> <lab bundle id>
-      exit 0 when MenuBarAgent's store changed only in the lab identity's own
+  trace-tool.py guard <store-before.json> <store-after.json> <own> [<own> ...]
+      exit 0 when MenuBarAgent's store changed only in the run's own
       TrailingItemPreferredPositions entries; prints every other change (in
-      that dictionary or any other top-level key) and exits 1.
+      that dictionary or any other top-level key) and exits 1. <own> is an
+      exact key, "status:<owner>::<autosave name>", or, ending in "::", a
+      prefix "status:<owner>::". What <owner> is, is MenuBarAgent's choice:
+      the bundle id for the signed apps seen, the process name for the
+      ad-hoc helpers (run 20261008-081444-y8GnWW); so a prefix on a lab
+      bundle id (run-trace.sh) may match nothing and then allows nothing.
+  trace-tool.py entry <store.json> <key>
+      the position MenuBarAgent remembers under that exact key, or null.
+  trace-tool.py remembered q3 <dragged side: left|right> <reads.jsonl>
+  trace-tool.py remembered q4 <dragged side: left|right> <reads.jsonl> <Q3's verdict>
+      the verdict of T2b's Q3 (relaunched: is the item back in the dragged
+      slot) or Q4 (relaunched with a contradicting seed: is it still there)
+      from three settled reads, one {"agent", "default", "side", "adjacent",
+      "x"} object per line: MenuBarAgent's entry, the item's own default, its
+      side of its anchor, whether it is beside it, its frame's x. The slot
+      is "beside the anchor on the dragged side". A verdict needs all three
+      reads to agree and a dragged slot that is not where a fresh item lands
+      anyway; Q4 also needs Q3's "slotKept" as its control (without it a
+      missing slot says nothing about the seed) and never says more than
+      "not the slot, and on the side the seed would put it". Anything else
+      is "inconclusive" with its reason, exit 1.
   trace-tool.py summary <trace.jsonl> <lab bundle id> <off|on>
       one JSON object on stdout: the preferred positions per control item and
       point, the AX frames, the icon-versus-divider layout, and the placement
@@ -31,6 +52,15 @@ VISIBLE = "Ice.ControlItem.Visible"
 HIDDEN = "Ice.ControlItem.Hidden"
 ALWAYS_HIDDEN = "Ice.ControlItem.AlwaysHidden"
 MARKER = "IceLabTrace-start-v1"
+SIDES = ("left", "right")
+# A new item with nothing stored lands leftmost (E2), so left of its anchor: a
+# slot on that side cannot be told from a fresh placement. Q4's seed is the
+# smallest preferred position, so the rightmost item (P4): right of the anchor
+# like a slot dragged there, but not beside it. run-remembered.sh launches and
+# seeds (`seed=`) to match.
+FRESH_SIDE = "left"
+SETTLED_READS = 3 # run-remembered.sh's settled_reads
+READ_FIELDS = ("agent", "default", "side", "adjacent", "x")
 STEPS = ["stopPermissionChecks", "setSettingsInMemory", "readBaseline", "setUpSections"]
 READINGS = ["ownExtras", "discover"]
 DISCOVERY_PASSES = 2
@@ -46,9 +76,13 @@ def load_store(path):
     return store
 
 
-def own_prefix(bundle_id):
-    """MenuBarAgent keys a remembered position as status:<bundle id>::<autosave name> (P4)."""
-    return f"status:{bundle_id}::"
+def is_own_pattern(own):
+    """An exact key or, ending in "::", a prefix: nothing looser (a bare bundle id is neither)."""
+    return own.startswith("status:") and "::" in own
+
+
+def is_own(key, owns):
+    return any(key.startswith(own) if own.endswith("::") else key == own for own in owns)
 
 
 def changes(before, after, skip=lambda key: False):
@@ -59,29 +93,63 @@ def changes(before, after, skip=lambda key: False):
     ]
 
 
-def foreign_changes(before, after, bundle_id):
-    """Everything outside the lab identity's own position entries that changed."""
-    own = own_prefix(bundle_id)
+def foreign_changes(before, after, owns):
+    """Everything outside the run's own position entries that changed."""
     outside = changes(before, after, skip=lambda key: key == POSITIONS)
-    inside = changes(before.get(POSITIONS, {}), after.get(POSITIONS, {}), skip=lambda key: key.startswith(own))
+    inside = changes(before.get(POSITIONS, {}), after.get(POSITIONS, {}), skip=lambda key: is_own(key, owns))
     return outside + inside
 
 
-def own_entries(store, bundle_id):
-    own = own_prefix(bundle_id)
-    return {key: value for key, value in store.get(POSITIONS, {}).items() if key.startswith(own)}
+def own_entries(store, owns):
+    return {key: value for key, value in store.get(POSITIONS, {}).items() if is_own(key, owns)}
 
 
-def guard(before_path, after_path, bundle_id):
+def guard(before_path, after_path, owns):
     before = load_store(before_path)
     after = load_store(after_path)
-    found = foreign_changes(before, after, bundle_id)
+    found = foreign_changes(before, after, owns)
     print(json.dumps({
         "foreignChanges": found,
-        "labEntriesBefore": own_entries(before, bundle_id),
-        "labEntriesAfter": own_entries(after, bundle_id),
+        "labEntriesBefore": own_entries(before, owns),
+        "labEntriesAfter": own_entries(after, owns),
     }, sort_keys=True))
     return 1 if found else 0
+
+
+def entry(store_path, key):
+    print(json.dumps(load_store(store_path).get(POSITIONS, {}).get(key)))
+    return 0
+
+
+def remembered_verdict(question, dragged_side, reads, control=None):
+    """(verdict, why it is inconclusive or None) from the settled reads after a relaunch.
+
+    `control` is Q3's verdict, for Q4."""
+    if len(reads) != SETTLED_READS:
+        return "inconclusive", "readCount"
+    if any(read != reads[0] for read in reads):
+        return "inconclusive", "readsDisagree"
+    side, adjacent = reads[0]["side"], reads[0]["adjacent"]
+    if side not in SIDES:
+        return "inconclusive", "sideUnread"
+    if dragged_side == FRESH_SIDE:
+        return "inconclusive", "slotOnTheFreshSide"
+    if question == "q4" and control != "slotKept":
+        return "inconclusive", "noSlotKeptControl"
+    if side == FRESH_SIDE:
+        return ("slotLost" if question == "q3" else "neitherSlotNorSeed"), None
+    if not isinstance(adjacent, bool):
+        return "inconclusive", "adjacencyUnread"
+    if question == "q3":
+        return ("slotKept" if adjacent else "elsewhereOnTheDraggedSide"), None
+    return ("rememberedSlotWins" if adjacent else "seedCompatibleNotSlot"), None
+
+
+def remembered(question, dragged_side, path, control=None):
+    reads = [{field: event.get(field) for field in READ_FIELDS} for event in read_events(path)]
+    verdict, reason = remembered_verdict(question, dragged_side, reads, control)
+    print(json.dumps({"question": question, "draggedSide": dragged_side, "control": control, "verdict": verdict, "reason": reason, "reads": reads}, sort_keys=True))
+    return 1 if verdict == "inconclusive" else 0
 
 
 def read_events(path):
@@ -212,8 +280,14 @@ def summary(path, bundle_id, variant):
 
 
 def main(argv):
-    if len(argv) == 5 and argv[1] == "guard":
-        return guard(argv[2], argv[3], argv[4])
+    if len(argv) >= 5 and argv[1] == "guard" and all(is_own_pattern(own) for own in argv[4:]):
+        return guard(argv[2], argv[3], argv[4:])
+    if len(argv) == 4 and argv[1] == "entry" and is_own_pattern(argv[3]) and not argv[3].endswith("::"):
+        return entry(argv[2], argv[3])
+    if len(argv) == 5 and argv[1:3] == ["remembered", "q3"] and argv[3] in SIDES:
+        return remembered("q3", argv[3], argv[4])
+    if len(argv) == 6 and argv[1:3] == ["remembered", "q4"] and argv[3] in SIDES:
+        return remembered("q4", argv[3], argv[4], argv[5])
     if len(argv) == 5 and argv[1] == "summary" and argv[4] in ("off", "on"):
         return summary(argv[2], argv[3], argv[4])
     print(__doc__, file=sys.stderr)

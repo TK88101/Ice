@@ -1,7 +1,8 @@
 #!/bin/zsh
-# Tests for trace-tool.py (plan 2026-10-07-icebar-preference-hiding, S1) on
-# synthetic stores and traces. No app is launched, nothing outside a temporary
-# directory is read or written.
+# Tests for trace-tool.py (plan 2026-10-07-icebar-preference-hiding, S1 and S2
+# design T2a, T2b) on synthetic stores, traces and reads. No app is launched and
+# nothing is written outside a temporary directory; two files of the repo are
+# read (LabTraceRule.swift and run-trace.sh, for the identity prefix).
 #
 #   test-trace.sh
 set -uo pipefail
@@ -37,17 +38,17 @@ print -- '{"TrailingItemPreferredPositions": {"status:com.example.a::x": 141.5, 
 print -- '{}' > $tmp/empty.json
 print -- '[]' > $tmp/not-a-store.json
 
-check "guard: no change passes" 0 python3 -I $tool guard $tmp/before.json $tmp/before.json $lab
-check "guard: a new entry of the lab identity passes" 0 python3 -I $tool guard $tmp/before.json $tmp/lab-only.json $lab
+check "guard: no change passes" 0 python3 -I $tool guard $tmp/before.json $tmp/before.json "status:$lab::"
+check "guard: a new entry of the lab identity passes" 0 python3 -I $tool guard $tmp/before.json $tmp/lab-only.json "status:$lab::"
 contains "guard: the lab entry is reported" '"status:com.icespike4.trace.r1::Ice.ControlItem.Hidden": 1'
-check "guard: a moved owner entry fails" 1 python3 -I $tool guard $tmp/before.json $tmp/moved.json $lab
+check "guard: a moved owner entry fails" 1 python3 -I $tool guard $tmp/before.json $tmp/moved.json "status:$lab::"
 contains "guard: the moved entry is named" '"key": "status:com.example.a::x"'
-check "guard: a removed owner entry fails" 1 python3 -I $tool guard $tmp/before.json $tmp/removed.json $lab
-check "guard: another lab identity (r10 vs r1) is not the run's own" 1 python3 -I $tool guard $tmp/before.json $tmp/sibling.json $lab
-check "guard: a change to another top-level key of the store fails" 1 python3 -I $tool guard $tmp/before.json $tmp/other-key.json $lab
+check "guard: a removed owner entry fails" 1 python3 -I $tool guard $tmp/before.json $tmp/removed.json "status:$lab::"
+check "guard: another lab identity (r10 vs r1) is not the run's own" 1 python3 -I $tool guard $tmp/before.json $tmp/sibling.json "status:$lab::"
+check "guard: a change to another top-level key of the store fails" 1 python3 -I $tool guard $tmp/before.json $tmp/other-key.json "status:$lab::"
 contains "guard: the other key is named" '"key": "OtherKey"'
-check "guard: a store with no dictionary yet passes" 0 python3 -I $tool guard $tmp/empty.json $tmp/empty.json $lab
-check "guard: something that is not a store does not pass" 1 python3 -I $tool guard $tmp/not-a-store.json $tmp/empty.json $lab
+check "guard: a store with no dictionary yet passes" 0 python3 -I $tool guard $tmp/empty.json $tmp/empty.json "status:$lab::"
+check "guard: something that is not a store does not pass" 1 python3 -I $tool guard $tmp/not-a-store.json $tmp/empty.json "status:$lab::"
 check "usage: wrong arguments exit 2" 2 python3 -I $tool guard $tmp/before.json
 
 start() { # [always-hidden: true|false] [bundle id]: the start event a trace announces
@@ -186,6 +187,87 @@ check "placement: a trace that declares no discovery passes (a T1 build) exits 1
 sed 's/"discoveryPasses":2/"discoveryPasses":1/' $tmp/one-pass.jsonl > $tmp/declares-one.jsonl
 check "placement: a build that declares and runs one pass exits 1: the count is the tool's" 1 python3 -I $tool summary $tmp/declares-one.jsonl $lab off
 contains "placement: the pass-count mismatch is named" '"discoveryPasses"'
+
+# Remembered positions (S2 design, T2b): the store guard over the run's two
+# exact keys, one entry, and the three-read verdicts of Q3 and Q4. The keys
+# are as MenuBarAgent wrote them for the helpers (run 20261008-081444-y8GnWW):
+# by process name, not bundle id.
+t_key=status:vzhelper::vz-rem-1-t
+p_key=status:vzhelper::vz-rem-1-p
+print -- '{"TrailingItemPreferredPositions": {"status:com.example.a::x": 141.5, "status:vzhelper::Item-0": 300}}' > $tmp/rem-before.json
+print -- '{"TrailingItemPreferredPositions": {"status:com.example.a::x": 141.5, "status:vzhelper::Item-0": 300, "status:vzhelper::vz-rem-1-t": 616.5, "status:vzhelper::vz-rem-1-p": 588.5}}' > $tmp/rem-both.json
+print -- '{"TrailingItemPreferredPositions": {"status:com.example.a::x": 141.5, "status:vzhelper::Item-0": 310, "status:vzhelper::vz-rem-1-t": 616.5, "status:vzhelper::vz-rem-1-p": 588.5}}' > $tmp/rem-other-helper.json
+print -- '{"TrailingItemPreferredPositions": {"status:com.example.a::x": 141.5, "status:vzhelper::Item-0": 300, "status:vzhelper::vz-rem-1-t": 616.5, "status:vzhelper::vz-rem-1-t2": 1}}' > $tmp/rem-longer-name.json
+check "guard: the run's two exact keys may appear" 0 python3 -I $tool guard $tmp/rem-before.json $tmp/rem-both.json $t_key $p_key
+contains "guard: both entries are reported" '"status:vzhelper::vz-rem-1-p": 588.5'
+check "guard: the second key fails when only the first is named" 1 python3 -I $tool guard $tmp/rem-before.json $tmp/rem-both.json $t_key
+check "guard: another entry of the same process is not the run's own" 1 python3 -I $tool guard $tmp/rem-before.json $tmp/rem-other-helper.json $t_key $p_key
+contains "guard: the other helper entry is named" '"key": "status:vzhelper::Item-0"'
+check "guard: an exact key is not a prefix" 1 python3 -I $tool guard $tmp/rem-before.json $tmp/rem-longer-name.json $t_key $p_key
+check "guard: a bundle id is neither a key nor a prefix: usage, exit 2" 2 python3 -I $tool guard $tmp/rem-before.json $tmp/rem-both.json com.icespike4.target
+check "entry: a key's remembered position is printed" 0 python3 -I $tool entry $tmp/rem-both.json $t_key
+contains "entry: the value" '616.5'
+check "entry: no entry is null, not an error" 0 python3 -I $tool entry $tmp/rem-before.json $t_key
+contains "entry: null" 'null'
+check "entry: a key that is only a prefix of one is null" 0 python3 -I $tool entry $tmp/rem-longer-name.json $p_key
+contains "entry: the prefix is null" 'null'
+check "entry: something that is not a store exits 1" 1 python3 -I $tool entry $tmp/not-a-store.json $t_key
+check "usage: entry with a prefix, not a key, exits 2" 2 python3 -I $tool entry $tmp/rem-both.json status:vzhelper::
+check "usage: entry with a bundle id and a name exits 2" 2 python3 -I $tool entry $tmp/rem-both.json com.icespike4.target vz-rem-1-t
+
+reads() { # <agent> <default> <side> <adjacent> x3: three settled reads, one per line
+    local agent default side adjacent
+    for agent default side adjacent in "$@"; do
+        print -- "{\"agent\":$agent,\"default\":$default,\"side\":$side,\"adjacent\":$adjacent}"
+    done
+}
+# T was dragged to the right of P. A fresh item lands leftmost (left of P); the
+# seed (0.1) is the rightmost item, right of P too but not beside it.
+reads 430 430 '"right"' true 430 430 '"right"' true 430 430 '"right"' true > $tmp/q-slot.jsonl
+reads 0.1 0.1 '"right"' false 0.1 0.1 '"right"' false 0.1 0.1 '"right"' false > $tmp/q-seed.jsonl
+reads 500 500 '"left"' true 500 500 '"left"' true 500 500 '"left"' true > $tmp/q-fresh.jsonl
+reads 430 0.1 '"right"' true 430 0.1 '"right"' true 430 0.1 '"left"' true > $tmp/q-flips.jsonl
+reads 430 0.1 '"right"' true 430 0.1 '"right"' true 431 0.1 '"right"' true > $tmp/q-drifts.jsonl
+reads 430 0.1 '"right"' true 430 0.1 '"right"' true > $tmp/q-two.jsonl
+reads null null null null null null null null null null null null > $tmp/q-unread.jsonl
+reads 430 0.1 '"right"' null 430 0.1 '"right"' null 430 0.1 '"right"' null > $tmp/q-no-adjacency.jsonl
+sed -e '1s/}$/,"x":1040}/' -e '2,3s/}$/,"x":1041}/' $tmp/q-slot.jsonl > $tmp/q-x-drifts.jsonl
+check "remembered q3: three agreeing reads beside P on the dragged side: the slot is kept" 0 python3 -I $tool remembered q3 right $tmp/q-slot.jsonl
+contains "remembered q3: kept is said" '"verdict": "slotKept"'
+check "remembered q3: on the dragged side but not beside P is not the slot" 0 python3 -I $tool remembered q3 right $tmp/q-seed.jsonl
+contains "remembered q3: elsewhere is said" '"verdict": "elsewhereOnTheDraggedSide"'
+check "remembered q3: on the dragged side with the adjacency unread is inconclusive" 1 python3 -I $tool remembered q3 right $tmp/q-no-adjacency.jsonl
+check "remembered q3: three agreeing reads on the other side: the slot is lost" 0 python3 -I $tool remembered q3 right $tmp/q-fresh.jsonl
+contains "remembered q3: lost is said" '"verdict": "slotLost"'
+check "remembered q3: a side that flips between reads is inconclusive, exit 1" 1 python3 -I $tool remembered q3 right $tmp/q-flips.jsonl
+contains "remembered q3: inconclusive is said" '"verdict": "inconclusive"'
+check "remembered q3: a store entry that drifts between reads is inconclusive" 1 python3 -I $tool remembered q3 right $tmp/q-drifts.jsonl
+check "remembered q3: a frame that moves between reads is inconclusive" 1 python3 -I $tool remembered q3 right $tmp/q-x-drifts.jsonl
+contains "remembered q3: the moving frame is a disagreement" '"reason": "readsDisagree"'
+check "remembered q3: two reads are not three" 1 python3 -I $tool remembered q3 right $tmp/q-two.jsonl
+contains "remembered q3: the read count is the reason" '"reason": "readCount"'
+check "remembered q3: three agreeing reads that saw no side are inconclusive" 1 python3 -I $tool remembered q3 right $tmp/q-unread.jsonl
+contains "remembered q3: the unread side is the reason" '"reason": "sideUnread"'
+check "remembered q3: a slot on the side a fresh item lands on cannot be told from a fresh placement" 1 python3 -I $tool remembered q3 left $tmp/q-fresh.jsonl
+contains "remembered q3: the fresh side is the reason" '"reason": "slotOnTheFreshSide"'
+check "remembered q4: beside P on the dragged side, against the seed: the remembered slot wins" 0 python3 -I $tool remembered q4 right $tmp/q-slot.jsonl slotKept
+contains "remembered q4: remembered is said" '"verdict": "rememberedSlotWins"'
+check "remembered q4: right of P but no longer beside it: not the slot, and where the seed would put it" 0 python3 -I $tool remembered q4 right $tmp/q-seed.jsonl slotKept
+contains "remembered q4: seed-compatible is said, not that the seed won" '"verdict": "seedCompatibleNotSlot"'
+check "remembered q4: on the fresh side: neither the slot nor the seed" 0 python3 -I $tool remembered q4 right $tmp/q-fresh.jsonl slotKept
+contains "remembered q4: neither is said" '"verdict": "neitherSlotNorSeed"'
+check "remembered q4: without Q3's kept slot as the control there is no verdict" 1 python3 -I $tool remembered q4 right $tmp/q-slot.jsonl slotLost
+contains "remembered q4: the missing control is the reason" '"reason": "noSlotKeptControl"'
+check "remembered q4: an inconclusive Q3 is no control either" 1 python3 -I $tool remembered q4 right $tmp/q-seed.jsonl inconclusive
+check "remembered q4: the slot and the seed are told apart by adjacency only: unread is inconclusive" 1 python3 -I $tool remembered q4 right $tmp/q-no-adjacency.jsonl slotKept
+contains "remembered q4: the unread adjacency is the reason" '"reason": "adjacencyUnread"'
+check "remembered q4: a slot on the fresh side is inconclusive" 1 python3 -I $tool remembered q4 left $tmp/q-fresh.jsonl slotKept
+check "remembered q4: reads that disagree are inconclusive" 1 python3 -I $tool remembered q4 right $tmp/q-flips.jsonl slotKept
+contains "remembered q4: the disagreement is the reason" '"reason": "readsDisagree"'
+check "usage: remembered q4 without Q3's verdict exits 2" 2 python3 -I $tool remembered q4 right $tmp/q-slot.jsonl
+check "usage: remembered q3 with a fourth argument exits 2" 2 python3 -I $tool remembered q3 right $tmp/q-slot.jsonl slotKept
+check "usage: remembered with an unknown question exits 2" 2 python3 -I $tool remembered q5 right $tmp/q-slot.jsonl
+check "usage: remembered with an unknown side exits 2" 2 python3 -I $tool remembered q3 up $tmp/q-slot.jsonl
 
 print -- "$failures failure(s)"
 exit $((failures > 0))
