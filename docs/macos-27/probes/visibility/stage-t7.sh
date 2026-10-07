@@ -17,6 +17,7 @@ owner=$(id -un)
 here=${0:A:h}
 repo=$(git -C "$here" rev-parse --show-toplevel)
 source "$here/t7-lib.zsh"
+staged_bundle_id=com.icespike4.ice
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 running_before=$(t7_count_ours -ax)
 
@@ -54,6 +55,18 @@ chmod 1777 $shared/evidence
 ditto "$scratch/apps" $shared/apps
 cp "$bin/icewatch" $shared/apps/icewatch
 ditto "$ice_app" $shared/Ice.app
+# The staged copy gets an identity of its own (plan 2026-10-07 section 14):
+# macOS 27 keeps every status item's position in MenuBarAgent's store, keyed by
+# bundle id and autosave name, and once the user has dragged an item that
+# record overrides the app's own seed. The isolated account's record for
+# com.jordanbaird.Ice has Ice's icon left of its divider; a new id has no
+# record. It also stops the staged copy sharing the release's preferences.
+# The XPC service keeps its id: its connection already fails on 27 and Ice
+# runs without it (every T7 log), and Shared/ is not to change (A10).
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $staged_bundle_id" $shared/Ice.app/Contents/Info.plist
+codesign --force --deep --sign - $shared/Ice.app 2> "$scratch/codesign.log" || { cat "$scratch/codesign.log" >&2; echo "stage-t7: re-signing the staged Ice failed" >&2; exit 1; }
+codesign --verify --deep --strict $shared/Ice.app || { echo "stage-t7: the re-signed Ice does not verify" >&2; exit 1; }
+[[ $(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" $shared/Ice.app/Contents/Info.plist) == $staged_bundle_id ]] || { echo "stage-t7: the staged Ice is not $staged_bundle_id" >&2; exit 1; }
 cp "$here/run-t7.sh" "$here/t7-lib.zsh" $shared/
 chmod 0755 $shared/run-t7.sh
 chmod 0644 $shared/t7-lib.zsh
@@ -61,7 +74,7 @@ chmod -R go-w $shared/apps $shared/Ice.app
 
 revision=$(git -C "$repo" rev-parse --short HEAD)
 [[ -z $(git -C "$repo" status --porcelain --untracked-files=no) ]] || revision+=-dirty
-t7_write_env $shared $isolated $owner $revision com.jordanbaird.Ice com.icespike4.target,com.icespike4.protected
+t7_write_env $shared $isolated $owner $revision $staged_bundle_id com.icespike4.target,com.icespike4.protected
 chmod 0644 $shared/t7.env
 
 # The staged copy has the release's bundle id and a higher build number: it

@@ -103,8 +103,13 @@ if [[ $1 == references ]]; then
         print -r -- "{\"complete\":true,\"dividerMinX\":1469,\"helpers\":[{\"id\":\"vz-t7-ref1\",\"side\":\"rightOfIce\",\"x\":1521}],\"iceIconMidX\":1297.5,\"items\":4,\"otherHidden\":0,\"others\":[],\"otherVisible\":0,\"references\":0}"
         exit 1
     fi
+    # Every member helper started so far, on the side T7_STUB_MEMBER_SIDE says.
+    members=""
+    for id in $(grep -o "vz-t7-[a-z0-9]*" $T7_STUB_MARKS/vzhelper 2>/dev/null | grep -v -E "^vz-t7-[0-9]{6}$" | sort -u); do
+        members+=",{\"id\":\"$id\",\"side\":\"${T7_STUB_MEMBER_SIDE:-hidden}\",\"x\":1100}"
+    done
     if (( $(grep -c -x references $T7_STUB_MARKS/icewatch) > ${T7_STUB_REFS_AFTER:-0} )); then
-        print -r -- "{\"complete\":true,\"dividerMinX\":1200,\"helpers\":[{\"id\":\"vz-t7-ref1\",\"side\":\"visible\",\"x\":1250}],\"iceIconMidX\":1310,\"items\":4,\"otherHidden\":0,\"otherVisible\":0,\"references\":1}"
+        print -r -- "{\"complete\":true,\"dividerMinX\":1200,\"helpers\":[{\"id\":\"vz-t7-ref1\",\"side\":\"visible\",\"x\":1250}$members],\"iceIconMidX\":1310,\"items\":4,\"otherHidden\":0,\"otherVisible\":0,\"references\":1}"
         exit 0
     fi
     print -r -- "{\"complete\":true,\"dividerMinX\":1200,\"helpers\":[{\"id\":\"vz-t7-ref1\",\"side\":\"hidden\",\"x\":1100}],\"iceIconMidX\":1310,\"items\":4,\"otherHidden\":0,\"otherVisible\":0,\"references\":0}"
@@ -241,6 +246,9 @@ for bad in '{"barHeight":33,"displayWidth":1728,"menuMaxX":null,"notchMinX":771.
     ! t7_menu_frame_ok $bad; expect "menu-frame refused: ${bad[1,60]}"
 done
 [[ $(t7_json_get $fits displayWidth) == 1728 ]]; expect "json: a number by key"
+sides='{"helpers":[{"id":"vz-t7-ref1","side":"visible","x":1250},{"id":"vz-t7-hidden2","side":"hidden","x":1100}],"references":1}'
+[[ $(t7_helper_side $sides vz-t7-hidden2) == hidden && $(t7_helper_side $sides vz-t7-ref1) == visible ]]; expect "helper side: by identifier"
+! t7_helper_side $sides vz-t7-hidden3 >/dev/null && ! t7_helper_side 'garbage' vz-t7-hidden2 >/dev/null; expect "helper side: not listed or unreadable fails"
 reply() { # <identifier> <frame>
     print -r -- '{"children":[{"frame":[1100,0,24,32],"identifier":"vz-other"},{"frame":'$2',"identifier":"'$1'"}],"trusted":true}'
 }
@@ -340,9 +348,10 @@ grep -q '右邊那排圖示（Wi-Fi、電池、Ice）的最左端' $tmp/out.txt 
 ! grep -E '^ *print -- "【第' $here/run-t7.sh | grep -v -E '【第 [0-9]+b? 列】【看(選單列|終端)】' >/dev/null; expect "every row's instruction carries a tag"
 
 # --- references (plan 2026-10-07 section 11, G1) -----------------------------------------
-[[ $(head -2 $T7_STUB_MARKS/vzhelper | grep -c -- '--autosave vz-t7-ref[12] --lifetime 9000') == 2 ]]; expect "two reference helpers start first, for the whole run"
-[[ $(cat $T7_STUB_MARKS/positions) == $'vz-t7-ref1 0.4\nvz-t7-ref2 0.6' ]]; expect "each finds its preferred position between Ice's icon and divider"
-grep -q '參照檢查：參照 1 個（讀取完整：true；自己的 helper 1 個；其他 app 的圖示：隱藏區 0 個、可見區 0 個）' $tmp/out.txt; expect "the report shows the references check, counts only"
+[[ $(head -2 $T7_STUB_MARKS/vzhelper | grep -c -E -- '--autosave vz-t7-[0-9]{6}-ref[12] --lifetime 9000') == 2 ]]; expect "two reference helpers start first, for the whole run"
+[[ $(sed -E 's/^vz-t7-[0-9]{6}-//' $T7_STUB_MARKS/positions) == $'ref1 0.4\nref2 0.6' ]]; expect "each finds its preferred position between Ice's icon and divider"
+first_names=$(cut -d' ' -f1 $T7_STUB_MARKS/positions)
+grep -q '參照檢查：參照 1 個（讀取完整：true；自己的 helper 2 個；其他 app 的圖示：隱藏區 0 個、可見區 0 個）' $tmp/out.txt; expect "the report shows the references check, counts only"
 grep -q ' s\{0,1\}1 before-wait {' $shared/evidence/*/references.txt 2>/dev/null || grep -q '1 before-wait {' $shared/evidence/*/references.txt; expect "the layout is recorded again before the wait"
 ! grep -q '拖到 Ice 圖示的左邊' $tmp/out.txt; expect "with a reference nobody is asked to drag"
 build_staging
@@ -360,6 +369,17 @@ build_staging
 T7_STUB_REFS=inverted run /dev/null --phase 1
 [[ $? == 3 ]] && grep -q 'Ice 自己的圖示排在它的分隔線左邊' $tmp/out.txt && ! grep -q '拖到 Ice 圖示的左邊' $tmp/out.txt && grep -q '偏好還原：verified' $tmp/out.txt; expect "Ice's icon left of its divider: said, nobody asked to drag, exit 3"
 ! grep -q '往右拖' $here/run-t7.sh; expect "the drag instruction names no direction"
+
+build_staging
+sleep 1
+answer_when_active $tmp/answers y 60 '' y 10 1 y 10 n
+run $tmp/answers --phase 1
+[[ $(cut -d' ' -f1 $T7_STUB_MARKS/positions) != $first_names ]]; expect "another run's reference helpers have other names"
+! grep -q -- '--autosave' <(grep -- '--menu' $T7_STUB_MARKS/vzhelper); expect "members carry no autosave name (two such items stack)"
+build_staging
+set_limits 30 1
+T7_STUB_MEMBER_SIDE=visible run /dev/null --phase 1
+[[ $? == 3 ]] && grep -q 'helper 1 不在 Ice 的隱藏區（在：visible）' $tmp/out.txt && ! grep -q '等 Ice 校準' $tmp/out.txt && grep -q '偏好還原：verified' $tmp/out.txt; expect "a member Ice would not hide: exit 3 before the wait"
 
 # --- the smoke pass (G2): phases 1-3 with no question ---------------------------------------
 build_staging

@@ -75,6 +75,19 @@ t7_menu_frame_ok() { # <line>
     done
 }
 
+# Which side of Ice's divider and icon `icewatch references` put a helper on:
+# hidden, visible, rightOfIce or unknown; nothing if the helper is not listed.
+t7_helper_side() { # <references json> <identifier>
+    local count i
+    count=$(t7_json_get "$1" helpers) && [[ $count == <-> ]] || return 1
+    for (( i = 0; i < count; i++ )); do
+        [[ $(t7_json_get "$1" helpers.$i.id) == $2 ]] || continue
+        t7_json_get "$1" helpers.$i.side
+        return
+    done
+    return 1
+}
+
 # Where a helper's item is, from its `selfread` reply (plan F3): its own child,
 # found by identifier, and its whole frame inside the main display's bar band.
 # Prints `on <x>`, `off <x,y,w,h>` or `unknown <reason>`; returns 0, 1 or 2.

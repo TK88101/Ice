@@ -392,6 +392,53 @@ MEASURED in the owner's account; nothing ran on a bar. Tests first, except
   86 + 70; MenuBarCapture 30; `test-t7.sh` 155; `ControlItemPositionSeed` 100 %;
   app builds; A3/A4, A8, A10 pass.
 
+## 14. Sixth attempt: the system remembers where items were dragged (2026-10-07)
+
+- E18 (MEASURED, run `20261007-211145-t7`, `icetest`, `53696d1`, evidence
+  copied): the run ended at the gate in 8 s: divider 1525, icon 1353.5,
+  reference helpers at 1288 and 1316 -- to the half point where the owner's
+  drags had left everything in run `20261007-201704-t7`, although the runner
+  deletes Ice's and the helpers' defaults domains before it launches
+  anything. Section 13's seed (0.1) had no effect there. The assistant had
+  told the owner no drag would be needed, on a rehearsal with names the
+  system had never seen: an unfounded claim, and a sixth wasted sitting.
+- E19 (MEASURED, owner's account, read-only): MenuBarAgent keeps
+  `TrailingItemPreferredPositions` in `~/Library/Group Containers/com.apple.MenuBar/Library/Preferences/com.apple.MenuBar.plist`,
+  keyed `status:<bundle id>::<autosave name>` (`::Item-<n>` without a name),
+  e.g. the release Ice's two control items. Today's sacrificial helpers,
+  never dragged, have no entry there, and their app-side seeds were honoured.
+- E20 (INFERRED from E18 + E19): once the user Command-drags, the agent
+  records positions there and they override the app's own
+  `NSStatusItem Preferred Position`; `icetest`'s record pins Ice's icon left
+  of its divider. Not read in `icetest` (a read of another app's group
+  container from Terminal may raise a consent prompt and block an unattended
+  run), so the record itself is unseen.
+- E21 (MEASURED, owner's account, sacrificial helpers, fresh names): divider
+  stand-in (1) 1437 | reference (0.6) 1465 | reference (0.4) 1493 | icon
+  stand-in (0.1) 1521. Two items with an autosave name and no seed landed on
+  the same x (972): stacked, which `CheckPlan` skips -- so members keep no
+  autosave name.
+- E22 (MEASURED, `icetest`, every run's helper logs): a helper with its own
+  bundle id, started by path from Terminal, reports `trusted: true`; consent
+  follows Terminal. For a re-identified Ice: INFERRED.
+- Change (Codex debate: a new identity, not an edit of the agent's store,
+  which `cfprefsd` or the running agent may overwrite): `stage-t7.sh` gives
+  the staged copy of Ice the bundle id `com.icespike4.ice` (Info.plist,
+  `codesign --force --deep -s -`, verified) and stages that as `DOMAIN`; the
+  XPC service keeps its id (its connection already fails on 27 in every T7
+  log and `Shared/` is not to change). Reference helpers get the run's time
+  in their name. Before each wait the runner checks, with Ice's own rule,
+  that a reference is still there and every member is on the hidden side.
+  The staged copy no longer shares the release's preferences domain.
+- Product gap, to `STATUS.md`, not built: a user whose record pins the
+  inverted order (a fresh Ice on 27, then any drag) stays broken despite the
+  seed; Ice should detect its icon left of its divider and say how to repair
+  it (Command-drag the icon to the right of the divider).
+- Unverified until a run in `icetest`: that a fresh bundle id is really
+  placed by its seeds there; that the re-identified Ice passes its permission
+  checks; everything from the baseline to `active`.
+- Tests: `test-t7.sh` 160; IceCore 483 / 56 unchanged.
+
 ## Appendix: plan review
 
 | Round | Finding | Ruling |

@@ -165,6 +165,7 @@ helper_pids=()
 reference_fds=()
 reference_pids=()
 references_line=
+references_raw=
 references_inverted=0
 # What the current phase's records are filed under: its number, or s<number>
 # in the smoke pass.
@@ -333,7 +334,9 @@ launch_references() {
     local i id launch_lifetime=$run_limit
     delete_helper_domains
     for i in {1..${#reference_glyphs}}; do
-        id=vz-t7-ref$i
+        # A name of this run's own: MenuBarAgent remembers where an item of a
+        # known name was dragged to, and puts it back there (section 14).
+        id=vz-t7-${run_id[10,15]}-ref$i
         defaults write $helper_domains[1] "NSStatusItem Preferred Position $id" -float $reference_positions[i]
         launch_helper Target.app $run/helper-ref-$i.log --items 1 --identifiers $id --glyphs $reference_glyphs[i] --autosave $id || return 1
         reference_fds+=($helper_fds[-1])
@@ -563,7 +566,7 @@ layout_change_phase() {
 # One phase up to Ice's `active`: the members, the placement gate, the wait,
 # the placement after, a capture before and after. Returns 1 when it stopped.
 reach_active() {
-    local index off_bar=0
+    local index side off_bar=0
     phase_stopped=0
     delete_helper_domains
     phase_from[$label]=$(( $(log_lines) + 1 ))
@@ -576,12 +579,23 @@ reach_active() {
         esac
     done
     capture_bar before
-    # Recorded, not a gate: a member's arrival may have moved a reference.
-    check_references "$label before-wait"
     if (( off_bar )); then
         stop_phase "helper 不在選單列上"
         return 1
     fi
+    # The members must be what Ice will hide: left of its hidden divider, with
+    # a reference still in place (a member's arrival may have moved one).
+    if ! poll_references "$label before-wait"; then
+        stop_phase "參照圖示不見了（$references_line）"
+        return 1
+    fi
+    for index in {1..${#member_ids}}; do
+        side=$(t7_helper_side "$references_raw" $member_ids[index])
+        if [[ $side != hidden ]]; then
+            stop_phase "helper $member_names[index] 不在 Ice 的隱藏區（在：${side:-讀不到}）"
+            return 1
+        fi
+    done
     wait_for_phase_status || return 1
     snapshot_members_after_active
     capture_bar active
@@ -610,6 +624,7 @@ check_references() { # [why it is asked]
     local line rc divider icon
     line=$($shared/apps/icewatch references 2>/dev/null)
     rc=$?
+    references_raw=$line
     print -r -- "$(date +%H:%M:%S) ${1:-gate} $line" >> $run/references.txt
     # Ice's icon left of its own hidden divider: there is no visible section
     # at all, and no drag of a helper can make one (run 20261007-201416-t7).
@@ -622,9 +637,9 @@ check_references() { # [why it is asked]
 
 # Several reads, as the bar and Accessibility take a moment to settle after
 # an item appears or is dragged.
-poll_references() {
+poll_references() { # [why it is asked]
     for _ in {1..$reference_polls}; do
-        check_references && return 0
+        check_references "$@" && return 0
         sleep 0.5
     done
     return 1
