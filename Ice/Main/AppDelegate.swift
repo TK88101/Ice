@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A trace launch starts nothing but its own bootstrap (plan
         // 2026-10-07-icebar-preference-hiding, S1).
         guard LabTrace.launch == .normal else {
+            LabTrace.exitIfRefused()
             return
         }
 
@@ -26,7 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if LabTrace.runIfRequested(appState: appState) {
+        if case .trace(let plan) = LabTrace.launch {
+            LabTrace.start(plan, appState: appState)
             return
         }
 

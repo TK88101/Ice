@@ -76,10 +76,12 @@ public enum LabTraceRule {
     public static let traceArgument = "IceLabTrace"
     /// `-IceLabTraceAlwaysHidden YES` runs it with the always-hidden section.
     public static let alwaysHiddenArgument = "IceLabTraceAlwaysHidden"
-    /// The sacrificial identities of this repository's experiments
-    /// (`com.icespike4.target` and the like); an allowlist, so a fork's or a
-    /// renamed release identity can never be traced by mistake.
-    public static let labBundleIDPrefix = "com.icespike4."
+    /// The trace's own disposable identities (`run-trace.sh` makes one per
+    /// run); an allowlist, so a fork's or a renamed release identity can never
+    /// be traced by mistake, nor the other experiments' identities
+    /// (`com.icespike4.target`, `.protected`, T7's `.ice`), whose defaults and
+    /// MenuBarAgent records those experiments rely on.
+    public static let labBundleIDPrefix = "com.icespike4.trace."
 
     /// - Parameters:
     ///   - trace: the value of `-IceLabTrace` in the launch arguments only
@@ -103,7 +105,7 @@ public enum LabTraceRule {
     }
 
     /// A prefix and at least one character after it.
-    static func isLabIdentity(_ bundleID: String) -> Bool {
+    private static func isLabIdentity(_ bundleID: String) -> Bool {
         bundleID.hasPrefix(labBundleIDPrefix) && bundleID.count > labBundleIDPrefix.count
     }
 
@@ -115,16 +117,5 @@ public enum LabTraceRule {
         case "NO": false
         default: nil
         }
-    }
-}
-
-/// MenuBarAgent's `TrailingItemPreferredPositions` (group container
-/// `com.apple.MenuBar`) keys a remembered position by bundle id and autosave
-/// name (P4). The trace names the key; the runner reads the store, before the
-/// launch and after the quit, because a read of another app's group container
-/// from Ice could raise a privacy prompt in the owner's session.
-public enum LabTraceStore {
-    public static func key(bundleID: String, autosaveName: String) -> String {
-        "status:\(bundleID)::\(autosaveName)"
     }
 }

@@ -37,33 +37,33 @@ enum LabTrace {
     private static var session: Session?
 
     /// A hook in `ControlItem`'s creation; does nothing unless a trace runs.
+    /// Before `autosaveName` is assigned, the status item carries AppKit's
+    /// own name for it.
     static func record(_ point: LabTracePoint, autosaveName: String, statusItem: NSStatusItem? = nil) {
         session?.emit("point", [
             "point": point.rawValue,
             "item": autosaveName,
             "defaults": defaults(for: autosaveName),
-            "statusItem": statusItem.map(describe) ?? NSNull(),
+            "statusItemAutosaveName": statusItem.map { $0.autosaveName as String } ?? NSNull(),
+            "statusItemIsVisible": statusItem.map(\.isVisible) ?? NSNull(),
+            "statusItemLength": statusItem.map { Double($0.length) } ?? NSNull(),
         ])
     }
 
-    /// Runs the trace if this launch asked for one, and quits when done.
-    /// `false` for a normal launch, which then goes on as always.
-    static func runIfRequested(appState: AppState) -> Bool {
-        switch launch {
-        case .normal:
-            return false
-        case .refused(let refusal):
-            Session.write(["event": "refused", "reason": String(describing: refusal)], to: .standardError)
-            exit(2)
-        case .trace(let plan):
-            start(plan, appState: appState)
-            return true
+    /// A refused trace launch quits before any trace step and before Ice's
+    /// own setup; `AppState` is already constructed by then (it is
+    /// `AppDelegate`'s stored property).
+    static func exitIfRefused() {
+        guard case .refused(let refusal) = launch else {
+            return
         }
+        Session.write(["event": "refused", "reason": String(describing: refusal)], to: .standardError)
+        exit(2)
     }
 
-    /// The bootstrap of S1, exactly: polling stopped, three settings set in
-    /// memory, each section's setup -- nothing else (`LabTracePlan.steps`).
-    private static func start(_ plan: LabTracePlan, appState: AppState) {
+    /// The bootstrap of S1, exactly: `LabTracePlan.steps` and nothing else;
+    /// then the samples, and the quit.
+    static func start(_ plan: LabTracePlan, appState: AppState) {
         let session = Session()
         self.session = session
         session.emit("start", header(plan))
@@ -73,13 +73,20 @@ enum LabTrace {
             exit(3)
         }
 
-        appState.permissions.stopAllChecks()
-        appState.settings.general.useIceBar = plan.useIceBar
-        appState.settings.general.showIceIcon = plan.showIceIcon
-        appState.settings.advanced.enableAlwaysHiddenSection = plan.alwaysHiddenSection
         let sections = appState.menuBarManager.sections
-        for section in sections {
-            section.performSetup(with: appState)
+        for step in LabTracePlan.steps {
+            switch step {
+            case .stopPermissionChecks:
+                appState.permissions.stopAllChecks()
+            case .setSettingsInMemory:
+                appState.settings.general.useIceBar = plan.useIceBar
+                appState.settings.general.showIceIcon = plan.showIceIcon
+                appState.settings.advanced.enableAlwaysHiddenSection = plan.alwaysHiddenSection
+            case .setUpSections:
+                for section in sections {
+                    section.performSetup(with: appState)
+                }
+            }
         }
 
         DispatchQueue.main.async {
@@ -104,7 +111,10 @@ enum LabTrace {
                 "defaults": defaults(for: controlItem.identifier.rawValue),
             ])
         }
-        // Read off the main thread, which must stay free to answer it.
+        // Read off the main thread, which must stay free to answer it. Only
+        // Ice's own process is read, so its record is built here rather than
+        // by enumerating every running app; no start time is needed, since
+        // the read is never quarantined.
         let own = ProcessInfoRecord(
             pid: getpid(),
             bundleID: Bundle.main.bundleIdentifier,
@@ -132,50 +142,38 @@ enum LabTrace {
         NSApp.terminate(nil)
     }
 
+    /// The runner's handshake: the first line a trace writes carries this,
+    /// and `run-trace.sh` refuses a build whose binary lacks it. Longer than
+    /// 15 bytes, so Swift stores it rather than folding it into the code.
+    private static let marker = "IceLabTrace-start-v1"
+
+    /// Also declares what the trace will sample, from the enums themselves,
+    /// so `trace-tool.py` checks what arrived against what was promised.
     private static func header(_ plan: LabTracePlan) -> [String: Any] {
-        let bundleID = Bundle.main.bundleIdentifier ?? ""
-        let names = ControlItem.Identifier.allCases.map(\.rawValue)
-        return [
-            "bundleID": bundleID,
+        [
+            "mode": marker,
+            "bundleID": Bundle.main.bundleIdentifier ?? NSNull(),
             "pid": Int(getpid()),
             "os": ProcessInfo.processInfo.operatingSystemVersionString,
             "alwaysHiddenSection": plan.alwaysHiddenSection,
             "steps": LabTracePlan.steps.map(\.rawValue),
-            "stores": [
-                "appDefaults": bundleID,
-                "menuBarAgent": [
-                    "file": "~/Library/Group Containers/com.apple.MenuBar/Library/Preferences/com.apple.MenuBar.plist",
-                    "dictionary": "TrailingItemPreferredPositions",
-                    "keys": names.map { LabTraceStore.key(bundleID: bundleID, autosaveName: $0) },
-                    "readBy": "the runner, before the launch and after the quit",
-                ] as [String: Any],
-            ] as [String: Any],
+            "points": LabTracePoint.allCases.map(\.rawValue),
+            "items": ControlItem.Identifier.allCases.map(\.rawValue),
         ]
     }
 
-    /// The three status-item keys Ice writes for one autosave name, as stored
-    /// (`ControlItemDefaults`); `null` when absent.
+    /// The three status-item keys Ice writes for one autosave name, read raw
+    /// (`ControlItemDefaults`' typed subscript would turn a value of another
+    /// type into `nil`); `null` when absent.
     private static func defaults(for autosaveName: String) -> [String: Any] {
-        let keys = [
-            ControlItemDefaults.Key<CGFloat>.preferredPosition.rawValue,
-            ControlItemDefaults.Key<Bool>.visible.rawValue,
-            ControlItemDefaults.Key<Bool>.visibleCC.rawValue,
-        ]
-        var result = [String: Any]()
-        for key in keys {
-            result[key] = UserDefaults.standard.object(forKey: "NSStatusItem \(key) \(autosaveName)") ?? NSNull()
+        func stored<Value>(_ key: ControlItemDefaults.Key<Value>) -> (String, Any) {
+            (key.rawValue, UserDefaults.standard.object(forKey: key.stringKey(for: autosaveName)) ?? NSNull())
         }
-        return result
-    }
-
-    private static func describe(_ statusItem: NSStatusItem) -> [String: Any] {
-        let autosaveName = statusItem.autosaveName as String
-        return [
-            "autosaveName": autosaveName,
-            "isVisible": statusItem.isVisible,
-            "length": Double(statusItem.length),
-            "defaultsUnderAutosaveName": defaults(for: autosaveName),
-        ]
+        return Dictionary(uniqueKeysWithValues: [
+            stored(ControlItemDefaults.Key<CGFloat>.preferredPosition),
+            stored(ControlItemDefaults.Key<Bool>.visible),
+            stored(ControlItemDefaults.Key<Bool>.visibleCC),
+        ])
     }
 
     private static func describe(_ frame: CGRect) -> [Double] {

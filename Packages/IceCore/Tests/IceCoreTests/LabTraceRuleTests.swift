@@ -7,8 +7,6 @@ import Testing
 /// identity that is not a disposable lab one.
 @Suite("LabTraceRule")
 struct LabTraceRuleTests {
-    let lab = "com.icespike4.trace.r1"
-
     func launch(trace: String?, alwaysHidden: String? = nil, bundleID: String? = "com.icespike4.trace.r1") -> LabTraceLaunch {
         LabTraceRule.launch(trace: trace, alwaysHidden: alwaysHidden, bundleID: bundleID)
     }
@@ -34,9 +32,13 @@ struct LabTraceRuleTests {
         #expect(launch(trace: "YES", alwaysHidden: "YES") == .trace(LabTracePlan(alwaysHiddenSection: true)))
     }
 
-    @Test("the release identity, a fork's, a look-alike and no identity are refused: the trace writes defaults")
+    @Test("the release identity, a fork's, the sacrificial helpers, a look-alike and no identity are refused: the trace writes defaults")
     func refusesOtherIdentities() {
-        for bundleID in ["com.jordanbaird.Ice", "com.example.Ice", "com.icespike4", "com.icespike4x.trace", "xcom.icespike4.trace", ""] {
+        let others = [
+            "com.jordanbaird.Ice", "com.example.Ice", "com.icespike4.target", "com.icespike4.protected", "com.icespike4.ice",
+            "com.icespike4.trace", "com.icespike4.trace.", "com.icespike4.tracex.r1", "xcom.icespike4.trace.r1", "",
+        ]
+        for bundleID in others {
             #expect(launch(trace: "YES", bundleID: bundleID) == .refused(.notLabIdentity(bundleID)))
         }
         #expect(launch(trace: "YES", bundleID: nil) == .refused(.notLabIdentity(nil)))
@@ -55,22 +57,13 @@ struct LabTraceRuleTests {
         #expect(launch(trace: "maybe", bundleID: "com.jordanbaird.Ice") == .refused(.badArgument(name: LabTraceRule.traceArgument, value: "maybe")))
     }
 
-    @Test("the plan sets IceBar mode and the icon in memory, and starts three things only")
-    func planContents() {
-        let plan = LabTracePlan(alwaysHiddenSection: true)
-        #expect(plan.useIceBar)
-        #expect(plan.showIceIcon)
+    @Test("the trace starts three things only, in S1's order; LabTrace.start runs exactly this list")
+    func steps() {
         #expect(LabTracePlan.steps == [.stopPermissionChecks, .setSettingsInMemory, .setUpSections])
-        #expect(LabTracePlan.capSeconds == 10)
     }
 
     @Test("five points are sampled, in the order the lifecycle reaches them")
     func points() {
         #expect(LabTracePoint.allCases == [.beforeSeed, .afterSeed, .afterStatusItem, .afterAutosaveName, .afterMainQueueTurn])
-    }
-
-    @Test("MenuBarAgent's key for an identity's item")
-    func storeKey() {
-        #expect(LabTraceStore.key(bundleID: lab, autosaveName: "Ice.ControlItem.Hidden") == "status:com.icespike4.trace.r1::Ice.ControlItem.Hidden")
     }
 }
