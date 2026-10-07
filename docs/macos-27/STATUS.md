@@ -107,3 +107,15 @@ Not verifiable on this machine: macOS 14 to 26 (the machine runs 27 only).
 | Fresh Ice's layout here | divider and icon both right of every other item: everything else would be left of the divider, so a hidden-section member (section 5, "S2, added" aims at divider, then the others, then the icon) | MEASURED, same run |
 | MenuBarAgent's store | no entry recorded for any lab identity, no other entry changed (before/after guard, all 6 runs) | MEASURED, same run; read from the store via `defaults export` after a 2 s wait |
 | Why P2 differed in `icetest` | unknown; the same trace becomes the lab's first scenario (S4) | TBD |
+
+## Where a fresh Ice puts its items (T2a, 2026-10-08, plan 2026-10-07-icebar-preference-hiding, S2 design)
+
+| what | status | tag |
+|---|---|---|
+| The hidden divider's seed on 27 | none any more (it was 1): the divider lands leftmost, the icon (0.1) rightmost of the status items. A stored value is never replaced. macOS 26 and earlier: unchanged | unit-tested (`ControlItemPositionSeed`) |
+| Fresh Ice's layout here | hidden divider at x 1033, Ice's icon at x 1517, all ten other on-bar status items between them, none left of the divider; with the always-hidden section on, its divider at x 1017, left of the hidden one; as many items on the bar as before Ice's items were added (10); 3 of 3 with the section off and 3 of 3 with it on, two agreeing discovery passes each | MEASURED, 26A434, run `20261008-001401-OIpSef-trace`, owner's account, never-seen identities |
+| The run before it | failed the oracle 6 of 6 on its own wording: it counted three parked items (frames at the screen's bottom left, not on the bar) as left of the divider. The count was corrected to on-bar items (what the membership rule can select) and re-reviewed by Codex; the failed run was not reused | MEASURED, run `20261008-001005-7X98U1-trace` |
+| An identity that already stored the old seeds | keeps the old layout (divider and icon right of everything, every other item a hidden-section member): the stored divider value stays. The repair is a Command-drag of the divider | INFERRED (code), not run |
+| An app installed later | its new item lands leftmost too, so left of the divider: a hidden-section member until the owner moves it | INFERRED (from the unseeded dividers' landing), not run |
+| A crowded bar | the leftmost slot may be overflowed or under the notch; Ice would then read its divider as unusable. Here the bar had room | not measured |
+| Other accounts, displays, item sets | not measured; `icetest`'s different layout (P2) is still unexplained | TBD |

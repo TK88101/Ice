@@ -3,8 +3,9 @@
 # 2026-10-07-icebar-preference-hiding, S1): stages a copy of a built Ice.app
 # under a fresh lab identity for every run (com.icespike4.trace.r<run id>.<variant><n>:
 # never seen by MenuBarAgent, so every run starts from a clean domain), runs
-# it with -IceLabTrace YES, both always-hidden variants, and guards
-# MenuBarAgent's store: any change outside the run's own position entries
+# it with -IceLabTrace YES, both always-hidden variants, judges the placement
+# oracle of the plan's S2 design (hidden divider | the other items | icon;
+# trace-tool.py summary), and guards MenuBarAgent's store: any change outside the run's own position entries
 # fails the run and stops the runner. The store is read here, not in Ice: a
 # read of another app's group container from Ice could raise a privacy prompt
 # in the owner's session.
@@ -12,7 +13,9 @@
 #   run-trace.sh <built Ice.app with trace mode> <scratch directory outside ~/Documents> [runs per variant, 1-20, default 3]
 #
 # Side effects: three status items of the lab identity on the bar for about
-# three seconds per run (the bar reflows while they are there); the lab
+# six seconds per run (the bar reflows while they are there); three read-only
+# discovery passes over every app's status items by Accessibility, as any Ice
+# on macOS 27 makes once a second; the lab
 # identity's own defaults domain (exported to the evidence, then deleted);
 # possibly MenuBarAgent's entries for the lab identity (left; reported). Each
 # staged copy is unregistered from LaunchServices and deleted after its run.

@@ -57,9 +57,22 @@ struct LabTraceRuleTests {
         #expect(launch(trace: "maybe", bundleID: "com.jordanbaird.Ice") == .refused(.badArgument(name: LabTraceRule.traceArgument, value: "maybe")))
     }
 
-    @Test("the trace starts three things only, in S1's order; LabTrace.start runs exactly this list")
+    @Test("the trace starts three things only, in S1's order, and reads the bar once before the control items exist; LabTrace.start runs exactly this list")
     func steps() {
-        #expect(LabTracePlan.steps == [.stopPermissionChecks, .setSettingsInMemory, .setUpSections])
+        #expect(LabTracePlan.steps == [.stopPermissionChecks, .setSettingsInMemory, .readBaseline, .setUpSections])
+    }
+
+    @Test("after the settle the trace reads the bar by two discovery passes and nothing else (S2 design, T2a)")
+    func readings() {
+        #expect(LabTracePlan.readings == [.ownExtras, .discoverTwice])
+        #expect(LabTracePlan.discoveryPasses == 2)
+        #expect(LabTracePlan.discoveryGapSeconds == 1)
+        // Creation settles, then two passes a gap apart, inside the cap.
+        // A pass was measured at about 1 s here (2026-10-08): the baseline, the
+        // settle and two passes a gap apart leave room inside the cap.
+        let passSeconds = 1.5
+        let needed = LabTracePlan.settleSeconds + LabTracePlan.discoveryGapSeconds + passSeconds * Double(LabTracePlan.discoveryPasses + 1)
+        #expect(needed < LabTracePlan.capSeconds)
     }
 
     @Test("five points are sampled, in the order the lifecycle reaches them")

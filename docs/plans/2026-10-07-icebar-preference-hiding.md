@@ -1,6 +1,6 @@
 # IceBar on macOS 27, re-aimed: preference hiding, proven in a harness before any owner sitting
 
-2026-10-07 · final (Codex round 5: CONVERGED; Appendix) · not implemented · continues on `wip/icebar-build` from `6c61b96`.
+2026-10-07 · final (Codex round 5: CONVERGED; T2 design added 2026-10-08, Codex round 3: CONVERGED; Appendix) · T1, T3a implemented · continues on `wip/icebar-build` from `6c61b96`.
 Follows the owner's corrected goal and Codex's consult of 2026-10-07
 (`~/IceReverse-evidence/20261007-213730-t7/codex-consult.md`, handover beside it).
 Supersedes, where they conflict: `2026-10-03-icebar-build.md` sections 1, 3 (the
@@ -126,6 +126,188 @@ target; `icetest` sittings are for final acceptance only, not for development.
   tested.
 - DoD: unit tests; `trace` 3 of 3; the inverted state shown, not silently broken.
 
+#### S2 design (T2, added 2026-10-07 after T1; review in the Appendix, "T2 design")
+
+What T1 measured, and what it changes (run `20261007-231100-cM6U06-trace`, owner's
+account, 26A434; STATUS "Ice's trace mode"):
+
+| # | Fact | Grade |
+|---|---|---|
+| E1 | From a never-seen identity the seeds held at all five points (icon 0.1, hidden 1) and both items landed right of every other status item Ice could have listed: hidden divider x 1492, icon x 1508, 6 of 6 (+12) | MEASURED |
+| E2 | The always-hidden divider, which gets no seed (`ControlItemPositionSeed.swift:31-32`), landed at x 1009, left of everything, 3 of 3 | MEASURED |
+| E3 | So here the defect is not P2 (icon left of divider) but the opposite of section 5's aim: with the divider at the far right, every other item is left of it, a hidden-section member by default | MEASURED (E1) + code (`DiscoveredCachePlan.make`) |
+| E4 | MenuBarAgent's `TrailingItemPreferredPositions` holds what look like distances from the bar's right end in points (`module:Clock` 0.0; this account's release Ice: icon 361.5, divider 465); 69 entries, among them never-dragged probe helpers of earlier dates, so the agent records positions without a drag at some point; in T1's 3 s lifetimes it recorded nothing | MEASURED (the store, T1's guard) / INFERRED (the unit; "without a drag") |
+| E5 | The release Ice's own defaults hold real coordinates (`Preferred Position` hidden 465, visible 432), not seeds: AppKit rewrites the app's value at some point | MEASURED (`defaults read com.jordanbaird.Ice`, read only) |
+
+T2 is three steps, each with its own `/simcodex` before it is reported: T2a the seed
+and the trace's oracle; T2b the remembered-position measurement; T2c the notice and
+the gate. Serial (each needs the one before); nothing is dispatched.
+
+**T2a The seed (macOS 27 only; 26 and earlier byte-for-byte as now).**
+
+- The change: the hidden divider gets **no seed** when nothing is
+  stored, as the always-hidden divider already does (E2: an unseeded control item of
+  Ice's own lifecycle lands leftmost). The icon keeps 0.1 (E1: rightmost of the
+  status items). Expected: `[always-hidden divider] hidden divider | others | icon`.
+- A stored value is never touched, a stored 1 included: its provenance cannot be
+  told from the number (review round 1). The rule keeps its shape,
+  `ControlItemPositionSeed.seed(for:stored:isMacOS27:) -> Double?`; the only change
+  is that `.hidden` on 27 returns `nil`. `ControlItem.preflightSetup` is not edited.
+  An identity that already stored the old seeds keeps E3's layout (the icon's 0 is
+  re-seeded to 0.1 as today, the divider's 1 stays): T2 does not change it, and
+  STATUS says so; the owner's repair there is a Command-drag of the divider.
+- With the always-hidden section on, two unseeded dividers are created in the order
+  hidden, always-hidden (`MenuBarManager.swift:53-57`, set up in that order by trace
+  mode and by `MenuBarManager.performSetup`). That each new unseeded item lands left
+  of the one before is INFERRED; the oracle below measures it.
+- The oracle (`trace-tool.py summary`, per run; the layout verdict replaces T1's
+  icon-versus-divider one):
+  1. `icon.midX > hiddenDivider.minX` (IceCore's boundary, `PreferenceHidingPreconditions`);
+  2. `othersLeftOfHiddenDivider == 0`, counting what D-a could make a member: an
+     item on the bar (`.onBar` or `.stacked`) whose mid-x is left of the divider's
+     minX. A `.parked` or frameless item is counted apart (`othersUnplaced`) and
+     never judged: it is not on the bar, the divider cannot carry it, and D-a never
+     selects it. (Corrected 2026-10-08 after the first run, `20261008-001005-7X98U1-trace`:
+     the first wording counted three parked items, frames at x -1 to 7, y 1104, at
+     the screen's bottom left, as "left"; the ten on-bar items were all between.
+     Re-reviewed by Codex, Appendix.)
+  3. `othersBetween >= 1` (the bar here has other status items; 0 would mean the
+     read saw nothing and proves nothing);
+  4. variant `on` only: `alwaysHiddenDivider.minX < hiddenDivider.minX`;
+  5. every control item `isAddedToMenuBar` with a usable frame (not overflowed, not
+     under the notch), the discovery pass `complete`, the store guard passing.
+  6. (added 2026-10-08, Codex's re-review of clause 2) none displaced: a discovery
+     pass taken **before** any control item exists (a fourth trace step,
+     `.readBaseline`) counts the other items on the bar; the judged pass must count
+     the same number, so a leftmost divider that pushed an item off the bar fails.
+  `othersRightOfIcon` is recorded, never judged (Apple's modules sit there).
+- One snapshot, not two reads stitched together (round 1): after the settle, trace
+  mode runs Ice's own discovery entry point (`MenuBarItem.discoverItems(previous:)`,
+  `MenuBarItem.swift:375`; read only, as every Ice does once a second) **twice, 1 s
+  apart**, and emits per pass, from that pass's `DiscoveredItemSet` alone: the three
+  control-item frames, the count of other items per region, `completeness`,
+  `ownRead`: numbers, no names. The oracle is judged on the second pass and holds
+  only if both passes agree on every frame and count; otherwise the run is
+  `indeterminate` and counts as failed. This is `LabTracePlan.readings`
+  (`.ownExtras`, `.discoverTwice`; as built, a list of its own beside `steps`,
+  which stays "what a trace launch starts"), unit-tested in `LabTraceRule`; the
+  item manager itself is still not started. T1's own-extras read and five-point values stay as they are.
+- Decision rule, fixed before the run: the change is kept iff the oracle holds 3 of
+  3 in both variants (`run-trace.sh <app> <scratch> 3`). If **any** clause fails in
+  any run, the seed rule returns to T1's, the failing clause and frames go into
+  STATUS, and the fresh-install layout is reported to the owner as an open defect:
+  T2c does **not** cover it (a divider right of the other items is a layout Ice
+  cannot tell from one the owner chose). No second candidate (explicit large seeds
+  were considered and dropped: whether a value beyond the bar is honoured is
+  unknown, and it would be a second production path, round 1) without a new plan
+  review.
+- Limits stated in STATUS: measured in this account only (P2's `icetest` layout is
+  still unexplained, S4 scenario 1); a later-installed app's new item lands leftmost
+  too (INFERRED from E2), so left of the divider, a member by default until the
+  owner moves it; on a crowded bar the leftmost slot may be overflowed, and Ice then
+  reports the divider unusable (D-c a) instead of hiding.
+
+**T2b Remembered positions, measured with the harness's own items only.**
+
+- Items: `vzhelper --items 1 --autosave <fresh name per run>` staged under
+  `com.icespike4.target` (the dragged one, T) and `com.icespike4.protected` (the
+  anchor, P), both ad-hoc signed copies as `build.sh` makes them, lifetime-capped,
+  controlled over stdin. Nothing else is dragged, clicked or resized.
+- Questions, each answered or recorded "not measured" with the reason:
+  Q1 does MenuBarAgent record an undragged item, and when (read at 3 s, 30 s, after quit);
+  Q2 after a Command-drag of T across P: the agent's entry for T, and T's own
+  `NSStatusItem Preferred Position <name>` default, before and after;
+  Q3 T quit and relaunched: is it back in the dragged slot;
+  Q4 T relaunched with a contradicting seed written to its own defaults (0.1): the
+  answer is the tuple (MenuBarAgent's entry, T's own default, T's side of P), each
+  read three times 1 s apart after the store has settled as `run-trace.sh` settles
+  it; "the remembered slot wins" or "the seed wins" only if all three reads agree,
+  else inconclusive. Q3 is read the same way.
+- The drag: a new one-shot probe `probes/dragown.swift`, derived from `inject3.swift`
+  (FINDINGS "The move primitive": 3 of 4, the miss a drop-point error with foreign
+  items in between). Side effects (README's column for `inject3`, read 2026-10-07):
+  synthetic mouse and Command events in the owner's session and a moved cursor for
+  about 2 s. That the drag is run at all, in this account, on harness items, is the
+  owner's instruction for T2; what guards it (round 1):
+  it refuses unless T and P are both found by identifier under `com.icespike4.`,
+  are adjacent (gap <= 2 pt, so the path crosses only P), both on the bar, and no
+  hardware input arrived for 5 s (`CGEventSource.secondsSinceLastEventType` on
+  `.hidSystemState`, which the probe's own session-tap events do not reset);
+  before **every** posted event it re-reads that counter and re-resolves T and P
+  from scratch (bundle id, the pid first seen, identifier, on the bar, adjacent,
+  frames as first read), and on any hardware input, any mismatch or an unreadable
+  element it releases the button and Command at
+  once, restores the cursor and ends as `aborted`; a watchdog and a `defer` release
+  both in every other exit. No countdown or confirmation: the run is unattended by
+  the owner's choice. A refusal or abort is "not measured"; at most 3 attempts.
+- Runner `run-remembered.sh <apps dir> <scratch>`: preflight (no helper already
+  running, both defaults domains empty), the four questions, the store read as
+  `run-trace.sh` reads it, T1's store guard on every read (only the two helper
+  identities' entries may change; anything else stops the run), 3 runs. Evidence in
+  `~/IceReverse-evidence/<run id>-remembered/`. Left behind, and said: MenuBarAgent's
+  entries for the two helper identities (the store is not ours to write; it already
+  holds such entries, E4). The helpers' own domains are deleted and verified empty.
+- The result changes no code path: it decides the wording of STATUS's "remembered
+  positions" row (MEASURED instead of INFERRED) and whether the notice's repair text
+  can promise that a drag sticks.
+
+**T2c The notice and the gate (macOS 27, IceBar mode).**
+
+- One definition of "right of": `PreferenceHidingPreconditions.misplacement` becomes
+  the public `iconPlacement(icon:divider:) -> PreferenceHidingIconPlacement?`
+  (unchanged logic; T3a's tests keep passing).
+- New pure rule `IcePlacementNotice.notice(placement:isIceBarMode:isDragging:)`:
+  `.iconLeftOfDivider` in IceBar mode and not during a drag gives the notice; every
+  other input gives none. An unreadable icon or unusable divider is **not** reported
+  as inverted (Ice did not see an inversion; T3b's `blocked` state names those).
+  The text lives beside the rule, as `IceBarHidingStatus.message` does: "Ice's icon
+  is left of its hidden-section divider, so Ice hides nothing. Hold Command and drag
+  Ice's icon to the right of the divider."
+- Wiring: `MenuBarItemManager.cacheDiscoveredItems` (27 only) evaluates the rule on
+  each discovery pass it publishes and publishes the notice; a pass is skipped for
+  1 s after a move (`MenuBarItemManager.swift:542-545`), so the notice follows a
+  change by up to that plus one pass. The layout pane shows it as a line above the
+  bars, beside `hidingCheckStatusLine`.
+- Gate, in the machine (round 1: `boundaryUsable` is read only when a baseline
+  starts, `IceBarHidingMachine.swift:294`, and `.resting` ignores samples, `:269`):
+  `IceBarHidingSample` gains `iconLeftOfDivider: Bool`, and `blocker(in:)` returns a
+  new `IceBarShownReason.iconLeftOfDivider` for it **first**, so from every phase,
+  `.resting` included, `enterShown` emits `.setLength(nil)` then the report
+  (`:382-386`); when it clears, the machine re-enters quiet as for the other
+  blockers. Its status line is the notice's text. Unit-tested per phase. This is
+  the one edit to the machine T3b will retire; T3b's `blocked` state replaces it.
+- Seen live, and what is not: a third trace variant `inv`: the runner writes the
+  lab identity's icon default to a large value before launch (the one deliberate
+  exception to the clean-domain check), trace mode emits the rule's verdict from
+  the discovery pass's frames, and the oracle expects `iconLeftOfDivider` with the
+  notice. Its gate, said exactly (round 2): the three `inv` runs must complete
+  (trace complete, two agreeing passes, store guard); whether the stored value
+  produces an inversion is a diagnostic, not a gate -- if none of the three is
+  inverted, that is recorded and the rule stays unit-tested only; but a run that
+  **is** inverted (`icon.midX <= divider.minX` in the pass's frames) and does not
+  carry the notice fails T2c. `inv` proves the rule on real
+  frames, **not** the wiring: trace mode starts neither the item manager nor the
+  coordinator. Publication after start and after a placement change, and the
+  retired length, are proved live only in the lab, as a new S4 scenario (14: the
+  icon left of the divider at start, and moved there while hidden: blocked, the
+  notice, no length applied); a full Ice under a lab identity is not started in
+  the owner's account for it (S1's not-called list, R1). Until then: INFERRED
+  (code and unit tests), and reported so.
+
+Tests: IceCore unit tests first (the seed on 27 and 26's unchanged values; notice;
+the machine's new blocker from every phase; `LabTraceRule`'s new step), coverage >= 80 % of changed IceCore files;
+`test-trace.sh` for the new oracle and the remembered-store classification on
+synthetic input; `xcodebuild` Debug build; `check-a3a4.sh` (frozen files untouched);
+E2E = `run-trace.sh`: the placement oracle 3 of 3 x (off, on), `inv` 3 runs under
+its own gate above; and `run-remembered.sh` in this account. No probes Swift package source changes, so no full probes test run.
+
+Touched: `Packages/IceCore` (seed, preconditions, notice, machine blocker, trace rule +
+tests); `Ice/` (`LabTrace.swift`, `MenuBarItemManager.swift`,
+`IceBarHidingCoordinator.swift`, `MenuBarLayoutSettingsPane.swift`); probes
+(`run-trace.sh`, `trace-tool.py`, `test-trace.sh`, new `run-remembered.sh`,
+`dragown.swift`, README rows); `STATUS.md`. Rollback: revert the T2 commits; the
+seed rule's 26 path is untouched.
+
 ### S3 Re-aim the hiding rule (owner cost: none)
 
 - D-a **Members** (thecure 2026-10-07, section 5). Items left of the divider:
@@ -212,6 +394,8 @@ target; `icetest` sittings are for final acceptance only, not for development.
   (5) no reference on the bar; (6) a `«` already present; (7) fresh and previously
   placed identity; (8) frontmost app and long menus changing while hidden; (9) Ice
   relaunched (membership and identity); (10) a positional item left of the divider: blocked, nothing moved;
+  (14) Ice's icon left of its divider, at start and moved there while hidden: blocked,
+  the notice, no length applied (T2c);
   (11) a member kept visible on purpose must yield `visible / failed`, never `verified`;
   (12) a stacked member: `not verified`, the roster includes it; (13) an incomplete
   discovery pass: blocked.
@@ -219,7 +403,7 @@ target; `icetest` sittings are for final acceptance only, not for development.
   absence, the IceBar's roster equals the members, the menu-open signal);
   **unverified best effort** (Ice applied an attempt and said so); **blocked** (the
   oracle: no divider length changed, nothing moved, no IceBar offered, the reason
-  reported). Scenarios (10) and (13) must end blocked; (5) and (12) must end
+  reported). Scenarios (10), (13) and (14) must end blocked; (5) and (12) must end
   unverified. Only verified scenarios count toward the
   DoD's "verified"; each of the others must match its expected kind in the same three
   runs, and is listed apart.
@@ -285,7 +469,7 @@ be able to establish `divider | others | icon`; remembered positions).
 | # | Task | Depends on | Owner cost |
 |---|---|---|---|
 | T1 | Ice's trace mode + the trace in the owner's account (S1) | -- | none |
-| T2 | placement fix + inverted-layout notice (S2) | T1 | none |
+| T2 | placement fix + inverted-layout notice (S2): T2a seed and trace oracle, T2b remembered-position measurement, T2c notice and machine blocker (S2 design) | T1 | none |
 | T3a | hiding rules as pure IceCore types + tests (S3) | this plan's review | none |
 | T3b | the rules wired into the live machine and coordinator (S3) | T2, T3a | none |
 | T4 | fixed-matrix lab runner (S4) | T3b; the owner starts it (section 5, O3) | one sitting per matrix run |
@@ -324,3 +508,22 @@ Round 1: 4 P0 + 3 P1 + 1 P2. Round 2: 5 P1 (unrevised file). Round 3: 2 P1. Roun
 the same 2 P1 (unrevised file) with three refinements. Round 5: 0, CONVERGED. Two of
 the five rounds were spent on files the assistant had failed to revise; since then a
 revision is checked in the file before it is sent.
+
+### T2 design (S2 design subsection; Codex gpt-5.6-terra, 2026-10-08; cap 5 calls, 3 used)
+
+| Round | Finding | Ruling |
+|---|---|---|
+| 1 | P0 the gate through `boundaryUsable` is read only when a baseline starts; `.resting` ignores samples (`IceBarHidingMachine.swift:269, 294`) | taken (Codex's): a machine blocker, first in `blocker(in:)`, `setLength(nil)` from every phase |
+| 1 | P0 no disposition when the oracle's clauses 2-3 fail; add a "divider right of the others" notice | modified, accepted in round 2: any failing clause reverts the seed and is reported as an open defect T2c does not cover; no new notice (a far-right divider is also an owner's choice; D-c's preconditions are owner-confirmed) |
+| 1 | P1 clearing a stored 1 infers provenance from a number | taken, simpler: no migration, stored values never touched, the rule keeps its shape |
+| 1 | P1 the oracle stitched two reads | taken: one `DiscoveredItemSet` per verdict, two agreeing passes or `indeterminate` |
+| 1 | P1 drag safety: idle time alone is not enough; ask for a countdown, confirmation, foreground | modified, accepted in round 2: hardware-input and target re-checks before every event, abort with release; no countdown or confirmation (the owner's ruling: unattended, in their account, harness items) |
+| 1 | P1 Q4 cannot say "which wins" from one read | taken: the tuple, three agreeing settled reads, else inconclusive |
+| 1 | P1 "at start and on every layout change" overstated; wants a live integration test | modified, accepted in round 2: timing corrected; the live wiring proof is S4 scenario 14, not a full Ice in the owner's account (S1's not-called list, R1); INFERRED until then |
+| 1 | P2 candidate B (seeds of 20 000 / 30 000) unsupported | taken: dropped |
+| 2 | P1 the drag re-checked frames only, not the targets' identity | taken: T and P re-resolved from scratch before every event |
+| 2 | P1 `inv` both optional and in the 3-of-3 E2E line | taken: its gate said exactly (completion gates; inversion is diagnostic; an inverted run without the notice fails) |
+| 3 | none | **CONVERGED** |
+
+Round 1: 2 P0 + 5 P1 + 1 P2. Round 2: 2 P1. Round 3: 0. Of round 1's eight, five
+taken as given, three modified with evidence and accepted.

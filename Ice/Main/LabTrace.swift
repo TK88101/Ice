@@ -27,10 +27,6 @@ enum LabTrace {
         )
     }()
 
-    /// How long after the control items are created their frames are read:
-    /// past the main-queue turns that add, remove and size them.
-    private static let settleSeconds = 3.0
-
     /// AX messaging timeout for the read of Ice's own extras.
     private static let readTimeout = 1.0
 
@@ -74,34 +70,52 @@ enum LabTrace {
         }
 
         let sections = appState.menuBarManager.sections
-        for step in LabTracePlan.steps {
-            switch step {
-            case .stopPermissionChecks:
-                appState.permissions.stopAllChecks()
-            case .setSettingsInMemory:
-                appState.settings.general.useIceBar = plan.useIceBar
-                appState.settings.general.showIceIcon = plan.showIceIcon
-                appState.settings.advanced.enableAlwaysHiddenSection = plan.alwaysHiddenSection
-            case .setUpSections:
-                for section in sections {
-                    section.performSetup(with: appState)
+        Task {
+            for step in LabTracePlan.steps {
+                switch step {
+                case .stopPermissionChecks:
+                    appState.permissions.stopAllChecks()
+                case .setSettingsInMemory:
+                    appState.settings.general.useIceBar = plan.useIceBar
+                    appState.settings.general.showIceIcon = plan.showIceIcon
+                    appState.settings.advanced.enableAlwaysHiddenSection = plan.alwaysHiddenSection
+                case .readBaseline:
+                    session.emit("baseline", await discoverPlacement())
+                case .setUpSections:
+                    for section in sections {
+                        section.performSetup(with: appState)
+                    }
                 }
             }
-        }
 
-        DispatchQueue.main.async {
-            for section in sections {
-                record(.afterMainQueueTurn, autosaveName: section.controlItem.identifier.rawValue)
+            DispatchQueue.main.async {
+                for section in sections {
+                    record(.afterMainQueueTurn, autosaveName: section.controlItem.identifier.rawValue)
+                }
             }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + settleSeconds) {
-            Task {
-                await finish(session, sections: sections)
+            DispatchQueue.main.asyncAfter(deadline: .now() + LabTracePlan.settleSeconds) {
+                Task {
+                    await finish(session, sections: sections)
+                }
             }
         }
     }
 
+    /// `LabTracePlan.readings` and nothing else; then the quit.
     private static func finish(_ session: Session, sections: [MenuBarSection]) async {
+        for reading in LabTracePlan.readings {
+            switch reading {
+            case .ownExtras:
+                await readOwnExtras(session, sections: sections)
+            case .discoverTwice:
+                await readPlacements(session)
+            }
+        }
+        session.emit("done", [:])
+        NSApp.terminate(nil)
+    }
+
+    private static func readOwnExtras(_ session: Session, sections: [MenuBarSection]) async {
         for section in sections {
             let controlItem = section.controlItem
             session.emit("window", [
@@ -138,8 +152,51 @@ enum LabTrace {
                 ] as [String: Any]
             },
         ])
-        session.emit("done", [:])
-        NSApp.terminate(nil)
+    }
+
+    /// Ice's own discovery pass, as its item manager runs it once a second,
+    /// but only `LabTracePlan.discoveryPasses` times and with no manager
+    /// started: each pass's placement as frames and counts, never a name.
+    private static func readPlacements(_ session: Session) async {
+        for pass in 1...LabTracePlan.discoveryPasses {
+            if pass > 1 {
+                try? await Task.sleep(for: .seconds(LabTracePlan.discoveryGapSeconds))
+            }
+            var placement = await discoverPlacement()
+            placement["pass"] = pass
+            session.emit("placement", placement)
+        }
+    }
+
+    /// One discovery pass by Ice's own entry point, described; only
+    /// `discovered: false` when it returned nothing.
+    private static func discoverPlacement() async -> [String: Any] {
+        guard #available(macOS 27, *), let discovery = await MenuBarItem.discoverItems(previous: nil) else {
+            return ["discovered": false]
+        }
+        return describe(LabTracePlacement(set: discovery.set))
+    }
+
+    private static func describe(_ placement: LabTracePlacement) -> [String: Any] {
+        func frame(_ rect: BarRect?) -> Any {
+            rect.map { [$0.minX, $0.minY, $0.width, $0.height] } ?? NSNull()
+        }
+        return [
+            "discovered": true,
+            "icon": frame(placement.icon),
+            "hiddenDivider": frame(placement.hiddenDivider),
+            "hiddenDividerUsable": placement.hiddenDividerUsable,
+            "alwaysHiddenDivider": frame(placement.alwaysHiddenDivider),
+            "alwaysHiddenDividerUsable": placement.alwaysHiddenDividerUsable,
+            "iconPlacement": placement.iconPlacement.map { String(describing: $0) } ?? "right",
+            "othersLeftOfHiddenDivider": placement.othersLeftOfHiddenDivider,
+            "othersBetween": placement.othersBetween,
+            "othersRightOfIcon": placement.othersRightOfIcon,
+            "othersUnplaced": placement.othersUnplaced,
+            "othersOnBar": placement.othersOnBar,
+            "complete": placement.isComplete,
+            "ownReadOk": placement.ownReadOk,
+        ]
     }
 
     /// The runner's handshake: the first line a trace writes carries this,
@@ -157,6 +214,8 @@ enum LabTrace {
             "os": ProcessInfo.processInfo.operatingSystemVersionString,
             "alwaysHiddenSection": plan.alwaysHiddenSection,
             "steps": LabTracePlan.steps.map(\.rawValue),
+            "readings": LabTracePlan.readings.map(\.rawValue),
+            "discoveryPasses": LabTracePlan.discoveryPasses,
             "points": LabTracePoint.allCases.map(\.rawValue),
             "items": ControlItem.Identifier.allCases.map(\.rawValue),
         ]

@@ -75,7 +75,7 @@ public enum PreferenceHidingPreconditions {
         blockers: [PreferenceHidingBlocker]
     ) -> PreferenceHidingPreconditionResult {
         var reasons = [PreferenceHidingBlockReason]()
-        if let placement = misplacement(icon: iceIcon, divider: hiddenDivider) {
+        if let placement = iconPlacement(icon: iceIcon, divider: hiddenDivider) {
             reasons.append(.iceIconNotRightOfDivider(placement))
         }
         if completeness != .complete {
@@ -90,8 +90,9 @@ public enum PreferenceHidingPreconditions {
         return reasons.isEmpty ? .ok : .blocked(reasons)
     }
 
-    /// `nil` when the icon's mid-x is strictly right of the divider's minX.
-    private static func misplacement(icon: BarRect?, divider: DividerReading?) -> PreferenceHidingIconPlacement? {
+    /// `nil` when the icon's mid-x is strictly right of the divider's minX: the
+    /// one definition of "Ice's icon is right of its hidden divider".
+    public static func iconPlacement(icon: BarRect?, divider: DividerReading?) -> PreferenceHidingIconPlacement? {
         guard let icon, icon.hasFiniteComponents else { return .iconUnreadable }
         guard let divider, divider.isUsable, let dividerFrame = divider.frame, dividerFrame.hasFiniteComponents else {
             return .dividerUnusable

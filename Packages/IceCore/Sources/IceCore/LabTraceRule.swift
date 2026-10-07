@@ -31,9 +31,25 @@ public enum LabTraceStep: String, Sendable {
     /// settings models only: their persistence subscribers are installed by
     /// their `performSetup`, which is not called.
     case setSettingsInMemory
+    /// One discovery pass before any control item exists: how many other
+    /// items are on the bar, so the placement oracle can tell whether Ice's
+    /// items pushed one off it (plan S2 design, T2a). Read only.
+    case readBaseline
     /// `MenuBarSection.performSetup(with:)` on the three sections, which
     /// creates the control items.
     case setUpSections
+}
+
+/// What the trace reads off the bar once the control items have settled, in
+/// order (plan S2 design, T2a). Both read only.
+public enum LabTraceReading: String, Sendable {
+    /// Ice's own extras by Accessibility, and each control item's window.
+    case ownExtras
+    /// Ice's own discovery pass (`MenuBarItem.discoverItems`), run
+    /// `LabTracePlan.discoveryPasses` times: every placement verdict comes
+    /// from one pass's set, and passes that disagree make the run
+    /// indeterminate. The item manager itself is still not started.
+    case discoverTwice
 }
 
 /// One trace run's settings. The always-hidden section runs both ways: off is
@@ -51,10 +67,18 @@ public struct LabTracePlan: Equatable, Sendable {
     public var useIceBar: Bool { true }
     public var showIceIcon: Bool { true }
 
-    public static let steps: [LabTraceStep] = [.stopPermissionChecks, .setSettingsInMemory, .setUpSections]
+    public static let steps: [LabTraceStep] = [.stopPermissionChecks, .setSettingsInMemory, .readBaseline, .setUpSections]
+
+    public static let readings: [LabTraceReading] = [.ownExtras, .discoverTwice]
+
+    /// How long after the control items are created the bar is read: past
+    /// the main-queue turns that add, remove and size them.
+    public static let settleSeconds = 3.0
+    public static let discoveryPasses = 2
+    public static let discoveryGapSeconds = 1.0
 
     /// The trace quits by itself after this long, whatever it has read.
-    public static let capSeconds = 10.0
+    public static let capSeconds = 15.0
 }
 
 public enum LabTraceRefusal: Equatable, Sendable {
