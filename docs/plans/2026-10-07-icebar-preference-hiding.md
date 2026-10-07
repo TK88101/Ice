@@ -128,24 +128,31 @@ target; `icetest` sittings are for final acceptance only, not for development.
 
 ### S3 Re-aim the hiding rule (owner cost: none)
 
-- D-a **Members, and nothing else moved without consent** (rounds 1-2: a spacer moves
-  everything left of it; there is no way to leave one item behind).
-  *IceBar members*: live items left of the divider that are uniquely addressable over
-  Accessibility now (`declared` basis: a unique non-empty identifier within the process,
-  `ItemKey.swift:45-57`); listed and pressable. An item left of the divider that is not
-  addressable (unnamed or ambiguous, such as Apple's input menu in `icetest`) is
-  *unmanaged*; what Ice does then is owner decision O2 -- default: Ice does not hide
-  and the pane says which item to move to the right of the divider (round 2's cheapest
-  safe rule: "not managed" then really means "not hidden"). No promise that membership
-  survives a restart until a restart-identity experiment says so (FINDINGS "Identity
-  across restarts is untested"); the experiment is in S4.
+- D-a **Members** (thecure 2026-10-07, section 5). Items left of the divider:
+  `.declared` and `.unnamed` ones are members -- listed in the IceBar, and pressable
+  while they are uniquely addressable in the current Accessibility read
+  (`PressTargetRule.swift:12-20`; the pixel check can target both, `CheckPlan.swift:36-45`);
+  a member that becomes ambiguous or unreadable stays listed, marked stale, its cell
+  disabled, and caps the state at `not verified`. A member whose position is `.stacked`
+  stays a member, listed and pressable, and also caps the state at `not verified` (the
+  pixel check skips it). A `.positional` item (an identifier shared within its process)
+  left of the divider **blocks hiding**: Ice names it and asks the owner to move it to
+  the right of the divider -- its press is resolved by child index with only an
+  identifier-at-index recheck, so a reorder between discovery and click can open a
+  sibling's menu. Parked, frameless or non-AX records never become newly selected
+  members; the explicit stale-state rule for a previously known member is written in
+  T3a. What Ice cannot see at all it cannot protect: a limit stated in `STATUS.md`,
+  mitigated by the complete-pass precondition of D-c. No promise that membership
+  survives a restart until the restart-identity experiment of S4.
 - D-b **`«` is recorded, never a trigger.** It neither vetoes a length nor shows the
   section at rest.
 - D-c **Four states, said honestly** (rounds 1 and 3):
-  `blocked, not attempted` -- Ice changed no length and offers no IceBar: an unmanaged
-  item is left of the divider (O2's default), Ice's icon is left of its divider (S2),
-  or verification is unavailable and O1 is "do not hide"; the pane names the reason
-  and, where there is one, the item to move;
+  `blocked, not attempted` -- Ice changed no length and offers no IceBar, because a
+  precondition of any hiding failed: (a) Ice's icon is not right of its hidden divider
+  (S2); (b) the discovery pass behind the roster is not complete (an unseen item could
+  be carried off and be unreachable; "complete" is `Completeness.complete`, defined
+  concretely in T3a); (c) a `.positional` item is left of the divider. The pane names
+  the reason and, where there is one, the item to move;
   `verified hidden` -- every member was observed absent from the bar by the pixel check;
   `hiding requested, not verified` -- Ice applied a length and could not check (no
   reference, capture refused); the pane says exactly that, the IceBar is offered, and
@@ -156,8 +163,8 @@ target; `icetest` sittings are for final acceptance only, not for development.
   default. In `verified` mode a length is kept only after every member is observed
   absent; below the band a member may be folded behind `«` (not a failure, but not proof
   of absence either), above it the member is drawn again (FINDINGS "The safe width").
-  What Ice does when it cannot verify (strict: do not hide; or best effort: the
-  unverified state above) is owner decision O1.
+  When Ice cannot verify, it hides best effort in the unverified state above; there is
+  no strict-mode setting (section 5).
 - D-e **Layout changes** (frontmost app, menus crossing the notch, items added): the
   requested set is kept, the state drops to `not verified` and is re-checked; nothing is
   shown merely because a menu is long.
@@ -187,14 +194,16 @@ target; `icetest` sittings are for final acceptance only, not for development.
   from the IceBar with the helper's menu-open signal; (4) add and remove a member;
   (5) no reference on the bar; (6) a `«` already present; (7) fresh and previously
   placed identity; (8) frontmost app and long menus changing while hidden; (9) Ice
-  relaunched (membership and identity); (10) an unmanaged item left of the divider;
-  (11) a member kept visible on purpose must yield `visible / failed`, never `verified`.
+  relaunched (membership and identity); (10) a positional item left of the divider: blocked, nothing moved;
+  (11) a member kept visible on purpose must yield `visible / failed`, never `verified`;
+  (12) a stacked member: `not verified`, the roster includes it; (13) an incomplete
+  discovery pass: blocked.
 - Outcomes are of three kinds and never mixed: **verified** (per-member visual
   absence, the IceBar's roster equals the members, the menu-open signal);
   **unverified best effort** (Ice applied an attempt and said so); **blocked** (the
   oracle: no divider length changed, nothing moved, no IceBar offered, the reason
-  reported). Scenario (10) must end blocked under O2's default; scenario (5) must end
-  unverified or blocked according to O1. Only verified scenarios count toward the
+  reported). Scenarios (10) and (13) must end blocked; (5) and (12) must end
+  unverified. Only verified scenarios count toward the
   DoD's "verified"; each of the others must match its expected kind in the same three
   runs, and is listed apart.
 - DoD: every verifiable scenario verified three runs in a row; the report is generated,
@@ -211,15 +220,38 @@ TDD throughout; unit + integration (stub-driven runner tests as `test-t7.sh`) + 
 matrix as E2E. Each step: `/simcodex` before it is reported. Full probes test run when
 probes Swift changes (about 56 min, in the background).
 
-## 5. Decisions the owner must make (asked once, with a default)
+## 5. The three decisions, converged (thecure with Codex, 2026-10-07)
 
-| # | Question | Default if not answered |
+Debated in two rounds; the owner confirms the conclusion, not a choice.
+
+- **O1** When Ice cannot verify that the members left the bar, it hides anyway and
+  says `hiding requested, not verified`; the IceBar is offered; never a lab success.
+  No strict-mode setting. Any hiding, verified or not, first needs D-c's
+  preconditions a, b, c.
+- **O2** No longer a decision: the membership rule of D-a.
+- **O3** The owner starts the lab matrix: one command in the `icetest` foreground
+  session, unattended, fixed scenarios, no agent; asked for only after S1-S3 are built
+  and reviewed. One fact to ask the owner then, not a decision: is there a second Mac
+  that could be dedicated to the lab.
+- **S2, added:** the placement fix aims, for a fresh Ice, at
+  `hidden divider | other status items, system agents included | Ice's icon`, so that
+  items such as the input menu are not swept into the hidden section by default (on the
+  owner's bar they sit right of Ice's icon already: MenuBarAgent's store has them at
+  141.5 and 221.5, Ice's icon at 361.5, divider at 465).
+
+| Claim | Won by | On what evidence |
 |---|---|---|
-| O1 | When Ice cannot verify that the chosen items left the bar (no reference item, capture refused): hide anyway and say "not verified", or do not hide? | hide, labelled "not verified" |
-| O2 | An item Ice cannot manage (e.g. Apple's input menu) sits left of the divider. Refuse to hide until it is moved to the right, or hide anyway and let it be carried off with the others (it would not be listed in the IceBar)? | refuse, and name the item to move |
-| O3 | The lab needs the `icetest` session in front for each matrix run. Who starts it: you, each time (one command, unattended, results read by the assistant); or a second Mac if you have one to dedicate? | you start it; asked for only when S1-S3 are done and reviewed |
+| hide best effort when unverifiable, one behaviour | the assistant, with Codex's preconditions | `CheckPlan.swift:72-74` (no reference is a verification failure, not a reason not to act) |
+| the risk of that is only "an item stays drawn" | Codex | an unseen item can be carried off and be unreachable: non-`AXMenuBarItem` records are dropped before membership (`ItemCatalog.swift:123-131`) |
+| `.unnamed` items are manageable (the plan had called them unmanaged) | the assistant | `PressTargetRule.swift:12-20`, `CheckPlan.swift:36-45`, FINDINGS "`.unnamed` items are eligible" |
+| `.positional` items can be members too | Codex | identifier-at-index is the only recheck and the identifier is shared (`PressTargetRule.swift:13-18`); the detector drops positional keys (`DiscoveredTargets.swift:7-17`) |
+| "listed and pressable" for members | Codex | only while uniquely addressable in the current read; otherwise stale and disabled |
+| the owner starts the lab; a second Mac is a fact to ask | agreed | the plan's S4 |
 
-`«` is no longer a question: it is recorded, never a trigger (section 0, D-b).
+Codex's greatest worry: positional identity taken as good enough because `AXPress`
+finds some child at that index -- the feature would look successful while opening
+another app's menu. Its most likely point of failure in the plan: S2 (a seed may not
+be able to establish `divider | others | icon`; remembered positions).
 
 ## 6. Risks
 
@@ -239,7 +271,7 @@ probes Swift changes (about 56 min, in the background).
 | T2 | placement fix + inverted-layout notice (S2) | T1 | none |
 | T3a | hiding rules as pure IceCore types + tests (S3) | this plan's review | none |
 | T3b | the rules wired into the live machine and coordinator (S3) | T2, T3a | none |
-| T4 | fixed-matrix lab runner (S4) | T3b, O1-O3 | per O3 |
+| T4 | fixed-matrix lab runner (S4) | T3b; the owner starts it (section 5, O3) | one sitting per matrix run |
 | T5 | owner acceptance (S5) | T4 green x3 | one short sitting |
 
 T1 and T3a are independent and may run in parallel; T2 needs T1; T3b needs T2.
@@ -268,6 +300,8 @@ T1 and T3a are independent and may run in parallel; T2 needs T1; T3b needs T2.
 
 Round 1: 4 P0 + 3 P1 + 1 P2. Round 2: 5 P1, two of them caused by a failed edit.
 | 5 | both round-3 P1s resolved; both modified rulings accepted (the three settings can be set in memory and are observed by `ControlItem`'s subscriptions, `ControlItem.swift:281, 308, 330`; the settings' persistence subscribers are installed only by their `performSetup`, so nothing of the settings is written; the trace still writes the lab domain's three control-item defaults) | **CONVERGED** |
+
+| thecure | the three decisions O1-O3 (2026-10-07, after the plan converged): round 1, 10 claims -- 6 right, 4 conceded to Codex; whole-package confirmation, one objection (pressable only while uniquely addressable), taken | converged: section 5, D-a, D-c, scenarios 10, 12, 13 |
 
 Round 1: 4 P0 + 3 P1 + 1 P2. Round 2: 5 P1 (unrevised file). Round 3: 2 P1. Round 4:
 the same 2 P1 (unrevised file) with three refinements. Round 5: 0, CONVERGED. Two of
