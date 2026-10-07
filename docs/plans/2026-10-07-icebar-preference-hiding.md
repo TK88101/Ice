@@ -1,6 +1,6 @@
 # IceBar on macOS 27, re-aimed: preference hiding, proven in a harness before any owner sitting
 
-2026-10-07 · DRAFT, Codex rounds 1-2 taken (Appendix), round 3 pending · continues on `wip/icebar-build` from `6c61b96`.
+2026-10-07 · final (Codex round 5: CONVERGED; Appendix) · not implemented · continues on `wip/icebar-build` from `6c61b96`.
 Follows the owner's corrected goal and Codex's consult of 2026-10-07
 (`~/IceReverse-evidence/20261007-213730-t7/codex-consult.md`, handover beside it).
 Supersedes, where they conflict: `2026-10-03-icebar-build.md` sections 1, 3 (the
@@ -68,18 +68,37 @@ target; `icetest` sittings are for final acceptance only, not for development.
   `ControlItem.swift:459-486`), not by an override. That is the state T7 starts Ice in.
   It is not a trace of an ordinary (non-IceBar) launch, where `.hideSection` means
   10,000 pt (`ControlItem.swift:35-56`), and proves nothing about one.
-- Ice logs, for each control item, the bundle id and the two preference keys at five
-  points (before seed, after seed, after `statusItem(withLength:)`, after
-  `autosaveName`, after the first main-queue turn), then the three items' AX frames;
-  then it quits (10 s cap).
-- Inert everywhere else, so that it may run in the owner's account: in trace mode Ice
-  starts the settings model and `MenuBarManager`'s sections (the path under test) and
-  nothing more -- not the hiding coordinator (`MenuBarItemManager.swift:121`), the item
-  manager's moves and discovery timers, the HID event taps, the image cache, the
-  appearance overlay, the updater, notifications, the permissions window, nor
-  `AppDelegate`'s application-menu and cursor changes (`AppDelegate.swift:16-40`,
-  `AppState.swift:64-86`). The list is checked against those two files item by item in
-  the code review; what is not on the "started" list does not start.
+- The bootstrap, exactly (rounds 3-4): `AppState` is constructed as always; trace mode
+  then sets, in memory only, `general.useIceBar = true`, `general.showIceIcon = true`
+  and `advanced.enableAlwaysHiddenSection`, and calls **only**
+  `MenuBarSection.performSetup(with:)` on the three existing sections, which assigns
+  the app state and calls `ControlItem.performSetup` (`MenuBarSection.swift:146-150`,
+  `ControlItem.swift:189-347`; the settings and sections exist once `AppState` is
+  constructed, `AppState.swift:19-29`). A clean domain would otherwise load
+  `useIceBar` false and take the 10,000 pt path (`GeneralSettings.swift:32, 85-90`,
+  `ControlItem.swift:459-470`).
+- Two variants, both run: `enableAlwaysHiddenSection` **off** (what T7 runs, and the
+  state P2 was seen in: setup then removes the always-hidden control item,
+  `ControlItem.swift:308-324`, and that removal is part of the lifecycle under test;
+  two items end on the bar) and **on** (three items on the bar).
+- Not called: `AppState.performSetup`; `AppSettings.performSetup` (it starts hotkeys,
+  which register global listeners, `AppSettings.swift:24-28`, `Hotkey.swift:43-52`) --
+  if the three values cannot be set without it, that is settled in the code review
+  with Codex, not assumed; `MenuBarManager.performSetup` (three panels and manager
+  observers, `MenuBarManager.swift:67-76`); the item manager, the hiding coordinator
+  (`MenuBarItemManager.swift:121`), HID taps, image cache, appearance, updater,
+  notifications, `AppDelegate`'s menu and cursor changes (`AppDelegate.swift:16-40`).
+  Two things `AppState`'s construction itself starts are dealt with by name: the
+  permission polling (`Permission.swift:65-79`) is stopped at once
+  (`permissions.stopAllChecks()`, as the normal setup does), and the macOS 27
+  menu-bar-owner observer (`AppState.swift:65-68`) is left, as it only reads.
+- Ice logs the bundle id and, for each control item, the **three** status-item keys it
+  writes (`Preferred Position`, `Visible`, `VisibleCC`, `ControlItem.swift:721-767`) at
+  five points (before seed, after seed, after `statusItem(withLength:)`, after
+  `autosaveName`, after the first main-queue turn), names the two stores a position
+  lives in (the app's defaults; MenuBarAgent's `TrailingItemPreferredPositions`) with
+  the lab identity's entry in each, then the AX frame of every control item that is on
+  the bar; then it quits (10 s cap).
 - What it does touch, stated: it adds three status items of the lab identity for a few
   seconds, which reflows the bar while they are there (as a helper does), and it writes
   the lab identity's own defaults and, possibly, MenuBarAgent's record for that
@@ -122,7 +141,11 @@ target; `icetest` sittings are for final acceptance only, not for development.
   across restarts is untested"); the experiment is in S4.
 - D-b **`«` is recorded, never a trigger.** It neither vetoes a length nor shows the
   section at rest.
-- D-c **Three states, said honestly** (round 1, P0):
+- D-c **Four states, said honestly** (rounds 1 and 3):
+  `blocked, not attempted` -- Ice changed no length and offers no IceBar: an unmanaged
+  item is left of the divider (O2's default), Ice's icon is left of its divider (S2),
+  or verification is unavailable and O1 is "do not hide"; the pane names the reason
+  and, where there is one, the item to move;
   `verified hidden` -- every member was observed absent from the bar by the pixel check;
   `hiding requested, not verified` -- Ice applied a length and could not check (no
   reference, capture refused); the pane says exactly that, the IceBar is offered, and
@@ -166,10 +189,14 @@ target; `icetest` sittings are for final acceptance only, not for development.
   placed identity; (8) frontmost app and long menus changing while hidden; (9) Ice
   relaunched (membership and identity); (10) an unmanaged item left of the divider;
   (11) a member kept visible on purpose must yield `visible / failed`, never `verified`.
-- Outcomes are of two kinds and never mixed: **verified** (per-member visual absence,
-  the IceBar's roster equals the members, the menu-open signal) and **unverified best
-  effort** (Ice applied an attempt and said so). Only verified scenarios count toward
-  the DoD; (5) is expected to end unverified and is reported as such.
+- Outcomes are of three kinds and never mixed: **verified** (per-member visual
+  absence, the IceBar's roster equals the members, the menu-open signal);
+  **unverified best effort** (Ice applied an attempt and said so); **blocked** (the
+  oracle: no divider length changed, nothing moved, no IceBar offered, the reason
+  reported). Scenario (10) must end blocked under O2's default; scenario (5) must end
+  unverified or blocked according to O1. Only verified scenarios count toward the
+  DoD's "verified"; each of the others must match its expected kind in the same three
+  runs, and is listed apart.
 - DoD: every verifiable scenario verified three runs in a row; the report is generated,
   with the unverified ones listed apart.
 
@@ -235,4 +262,14 @@ T1 and T3a are independent and may run in parallel; T2 needs T1; T3b needs T2.
 | 2 | P1 D-a: an unmanaged item left of the divider must block hiding | taken as the default of O2 (round 1 had proposed carrying it as collateral; the two differ, so the owner decides, default = block) |
 | 2 | P1 T3 needs a boundary | taken: T3a (pure rules, parallel with S1) and T3b (live wiring, after T2) |
 
-Round 1: 4 P0 + 3 P1 + 1 P2. Round 2: 5 P1, two of them caused by the failed edit.
+| 3 | P1 S1's started / not-started set is not executable as written: settings setup starts hotkeys, `AppState`'s construction starts permission polling, `MenuBarManager.performSetup` starts panels; a clean domain removes the always-hidden item; three keys, not two | taken: the exact bootstrap (only each section's setup, three settings set in memory, polling stopped), three keys and two stores logged |
+| 3 | P1 D-a/O2 and strict O1 need a "blocked, not attempted" result that D-c and S4 lacked | taken: a fourth state with its oracle; scenarios 5 and 10 tied to O1 and O2 |
+| 4 | (again shown a file without the round-3 revision: the assistant's edit script had failed a second time) the same two P1s, plus: a clean domain loads `useIceBar` false; call `settings.performSetup` and say it starts hotkeys; force `enableAlwaysHiddenSection` on for three frames | process error, the assistant's; from now the file is checked before it is sent. Taken: `useIceBar` set explicitly. Modified: the always-hidden setting is run both off (T7's state, where P2 was seen) and on; `AppSettings.performSetup` is not called, to keep hotkeys out of the owner's session, unless the code review shows the values cannot be set without it |
+
+Round 1: 4 P0 + 3 P1 + 1 P2. Round 2: 5 P1, two of them caused by a failed edit.
+| 5 | both round-3 P1s resolved; both modified rulings accepted (the three settings can be set in memory and are observed by `ControlItem`'s subscriptions, `ControlItem.swift:281, 308, 330`; the settings' persistence subscribers are installed only by their `performSetup`, so nothing of the settings is written; the trace still writes the lab domain's three control-item defaults) | **CONVERGED** |
+
+Round 1: 4 P0 + 3 P1 + 1 P2. Round 2: 5 P1 (unrevised file). Round 3: 2 P1. Round 4:
+the same 2 P1 (unrevised file) with three refinements. Round 5: 0, CONVERGED. Two of
+the five rounds were spent on files the assistant had failed to revise; since then a
+revision is checked in the file before it is sent.
