@@ -65,10 +65,15 @@ final class ControlItem {
         /// Creates a new storage instance.
         @MainActor
         init(controlItem: ControlItem) {
+            let autosaveName = controlItem.identifier.rawValue
+            LabTrace.record(.beforeSeed, autosaveName: autosaveName)
             ControlItemDefaults.preflightSetup(for: controlItem)
+            LabTrace.record(.afterSeed, autosaveName: autosaveName)
 
             self.statusItem = NSStatusBar.system.statusItem(withLength: 0)
+            LabTrace.record(.afterStatusItem, autosaveName: autosaveName, statusItem: statusItem)
             self.statusItem.autosaveName = controlItem.identifier.rawValue
+            LabTrace.record(.afterAutosaveName, autosaveName: autosaveName, statusItem: statusItem)
 
             if let button = statusItem.button {
                 if #available(macOS 27, *) {

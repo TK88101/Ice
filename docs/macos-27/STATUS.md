@@ -97,3 +97,13 @@ Not verifiable on this machine: macOS 14 to 26 (the machine runs 27 only).
 | IceBar hiding needs a reference | at least one identifiable third-party item between Ice's hidden divider and its icon (the visible section); a bar with system items only gets `cannotAssess` and nothing is hidden | MEASURED (run `20261007-182404-t7`: `skip(noReference)`; `CheckPlan.swift:47-80`), 26A434, 2026-10-07 |
 | The application menu's frame on 27 | upstream's hit test at the display origin returns a `MenuBarAgent` `AXWindow`, so the frame was always nil; now read from the menu bar owner's own `AXMenuBar` (27 only) | MEASURED (read-only probe 3/3, `icewatch menu-frame` live), 26A434, 2026-10-07 |
 | Upstream features that read that frame on 27 (hide app menus, temporary show, show on click in empty bar space, overlay) | now get a frame where they got nil; in IceBar mode only the click path is reached (T7 row 1b) | INFERRED (code), not run |
+
+## Ice's trace mode (T1, 2026-10-07, plan 2026-10-07-icebar-preference-hiding S1)
+
+| what | status | tag |
+|---|---|---|
+| Trace mode | `-IceLabTrace YES` under a `com.icespike4.` identity: Ice creates its control items by its own code path in IceBar mode with uncalibrated dividers, logs the three status-item defaults at five points and the frames, and quits; refused under any other identity; inert without the argument | MEASURED (6 runs) / unit-tested (`LabTraceRule`) |
+| P2 in the owner's account | not reproduced: 6 of 6 runs from a never-seen identity (3 with the always-hidden section off, 3 on) put the hidden divider at x 1492 and Ice's icon at 1508, icon right of divider; the seeds (icon 0.1, hidden 1) held at all five points; the always-hidden divider (no seed) landed at 1009, left of everything | MEASURED, 26A434, run `20261007-225415-trace` |
+| Fresh Ice's layout here | divider and icon both right of every other item: everything else would be left of the divider, so a hidden-section member (section 5, "S2, added" aims at divider, then the others, then the icon) | MEASURED, same run |
+| MenuBarAgent's store | no entry recorded for any lab identity, no other entry changed (before/after guard, all 6 runs) | MEASURED, same run; read from the store via `defaults export` after a 2 s wait |
+| Why P2 differed in `icetest` | unknown; the same trace becomes the lab's first scenario (S4) | TBD |

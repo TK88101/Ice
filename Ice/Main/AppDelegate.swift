@@ -14,12 +14,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: NSApplicationDelegate Methods
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // A trace launch starts nothing but its own bootstrap (plan
+        // 2026-10-07-icebar-preference-hiding, S1).
+        guard LabTrace.launch == .normal else {
+            return
+        }
+
         // Initial chore work.
         NSSplitViewItem.swizzle()
         MigrationManager(appState: appState).migrateAll()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if LabTrace.runIfRequested(appState: appState) {
+            return
+        }
+
         // Hide the main menu's items to add additional space to the
         // menu bar when we are the focused app.
         for item in NSApp.mainMenu?.items ?? [] {

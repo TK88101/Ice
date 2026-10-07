@@ -1,4 +1,9 @@
 +import IceCore
++            let autosaveName = controlItem.identifier.rawValue
++            LabTrace.record(.beforeSeed, autosaveName: autosaveName)
++            LabTrace.record(.afterSeed, autosaveName: autosaveName)
++            LabTrace.record(.afterStatusItem, autosaveName: autosaveName, statusItem: statusItem)
++            LabTrace.record(.afterAutosaveName, autosaveName: autosaveName, statusItem: statusItem)
 +                if #available(macOS 27, *) {
 +                    // macOS 27 lists no menu bar item windows, so Ice finds its own
 +                    // dividers over Accessibility by this identifier (plan D9).
