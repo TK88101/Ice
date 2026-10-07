@@ -351,6 +351,47 @@ MEASURED in the owner's account; nothing ran on a bar. Tests first, except
   do not touch `icewatch`'s commands, `vzhelper`'s lifetime guard or the two
   reports; stated, not hidden.
 
+## 13. Fourth and fifth attempts: Ice's icon left of its divider (2026-10-07)
+
+- E15 (MEASURED, runs `20261007-201416-t7` and `20261007-201704-t7`, `icetest`,
+  `cfef1d0`, evidence copied): `references.txt` shows Ice's hidden divider at
+  x 1469 and its icon's middle at 1297.5 -- the icon LEFT of the divider. So
+  the interval `CheckPlan` looks in (right of the divider, left of the icon)
+  is empty: no reference can exist, wherever a helper is dragged. The two
+  reference helpers sat right of both (1493, 1521). The runner's instruction
+  ("drag right, to the left of Ice's icon") assumed the opposite order and
+  could not be followed; the owner said so. The owner's three drags could not
+  have worked.
+- E16 (MEASURED, owner's account, macOS 27.0.1 26A434, sacrificial helpers
+  only; `postmortem/preferred-position-results.txt` in run `20261007-201416-t7`):
+  an `NSStatusItem Preferred Position` of 0 is read as none (the item lands
+  leftmost); positive values order items from the right, smallest rightmost
+  (0.001, 0.1, 0.5, 1, 2). One of seven trials kept that order but off the bar
+  to the left: TBD. Upstream seeds Ice's icon with 0 and its hidden divider
+  with 1 (`ControlItem.preflightSetup`), which on 27 gives E15.
+- E17 (MEASURED, same record): a rehearsal with stand-ins carrying Ice's AX
+  identifiers, the run's two reference helpers and a member, then
+  `icewatch references`: icon seed 0 reproduces E15 (divider 1465, icon 995,
+  references 0); icon seed 0.1 gives divider 1437 | references 1465, 1493 |
+  icon 1528, references 2, the member left of the divider.
+- Fix: `ControlItemPositionSeed` (IceCore, tested): on macOS 27 the icon's seed
+  is 0.1, and a stored 0 is seeded again; the divider's 1 and earlier systems
+  are unchanged. `ControlItem.preflightSetup` calls it;
+  `a10-ControlItem.expected` follows. A real defect of a fresh Ice on 27, not
+  of the test.
+- Runner: an icon left of the divider is said as such and ends the run without
+  asking for a drag; the drag instruction names no direction and says how to
+  recognise Ice's icon.
+- Also read from E15: the two other hidden members are Apple's input menu
+  agent and `com.apple.campo` (basis `unnamed`, so targets and possible
+  references). With the fix they are expected left of the divider, i.e.
+  members of the hidden section beside the helpers: the cell counts of rows
+  3, 8 and 9 will be k + 2 unless they are moved, and a baseline rejection of
+  either would stop coverage (the coverage line would name it).
+- Codex (`review --uncommitted`): 0. Tests: IceCore 483 / 56; MenuBarDiscovery
+  86 + 70; MenuBarCapture 30; `test-t7.sh` 155; `ControlItemPositionSeed` 100 %;
+  app builds; A3/A4, A8, A10 pass.
+
 ## Appendix: plan review
 
 | Round | Finding | Ruling |

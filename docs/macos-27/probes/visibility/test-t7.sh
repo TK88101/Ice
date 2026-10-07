@@ -99,6 +99,10 @@ done'
     stub $shared/apps/Menus.app/Contents/MacOS/vzhelper $helper
     stub $shared/apps/icewatch 'print -r -- "$*" >> $T7_STUB_MARKS/icewatch
 if [[ $1 == references ]]; then
+    if [[ ${T7_STUB_REFS:-} == inverted ]]; then
+        print -r -- "{\"complete\":true,\"dividerMinX\":1469,\"helpers\":[{\"id\":\"vz-t7-ref1\",\"side\":\"rightOfIce\",\"x\":1521}],\"iceIconMidX\":1297.5,\"items\":4,\"otherHidden\":0,\"others\":[],\"otherVisible\":0,\"references\":0}"
+        exit 1
+    fi
     if (( $(grep -c -x references $T7_STUB_MARKS/icewatch) > ${T7_STUB_REFS_AFTER:-0} )); then
         print -r -- "{\"complete\":true,\"dividerMinX\":1200,\"helpers\":[{\"id\":\"vz-t7-ref1\",\"side\":\"visible\",\"x\":1250}],\"iceIconMidX\":1310,\"items\":4,\"otherHidden\":0,\"otherVisible\":0,\"references\":1}"
         exit 0
@@ -351,6 +355,11 @@ T7_STUB_REFS_AFTER=99 run $tmp/answers --phase 1
 [[ $? == 3 ]] && grep -q '沒有參照圖示，本輪無效' $tmp/out.txt && grep -q '偏好還原：verified' $tmp/out.txt && ! stub_ice_running && ! grep -q '【第 1 列】' $tmp/out.txt; expect "no reference after three drags: exit 3"
 [[ $(grep -c '拖到 Ice 圖示的左邊' $tmp/out.txt) == 3 ]]; expect "asked three times, no more"
 [[ $(grep -c -x references $T7_STUB_MARKS/icewatch) == 24 ]]; expect "each drag is followed by several reads, not one"
+
+build_staging
+T7_STUB_REFS=inverted run /dev/null --phase 1
+[[ $? == 3 ]] && grep -q 'Ice 自己的圖示排在它的分隔線左邊' $tmp/out.txt && ! grep -q '拖到 Ice 圖示的左邊' $tmp/out.txt && grep -q '偏好還原：verified' $tmp/out.txt; expect "Ice's icon left of its divider: said, nobody asked to drag, exit 3"
+! grep -q '往右拖' $here/run-t7.sh; expect "the drag instruction names no direction"
 
 # --- the smoke pass (G2): phases 1-3 with no question ---------------------------------------
 build_staging

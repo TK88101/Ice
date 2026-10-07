@@ -5,6 +5,7 @@
 
 import Cocoa
 import Combine
+import IceCore
 
 // MARK: - ControlItem
 
@@ -708,16 +709,18 @@ enum ControlItemDefaults {
         let autosaveName = controlItem.identifier.rawValue
 
         // Visible and hidden control items should be added before
-        // existing items in the status bar.
-        if ControlItemDefaults[.preferredPosition, autosaveName] == nil {
-            switch controlItem.identifier {
-            case .visible:
-                ControlItemDefaults[.preferredPosition, autosaveName] = 0
-            case .hidden:
-                ControlItemDefaults[.preferredPosition, autosaveName] = 1
-            case .alwaysHidden:
-                break
-            }
+        // existing items in the status bar. The values are IceCore's: on
+        // macOS 27 a position of 0 is read as none (plan
+        // 2026-10-07-icebar-menu-frame-fix, section 13).
+        let item: ControlItemPositionSeed.Item = switch controlItem.identifier {
+        case .visible: .visible
+        case .hidden: .hidden
+        case .alwaysHidden: .alwaysHidden
+        }
+        let isMacOS27 = if #available(macOS 27, *) { true } else { false }
+        let stored = ControlItemDefaults[.preferredPosition, autosaveName].map { Double($0) }
+        if let seed = ControlItemPositionSeed.seed(for: item, stored: stored, isMacOS27: isMacOS27) {
+            ControlItemDefaults[.preferredPosition, autosaveName] = CGFloat(seed)
         }
 
         // The control item should be visible by default. We change

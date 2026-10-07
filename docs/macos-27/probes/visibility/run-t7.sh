@@ -165,6 +165,7 @@ helper_pids=()
 reference_fds=()
 reference_pids=()
 references_line=
+references_inverted=0
 # What the current phase's records are filed under: its number, or s<number>
 # in the smoke pass.
 label=0
@@ -606,10 +607,15 @@ end_phase() { # <completed: 0|1>
 # other apps' items, goes to the run directory only; the Terminal and the
 # report get counts.
 check_references() { # [why it is asked]
-    local line rc
+    local line rc divider icon
     line=$($shared/apps/icewatch references 2>/dev/null)
     rc=$?
     print -r -- "$(date +%H:%M:%S) ${1:-gate} $line" >> $run/references.txt
+    # Ice's icon left of its own hidden divider: there is no visible section
+    # at all, and no drag of a helper can make one (run 20261007-201416-t7).
+    references_inverted=0
+    divider=$(t7_json_get "$line" dividerMinX) && icon=$(t7_json_get "$line" iceIconMidX) \
+        && t7_is_number "$divider" && t7_is_number "$icon" && (( icon < divider )) && references_inverted=1
     references_line="參照 $(t7_json_get "$line" references || print '?') 個（讀取完整：$(t7_json_get "$line" complete || print '?')；自己的 helper $(t7_json_get "$line" helpers || print '?') 個；其他 app 的圖示：隱藏區 $(t7_json_get "$line" otherHidden || print '?') 個、可見區 $(t7_json_get "$line" otherVisible || print '?') 個）"
     return $rc
 }
@@ -630,7 +636,11 @@ reference_gate() {
     local try
     poll_references && return 0
     for try in {1..$reference_tries}; do
-        print -- "【看選單列】Ice 需要一個「參照圖示」，現在沒有。請按住 Command 鍵，把一個方括號小圖示（黑白線條、沒有文字）往右拖到 Ice 圖示的左邊、緊挨著它，放開。"
+        if (( references_inverted )); then
+            print -- "Ice 自己的圖示排在它的分隔線左邊：這是 Ice 的佈局錯誤，拖 helper 也沒有用，所以不請你拖。"
+            return 1
+        fi
+        print -- "【看選單列】Ice 需要一個「參照圖示」，現在沒有。請按住 Command 鍵，把一個方括號小圖示（黑白線條、沒有文字）拖到 Ice 圖示的左邊、緊挨著它（Ice 圖示和它左邊那條分隔線之間），放開。Ice 圖示＝右鍵點它會出現「Ice Settings…」的那個。"
         print -r -- "  （目前：$references_line）"
         ask refs.drag$try '^$' "Enter" "【看終端】拖好了就按 Enter（第 $try / $reference_tries 次）" || return 1
         poll_references && return 0
