@@ -277,6 +277,80 @@ A8, A10 pass; `icewatch menu-frame` live `fits`.
   no item names); `t7_summary` prints the reasons. Tests first.
 - Then: rebuild, restage, the owner runs `run-t7.sh --phase 1` only.
 
+## 11. Third attempt: no reference, and one sitting that tells more (2026-10-07)
+
+- E13 (MEASURED, run `20261007-182404-t7`, `icetest`, `ef5b37b`, evidence copied,
+  `diff -r` identical): `IceBar baseline: ok false coverage skip(noReference)
+  targets=3`. Section 10's diagnostic named the cause in one run.
+- E14 (MEASURED, code): a reference is a non-positional on-bar item between the
+  hidden divider and Ice's icon (`CheckPlan.swift:47-80`). `run-t7.sh` launched
+  only hidden members and `icetest`'s bar has system items only; T0's roster had
+  three visible helpers (`IceBarRunCore/Roster.swift:50`). A gap in T7's design
+  (section 10 of the build plan), not in Ice. Why three targets with one
+  helper: TBD (the references report below lists the layout).
+- Product limit, to `STATUS.md`: IceBar hiding needs at least one identifiable
+  third-party item in the visible section; a bar with system items only is not
+  supported.
+- Decision (Codex debate: do not rehearse on the owner's bar -- another layout
+  predicts nothing here and the isolation is the point; no harness can reach
+  `active` outside the logged-in session): stay in `icetest`, make each sitting
+  cost one command and no typing until Ice hides, and collect more per sitting.
+- G1 references: two reference helpers (`vz-t7-ref1`, `-ref2`, `Target.app`,
+  `--autosave`, lifetime = the run's) are launched before Ice, with a preferred
+  position between Ice's icon (0) and its hidden divider (1)
+  (`ControlItem.swift:712-717`); whether macOS 27 honours that is not known, so
+  it is checked, not assumed: `icewatch references` runs one read-only
+  discovery pass and applies Ice's own rule (extracted as
+  `CheckPlan.geometricReferenceCandidates`, used by `CheckPlan.make` too). No
+  reference -> the owner is asked, in the same sitting, to Command-drag one
+  bracket icon to just left of Ice's icon (up to three tries); still none ->
+  the run stops with the layout recorded. `vzhelper`'s lifetime cap goes from
+  1800 s to 10800 s for these.
+- G2 smoke first: a run without `--phase` first does phases 1-3 with no
+  question (members, placement gate, wait for `active`, placement after, a
+  capture of the bar strip only before and after), goes on to the next k when
+  one fails, and only if all three reach `active` starts the checklist;
+  otherwise it reports and ends with status 3. `--phase n` skips the smoke.
+- G3 `shown(noMembers)` and `shown(unstableLayout)` join the statuses that stop
+  a phase after the grace (both end hiding; `noMembers` is also a normal first
+  status, hence the grace, not at once).
+- The owner no longer pastes anything: the run directory is read from
+  `/Users/Shared/IceReverse-t7/evidence/`.
+
+## 12. Section 11 as built (2026-10-07)
+
+MEASURED in the owner's account; nothing ran on a bar. Tests first, except
+`ReferencesReport`, written with its tests in one step.
+
+- Built: `CheckPlan.geometricReferenceCandidates` (the inline filter, moved);
+  `ExternalReferenceCheck` (IceCore: Ice's rule asked from outside Ice, all
+  three of Ice's control items left out); `icewatch references`
+  (`ReferencesReport`: counts on the Terminal and in the report, the full
+  line with other apps' item namespaces in the run directory only);
+  `run-t7.sh`: two reference helpers before Ice, `reference_gate` (six reads,
+  then up to three owner drags, six reads after each), the smoke pass
+  (`s1`-`s3`, a stopped phase recorded and the next k still run), a bar-strip
+  capture before / at `active` / at a stop (`CAPTURE`, 0 in the tests), the
+  layout recorded again before each wait and at each stop, `noMembers` and
+  `unstableLayout` as stops after the grace; `vzhelper` lifetime cap 10800 s.
+- Codex review, one round: 1 P0 (Ice's always-hidden divider passed for a
+  reference: the gate could pass and Ice still fail), taken with a test; 4 P1
+  taken (reads after a drag, an incomplete pass is not a pass, the layout
+  before the wait and at a stop, the capture's size noted; the display
+  identity not taken: one display). Not sent back (cap).
+- Open, to be read from the next run's `references.txt`: the last run had
+  three hidden members with one helper launched, so two other identifiable
+  third-party items sit in `icetest`'s hidden section; they are members too
+  and may fail coverage or change the cell count.
+- Not known until run: whether macOS 27 honours the preferred positions (the
+  owner's drag is the fallback); everything from the baseline to `active`.
+- Tests: IceCore 479 / 55; MenuBarDiscovery 86 + 70; MenuBarCapture 30;
+  `IceWatchCoreTests` 49; `test-t7.sh` 153 (about 5.5 min); coverage
+  `CheckPlan` 100 %, `ExternalReferenceCheck` 100 %; app and probes build; A3/A4,
+  A8, A10 pass. Not repeated: the full probes run (56 min): its other bundles
+  do not touch `icewatch`'s commands, `vzhelper`'s lifetime guard or the two
+  reports; stated, not hidden.
+
 ## Appendix: plan review
 
 | Round | Finding | Ruling |

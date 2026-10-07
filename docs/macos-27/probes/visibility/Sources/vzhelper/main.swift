@@ -99,7 +99,7 @@ struct Config {
 
 func parseConfig() -> Config {
     let lifetime = option("--lifetime").flatMap(Double.init) ?? 300
-    guard lifetime > 0, lifetime <= 1800 else { usage("--lifetime must be in (0, 1800]") }
+    guard lifetime > 0, lifetime <= 10800 else { usage("--lifetime must be in (0, 10800]") }
 
     if let roleName = option("--role") {
         // Amendment v8 (C1 protocol, "Placement by the helpers' own

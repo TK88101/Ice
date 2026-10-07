@@ -14,6 +14,7 @@ shared=$tmp/shared
 export T7_STUB_MARKS=$tmp/marks
 domain=com.icespike4.t7test
 helper_domain=com.icespike4.t7helper
+export T7_STUB_HELPER_DOMAIN=$helper_domain
 failures=0
 
 wipe() {
@@ -45,7 +46,9 @@ stub() { # <path> <body>
 # default `checking`, then `active`, as the real one does after a calibration;
 # `sleep:<s>` waits, `exit` ends it, `shown:<reason>` is a shown status) and then
 # leaves a marker so that a test can wait for it. The stubs, not run-t7.sh, read
-# the environment.
+# the environment. A helper started with --autosave records the preferred
+# position it finds; `icewatch references` finds no reference for its first
+# T7_STUB_REFS_AFTER calls.
 build_staging() { # [expected user]
     wipe
     mkdir -p $shared/evidence $T7_STUB_MARKS $tmp/backup
@@ -53,15 +56,21 @@ build_staging() { # [expected user]
 print -u2 "2026-10-05 10:00:00.100000+0900 Ice[1:1] [Permissions] Passed all permissions checks"
 trap "exit 0" TERM
 sleep 1
-for token in ${=T7_STUB_STATUS:-checking active}; do
-    case $token in
-        sleep:*) sleep ${token#sleep:} ;;
-        exit) exit 0 ;;
-        shown:*) print -u2 "2026-10-05 10:00:02.000000+0900 Ice[1:1] [IceBarHiding] IceBar hiding: shown(IceCore.IceBarShownReason.${token#shown:})" ;;
-        *) print -u2 "2026-10-05 10:00:09.500000+0900 Ice[1:1] [IceBarHiding] IceBar hiding: $token" ;;
-    esac
-done
+emit() {
+    for token in ${=T7_STUB_STATUS:-checking active}; do
+        case $token in
+            sleep:*) sleep ${token#sleep:} ;;
+            exit) exit 0 ;;
+            shown:*) print -u2 "2026-10-05 10:00:02.000000+0900 Ice[1:1] [IceBarHiding] IceBar hiding: shown(IceCore.IceBarShownReason.${token#shown:})" ;;
+            *) print -u2 "2026-10-05 10:00:09.500000+0900 Ice[1:1] [IceBarHiding] IceBar hiding: $token" ;;
+        esac
+    done
+}
+emit
 : > $T7_STUB_MARKS/ice-active
+# T7_STUB_REPEAT: the sequence again every 2 s, as a real Ice recalibrates
+# when the helpers of the next phase appear.
+for (( n = 1; n < ${T7_STUB_REPEAT:-1}; n++ )); do sleep 2; emit; done
 sleep 1000 &
 wait'
     # selfread answers by T7_STUB_SELFREAD: ok (on the bar), offbar, slow (1 s
@@ -69,6 +78,9 @@ wait'
     local helper='print -r -- "$*" >> $T7_STUB_MARKS/vzhelper
 id=none
 for (( i = 1; i < $#; i++ )); do [[ ${@[i]} == --identifiers ]] && id=${@[i+1]}; done
+for (( i = 1; i < $#; i++ )); do
+    [[ ${@[i]} == --autosave ]] && print -r -- "${@[i+1]} $(defaults read $T7_STUB_HELPER_DOMAIN "NSStatusItem Preferred Position ${@[i+1]}" 2>/dev/null)" >> $T7_STUB_MARKS/positions
+done
 print "up {\"pid\":1}"
 [[ "$*" == *--menu* ]] && print "menu {\"event\":\"open\"}"
 answer() { print -r -- "selfread {\"children\":[{\"frame\":[1100,0,24,32],\"identifier\":\"vz-other\"},{\"frame\":$1,\"identifier\":\"$2\"}]}"; }
@@ -86,13 +98,21 @@ done'
     stub $shared/apps/Target.app/Contents/MacOS/vzhelper $helper
     stub $shared/apps/Menus.app/Contents/MacOS/vzhelper $helper
     stub $shared/apps/icewatch 'print -r -- "$*" >> $T7_STUB_MARKS/icewatch
+if [[ $1 == references ]]; then
+    if (( $(grep -c -x references $T7_STUB_MARKS/icewatch) > ${T7_STUB_REFS_AFTER:-0} )); then
+        print -r -- "{\"complete\":true,\"dividerMinX\":1200,\"helpers\":[{\"id\":\"vz-t7-ref1\",\"side\":\"visible\",\"x\":1250}],\"iceIconMidX\":1310,\"items\":4,\"otherHidden\":0,\"otherVisible\":0,\"references\":1}"
+        exit 0
+    fi
+    print -r -- "{\"complete\":true,\"dividerMinX\":1200,\"helpers\":[{\"id\":\"vz-t7-ref1\",\"side\":\"hidden\",\"x\":1100}],\"iceIconMidX\":1310,\"items\":4,\"otherHidden\":0,\"otherVisible\":0,\"references\":0}"
+    exit 1
+fi
 if [[ $1 == menu-frame ]]; then
     print -r -- "${T7_STUB_MENU:-{\"barHeight\":33,\"displayWidth\":1728,\"menuMaxX\":574,\"notchMinX\":771.5,\"verdict\":\"fits\"}}"
     exit 0
 fi
 print "{\"axTrusted\":${T7_STUB_AX:-true},\"pid\":1,\"screenCapture\":true}"'
     cp $here/run-t7.sh $here/t7-lib.zsh $shared/
-    t7_write_env $shared ${1:-$(id -un)} $(id -un) test $domain $helper_domain BACKUP_ROOT=$tmp/backup NEW_ITEM_DELAY=0
+    t7_write_env $shared ${1:-$(id -un)} $(id -un) test $domain $helper_domain BACKUP_ROOT=$tmp/backup NEW_ITEM_DELAY=0 CAPTURE=0
     # As the real staging: nothing but evidence/ is writable by the runner.
     chmod -R a-w $shared
     chmod 1777 $shared/evidence
@@ -101,7 +121,7 @@ print "{\"axTrusted\":${T7_STUB_AX:-true},\"pid\":1,\"screenCapture\":true}"'
 # 2026-10-07 F2), as the staging would write them.
 set_limits() { # <status limit> <blocking grace>
     chmod u+w $shared $shared/t7.env
-    t7_write_env $shared $(id -un) $(id -un) test $domain $helper_domain BACKUP_ROOT=$tmp/backup NEW_ITEM_DELAY=0 STATUS_LIMIT=$1 BLOCKING_GRACE=$2
+    t7_write_env $shared $(id -un) $(id -un) test $domain $helper_domain BACKUP_ROOT=$tmp/backup NEW_ITEM_DELAY=0 CAPTURE=0 STATUS_LIMIT=$1 BLOCKING_GRACE=$2
     chmod -R a-w $shared
     chmod 1777 $shared/evidence
 }
@@ -315,6 +335,59 @@ grep -q '右邊那排圖示（Wi-Fi、電池、Ice）的最左端' $tmp/out.txt 
 ! grep -E '^ *ask ' $here/run-t7.sh | grep -v -E '"【看(選單列|終端)】' >/dev/null; expect "every question carries a tag"
 ! grep -E '^ *print -- "【第' $here/run-t7.sh | grep -v -E '【第 [0-9]+b? 列】【看(選單列|終端)】' >/dev/null; expect "every row's instruction carries a tag"
 
+# --- references (plan 2026-10-07 section 11, G1) -----------------------------------------
+[[ $(head -2 $T7_STUB_MARKS/vzhelper | grep -c -- '--autosave vz-t7-ref[12] --lifetime 9000') == 2 ]]; expect "two reference helpers start first, for the whole run"
+[[ $(cat $T7_STUB_MARKS/positions) == $'vz-t7-ref1 0.4\nvz-t7-ref2 0.6' ]]; expect "each finds its preferred position between Ice's icon and divider"
+grep -q '參照檢查：參照 1 個（讀取完整：true；自己的 helper 1 個；其他 app 的圖示：隱藏區 0 個、可見區 0 個）' $tmp/out.txt; expect "the report shows the references check, counts only"
+grep -q ' s\{0,1\}1 before-wait {' $shared/evidence/*/references.txt 2>/dev/null || grep -q '1 before-wait {' $shared/evidence/*/references.txt; expect "the layout is recorded again before the wait"
+! grep -q '拖到 Ice 圖示的左邊' $tmp/out.txt; expect "with a reference nobody is asked to drag"
+build_staging
+answer_when_active $tmp/answers '' y 60 '' y 10 1 y 10 n
+T7_STUB_REFS_AFTER=6 T7_STUB_REPEAT=8 run $tmp/answers --phase 1; expect "no reference at first: one drag, then the phase runs"
+[[ $(grep -c '拖到 Ice 圖示的左邊' $tmp/out.txt) == 1 ]] && grep -q 'p0.refs.drag1' $shared/evidence/*/answers.txt; expect "the owner is asked to drag once"
+build_staging
+print -l '' '' '' > $tmp/answers
+T7_STUB_REFS_AFTER=99 run $tmp/answers --phase 1
+[[ $? == 3 ]] && grep -q '沒有參照圖示，本輪無效' $tmp/out.txt && grep -q '偏好還原：verified' $tmp/out.txt && ! stub_ice_running && ! grep -q '【第 1 列】' $tmp/out.txt; expect "no reference after three drags: exit 3"
+[[ $(grep -c '拖到 Ice 圖示的左邊' $tmp/out.txt) == 3 ]]; expect "asked three times, no more"
+[[ $(grep -c -x references $T7_STUB_MARKS/icewatch) == 24 ]]; expect "each drag is followed by several reads, not one"
+
+# --- the smoke pass (G2): phases 1-3 with no question ---------------------------------------
+build_staging
+set_limits 30 1
+T7_STUB_REPEAT=8 run /dev/null --smoke; expect "smoke: three phases reach active with no input"
+for label in s1 s2 s3; do
+    grep -q -- "-- 自動檢查 $label" $tmp/out.txt; expect "smoke: $label is in the report"
+done
+! grep -q '未完成' $tmp/out.txt && ! grep -q '【第 1 列】' $tmp/out.txt; expect "smoke: every phase done, no row asked"
+[[ $(grep -c -- '--menu' $T7_STUB_MARKS/vzhelper) == 7 ]]; expect "smoke: 1 + 2 + 4 members were started"
+captures=($shared/evidence/*/*.png(N))
+(( ${#captures} == 0 )); expect "CAPTURE=0: no capture taken"
+build_staging
+set_limits 30 1
+T7_STUB_STATUS="checking shown:cannotAssess" T7_STUB_REPEAT=8 run /dev/null --smoke
+[[ $? == 3 ]] && [[ $(grep -c '本輪無效：Ice 沒有在隱藏（原因：cannotAssess）' $tmp/out.txt) == 3 ]] && grep -q '偏好還原：verified' $tmp/out.txt && ! stub_ice_running; expect "smoke: a failing phase is recorded and the next k still runs; exit 3"
+build_staging
+set_limits 30 1
+T7_STUB_REPEAT=8 run /dev/null
+[[ $? == 1 ]] && grep -q -- '-- 自動檢查 s3' $tmp/out.txt && grep -q '===== 階段 1 / 4' $tmp/out.txt && grep -q '輸入結束' $tmp/out.txt; expect "default: the smoke pass, then the checklist starts"
+build_staging
+set_limits 30 1
+T7_STUB_STATUS="checking shown:cannotAssess" T7_STUB_REPEAT=8 run /dev/null
+[[ $? == 3 ]] && ! grep -q '===== 階段 1 / 4' $tmp/out.txt && grep -q '自動檢查沒有全部通過' $tmp/out.txt; expect "default: a failed smoke pass ends the run before the checklist"
+for reason in noMembers unstableLayout; do
+    build_staging
+    set_limits 30 1
+    T7_STUB_STATUS="checking shown:$reason" run /dev/null --phase 1
+    [[ $? == 3 ]] && grep -q "原因：$reason" $tmp/out.txt; expect "$reason that stays: exit 3"
+done
+build_staging
+answer_when_active $tmp/answers y 60 '' y 10 1 y 10 n
+T7_STUB_STATUS="checking shown:noMembers checking active" run $tmp/answers --phase 1; expect "noMembers first, then active: the phase goes on"
+build_staging
+tamper $shared/t7.env "CAPTURE=2"
+run /dev/null --dry-run; refused; expect "a CAPTURE in t7.env that is not 0 or 1 exits 2"
+
 # --- Ice not hiding: the phase stops by itself (plan 2026-10-07 F2) ------------------------
 stops_cleanly() { # <exit code wanted>
     [[ $? == $1 ]] && grep -q '偏好還原：verified' $tmp/out.txt && ! stub_ice_running && ! grep -q '【第 1 列】' $tmp/out.txt
@@ -381,9 +454,9 @@ grep -q -- '-- 階段 1（k = 1）未完成' $tmp/out.txt; expect "end of input:
 # --- a helper that does not start: the phase is skipped, the run says so ---------------
 build_staging
 chmod u+w $shared/apps/Target.app/Contents/MacOS{,/vzhelper} && print -r -- "#!/bin/zsh"$'\n'"exit 1" > $shared/apps/Target.app/Contents/MacOS/vzhelper
-chmod u+w $shared $shared/t7.env && t7_write_env $shared $(id -un) $(id -un) test $domain $helper_domain BACKUP_ROOT=$tmp/backup NEW_ITEM_DELAY=0 && chmod -R a-w $shared && chmod 1777 $shared/evidence
+chmod u+w $shared $shared/t7.env && t7_write_env $shared $(id -un) $(id -un) test $domain $helper_domain BACKUP_ROOT=$tmp/backup NEW_ITEM_DELAY=0 CAPTURE=0 && chmod -R a-w $shared && chmod 1777 $shared/evidence
 run /dev/null --phase 1
-[[ $? == 3 ]] && grep -q '未完成' $tmp/out.txt && grep -q '偏好還原：verified' $tmp/out.txt && ! stub_ice_running; expect "a helper that does not start: exit 3, phase not completed, cleanup ran"
+[[ $? == 3 ]] && grep -q '參照 helper 沒有啟動' $tmp/out.txt && grep -q '偏好還原：verified' $tmp/out.txt && ! stub_ice_running && [[ ! -e $T7_STUB_MARKS/ice ]]; expect "a helper that does not start: exit 3 before Ice, cleanup ran"
 
 for signal in TERM HUP INT QUIT; do
     build_staging
@@ -394,7 +467,7 @@ for signal in TERM HUP INT QUIT; do
     perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV' /bin/zsh $shared/run-t7.sh --phase 1 < $tmp/fifo > $tmp/out.txt 2>&1 &
     pid=$!
     exec {hold}> $tmp/fifo
-    for _ in {1..100}; do [[ -e $T7_STUB_MARKS/vzhelper ]] && break; sleep 0.1; done
+    for _ in {1..100}; do [[ -e $T7_STUB_MARKS/ice-active ]] && break; sleep 0.1; done
     kill -$signal $pid
     wait $pid
     exec {hold}>&-

@@ -51,14 +51,7 @@ public enum CheckPlan {
         if let explicitCandidates {
             rawCandidateKeys = explicitCandidates
         } else {
-            rawCandidateKeys = set.items
-                .filter { item in
-                    item.basis != .positional && item.position == .onBar
-                        && item.frame.map { frame in
-                            frame.midX > dividerMinX && (iceIconFrame.map { frame.midX < $0.midX } ?? true)
-                        } == true
-                }
-                .sorted { $0.frame!.midX < $1.frame!.midX }
+            rawCandidateKeys = geometricReferenceCandidates(items: set.items, dividerMinX: dividerMinX, iceIconMidX: iceIconFrame?.midX)
                 .map(\.key)
         }
 
@@ -91,6 +84,21 @@ public enum CheckPlan {
         }
 
         return .observe(targets: targets, alsoObserved: alsoObserved, referenceCandidates: accepted, skipped: skipped)
+    }
+
+    /// D14's geometric filter: the identifiable on-bar items between the
+    /// divider and Ice's own icon, left to right. On its own so that a
+    /// caller outside Ice can ask a live bar the same question (plan
+    /// 2026-10-07-icebar-menu-frame-fix, section 11).
+    public static func geometricReferenceCandidates(items: [DiscoveredItem], dividerMinX: Double, iceIconMidX: Double?) -> [DiscoveredItem] {
+        items
+            .compactMap { item -> (item: DiscoveredItem, midX: Double)? in
+                guard item.basis != .positional, item.position == .onBar, let midX = item.frame?.midX else { return nil }
+                guard midX > dividerMinX, iceIconMidX.map({ midX < $0 }) ?? true else { return nil }
+                return (item, midX)
+            }
+            .sorted { $0.midX < $1.midX }
+            .map(\.item)
     }
 
     /// Every item of `set.items` whose mapped section is one of `sections`,

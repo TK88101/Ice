@@ -5,8 +5,14 @@
 # the checklist of section 10.5 with the owner, and on every exit path stops
 # them, restores Ice's preferences and prints the report.
 #
-#   /Users/Shared/IceReverse-t7/run-t7.sh [--phase 1|2|3|4]
+#   /Users/Shared/IceReverse-t7/run-t7.sh               the smoke pass, then the checklist
+#   /Users/Shared/IceReverse-t7/run-t7.sh --smoke       the smoke pass only: no question
+#   /Users/Shared/IceReverse-t7/run-t7.sh --phase 1|2|3|4   one checklist phase, no smoke pass
 #   /Users/Shared/IceReverse-t7/run-t7.sh --dry-run     starts neither Ice nor a helper
+#
+# The smoke pass (plan 2026-10-07-icebar-menu-frame-fix, section 11): phases
+# 1-3 up to Ice's `active` with nobody typing, each recorded, so that a sitting
+# is not spent on a run that cannot hide.
 #
 # Everything it trusts is in its own directory, written by stage-t7.sh: no
 # environment variable changes what it does.
@@ -31,16 +37,28 @@ long_menus=24
 # watches for an IceBar after the click.
 selfread_wait=2
 click_watch=3
-usage="usage: run-t7.sh [--dry-run] [--phase 1|2|3|4]"
+# Section 11, G1: Ice's baseline needs a reference, an identifiable item
+# between its hidden divider and its icon. Two helpers for that, started
+# before Ice with a preferred position between Ice's icon (0) and divider (1).
+reference_glyphs=(reference alt)
+reference_positions=(0.4 0.6)
+reference_polls=6
+reference_tries=3
+smoke_phases=(1 2 3)
+usage="usage: run-t7.sh [--dry-run] [--smoke] [--phase 1|2|3|4]"
 
 dry_run=0
+smoke=1
+checklist=1
 phases=(1 2 3 4)
 while (( $# )); do
     case $1 in
         --dry-run) dry_run=1 ;;
+        --smoke) checklist=0 ;;
         --phase)
             [[ ${2:-} == [1-4] ]] || { print -u2 -- $usage; exit 64; }
             phases=($2)
+            smoke=0
             shift ;;
         *) print -u2 -- $usage; exit 64 ;;
     esac
@@ -68,8 +86,11 @@ NEW_ITEM_DELAY=3
 # that stops hiding must stay the latest before the phase is given up.
 STATUS_LIMIT=300
 BLOCKING_GRACE=10
+# Section 11: a capture of the bar strip only, before and after each phase's
+# `active`; 0 in test-t7.sh, which must not capture the tester's bar.
+CAPTURE=1
 required=(EXPECT_USER OWNER_USER GIT_REV DOMAIN HELPER_DOMAINS ICE_SHA TARGET_SHA MENUS_SHA ICEWATCH_SHA)
-optional=(BACKUP_ROOT NEW_ITEM_DELAY STATUS_LIMIT BLOCKING_GRACE)
+optional=(BACKUP_ROOT NEW_ITEM_DELAY STATUS_LIMIT BLOCKING_GRACE CAPTURE)
 allowed=($required $optional)
 seen=()
 while IFS='=' read -r key value; do
@@ -84,7 +105,7 @@ for key in $required; do
     (( ${seen[(Ie)$key]} )) || { print -u2 -- "run-t7: t7.env 缺少 $key，停止。"; exit 2; }
 done
 domain=$DOMAIN
-[[ $STATUS_LIMIT == <1-> && $BLOCKING_GRACE == <-> ]] || { print -u2 -- "run-t7: t7.env 的 STATUS_LIMIT/BLOCKING_GRACE 不是整數，停止。"; exit 2; }
+[[ $STATUS_LIMIT == <1-> && $BLOCKING_GRACE == <-> && $CAPTURE == [01] ]] || { print -u2 -- "run-t7: t7.env 的 STATUS_LIMIT/BLOCKING_GRACE/CAPTURE 不合規，停止。"; exit 2; }
 helper_domains=(${(s:,:)HELPER_DOMAINS})
 backup_root=$BACKUP_ROOT
 
@@ -115,7 +136,10 @@ bar_height=$(t7_json_get "$menu_frame" barHeight)
 if (( dry_run )); then
     print -- "run-t7 dry-run：檢查通過（$GIT_REV；preflight $preflight；menu-frame $menu_frame）。正式執行會做："
     print -- "  1. 匯出 $domain 到 $backup_root/<run id>/prefs-before.plist，清空後寫入：$settings"
+    print -- "  1b. 啟動 ${#reference_glyphs} 個參照 helper（$shared/apps/Target.app/Contents/MacOS/vzhelper … --autosave vz-t7-ref<n> --lifetime $run_limit），偏好位置寫入 $helper_domains[1]"
     print -- "  2. 啟動 OS_ACTIVITY_DT_MODE=YES OS_ACTIVITY_MODE=debug $ice $ice_arguments"
+    print -- "  2b. $shared/apps/icewatch references：確認 Ice 的分隔線與圖示之間有參照圖示"
+    (( smoke )) && print -- "  自動檢查（不問問題）：階段 $smoke_phases 各自等到 active"
     for phase in $phases; do
         print -- "  階段 $phase：${phase_members[phase]} 個 helper（$shared/apps/Target.app/Contents/MacOS/vzhelper --controller <pid> --items 1 --identifiers vz-t7-<glyph> --glyphs <glyph> --menu --lifetime $helper_lifetime）"
     done
@@ -137,6 +161,16 @@ restore_armed=0
 cleaned=0
 helper_fds=()
 helper_pids=()
+# The reference helpers live for the whole run, not for a phase.
+reference_fds=()
+reference_pids=()
+references_line=
+# What the current phase's records are filed under: its number, or s<number>
+# in the smoke pass.
+label=0
+current_phase=0
+in_smoke=0
+phase_stopped=0
 # The current phase's members, for the placement snapshots (plan F3).
 member_fds=()
 member_ids=()
@@ -189,8 +223,14 @@ report() { # <restore verdict>
     local phase helper_domain state=empty
     print -- "==== T7 回報 ===="
     print -- "run $run_id（$GIT_REV）"
+    [[ -f $run/stops.txt ]] && awk 'index($0, "p0 ") == 1 { print "本輪無效：" substr($0, 4) }' $run/stops.txt
+    [[ -n $references_line ]] && print -r -- "參照檢查：$references_line"
     for phase in ${(on)${(k)phase_from}}; do
-        print -- "-- 階段 $phase（k = ${phase_members[phase]}）${${phase_done[$phase]:-未完成}:#1}"
+        if [[ $phase == s* ]]; then
+            print -- "-- 自動檢查 $phase（k = ${phase_members[${phase#s}]}）${${phase_done[$phase]:-未完成}:#1}"
+        else
+            print -- "-- 階段 $phase（k = ${phase_members[phase]}）${${phase_done[$phase]:-未完成}:#1}"
+        fi
         [[ -f $run/answers.txt ]] && awk -F'\t' -v prefix="p$phase." 'index($2, prefix) == 1 { print "  你的回答 " $2 " = " $3 }' $run/answers.txt
         [[ -f $run/stops.txt ]] && awk -v prefix="p$phase " 'index($0, prefix) == 1 { print "  本輪無效：" substr($0, length(prefix) + 1) }' $run/stops.txt
         [[ -f $run/placement.txt ]] && awk -v prefix="p$phase " 'index($0, prefix) == 1 { print "  " substr($0, length(prefix) + 1) }' $run/placement.txt
@@ -213,6 +253,8 @@ cleanup() {
     local restore="未變更" ice_gone=1
     [[ -n $watchdog_pid ]] && kill $watchdog_pid 2>/dev/null
     stop_ice || ice_gone=0
+    helper_fds+=($reference_fds)
+    helper_pids+=($reference_pids)
     close_helpers
     [[ -n $tail_pid ]] && kill $tail_pid 2>/dev/null
     if (( restore_armed )); then
@@ -265,6 +307,48 @@ for key value in $settings; do
 done
 note "settings written: $settings"
 
+# --- reference helpers, before Ice (section 11, G1) -----------------------------------------
+
+# The helper's stdin stays open in this script (EOF is its quit); the newest
+# one's descriptor is $helper_fds[-1].
+launch_helper() { # <app> <log> <vzhelper arguments...>
+    local app=$1 log=$2 fifo=$run/.fifo-$RANDOM fd
+    shift 2
+    mkfifo $fifo || { print -- "（無法建立 $fifo，helper $app 沒有啟動）"; return 1; }
+    $shared/apps/$app/Contents/MacOS/vzhelper --controller $$ "$@" --lifetime ${launch_lifetime:-$helper_lifetime} < $fifo > $log 2>&1 &
+    helper_pids+=($!)
+    exec {fd}> $fifo
+    rm -f $fifo
+    helper_fds+=($fd)
+    for _ in {1..50}; do grep -q '^up ' $log && return 0; sleep 0.2; done
+    print -- "（helper $app 沒有回報啟動，見 $log）"
+    return 1
+}
+
+# Before Ice, so that Ice's own items arrive on a bar that already has them;
+# each with a preferred position between Ice's icon (0) and its hidden divider
+# (1). Whether macOS honours that is checked by reference_gate, not assumed.
+launch_references() {
+    local i id launch_lifetime=$run_limit
+    delete_helper_domains
+    for i in {1..${#reference_glyphs}}; do
+        id=vz-t7-ref$i
+        defaults write $helper_domains[1] "NSStatusItem Preferred Position $id" -float $reference_positions[i]
+        launch_helper Target.app $run/helper-ref-$i.log --items 1 --identifiers $id --glyphs $reference_glyphs[i] --autosave $id || return 1
+        reference_fds+=($helper_fds[-1])
+        reference_pids+=($helper_pids[-1])
+        helper_fds[-1]=()
+        helper_pids[-1]=()
+        note "reference $i ($id) launched"
+    done
+}
+
+if ! launch_references; then
+    print -- "參照 helper 沒有啟動，本輪無效"
+    print -r -- "p0 參照 helper 沒有啟動" >> $run/stops.txt
+    finish 3
+fi
+
 # --- Ice (step 4) --------------------------------------------------------------------
 
 : > $run/ice.log
@@ -288,29 +372,13 @@ tail_pid=$!
 
 # --- helpers and questions (step 5) ----------------------------------------------------
 
-# The helper's stdin stays open in this script (EOF is its quit); the newest
-# one's descriptor is $helper_fds[-1].
-launch_helper() { # <app> <log> <vzhelper arguments...>
-    local app=$1 log=$2 fifo=$run/.fifo-$RANDOM fd
-    shift 2
-    mkfifo $fifo || { print -- "（無法建立 $fifo，helper $app 沒有啟動）"; return 1; }
-    $shared/apps/$app/Contents/MacOS/vzhelper --controller $$ "$@" --lifetime $helper_lifetime < $fifo > $log 2>&1 &
-    helper_pids+=($!)
-    exec {fd}> $fifo
-    rm -f $fifo
-    helper_fds+=($fd)
-    for _ in {1..50}; do grep -q '^up ' $log && return 0; sleep 0.2; done
-    print -- "（helper $app 沒有回報啟動，見 $log）"
-    return 1
-}
-
 # Launches a member and records where its item is at once, before Ice's quiet
 # period (3 s after the layout changes) lets a trial move it. Returns 1 when it
 # did not start, 2 when it is not on the bar (plan F3: the phase cannot be judged).
 launch_member() { # <index> <glyph>
-    local log=$run/helper-p$current_phase-$1.log rc
+    local log=$run/helper-p$label-$1.log rc
     launch_helper Target.app $log --items 1 --identifiers vz-t7-$2 --glyphs $2 --menu || return 1
-    note "phase $current_phase member $1 ($2) launched"
+    note "phase $label member $1 ($2) launched"
     member_fds+=($helper_fds[-1])
     member_ids+=(vz-t7-$2)
     member_names+=($1)
@@ -328,7 +396,7 @@ launch_member() { # <index> <glyph>
 # Returns t7_placement's 0 (on the bar), 1 (off) or 2 (unknown).
 snapshot_member() { # <member index> <label>
     local i=$1 before line place rc
-    local log=$run/helper-p$current_phase-$member_names[i].log
+    local log=$run/helper-p$label-$member_names[i].log
     before=$(grep -c '^selfread ' $log)
     print -u $member_fds[i] -- selfread
     for _ in {1..$((selfread_wait * 5))}; do
@@ -350,16 +418,21 @@ snapshot_member() { # <member index> <label>
         1) place="不在列上（${place#off }）" ;;
         *) place="unknown（${place#unknown }）" ;;
     esac
-    print -r -- "p$current_phase helper p$current_phase-$member_names[i] $2 $place" >> $run/placement.txt
+    print -r -- "p$label helper p$label-$member_names[i] $2 $place" >> $run/placement.txt
     return $rc
 }
 
-# The phase cannot be judged: say why, record it, and end the run (status 3).
+# The phase cannot be judged: say why and record it. The checklist ends the
+# run there (status 3); the smoke pass goes on to the next phase, so one
+# sitting shows every k. Callers return after it.
 stop_phase() { # <reason>
     print -- "$1，本輪無效"
-    print -r -- "p$current_phase $1" >> $run/stops.txt
-    note "phase $current_phase stopped: $1"
-    finish 3
+    print -r -- "p$label $1" >> $run/stops.txt
+    note "phase $label stopped: $1"
+    check_references "$label stopped"
+    capture_bar stopped
+    phase_stopped=1
+    (( in_smoke )) || finish 3
 }
 
 # Waits for Ice's first `active` of this phase (plan F2). A status that stops
@@ -372,15 +445,23 @@ wait_for_phase_status() {
         kill -0 $ice_pid 2>/dev/null || { print -- "Ice 已經結束，中止。"; finish 1; }
         # Any `active` since the phase began counts: Ice may have moved on
         # (a long menu, a quiet period) before this loop looked.
-        t7_log_has $run/ice.log ${phase_from[$current_phase]} "${t7_ice_status_prefix}active\$" && return 0
-        latest=$(t7_latest_status $run/ice.log ${phase_from[$current_phase]})
-        if [[ $latest == shown:(menuUnreadable|cannotAssess|noCleanLength) ]]; then
+        t7_log_has $run/ice.log ${phase_from[$label]} "${t7_ice_status_prefix}active\$" && return 0
+        latest=$(t7_latest_status $run/ice.log ${phase_from[$label]})
+        # `noMembers` is also Ice's normal first status, before it has seen
+        # the helpers: like the others it stops the phase only if it stays.
+        if [[ $latest == shown:(menuUnreadable|cannotAssess|noCleanLength|noMembers|unstableLayout) ]]; then
             [[ -n $blocked_since ]] || blocked_since=$SECONDS
-            (( SECONDS - blocked_since >= BLOCKING_GRACE )) && stop_phase "Ice 沒有在隱藏（原因：${latest#shown:}）"
+            if (( SECONDS - blocked_since >= BLOCKING_GRACE )); then
+                stop_phase "Ice 沒有在隱藏（原因：${latest#shown:}）"
+                return 1
+            fi
         else
             blocked_since=
         fi
-        (( SECONDS - started >= STATUS_LIMIT )) && stop_phase "Ice 沒有在隱藏（原因：$STATUS_LIMIT 秒內沒有 active）"
+        if (( SECONDS - started >= STATUS_LIMIT )); then
+            stop_phase "Ice 沒有在隱藏（原因：$STATUS_LIMIT 秒內沒有 active）"
+            return 1
+        fi
         sleep 0.5
     done
 }
@@ -416,7 +497,7 @@ ask() { # <key> <pattern> <hint> <question>
         fi
         [[ $answer =~ $2 ]] && break
     done
-    print -r -- "$(date +%H:%M:%S)"$'\t'"p$current_phase.$1"$'\t'"$answer" >> $run/answers.txt
+    print -r -- "$(date +%H:%M:%S)"$'\t'"p$label.$1"$'\t'"$answer" >> $run/answers.txt
     REPLY=$answer
 }
 
@@ -446,14 +527,14 @@ hide_and_press_phase() {
 # Rows 5-9: long menus, a new item, a Command-drag.
 layout_change_phase() {
     local count=$long_menus menus_fd
-    launch_helper Menus.app $run/helper-p$current_phase-menus.log --role menus || return 1
+    launch_helper Menus.app $run/helper-p$label-menus.log --role menus || return 1
     menus_fd=$helper_fds[-1]
     while true; do
         print -u $menus_fd -- "menus $count"
         note "menus $count sent"
         print -- "【第 5 列】【看選單列】點 Dock 上新出現的 Menus（選單列左邊會出現 M01、M02… 共 $count 個），停 10 秒。"
         ask row5.shown $yes_no "y/n" "【看選單列】helper 回到列上並一直留著？" || return 1
-        t7_log_has_long_menu $run/ice.log ${phase_from[$current_phase]} && break
+        t7_log_has_long_menu $run/ice.log ${phase_from[$label]} && break
         print -- "【看終端】紀錄裡沒有 longMenu（選單可能還不夠長）。"
         ask row5.retry '^([1-9]|[1-3][0-9]|40)?$' "1-40，或直接 Enter 跳過" "【看終端】要改用幾個選單再試一次？" || return 1
         [[ -z $REPLY ]] && break
@@ -478,38 +559,135 @@ layout_change_phase() {
     ask row9.backToThree $yes_no "y/n" "【看選單列】IceBar 回到 3 格？" || return 1
 }
 
-for current_phase in $phases; do
-    print
-    print -- "===== 階段 $current_phase / 4：${phase_members[current_phase]} 個 helper（上限 30 分鐘）====="
+# One phase up to Ice's `active`: the members, the placement gate, the wait,
+# the placement after, a capture before and after. Returns 1 when it stopped.
+reach_active() {
+    local index off_bar=0
+    phase_stopped=0
     delete_helper_domains
-    phase_from[$current_phase]=$(( $(log_lines) + 1 ))
-    note "phase $current_phase begins"
-    phase_ok=1
-    off_bar=0
+    phase_from[$label]=$(( $(log_lines) + 1 ))
+    note "phase $label begins"
     for index in {1..${phase_members[current_phase]}}; do
         launch_member $index $member_glyphs[index]
         case $? in
-            1) phase_ok=0 ;;
+            1) print -- "helper 沒有全部啟動，這個階段不做（可用 --phase $current_phase 重跑）。"; return 1 ;;
             2) off_bar=1 ;;
         esac
     done
-    if (( ! phase_ok )); then
-        print -- "helper 沒有全部啟動，這個階段不做（可用 --phase $current_phase 重跑）。"
-    else
-        (( off_bar )) && stop_phase "helper 不在選單列上"
-        wait_for_phase_status
-        snapshot_members_after_active
+    capture_bar before
+    # Recorded, not a gate: a member's arrival may have moved a reference.
+    check_references "$label before-wait"
+    if (( off_bar )); then
+        stop_phase "helper 不在選單列上"
+        return 1
+    fi
+    wait_for_phase_status || return 1
+    snapshot_members_after_active
+    capture_bar active
+}
+
+# The bar strip only (plan section 11); never the rest of the screen.
+capture_bar() { # <when>
+    (( CAPTURE )) || return 0
+    screencapture -x -R0,0,${display_width%.*},${bar_height%.*} $run/bar-$label-$1.png 2>/dev/null
+    note "capture $label $1: $(stat -f %z $run/bar-$label-$1.png 2>/dev/null || print failed) bytes"
+}
+
+end_phase() { # <completed: 0|1>
+    (( $1 )) && phase_done[$label]=1
+    phase_to[$label]=$(log_lines)
+    note "phase $label ends (complete: $1)"
+    close_helpers
+}
+
+# --- references (section 11, G1) ---------------------------------------------------------
+
+# Runs Ice's own reference rule on the live bar. The whole line, which names
+# other apps' items, goes to the run directory only; the Terminal and the
+# report get counts.
+check_references() { # [why it is asked]
+    local line rc
+    line=$($shared/apps/icewatch references 2>/dev/null)
+    rc=$?
+    print -r -- "$(date +%H:%M:%S) ${1:-gate} $line" >> $run/references.txt
+    references_line="參照 $(t7_json_get "$line" references || print '?') 個（讀取完整：$(t7_json_get "$line" complete || print '?')；自己的 helper $(t7_json_get "$line" helpers || print '?') 個；其他 app 的圖示：隱藏區 $(t7_json_get "$line" otherHidden || print '?') 個、可見區 $(t7_json_get "$line" otherVisible || print '?') 個）"
+    return $rc
+}
+
+# Several reads, as the bar and Accessibility take a moment to settle after
+# an item appears or is dragged.
+poll_references() {
+    for _ in {1..$reference_polls}; do
+        check_references && return 0
+        sleep 0.5
+    done
+    return 1
+}
+
+# Ice's baseline needs a reference. The helpers' preferred position should
+# have put one there; if not, the owner drags one, in this same sitting.
+reference_gate() {
+    local try
+    poll_references && return 0
+    for try in {1..$reference_tries}; do
+        print -- "【看選單列】Ice 需要一個「參照圖示」，現在沒有。請按住 Command 鍵，把一個方括號小圖示（黑白線條、沒有文字）往右拖到 Ice 圖示的左邊、緊挨著它，放開。"
+        print -r -- "  （目前：$references_line）"
+        ask refs.drag$try '^$' "Enter" "【看終端】拖好了就按 Enter（第 $try / $reference_tries 次）" || return 1
+        poll_references && return 0
+    done
+    return 1
+}
+
+# --- the run ---------------------------------------------------------------------------
+
+label=0
+current_phase=0
+if ! reference_gate; then
+    print -- "沒有參照圖示，本輪無效"
+    print -r -- "p0 沒有參照圖示（Ice 的分隔線與圖示之間沒有可辨識的圖示）" >> $run/stops.txt
+    note "no reference: $references_line"
+    finish 3
+fi
+note "references: $references_line"
+
+if (( smoke )); then
+    in_smoke=1
+    print
+    print -- "===== 自動檢查（不用輸入，約 ${#smoke_phases} × 3 分鐘）：確認 Ice 能把 helper 藏起來 ====="
+    for current_phase in $smoke_phases; do
+        label=s$current_phase
+        print
+        print -- "--- 自動檢查 $label：${phase_members[current_phase]} 個 helper ---"
+        phase_ok=1
+        reach_active || phase_ok=0
+        end_phase $phase_ok
+    done
+    in_smoke=0
+    if (( ${#phase_done} != ${#smoke_phases} )); then
+        print -- "自動檢查沒有全部通過，不進入問答。"
+        finish 3
+    fi
+    print -- "自動檢查全部通過。"
+    (( checklist )) || finish 0
+fi
+
+smoke_done=${#phase_done}
+for current_phase in $phases; do
+    label=$current_phase
+    print
+    print -- "===== 階段 $current_phase / 4：${phase_members[current_phase]} 個 helper（上限 30 分鐘）====="
+    phase_ok=1
+    if reach_active; then
         if (( current_phase == 4 )); then
             layout_change_phase || phase_ok=0
         else
             hide_and_press_phase || phase_ok=0
         fi
+    else
+        phase_ok=0
     fi
-    (( phase_ok )) && phase_done[$current_phase]=1
-    phase_to[$current_phase]=$(log_lines)
-    note "phase $current_phase ends (complete: $phase_ok)"
-    close_helpers
+    end_phase $phase_ok
 done
 
 # 3: the run ended in order, but a phase was not completed.
-finish $(( ${#phase_done} == ${#phases} ? 0 : 3 ))
+finish $(( ${#phase_done} - smoke_done == ${#phases} ? 0 : 3 ))

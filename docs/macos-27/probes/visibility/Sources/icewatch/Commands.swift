@@ -1,5 +1,5 @@
-// icewatch's read-only subcommands: `preflight`, `menu-frame`, `dry-run`,
-// `dump-windows`.
+// icewatch's read-only subcommands: `preflight`, `menu-frame`, `references`,
+// `dry-run`, `dump-windows`.
 import AppKit
 import ApplicationServices
 import CoreGraphics
@@ -7,6 +7,7 @@ import Foundation
 import IceCore
 import IceWatchCore
 import MenuBarDetectorFeed
+import MenuBarDiscovery
 
 enum Preflight {
     /// Neither call prompts. Ice will be a child of this same chain, so what
@@ -39,6 +40,65 @@ enum MenuFrame {
         let verdict = MenuWidthRule.verdict(menuMaxX: menuMaxX, notchMinX: notchMinX)
         print(MenuFrameReport.line(menuMaxX: menuMaxX, notchMinX: notchMinX, displayWidth: displayWidth, barHeight: barHeight, verdict: verdict.rawValue))
         return verdict == .fits ? 0 : 1
+    }
+}
+
+enum References {
+    static let helperPrefix = "vz-"
+
+    /// One read-only discovery pass, then Ice's own rule for a baseline's
+    /// references (`ExternalReferenceCheck`): is there an identifiable item
+    /// between Ice's hidden divider and its icon (plan
+    /// 2026-10-07-icebar-menu-frame-fix, section 11)? Exit 0 only for a
+    /// complete pass with at least one reference. The line names other apps'
+    /// items: it belongs in the evidence directory, not on the Terminal.
+    /// This command-line process cannot answer Accessibility, so reading its
+    /// own pid would only time out and mark the pass incomplete (as `mbdiscover`).
+    struct OtherProcesses: RunningAppsProviding {
+        let base = LiveRunningApps()
+        func processes() -> [ProcessInfoRecord] { base.processes().filter { !$0.isSelf } }
+        func agentPID() -> Int32? { base.agentPID() }
+    }
+
+    static func run() async -> Int32 {
+        let own = OwnIdentifiers(visible: "Ice.ControlItem.Visible", hidden: "Ice.ControlItem.Hidden", alwaysHidden: "Ice.ControlItem.AlwaysHidden")
+        let discoverer = MenuBarDiscoverer(
+            apps: OtherProcesses(),
+            reader: LiveExtrasReader(),
+            display: LiveDisplay(),
+            isTrusted: { AXIsProcessTrusted() },
+            ownIdentifiers: own,
+            now: { ProcessInfo.processInfo.systemUptime }
+        )
+        let set = await discoverer.discover(previous: nil)?.set
+        let check = ExternalReferenceCheck(items: set?.items ?? [], own: own)
+
+        func side(_ item: DiscoveredItem) -> String {
+            ReferencesReport.side(midX: item.frame?.midX, dividerMinX: check.dividerMinX, iceIconMidX: check.iceIconMidX)
+        }
+        let helpers = check.others.filter { $0.key.identifier.hasPrefix(helperPrefix) }
+        let foreign = check.others.filter { !$0.key.identifier.hasPrefix(helperPrefix) }
+        // Ice's baseline makes a discovery pass of its own: an incomplete one
+        // here says nothing about that one, so it is not a pass.
+        let complete = if case .complete? = set?.completeness { true } else { false }
+        print(ReferencesReport.line(
+            complete: complete,
+            items: set?.items.count ?? 0,
+            dividerMinX: check.dividerMinX,
+            iceIconMidX: check.iceIconMidX,
+            references: check.references.count,
+            helpers: helpers.map { ReferencesReport.Helper(id: $0.key.identifier, x: $0.frame?.minX, side: side($0)) },
+            others: foreign.map {
+                ReferencesReport.Other(
+                    namespace: $0.key.namespace,
+                    basis: DiscoveryLabels.basisName($0.basis),
+                    position: DiscoveryLabels.positionName($0.position),
+                    x: $0.frame?.minX,
+                    side: side($0)
+                )
+            }
+        ))
+        return complete && !check.references.isEmpty ? 0 : 1
     }
 }
 
