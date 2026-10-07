@@ -58,6 +58,16 @@ final class AppState: ObservableObject {
     /// Storage for internal observers.
     private var cancellables = Set<AnyCancellable>()
 
+    /// macOS 27: keeps `MenuBarOwner.pid` current from launch, before the
+    /// asynchronous setup (plan 2026-10-07-icebar-menu-frame-fix, F1).
+    private var menuBarOwnerObservation: AnyCancellable?
+
+    init() {
+        if #available(macOS 27, *) {
+            menuBarOwnerObservation = MenuBarOwner.observe()
+        }
+    }
+
     /// Logger for the app state.
     private let logger = Logger(category: "AppState")
 

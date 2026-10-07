@@ -706,6 +706,7 @@ test run (A6), anything on a bar.
 | # | 階段 | 做 X | 應看到 Y | 對應 |
 |---|---|---|---|---|
 | 1 | 每階段開頭 | 等 helper 出現、Terminal 顯示 `active` | helper 圖示先出現在列上最左側，約 1 分鐘內閃動後消失；列上沒有 «；Ice 圖示還在 | AC1 前提 |
+| 1b | 1（k = 1） | 點一下左上角 Terminal 的「Shell」選單，按 Esc，看著 Ice 圖示下方數 3 秒 | 選單正常打開；這 3 秒裡沒有跳出 IceBar（2026-10-07 plan F2b） | menu-frame fix |
 | 2 | 1-3（k = 1、2、4） | 右鍵 Ice 圖示 > Ice Settings… > General，把 **Use Ice Bar** 關掉再打開；等 Terminal 顯示 `active`；做 10 次 | 每次打開後：helper 全部消失、列上沒有 «；10 次至少 9 次 | AC1 |
 | 3 | 1-3 | 左鍵點 Ice 圖示 | Ice 圖示下方出現 IceBar，格數 = k，每格有圖示（helper 沒有自己的 app 圖示，會是同一個灰階通用圖示） | AC2 |
 | 4 | 1-3 | 點 IceBar 的一格；按 Esc 關選單；輪流點各格共 10 次 | 每次 1 秒內出現只有一項「Spike」的選單；10 次至少 9 次；沒有任何一格變灰 | AC2 |

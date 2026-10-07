@@ -4,6 +4,7 @@
 //
 
 import Combine
+import MenuBarDetectorFeed
 import SwiftUI
 
 // MARK: - Bundle
@@ -551,22 +552,7 @@ extension NSScreen {
 
     /// Returns the frame of the application menu on this screen.
     func getApplicationMenuFrame() -> CGRect? {
-        let displayBounds = CGDisplayBounds(displayID)
-
-        guard
-            let menuBar = AXHelpers.element(at: displayBounds.origin),
-            AXHelpers.role(for: menuBar) == .menuBar
-        else {
-            return nil
-        }
-
-        let applicationMenuFrame = AXHelpers.children(for: menuBar).reduce(into: CGRect.null) { result, child in
-            if AXHelpers.isEnabled(child), let childFrame = AXHelpers.frame(for: child) {
-                result = result.union(childFrame)
-            }
-        }
-
-        if applicationMenuFrame.width <= 0 || applicationMenuFrame.isNull {
+        guard let applicationMenuFrame = readApplicationMenuFrame() else {
             return nil
         }
 
@@ -583,6 +569,39 @@ extension NSScreen {
             let leftArea = notchedScreen.auxiliaryTopLeftArea,
             applicationMenuFrame.width >= leftArea.maxX
         {
+            return nil
+        }
+
+        return applicationMenuFrame
+    }
+
+    /// The application menu's frame before the inactive-screen check. On
+    /// macOS 27 the hit test at the display origin returns a `MenuBarAgent`
+    /// window, not the menu bar, so the frame is read from the menu bar
+    /// owner's own `AXMenuBar` there (plan 2026-10-07-icebar-menu-frame-fix, F1).
+    private func readApplicationMenuFrame() -> CGRect? {
+        if #available(macOS 27, *) {
+            return ApplicationMenuReader.live.frame(owningPID: MenuBarOwner.pid.current).map { frame in
+                CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height)
+            }
+        }
+
+        let displayBounds = CGDisplayBounds(displayID)
+
+        guard
+            let menuBar = AXHelpers.element(at: displayBounds.origin),
+            AXHelpers.role(for: menuBar) == .menuBar
+        else {
+            return nil
+        }
+
+        let applicationMenuFrame = AXHelpers.children(for: menuBar).reduce(into: CGRect.null) { result, child in
+            if AXHelpers.isEnabled(child), let childFrame = AXHelpers.frame(for: child) {
+                result = result.union(childFrame)
+            }
+        }
+
+        if applicationMenuFrame.width <= 0 || applicationMenuFrame.isNull {
             return nil
         }
 

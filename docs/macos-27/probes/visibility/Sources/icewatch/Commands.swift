@@ -1,9 +1,12 @@
-// icewatch's read-only subcommands: `preflight`, `dry-run`, `dump-windows`.
+// icewatch's read-only subcommands: `preflight`, `menu-frame`, `dry-run`,
+// `dump-windows`.
 import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
+import IceCore
 import IceWatchCore
+import MenuBarDetectorFeed
 
 enum Preflight {
     /// Neither call prompts. Ice will be a child of this same chain, so what
@@ -17,6 +20,29 @@ enum Preflight {
         let data = (try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])) ?? Data()
         print(String(decoding: data, as: UTF8.self))
         return 0
+    }
+}
+
+enum MenuFrame {
+    /// Reads the application menu's frame with Ice's own macOS 27 reader and
+    /// the notch as Ice reads it (`NSScreen.frameOfNotch`'s left edge), and
+    /// prints the long-menu verdict (plan 2026-10-07-icebar-menu-frame-fix, F4),
+    /// with the main display's width and bar height for the placement check (F3).
+    /// Read-only; exit 0 only for `fits`.
+    static func run() -> Int32 {
+        let pid = NSWorkspace.shared.menuBarOwningApplication?.processIdentifier
+        let menuMaxX = ApplicationMenuReader.live.frame(owningPID: pid)?.maxX
+        let screen = NSScreen.main
+        let notchMinX = screen?.auxiliaryTopLeftArea.map { Double($0.maxX) }
+        let displayWidth = screen.map { Double($0.frame.width) }
+        let barHeight = screen.map { Double($0.frame.maxY - $0.visibleFrame.maxY) }
+        let verdict = switch MenuWidthRule.verdict(menuMaxX: menuMaxX, notchMinX: notchMinX) {
+        case .fits: "fits"
+        case .crossesNotch: "crossesNotch"
+        case .unreadable: "unreadable"
+        }
+        print(MenuFrameReport.line(menuMaxX: menuMaxX, notchMinX: notchMinX, displayWidth: displayWidth, barHeight: barHeight, verdict: verdict))
+        return MenuFrameReport.exitCode(verdict: verdict)
     }
 }
 

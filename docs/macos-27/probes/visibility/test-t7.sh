@@ -41,8 +41,11 @@ stub() { # <path> <body>
     print -r -- "#!/bin/zsh"$'\n'"$2" > $1
     chmod 0755 $1
 }
-# The stub Ice logs `active` a moment after it starts, as the real one does
-# after a calibration, and leaves a marker so that a test can wait for it.
+# The stub Ice logs the statuses of T7_STUB_STATUS one after the other (by
+# default `checking`, then `active`, as the real one does after a calibration;
+# `sleep:<s>` waits, `exit` ends it, `shown:<reason>` is a shown status) and then
+# leaves a marker so that a test can wait for it. The stubs, not run-t7.sh, read
+# the environment.
 build_staging() { # [expected user]
     wipe
     mkdir -p $shared/evidence $T7_STUB_MARKS $tmp/backup
@@ -50,18 +53,43 @@ build_staging() { # [expected user]
 print -u2 "2026-10-05 10:00:00.100000+0900 Ice[1:1] [Permissions] Passed all permissions checks"
 trap "exit 0" TERM
 sleep 1
-print -u2 "2026-10-05 10:00:01.000000+0900 Ice[1:1] [IceBarHiding] IceBar hiding: checking"
-print -u2 "2026-10-05 10:00:09.500000+0900 Ice[1:1] [IceBarHiding] IceBar hiding: active"
+for token in ${=T7_STUB_STATUS:-checking active}; do
+    case $token in
+        sleep:*) sleep ${token#sleep:} ;;
+        exit) exit 0 ;;
+        shown:*) print -u2 "2026-10-05 10:00:02.000000+0900 Ice[1:1] [IceBarHiding] IceBar hiding: shown(IceCore.IceBarShownReason.${token#shown:})" ;;
+        *) print -u2 "2026-10-05 10:00:09.500000+0900 Ice[1:1] [IceBarHiding] IceBar hiding: $token" ;;
+    esac
+done
 : > $T7_STUB_MARKS/ice-active
 sleep 1000 &
 wait'
+    # selfread answers by T7_STUB_SELFREAD: ok (on the bar), offbar, slow (1 s
+    # late, still on the bar), malformed, wrongid, none.
     local helper='print -r -- "$*" >> $T7_STUB_MARKS/vzhelper
+id=none
+for (( i = 1; i < $#; i++ )); do [[ ${@[i]} == --identifiers ]] && id=${@[i+1]}; done
 print "up {\"pid\":1}"
 [[ "$*" == *--menu* ]] && print "menu {\"event\":\"open\"}"
-while read -r line; do print -r -- "$line" >> $T7_STUB_MARKS/vzhelper-stdin; done'
+answer() { print -r -- "selfread {\"children\":[{\"frame\":[1100,0,24,32],\"identifier\":\"vz-other\"},{\"frame\":$1,\"identifier\":\"$2\"}]}"; }
+while read -r line; do
+    print -r -- "$line" >> $T7_STUB_MARKS/vzhelper-stdin
+    [[ $line == selfread ]] || continue
+    case ${T7_STUB_SELFREAD:-ok} in
+        ok) answer "[1200,0,24,32]" $id ;;
+        offbar) answer "[1200,300,24,32]" $id ;;
+        slow) { sleep 1; answer "[1200,0,24,32]" $id } & ;;
+        malformed) print -r -- "selfread {oops" ;;
+        wrongid) answer "[1200,0,24,32]" vz-someone-else ;;
+    esac
+done'
     stub $shared/apps/Target.app/Contents/MacOS/vzhelper $helper
     stub $shared/apps/Menus.app/Contents/MacOS/vzhelper $helper
     stub $shared/apps/icewatch 'print -r -- "$*" >> $T7_STUB_MARKS/icewatch
+if [[ $1 == menu-frame ]]; then
+    print -r -- "${T7_STUB_MENU:-{\"barHeight\":33,\"displayWidth\":1728,\"menuMaxX\":574,\"notchMinX\":771.5,\"verdict\":\"fits\"}}"
+    exit 0
+fi
 print "{\"axTrusted\":${T7_STUB_AX:-true},\"pid\":1,\"screenCapture\":true}"'
     cp $here/run-t7.sh $here/t7-lib.zsh $shared/
     t7_write_env $shared ${1:-$(id -un)} $(id -un) test $domain $helper_domain BACKUP_ROOT=$tmp/backup NEW_ITEM_DELAY=0
@@ -159,6 +187,35 @@ summary=$(print "2026-10-05 10:00:01.000000+0900 Ice[1:1] [Other] Press failed, 
 t7_log_has_long_menu $tmp/ice.log 1; expect "long menu found in the log"
 ! t7_log_has_long_menu $tmp/ice.log 10; expect "long menu not found after its line"
 
+# --- t7-lib: the latest status, menu-frame, helper placement (plan 2026-10-07 F2-F4) ---
+[[ $(t7_latest_status $tmp/ice.log 1) == shown:longMenu ]]; expect "latest status: a shown reason"
+[[ $(t7_latest_status $tmp/ice.log 5) == shown:longMenu && $(t7_latest_status $tmp/ice.log 1 7) == checking ]]; expect "latest status: within a slice"
+[[ $(t7_latest_status $tmp/ice.log 1 5) == active ]]; expect "latest status: active"
+[[ -z $(t7_latest_status $tmp/ice.log 12) ]]; expect "latest status: none after the last line"
+fits='{"barHeight":33,"displayWidth":1728,"menuMaxX":574,"notchMinX":771.5,"verdict":"fits"}'
+t7_menu_frame_ok $fits; expect "menu-frame: fits with every number is ok"
+for bad in '{"barHeight":33,"displayWidth":1728,"menuMaxX":null,"notchMinX":771.5,"verdict":"unreadable"}' \
+    '{"barHeight":33,"displayWidth":1728,"menuMaxX":null,"notchMinX":771.5,"verdict":"fits"}' \
+    '{"barHeight":33,"displayWidth":1728,"menuMaxX":900,"notchMinX":771.5,"verdict":"crossesNotch"}' \
+    '{"barHeight":33,"menuMaxX":574,"notchMinX":771.5,"verdict":"fits"}' \
+    'menuMaxX 574 fits' ''; do
+    ! t7_menu_frame_ok $bad; expect "menu-frame refused: ${bad[1,60]}"
+done
+[[ $(t7_json_get $fits displayWidth) == 1728 ]]; expect "json: a number by key"
+reply() { # <identifier> <frame>
+    print -r -- '{"children":[{"frame":[1100,0,24,32],"identifier":"vz-other"},{"frame":'$2',"identifier":"'$1'"}],"trusted":true}'
+}
+[[ $(t7_placement "$(reply vz-t7-hidden2 '[1210.5,0,24,32]')" vz-t7-hidden2 1728 33) == 'on 1210.5' ]]; expect "placement: on the bar, its own child"
+t7_placement "$(reply vz-t7-hidden2 '[1210.5,0,24,32]')" vz-t7-hidden2 1728 33 >/dev/null; expect "placement: on the bar returns 0"
+for frame in '[1210,200,24,32]' '[-40,0,24,32]' '[1720,0,24,32]' '[1210,0,0,32]' '[1210,0,24,40]'; do
+    t7_placement "$(reply vz-t7-hidden2 $frame)" vz-t7-hidden2 1728 33 >/dev/null
+    [[ $? == 1 ]]; expect "placement: off the bar $frame"
+done
+for json in "$(reply vz-t7-other2 '[1210,0,24,32]')" "$(reply vz-t7-hidden2 '"x"')" '{"children":[{"identifier":"vz-t7-hidden2"}]}' '{"error":"unencodable"}' 'garbage' ''; do
+    t7_placement "$json" vz-t7-hidden2 1728 33 >/dev/null
+    [[ $? == 2 ]]; expect "placement: unknown for ${json[1,50]}"
+done
+
 # What t7_summary reads is what Ice's sources write.
 ice27=$repo/Ice/MenuBar/IceBar27
 core=$repo/Packages/IceCore/Sources/IceCore
@@ -184,7 +241,7 @@ done
 build_staging
 run /dev/null --dry-run; expect "dry run exits 0"
 [[ ! -e $T7_STUB_MARKS/ice && ! -e $T7_STUB_MARKS/vzhelper ]]; expect "dry run starts neither Ice nor a helper"
-[[ $(cat $T7_STUB_MARKS/icewatch 2>/dev/null) == preflight ]]; expect "dry run calls icewatch with preflight only"
+[[ $(cat $T7_STUB_MARKS/icewatch 2>/dev/null) == $'preflight\nmenu-frame' ]]; expect "dry run calls icewatch with preflight and menu-frame only"
 t7_domain_is_empty $domain; expect "dry run leaves the domain empty"
 [[ -z $(ls $shared/evidence) && -z $(ls $tmp/backup) ]]; expect "dry run writes nothing"
 
@@ -200,6 +257,12 @@ tamper $shared/Ice.app/Contents/MacOS/Ice.debug.dylib code
 run /dev/null --dry-run; refused; expect "a file added to the staged Ice.app exits 2"
 build_staging
 T7_STUB_AX=false run /dev/null --dry-run; refused; expect "a false preflight exits 2"
+for menu in '{"barHeight":33,"displayWidth":1728,"menuMaxX":null,"notchMinX":771.5,"verdict":"unreadable"}' 'garbage'; do
+    build_staging
+    T7_STUB_MENU=$menu run /dev/null --dry-run; refused; expect "menu-frame ${menu[1,40]} exits 2 in a dry run"
+    build_staging
+    T7_STUB_MENU=$menu run /dev/null --phase 1; refused; expect "menu-frame ${menu[1,40]} exits 2 before anything starts"
+done
 build_staging
 tamper $shared/t7.env "X=\$(touch $T7_STUB_MARKS/pwned)"
 run /dev/null --dry-run; refused; expect "a command in t7.env exits 2 and is not run"
@@ -213,7 +276,8 @@ run /dev/null --dry-run; refused; expect "a symlinked library exits 2, in a dry 
 # --- one phase, start to report ---------------------------------------------------
 build_staging
 defaults write $domain Text -string before
-answer_when_active $tmp/answers y 60 10 1 y 10 n
+# row 1 (two answers), row 1b (Enter, then y), rows 2-4.
+answer_when_active $tmp/answers y 60 '' y 10 1 y 10 n
 run $tmp/answers --phase 1; expect "phase 1 runs to the end"
 grep -q '==== T7 回報 ====' $tmp/out.txt && grep -q '==== 結束 ====' $tmp/out.txt; expect "the report has both markers"
 grep -q '偏好還原：verified' $tmp/out.txt; expect "the report says the restore is verified"
@@ -226,13 +290,57 @@ backup=($tmp/backup/*(N))
 grep -q 'active 1 次' $tmp/out.txt && grep -q '紀錄 2 行，讀懂 2 行' $tmp/out.txt; expect "the report counts the log"
 grep -q 'helper 選單開啟 1 次' $tmp/out.txt; expect "the report counts the helpers' menu opens"
 grep -q 'p1.row4.openedOfTen = 10' $tmp/out.txt; expect "the report lists the answers"
+[[ $(grep -c 'p1.row1b.noIceBar = y' $tmp/out.txt) == 1 ]] && [[ $(grep -c '「Shell」' $tmp/out.txt) == 1 ]]; expect "row 1b is asked once and recorded"
+grep -q 'helper p1-1 啟動後 x=1200 在列上' $tmp/out.txt && grep -q 'helper p1-1 active 後 x=1200 在列上' $tmp/out.txt; expect "the report places the helper at both snapshots"
+grep -q '右邊那排圖示（Wi-Fi、電池、Ice）的最左端' $tmp/out.txt && grep -q 'x = 1200' $tmp/out.txt; expect "row 1 says where to look"
+# Every question and every row's instruction says where to look.
+! grep -E '^ *ask ' $here/run-t7.sh | grep -v -E '"【看(選單列|終端)】' >/dev/null; expect "every question carries a tag"
+! grep -E '^ *print -- "【第' $here/run-t7.sh | grep -v -E '【第 [0-9]+b? 列】【看(選單列|終端)】' >/dev/null; expect "every row's instruction carries a tag"
+
+# --- Ice not hiding: the phase stops by itself (plan 2026-10-07 F2) ------------------------
+stops_cleanly() { # <exit code wanted>
+    [[ $? == $1 ]] && grep -q '偏好還原：verified' $tmp/out.txt && ! stub_ice_running && ! grep -q '【第 1 列】' $tmp/out.txt
+}
+build_staging
+T7_STUB_STATUS="checking shown:menuUnreadable" run /dev/null --phase 1 --test-limits 30 1
+stops_cleanly 3 && grep -q 'Ice 沒有在隱藏（原因：menuUnreadable），本輪無效' $tmp/out.txt; expect "menuUnreadable that stays: exit 3, said, no row prompt"
+grep -q -- '-- 階段 1（k = 1）未完成' $tmp/out.txt && grep -q '本輪無效：Ice 沒有在隱藏（原因：menuUnreadable）' $tmp/out.txt; expect "the report says why the phase stopped"
+build_staging
+answer_when_active $tmp/answers y 60 '' y 10 1 y 10 n
+T7_STUB_STATUS="checking shown:menuUnreadable active" run $tmp/answers --phase 1 --test-limits 30 5; expect "menuUnreadable then active within the grace: the phase goes on"
+build_staging
+T7_STUB_STATUS="checking" run /dev/null --phase 1 --test-limits 2 1
+stops_cleanly 3 && grep -q 'Ice 沒有在隱藏（原因：2 秒內沒有 active），本輪無效' $tmp/out.txt; expect "no active within the limit: exit 3"
+build_staging
+T7_STUB_STATUS="checking exit" run /dev/null --phase 1 --test-limits 30 1
+stops_cleanly 1 && grep -q 'Ice 已經結束' $tmp/out.txt; expect "Ice ends while waiting: exit 1"
+for reason in cannotAssess noCleanLength; do
+    build_staging
+    T7_STUB_STATUS="checking shown:$reason" run /dev/null --phase 1 --test-limits 30 1
+    stops_cleanly 3 && grep -q "原因：$reason" $tmp/out.txt; expect "$reason that stays: exit 3"
+done
+
+# --- where the helper is: the first snapshot gates the phase (plan F3) ---------------------
+build_staging
+T7_STUB_SELFREAD=offbar run /dev/null --phase 1 --test-limits 30 1
+stops_cleanly 3 && grep -q 'helper 不在選單列上，本輪無效' $tmp/out.txt && grep -q 'helper p1-1 啟動後 不在列上（1200,300,24,32）' $tmp/out.txt; expect "a helper below the bar: exit 3 before any row"
+for mode in malformed wrongid none; do
+    build_staging
+    T7_STUB_SELFREAD=$mode run /dev/null --phase 1 --test-limits 30 1
+    stops_cleanly 3 && grep -q 'helper p1-1 啟動後 unknown' $tmp/out.txt && [[ $(grep -c -x selfread $T7_STUB_MARKS/vzhelper-stdin) == 2 ]]; expect "selfread $mode: asked twice, then exit 3"
+done
+build_staging
+answer_when_active $tmp/answers y 60 '' y 10 1 y 10 n
+T7_STUB_SELFREAD=slow run $tmp/answers --phase 1; expect "a selfread reply 1 s late still counts"
+grep -q 'helper p1-1 啟動後 x=1200 在列上' $tmp/out.txt; expect "and places the helper"
 
 # --- phase 4: the menus helper, a new item ------------------------------------------
 build_staging
-# ready, row 5 (shown, no longMenu in the stub's log: Enter skips the retry, no
-# IceBar), row 6, row 7 (Enter, two answers), row 8, row 9.
-answer_when_active $tmp/answers y y '' y y 20 '' y y y y y y
-run $tmp/answers --phase 4; expect "phase 4 runs to the end"
+# Row 5 (shown, no longMenu in the stub's log: Enter skips the retry, no
+# IceBar), row 6, row 7 (Enter, two answers), row 8, row 9. A longMenu after the
+# first active is not a stop.
+answer_when_active $tmp/answers y '' y y 20 '' y y y y y y
+T7_STUB_STATUS="checking active shown:longMenu" run $tmp/answers --phase 4 --test-limits 20 1; expect "phase 4 runs to the end"
 grep -q -- '--role menus' $T7_STUB_MARKS/vzhelper && grep -q -x 'menus 24' $T7_STUB_MARKS/vzhelper-stdin; expect "the menus helper got its count"
 [[ $(grep -c -- '--menu ' $T7_STUB_MARKS/vzhelper) == 3 ]] && grep -q 'vz-t7-gamma' $T7_STUB_MARKS/vzhelper; expect "two members and the new item were started"
 grep -q 'p4.row9.backToThree = y' $tmp/out.txt; expect "the report lists phase 4's answers"

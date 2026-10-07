@@ -55,6 +55,49 @@ t7_preflight_ok() { # <icewatch preflight's line>
     [[ $1 == *'"axTrusted":true'* && $1 == *'"screenCapture":true'* ]]
 }
 
+# A value of a JSON text by key path (plutil reads JSON; a number comes back as
+# e.g. 771.500000, an array as its count). Fails for bad JSON, a missing key or null.
+t7_json_get() { # <json> <key path>
+    print -r -- "$1" | plutil -extract "$2" raw -o - - 2>/dev/null
+}
+
+t7_is_number() { # <text>
+    [[ $1 =~ '^-?[0-9]+(\.[0-9]+)?$' ]]
+}
+
+# `icewatch menu-frame`'s line (plan 2026-10-07-icebar-menu-frame-fix, F4):
+# Ice's reader found the menu and it fits; every value the run uses is a number.
+t7_menu_frame_ok() { # <line>
+    local key value
+    [[ $(t7_json_get "$1" verdict) == fits ]] || return 1
+    for key in menuMaxX notchMinX displayWidth barHeight; do
+        value=$(t7_json_get "$1" $key) && t7_is_number $value || return 1
+    done
+}
+
+# Where a helper's item is, from its `selfread` reply (plan F3): its own child,
+# found by identifier, and its whole frame inside the main display's bar band.
+# Prints `on <x>`, `off <x,y,w,h>` or `unknown <reason>`; returns 0, 1 or 2.
+t7_placement() { # <selfread json> <identifier> <display width> <bar height>
+    local json=$1 count i x y w h
+    count=$(t7_json_get "$json" children) && [[ $count == <-> ]] || { print -r -- "unknown 回覆讀不懂"; return 2; }
+    for (( i = 0; i < count; i++ )); do
+        [[ $(t7_json_get "$json" children.$i.identifier) == $2 ]] || continue
+        x=$(t7_json_get "$json" children.$i.frame.0) && y=$(t7_json_get "$json" children.$i.frame.1) \
+            && w=$(t7_json_get "$json" children.$i.frame.2) && h=$(t7_json_get "$json" children.$i.frame.3) \
+            && t7_is_number $x && t7_is_number $y && t7_is_number $w && t7_is_number $h \
+            || { print -r -- "unknown 讀不到 $2 的位置"; return 2; }
+        if (( w > 0 && h > 0 && x >= 0 && x + w <= $3 && y >= 0 && y + h <= $4 )); then
+            printf 'on %g\n' $x
+            return 0
+        fi
+        printf 'off %g,%g,%g,%g\n' $x $y $w $h
+        return 1
+    done
+    print -r -- "unknown 沒有 $2 這個項目"
+    return 2
+}
+
 # How many Ice or vzhelper processes `ps <arguments>` lists: by executable
 # path, not by name (the release Ice has the same name).
 t7_count_ours() { # <ps arguments...>
@@ -131,6 +174,23 @@ t7_log_has() { # <log> <first line> <extended regex>
 
 t7_log_has_long_menu() { # <log> <first line>
     t7_log_has $1 $2 'IceBar hiding: shown[(].*longMenu'
+}
+
+# The latest `IceBar hiding:` status between two lines: active, checking, off,
+# shown:<reason>, or nothing (plan 2026-10-07-icebar-menu-frame-fix, F2).
+t7_latest_status() { # <log> <first line> [last line]
+    awk -v from=$2 -v to=${3:-0} '
+    NR >= from && (to == 0 || NR <= to) && /\[IceBarHiding\] IceBar hiding: / {
+        status = $0
+        sub(/.*IceBar hiding: /, "", status)
+        if (status ~ /^shown[(]/) {
+            sub(/.*IceBarShownReason\./, "", status)
+            sub(/[^A-Za-z].*/, "", status)
+            status = "shown:" status
+        }
+        latest = status
+    }
+    END { print latest }' $1
 }
 
 # Reads a log slice on stdin. The last line says how many of Ice's IceBar lines

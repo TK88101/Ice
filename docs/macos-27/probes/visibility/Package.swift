@@ -209,6 +209,8 @@ let package = Package(
                 "IceWatchCore",
                 .product(name: "IceCore", package: "IceCore"),
                 .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),
+                // menu-frame (plan 2026-10-07-icebar-menu-frame-fix, F4).
+                .product(name: "MenuBarDetectorFeed", package: "MenuBarDiscovery"),
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),

@@ -5,6 +5,7 @@
 
 import Cocoa
 import Combine
+import IceCore
 
 /// Manager that monitors input events and implements the features
 /// that are triggered by them, such as showing hidden items on
@@ -477,15 +478,19 @@ extension HIDEventManager {
     /// A Boolean value that indicates whether the mouse pointer is within
     /// the bounds of the current application menu.
     func isMouseInsideApplicationMenu(appState: AppState, screen: NSScreen) -> Bool {
-        guard
-            let mouseLocation = MouseHelpers.locationCoreGraphics,
-            var applicationMenuFrame = screen.getApplicationMenuFrame()
-        else {
+        guard let mouseLocation = MouseHelpers.locationCoreGraphics else {
             return false
         }
-        applicationMenuFrame.size.width += applicationMenuFrame.origin.x - screen.frame.origin.x
-        applicationMenuFrame.origin.x = screen.frame.origin.x
-        return applicationMenuFrame.contains(mouseLocation)
+        // The containment test lives in IceCore so it can be tested (plan
+        // 2026-10-07-icebar-menu-frame-fix, F2b).
+        return ApplicationMenuHitRule.contains(
+            x: Double(mouseLocation.x),
+            y: Double(mouseLocation.y),
+            menuFrame: screen.getApplicationMenuFrame().map { frame in
+                BarRect(minX: Double(frame.minX), minY: Double(frame.minY), width: Double(frame.width), height: Double(frame.height))
+            },
+            screenMinX: Double(screen.frame.origin.x)
+        )
     }
 
     /// A Boolean value that indicates whether the mouse pointer is within

@@ -2,6 +2,7 @@
 // (docs/plans/2026-09-24-ice-first-run.md, section 5).
 //
 //   icewatch preflight
+//   icewatch menu-frame
 //   icewatch dry-run --seconds N --evidence <dir> [--interval 0.2]
 //   icewatch dump-windows --pid <pid>
 //   icewatch run (--app <X.app> | --exec <path>) --domain <d> --backup <plist>
@@ -28,11 +29,12 @@ func fail(_ message: String) -> Never {
 }
 
 var arguments = Array(CommandLine.arguments.dropFirst())
-guard let command = arguments.first else { fail("usage: icewatch preflight|dry-run|dump-windows|run ...") }
+guard let command = arguments.first else { fail("usage: icewatch preflight|menu-frame|dry-run|dump-windows|run ...") }
 arguments.removeFirst()
 
 let valuedOptions: [String: Set<String>] = [
     "preflight": [],
+    "menu-frame": [],
     "dump-windows": ["--pid"],
     "dry-run": ["--seconds", "--evidence", "--interval"],
     "run": ["--app", "--exec", "--domain", "--backup", "--set", "--log", "--controller", "--evidence", "--interval", "--go-timeout"],
@@ -54,6 +56,9 @@ func value(_ name: String) -> String? { parsed.value(name) }
 switch command {
 case "preflight":
     exit(Preflight.run())
+
+case "menu-frame":
+    exit(MenuFrame.run())
 
 case "dump-windows":
     guard let pid = value("--pid").flatMap(Int32.init) else { fail("dump-windows needs --pid") }

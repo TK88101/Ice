@@ -8,6 +8,9 @@
 #   /Users/Shared/IceReverse-t7/run-t7.sh [--phase 1|2|3|4]
 #   /Users/Shared/IceReverse-t7/run-t7.sh --dry-run     starts neither Ice nor a helper
 #
+# --test-limits <seconds> <seconds> shortens the wait for `active` and the
+# grace of a blocking status; only test-t7.sh passes it.
+#
 # Everything it trusts is in its own directory, written by stage-t7.sh: no
 # environment variable changes what it does.
 set -uo pipefail
@@ -25,6 +28,16 @@ helper_lifetime=1800
 run_limit=9000
 start_timeout=20
 long_menus=24
+# Plan 2026-10-07-icebar-menu-frame-fix F2: how long a phase waits for Ice's
+# first `active` (T0: a full sweep took about 2.7 min), and how long a status
+# that stops hiding must stay the latest before the phase is given up.
+status_limit=300
+blocking_grace=10
+blocking_reasons=(menuUnreadable cannotAssess noCleanLength)
+# F3: how long a helper's `selfread` reply may take. F2b: how long the owner
+# watches for an IceBar after the click.
+selfread_wait=2
+click_watch=3
 usage="usage: run-t7.sh [--dry-run] [--phase 1|2|3|4]"
 
 dry_run=0
@@ -36,6 +49,11 @@ while (( $# )); do
             [[ ${2:-} == [1-4] ]] || { print -u2 -- $usage; exit 64; }
             phases=($2)
             shift ;;
+        --test-limits)
+            [[ ${2:-} == <-> && ${3:-} == <-> ]] || { print -u2 -- $usage; exit 64; }
+            status_limit=$2
+            blocking_grace=$3
+            shift 2 ;;
         *) print -u2 -- $usage; exit 64 ;;
     esac
     shift
@@ -92,10 +110,16 @@ running=$(t7_count_ours -U $(id -u))
 t7_check_staged $shared || guard 1 "staging 的檔案與 t7.env 記錄的 sha256 不符"
 preflight=$($shared/apps/icewatch preflight 2>/dev/null)
 t7_preflight_ok "$preflight" || guard 1 "Terminal 缺少「輔助使用」或「螢幕與系統錄音」權限：$preflight"
+# Plan 2026-10-07 F4: Ice's own reader, with this Terminal in front. Without a
+# menu frame Ice never hides (run 20261007-012252-t7).
+menu_frame=$($shared/apps/icewatch menu-frame 2>/dev/null)
+t7_menu_frame_ok "$menu_frame" || guard 1 "Ice 讀不到 app 選單的寬度（icewatch menu-frame：${menu_frame:-沒有輸出}）；這樣 Ice 不會隱藏，所以不開始"
 (( guard_failed )) && exit 2
+display_width=$(t7_json_get "$menu_frame" displayWidth)
+bar_height=$(t7_json_get "$menu_frame" barHeight)
 
 if (( dry_run )); then
-    print -- "run-t7 dry-run：檢查通過（$GIT_REV；preflight $preflight）。正式執行會做："
+    print -- "run-t7 dry-run：檢查通過（$GIT_REV；preflight $preflight；menu-frame $menu_frame）。正式執行會做："
     print -- "  1. 匯出 $domain 到 $backup_root/<run id>/prefs-before.plist，清空後寫入：$settings"
     print -- "  2. 啟動 OS_ACTIVITY_DT_MODE=YES OS_ACTIVITY_MODE=debug $ice $ice_arguments"
     for phase in $phases; do
@@ -119,6 +143,12 @@ restore_armed=0
 cleaned=0
 helper_fds=()
 helper_pids=()
+# The current phase's members, for the placement snapshots (plan F3).
+member_fds=()
+member_logs=()
+member_ids=()
+member_names=()
+member_x=()
 typeset -A phase_from phase_to phase_done
 
 note() { print -r -- "$(date +%H:%M:%S) $*" >> $run/timeline.txt; }
@@ -142,6 +172,11 @@ close_helpers() {
     done
     helper_fds=()
     helper_pids=()
+    member_fds=()
+    member_logs=()
+    member_ids=()
+    member_names=()
+    member_x=()
 }
 
 # Returns 1 when Ice is still there afterwards.
@@ -165,6 +200,8 @@ report() { # <restore verdict>
     for phase in ${(on)${(k)phase_from}}; do
         print -- "-- 階段 $phase（k = ${phase_members[phase]}）${${phase_done[$phase]:-未完成}:#1}"
         [[ -f $run/answers.txt ]] && awk -F'\t' -v prefix="p$phase." 'index($2, prefix) == 1 { print "  你的回答 " $2 " = " $3 }' $run/answers.txt
+        [[ -f $run/stops.txt ]] && awk -v prefix="p$phase " 'index($0, prefix) == 1 { print "  本輪無效：" substr($0, length(prefix) + 1) }' $run/stops.txt
+        [[ -f $run/placement.txt ]] && awk -v prefix="p$phase " 'index($0, prefix) == 1 { print "  " substr($0, length(prefix) + 1) }' $run/placement.txt
         sed -n "${phase_from[$phase]},${phase_to[$phase]:-\$}p" $run/ice.log | t7_summary | sed 's/^/  /'
         print -- "  helper 選單開啟 $(cat $run/helper-p$phase-*.log(N) /dev/null | grep -c '"event":"open"') 次"
     done
@@ -275,9 +312,93 @@ launch_helper() { # <app> <log> <vzhelper arguments...>
     return 1
 }
 
+# Launches a member and records where its item is at once, before Ice's quiet
+# period (3 s after the layout changes) lets a trial move it. Returns 1 when it
+# did not start, 2 when it is not on the bar (plan F3: the phase cannot be judged).
 launch_member() { # <index> <glyph>
-    launch_helper Target.app $run/helper-p$current_phase-$1.log --items 1 --identifiers vz-t7-$2 --glyphs $2 --menu || return 1
+    local log=$run/helper-p$current_phase-$1.log rc
+    launch_helper Target.app $log --items 1 --identifiers vz-t7-$2 --glyphs $2 --menu || return 1
     note "phase $current_phase member $1 ($2) launched"
+    member_fds+=($helper_fds[-1])
+    member_logs+=($log)
+    member_ids+=(vz-t7-$2)
+    member_names+=($1)
+    snapshot_member ${#member_fds} 啟動後
+    rc=$?
+    if (( rc == 2 )); then
+        sleep $selfread_wait
+        snapshot_member ${#member_fds} 啟動後
+        rc=$?
+    fi
+    (( rc == 0 )) || return 2
+}
+
+# Asks one member's helper where its item is and writes one placement line.
+# Returns t7_placement's 0 (on the bar), 1 (off) or 2 (unknown).
+snapshot_member() { # <member index> <label>
+    local i=$1 before line place rc
+    before=$(grep -c '^selfread ' $member_logs[i])
+    print -u $member_fds[i] -- selfread
+    for _ in {1..$((selfread_wait * 5))}; do
+        if (( $(grep -c '^selfread ' $member_logs[i]) > before )); then
+            line=$(grep '^selfread ' $member_logs[i] | tail -1)
+            break
+        fi
+        sleep 0.2
+    done
+    if [[ -z ${line:-} ]]; then
+        place="unknown $selfread_wait 秒內沒有回覆"
+        rc=2
+    else
+        place=$(t7_placement "${line#selfread }" $member_ids[i] $display_width $bar_height)
+        rc=$?
+    fi
+    case $rc in
+        0) member_x[i]=${place#on }; place="x=${place#on } 在列上" ;;
+        1) place="不在列上（${place#off }）" ;;
+        *) place="unknown（${place#unknown }）" ;;
+    esac
+    print -r -- "p$current_phase helper p$current_phase-$member_names[i] $2 $place" >> $run/placement.txt
+    return $rc
+}
+
+# The phase cannot be judged: say why, record it, and end the run (status 3).
+stop_phase() { # <reason>
+    print -- "$1，本輪無效"
+    print -r -- "p$current_phase $1" >> $run/stops.txt
+    note "phase $current_phase stopped: $1"
+    phase_to[$current_phase]=$(log_lines)
+    finish 3
+}
+
+# Waits for Ice's first `active` of this phase (plan F2). A status that stops
+# hiding and is still the latest after the grace, no `active` within the limit,
+# or Ice ending stops the run.
+wait_for_phase_status() {
+    local started=$SECONDS blocked_since= latest
+    print -- "【看終端】等 Ice 校準：等到上面出現 [Ice …] IceBar hiding: active（最多 $status_limit 秒，期間選單列上的 helper 圖示會閃）。不用輸入。"
+    while true; do
+        kill -0 $ice_pid 2>/dev/null || { print -- "Ice 已經結束，中止。"; finish 1; }
+        # Any `active` since the phase began counts: Ice may have moved on
+        # (a long menu, a quiet period) before this loop looked.
+        t7_log_has $run/ice.log ${phase_from[$current_phase]} 'IceBar hiding: active' && return 0
+        latest=$(t7_latest_status $run/ice.log ${phase_from[$current_phase]})
+        if [[ $latest == shown:* ]] && (( ${blocking_reasons[(Ie)${latest#shown:}]} )); then
+            [[ -n $blocked_since ]] || blocked_since=$SECONDS
+            (( SECONDS - blocked_since >= blocking_grace )) && stop_phase "Ice 沒有在隱藏（原因：${latest#shown:}）"
+        else
+            blocked_since=
+        fi
+        (( SECONDS - started >= status_limit )) && stop_phase "Ice 沒有在隱藏（原因：$status_limit 秒內沒有 active）"
+        sleep 0.5
+    done
+}
+
+# Every member's place after `active`: recorded, never a stop (a hidden member is
+# meant to be off the bar).
+snapshot_members_after_active() {
+    local i
+    for i in {1..${#member_fds}}; do snapshot_member $i "active 後"; done
 }
 
 yes_no='^[yn]$'
@@ -308,57 +429,62 @@ ask() { # <key> <pattern> <hint> <question>
     REPLY=$answer
 }
 
-# Rows 1-4 of section 10.5, for k = 1, 2, 4.
+# Rows 1-4 of section 10.5, for k = 1, 2, 4, and row 1b in phase 1. Called
+# after the first `active` (wait_for_phase_status).
 hide_and_press_phase() {
     local k=${phase_members[current_phase]}
-    print -- "【第 1 列】$k 個 helper 已啟動，會先出現在列上最左側。等上面出現 [Ice …] IceBar hiding: active（約 1-2 分鐘，期間圖示會閃）。"
-    ask row1.hidden $yes_no "y/n" "active 之後：helper 全部從列上消失、列上沒有 «、Ice 圖示還在？" || return 1
-    ask row1.flickerSeconds $number "秒數" "這次首次校準，圖示大約閃了幾秒？" || return 1
-    print -- "【第 2 列】右鍵 Ice 圖示 > Ice Settings… > General，把 Use Ice Bar 關掉再打開，等 active；共做 10 次（每次約 1-2 分鐘）。"
-    ask row2.cleanOfTen $out_of_ten "0-10" "10 次裡，幾次打開後 helper 全部消失且沒有 «？" || return 1
-    print -- "【第 3 列】關掉設定視窗，左鍵點 Ice 圖示。"
-    ask row3.cells $number "格數" "Ice 圖示下方的 IceBar 有幾格？（沒出現填 0；應為 $k）" || return 1
-    ask row3.icons $yes_no "y/n" "每一格都有圖示？" || return 1
-    print -- "【第 4 列】點 IceBar 的一格，看選單，按 Esc 關掉；輪流點各格，共 10 次。"
-    ask row4.openedOfTen $out_of_ten "0-10" "10 次裡，幾次在 1 秒內開出只有「Spike」一項的選單？" || return 1
-    ask row4.dimmed $yes_no "y/n" "有任何一格變灰（Cannot open on macOS 27）？" || return 1
+    print -- "【第 1 列】【看選單列】$k 個 helper 剛才在右邊那排圖示（Wi-Fi、電池、Ice）的最左端：黑白線條、像方括號的小圖示，沒有文字（啟動時位置 x = ${(j:、:)member_x}；選單列從左到右 0-$display_width）。"
+    ask row1.hidden $yes_no "y/n" "【看選單列】現在 helper 全部從列上消失、列上沒有 «、Ice 圖示還在？" || return 1
+    ask row1.flickerSeconds $number "秒數" "【看選單列】剛才校準時，圖示大約閃了幾秒？" || return 1
+    if (( current_phase == 1 )); then
+        print -- "【第 1b 列】【看選單列】點一下左上角 Terminal 的「Shell」選單，再按 Esc，然後看著 Ice 圖示下方數 $click_watch 秒。"
+        ask row1b.done '^$' "Enter" "【看終端】做完就按 Enter" || return 1
+        sleep $click_watch
+        ask row1b.noIceBar $yes_no "y/n" "【看選單列】選單正常打開過，而且這 $click_watch 秒裡 Ice 圖示下方沒有跳出 IceBar？" || return 1
+    fi
+    print -- "【第 2 列】【看選單列】右鍵 Ice 圖示 > Ice Settings… > General，把 Use Ice Bar 關掉再打開，等終端出現 active；共做 10 次（每次約 1-2 分鐘）。"
+    ask row2.cleanOfTen $out_of_ten "0-10" "【看選單列】10 次裡，幾次打開後 helper 全部消失且沒有 «？" || return 1
+    print -- "【第 3 列】【看選單列】關掉設定視窗，左鍵點 Ice 圖示。"
+    ask row3.cells $number "格數" "【看選單列】Ice 圖示下方的 IceBar 有幾格？（沒出現填 0；應為 $k）" || return 1
+    ask row3.icons $yes_no "y/n" "【看選單列】每一格都有圖示？" || return 1
+    print -- "【第 4 列】【看選單列】點 IceBar 的一格，看選單，按 Esc 關掉；輪流點各格，共 10 次。"
+    ask row4.openedOfTen $out_of_ten "0-10" "【看選單列】10 次裡，幾次在 1 秒內開出只有「Spike」一項的選單？" || return 1
+    ask row4.dimmed $yes_no "y/n" "【看選單列】有任何一格變灰（Cannot open on macOS 27）？" || return 1
 }
 
 # Rows 5-9: long menus, a new item, a Command-drag.
 layout_change_phase() {
     local count=$long_menus menus_fd
-    print -- "先等 [Ice …] IceBar hiding: active（2 個 helper 藏好）。"
-    ask ready $yes_no "y/n" "已經 active、helper 都消失了？" || return 1
     launch_helper Menus.app $run/helper-p$current_phase-menus.log --role menus || return 1
     menus_fd=$helper_fds[-1]
     while true; do
         print -u $menus_fd -- "menus $count"
         note "menus $count sent"
-        print -- "【第 5 列】點 Dock 上新出現的 Menus（選單列左邊會出現 M01、M02… 共 $count 個），停 10 秒。"
-        ask row5.shown $yes_no "y/n" "helper 回到列上並一直留著？" || return 1
+        print -- "【第 5 列】【看選單列】點 Dock 上新出現的 Menus（選單列左邊會出現 M01、M02… 共 $count 個），停 10 秒。"
+        ask row5.shown $yes_no "y/n" "【看選單列】helper 回到列上並一直留著？" || return 1
         t7_log_has_long_menu $run/ice.log ${phase_from[$current_phase]} && break
-        print -- "紀錄裡沒有 longMenu（選單可能還不夠長）。"
-        ask row5.retry '^([1-9]|[1-3][0-9]|40)?$' "1-40，或直接 Enter 跳過" "要改用幾個選單再試一次？" || return 1
+        print -- "【看終端】紀錄裡沒有 longMenu（選單可能還不夠長）。"
+        ask row5.retry '^([1-9]|[1-3][0-9]|40)?$' "1-40，或直接 Enter 跳過" "【看終端】要改用幾個選單再試一次？" || return 1
         [[ -z $REPLY ]] && break
         count=$REPLY
     done
-    ask row5.noIceBar $yes_no "y/n" "此時左鍵點 Ice 圖示，IceBar 沒有出現？" || return 1
-    print -- "【第 6 列】點回這個 Terminal 視窗，等 active。"
-    ask row6.hiddenAgain $yes_no "y/n" "helper 再次消失、沒有 «？" || return 1
-    ask row6.seconds $number "秒數" "從點回 Terminal 到 helper 消失，大約幾秒？" || return 1
-    print -- "【第 7 列】按 Enter 後 $NEW_ITEM_DELAY 秒會啟動一個新 helper，請盯著選單列右側。"
-    ask row7.go '^$' "Enter" "準備好了就按 Enter" || return 1
+    ask row5.noIceBar $yes_no "y/n" "【看選單列】此時左鍵點 Ice 圖示，IceBar 沒有出現？" || return 1
+    print -- "【第 6 列】【看終端】點回這個 Terminal 視窗，等上面出現 active。"
+    ask row6.hiddenAgain $yes_no "y/n" "【看選單列】helper 再次消失、沒有 «？" || return 1
+    ask row6.seconds $number "秒數" "【看選單列】從點回 Terminal 到 helper 消失，大約幾秒？" || return 1
+    print -- "【第 7 列】【看選單列】按 Enter 後 $NEW_ITEM_DELAY 秒會啟動一個新 helper，請盯著選單列右側。"
+    ask row7.go '^$' "Enter" "【看終端】準備好了就按 Enter" || return 1
     sleep $NEW_ITEM_DELAY
     launch_member new $new_item_glyph || return 1
-    ask row7.shownAtOnce $yes_no "y/n" "新圖示一出現，原本藏著的 helper 立刻回到列上？" || return 1
-    print -- "等 active。"
-    ask row7.hiddenAgain $yes_no "y/n" "之後 3 個 helper 全部再次消失、沒有 «？" || return 1
-    print -- "【第 8 列】等 helper 回到列上後（可先點一下別的 app 再點回來），按住 Command 把一個 helper 拖到 Ice 圖示右邊，放開，等 active。"
-    ask row8.draggable $yes_no "y/n" "拖得動？" || return 1
-    ask row8.shownWhileDragging $yes_no "y/n" "按住 Command 開始拖的時候，藏著的 helper 回到列上？" || return 1
-    ask row8.backInIceBar $yes_no "y/n" "放開後：被拖的留在列上，其餘 2 個再次消失，IceBar 是 2 格？" || return 1
-    print -- "【第 9 列】再用 Command 把它拖回最左側，等 active。"
-    ask row9.backToThree $yes_no "y/n" "IceBar 回到 3 格？" || return 1
+    ask row7.shownAtOnce $yes_no "y/n" "【看選單列】新圖示一出現，原本藏著的 helper 立刻回到列上？" || return 1
+    print -- "【看終端】等上面出現 active。"
+    ask row7.hiddenAgain $yes_no "y/n" "【看選單列】之後 3 個 helper 全部再次消失、沒有 «？" || return 1
+    print -- "【第 8 列】【看選單列】等 helper 回到列上後（可先點一下別的 app 再點回來），按住 Command 把一個 helper 拖到 Ice 圖示右邊，放開，等終端出現 active。"
+    ask row8.draggable $yes_no "y/n" "【看選單列】拖得動？" || return 1
+    ask row8.shownWhileDragging $yes_no "y/n" "【看選單列】按住 Command 開始拖的時候，藏著的 helper 回到列上？" || return 1
+    ask row8.backInIceBar $yes_no "y/n" "【看選單列】放開後：被拖的留在列上，其餘 2 個再次消失，IceBar 是 2 格？" || return 1
+    print -- "【第 9 列】【看選單列】再用 Command 把它拖回最左側，等終端出現 active。"
+    ask row9.backToThree $yes_no "y/n" "【看選單列】IceBar 回到 3 格？" || return 1
 }
 
 for current_phase in $phases; do
@@ -368,15 +494,25 @@ for current_phase in $phases; do
     phase_from[$current_phase]=$(( $(log_lines) + 1 ))
     note "phase $current_phase begins"
     phase_ok=1
+    off_bar=0
     for index in {1..${phase_members[current_phase]}}; do
-        launch_member $index $member_glyphs[index] || phase_ok=0
+        launch_member $index $member_glyphs[index]
+        case $? in
+            1) phase_ok=0 ;;
+            2) off_bar=1 ;;
+        esac
     done
     if (( ! phase_ok )); then
         print -- "helper 沒有全部啟動，這個階段不做（可用 --phase $current_phase 重跑）。"
-    elif (( current_phase == 4 )); then
-        layout_change_phase || phase_ok=0
     else
-        hide_and_press_phase || phase_ok=0
+        (( off_bar )) && stop_phase "helper 不在選單列上"
+        wait_for_phase_status
+        snapshot_members_after_active
+        if (( current_phase == 4 )); then
+            layout_change_phase || phase_ok=0
+        else
+            hide_and_press_phase || phase_ok=0
+        fi
     fi
     (( phase_ok )) && phase_done[$current_phase]=1
     phase_to[$current_phase]=$(log_lines)
