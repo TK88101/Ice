@@ -2,29 +2,13 @@
 /// from the preconditions, the membership, whether a length was applied and
 /// the per-member pixel checks.
 
-/// A state with the roster it was derived for and the chevron reading, kept
-/// together so a layout change can keep the requested member set (D-e).
-public struct PreferenceHidingEvaluation: Equatable, Sendable {
-    public let state: PreferenceHidingState
-    public let members: [PreferenceHidingMember]
-    /// D-b: recorded only. It is never an input to `state`.
-    public let chevronListed: Bool?
-
-    public init(state: PreferenceHidingState, members: [PreferenceHidingMember], chevronListed: Bool?) {
-        self.state = state
-        self.members = members
-        self.chevronListed = chevronListed
-    }
-
-    /// D-e: the same members and chevron record, the state after `change`.
-    public func afterLayoutChange(_ change: PreferenceHidingLayoutChange) -> PreferenceHidingEvaluation {
-        PreferenceHidingEvaluation(state: state.afterLayoutChange(change), members: members, chevronListed: chevronListed)
-    }
-}
-
 public enum PreferenceHidingStateRule {
     /// Order of decision:
-    /// 1. A failed precondition is `blocked`, whatever else is true.
+    /// 1. A failed precondition is `blocked`, whatever else is true. `blocked`
+    ///    means "Ice changed no length" (D-c), so when it comes with
+    ///    `lengthApplied` true the caller must first retire the length (back to
+    ///    standard) and only then present `blocked`; the rule itself cannot
+    ///    revert anything.
     /// 2. With a length applied, a member whose check is `.stillDrawn` is
     ///    `visibleFailed`, regardless of caps and pending changes.
     /// 3. Otherwise every reason that stops short of proof is collected, and
@@ -40,24 +24,20 @@ public enum PreferenceHidingStateRule {
     /// `checks` are matched to members by key. A check for a key that is not a
     /// member is ignored (a non-member's pixels say nothing about the roster),
     /// as is a check for a member with no key (one missing from the read).
-    /// `chevronListed` is copied to the result and read by nothing here (D-b).
-    /// Lengths are not an input: this rule neither knows nor ships one (D-d).
+    /// D-b ("`«` is recorded, never a trigger") holds by construction: the rule
+    /// has no chevron input, so the reading cannot change the state. The state
+    /// machine records it (T3b). Lengths are not an input either: this rule
+    /// neither knows nor ships one (D-d).
+    ///
+    /// D-e (layout changes: frontmost app, menus crossing the notch, items
+    /// added): the caller keeps the requested member set and calls this again
+    /// with `pendingLayoutChange:`. A would-be `verifiedHidden` then drops to
+    /// `requestedNotVerified` carrying `layoutChangePending(change)` among its
+    /// reasons until the re-check clears it; `blocked` and `visibleFailed` stay
+    /// what their own inputs say. There is no state that means "show the
+    /// section", so a long menu cannot become one: nothing is shown merely
+    /// because a menu is long.
     public static func evaluate(
-        preconditions: PreferenceHidingPreconditionResult,
-        membership: PreferenceHidingMembership,
-        lengthApplied: Bool,
-        checks: [ItemKey: SectionItemCheck],
-        chevronListed: Bool?,
-        pendingLayoutChange: PreferenceHidingLayoutChange?
-    ) -> PreferenceHidingEvaluation {
-        let state = state(
-            preconditions: preconditions, membership: membership, lengthApplied: lengthApplied,
-            checks: checks, pendingLayoutChange: pendingLayoutChange
-        )
-        return PreferenceHidingEvaluation(state: state, members: membership.members, chevronListed: chevronListed)
-    }
-
-    private static func state(
         preconditions: PreferenceHidingPreconditionResult,
         membership: PreferenceHidingMembership,
         lengthApplied: Bool,

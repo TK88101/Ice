@@ -5,11 +5,14 @@
 
 /// How Ice's icon failed to be right of its hidden divider (D-c a, S2).
 public enum PreferenceHidingIconPlacement: Equatable, Sendable {
-    /// The icon's reading is missing or not finite.
+    /// The icon's reading is missing or a component of its frame is not finite.
     case iconUnreadable
-    /// The hidden divider's reading is missing, unusable or not finite.
+    /// The hidden divider's reading is missing, unusable or a component of its
+    /// frame is not finite.
     case dividerUnusable
-    /// Both are readable and the icon's mid-x is not greater than the divider's.
+    /// Both are readable and the icon's mid-x is not greater than the divider's
+    /// minX, the boundary the rest of IceCore uses (`CheckPlan`,
+    /// `DiscoveredCachePlan`).
     case iconLeftOfDivider
 }
 
@@ -48,8 +51,11 @@ public enum PreferenceHidingPreconditions {
     ///   - iceIcon: the AX frame of Ice's visible control item; `nil` when it
     ///     could not be read.
     ///   - hiddenDivider: the hidden divider's reading; `nil` when the pass has
-    ///     none. Compared by mid-x, as the plan's evidence records them
-    ///     (P2: divider 1469, icon 1297.5).
+    ///     none. Ice's icon is right of it iff `icon.midX > divider.frame.minX`:
+    ///     the divider's minX is the section boundary everywhere else in IceCore,
+    ///     and a collapsed or expanded divider's width is not a bar position
+    ///     (P2: divider minX 1459, icon mid-x 1297.5). Every component of both
+    ///     frames must be finite, otherwise the reading is unusable.
     ///   - completeness, ownRead: the pass's verdicts. "Complete" means exactly
     ///     `Completeness.complete` AND `OwnReadStatus.ok`. `.incomplete` blocks
     ///     because a process whose read failed may own a status item Ice never
@@ -84,12 +90,20 @@ public enum PreferenceHidingPreconditions {
         return reasons.isEmpty ? .ok : .blocked(reasons)
     }
 
-    /// `nil` when the icon is strictly right of the divider.
+    /// `nil` when the icon's mid-x is strictly right of the divider's minX.
     private static func misplacement(icon: BarRect?, divider: DividerReading?) -> PreferenceHidingIconPlacement? {
-        guard let icon, icon.midX.isFinite else { return .iconUnreadable }
-        guard let divider, divider.isUsable, let dividerFrame = divider.frame, dividerFrame.midX.isFinite else {
+        guard let icon, icon.hasFiniteComponents else { return .iconUnreadable }
+        guard let divider, divider.isUsable, let dividerFrame = divider.frame, dividerFrame.hasFiniteComponents else {
             return .dividerUnusable
         }
-        return icon.midX > dividerFrame.midX ? nil : .iconLeftOfDivider
+        return icon.midX > dividerFrame.minX ? nil : .iconLeftOfDivider
+    }
+}
+
+extension BarRect {
+    /// Every component finite: a frame with a NaN or infinite minY or height is
+    /// not a position even when its mid-x happens to be finite.
+    var hasFiniteComponents: Bool {
+        minX.isFinite && minY.isFinite && width.isFinite && height.isFinite
     }
 }

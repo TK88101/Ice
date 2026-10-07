@@ -177,6 +177,23 @@ target; `icetest` sittings are for final acceptance only, not for development.
 - Two tasks (round 2): T3a, the rules as pure IceCore types with unit tests, may start
   beside S1; T3b, wiring them into the live machine and coordinator, waits for S2 (the
   inverted-layout gate must exist before any live hiding).
+- T3b must retire, not sit beside, the machine's old triggers (T3a review, 2026-10-07,
+  altitude F3): `HiddenLengthOutcomeRule` reading `chevronListed` as `.folded`, the
+  machine's `chevronSeenAtRest` re-calibration and its `.crossesNotch` -> `.shown(.longMenu)`
+  path all contradict D-b and D-e. The machine stays the single owner of "a length is
+  applied" (`lengthApplied` is derived from its phase, never set separately) and records
+  the chevron reading itself (the state rule has no chevron input). Layout changes are
+  derived from `LayoutSignature` differences, not classified by hand. Membership is read
+  only through `PreferenceHidingMembership.resolve(set:hiddenDividerState:previousMembers:childIdentifiersByPID:)`,
+  never from `CachePublication.hidden`, which drops always-hidden and parked items and is
+  empty until a divider has settled. The roster advances only from a pass whose divider
+  boundary `DiscoveredCachePlan` would trust (collapsed, settled, unchanged during the
+  pass, own read ok): a released member is dropped for good, so one read taken while
+  the divider moves must not release it (T3a review round 2, altitude F2; enforced in
+  `resolve(set:...)` itself after Codex round 3, which freezes the roster otherwise). A precondition
+  that fails while a length is applied (a positional item appears, a pass is incomplete,
+  the icon moves): the machine retires the length first, then the pane shows `blocked`
+  -- `blocked` promises that no length is changed (T3a review round 3).
 - DoD: unit tests per rule (TDD, coverage >= 80 % of changed files); `/simcodex`.
 
 ### S4 A fixed lab matrix, foreground (owner cost: see O3)

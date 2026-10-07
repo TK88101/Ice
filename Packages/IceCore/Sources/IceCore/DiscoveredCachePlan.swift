@@ -178,7 +178,9 @@ public enum DiscoveredCachePlan {
     /// first reason it is not, checked in this order because own-read
     /// problems and a missing/unusable reading make every later check
     /// meaningless.
-    private static func evaluate(reading: DividerReading?, state: DividerState, ownRead: OwnReadStatus) -> (minX: Double?, issue: BoundaryIssue?) {
+    /// Internal, not private: `PreferenceHidingMembership.resolve(set:...)`
+    /// trusts a boundary for releasing members by exactly this verdict.
+    static func evaluate(reading: DividerReading?, state: DividerState, ownRead: OwnReadStatus) -> (minX: Double?, issue: BoundaryIssue?) {
         if ownRead == .failed { return (nil, .ownReadFailed) }
         if ownRead == .identifiersMissing { return (nil, .identifiersMissing) }
 

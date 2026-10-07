@@ -26,12 +26,11 @@ struct PreferenceHidingStateTests {
         preconditions: PreferenceHidingPreconditionResult = .ok,
         lengthApplied: Bool = true,
         checks: [ItemKey: SectionItemCheck] = [:],
-        chevronListed: Bool? = false,
         pending: PreferenceHidingLayoutChange? = nil
-    ) -> PreferenceHidingEvaluation {
+    ) -> PreferenceHidingState {
         PreferenceHidingStateRule.evaluate(
             preconditions: preconditions, membership: members, lengthApplied: lengthApplied,
-            checks: checks, chevronListed: chevronListed, pendingLayoutChange: pending
+            checks: checks, pendingLayoutChange: pending
         )
     }
 
@@ -45,9 +44,9 @@ struct PreferenceHidingStateTests {
             membership([a]), preconditions: .blocked(reasons), lengthApplied: true,
             checks: [a.key: hiddenClean]
         )
-        #expect(result.state == .blocked(reasons: reasons))
-        #expect(!result.state.isIceBarOffered)
-        #expect(!result.state.countsAsLabSuccess)
+        #expect(result == .blocked(reasons: reasons))
+        #expect(!result.isIceBarOffered)
+        #expect(!result.countsAsLabSuccess)
     }
 
     // MARK: - verified hidden
@@ -56,24 +55,24 @@ struct PreferenceHidingStateTests {
     func allAbsentIsVerified() {
         let a = item("a", pid: 1), b = item("b", pid: 2)
         let result = evaluate(membership([a, b]), checks: [a.key: hiddenClean, b.key: hiddenClean])
-        #expect(result.state == .verifiedHidden)
-        #expect(result.state.isIceBarOffered)
-        #expect(result.state.countsAsLabSuccess)
+        #expect(result == .verifiedHidden)
+        #expect(result.isIceBarOffered)
+        #expect(result.countsAsLabSuccess)
     }
 
     @Test("D-c: one member not observed absent is never verified")
     func oneMissingCheckIsNotVerified() {
         let a = item("a", pid: 1), b = item("b", pid: 2)
         let result = evaluate(membership([a, b]), checks: [a.key: hiddenClean])
-        #expect(result.state == .requestedNotVerified(reasons: [.membersUnchecked([b.tagKey])]))
-        #expect(!result.state.countsAsLabSuccess)
+        #expect(result == .requestedNotVerified(reasons: [.membersUnchecked([b.tagKey])]))
+        #expect(!result.countsAsLabSuccess)
     }
 
     @Test("D-c: a check list shorter than the member list is not verified, naming who lacks a check")
     func shorterCheckListNamesTheRest() {
         let a = item("a", pid: 1), b = item("b", pid: 2), c = item("c", pid: 3)
         let result = evaluate(membership([a, b, c]), checks: [b.key: hiddenClean])
-        #expect(result.state == .requestedNotVerified(reasons: [.membersUnchecked([a.tagKey, c.tagKey])]))
+        #expect(result == .requestedNotVerified(reasons: [.membersUnchecked([a.tagKey, c.tagKey])]))
     }
 
     @Test("D-c: a check for a key that is not a member is ignored")
@@ -81,16 +80,16 @@ struct PreferenceHidingStateTests {
         let a = item("a", pid: 1)
         let stranger = item("z", pid: 9)
         let verified = evaluate(membership([a]), checks: [a.key: hiddenClean, stranger.key: hiddenClean])
-        #expect(verified.state == .verifiedHidden)
+        #expect(verified == .verifiedHidden)
         let drawnStranger = evaluate(membership([a]), checks: [a.key: hiddenClean, stranger.key: .checked(.stillDrawn)])
-        #expect(drawnStranger.state == .verifiedHidden)
+        #expect(drawnStranger == .verifiedHidden)
     }
 
     @Test("D-c: an unverifiable pixel result is not proof of absence")
     func unverifiableIsNotProof() {
         let a = item("a", pid: 1)
         let result = evaluate(membership([a]), checks: [a.key: .checked(.unverifiable(.weakMatch))])
-        #expect(result.state == .requestedNotVerified(reasons: [.membersUnchecked([a.tagKey])]))
+        #expect(result == .requestedNotVerified(reasons: [.membersUnchecked([a.tagKey])]))
     }
 
     // MARK: - empty member set
@@ -98,16 +97,16 @@ struct PreferenceHidingStateTests {
     @Test("D-c: an empty member set is never verified, it is requested-not-verified with no members")
     func emptyMemberSetIsNeverVerified() {
         let result = evaluate(membership([]), checks: [:])
-        #expect(result.state == .requestedNotVerified(reasons: [.noMembers]))
-        #expect(!result.state.countsAsLabSuccess)
-        #expect(result.state.isIceBarOffered)
+        #expect(result == .requestedNotVerified(reasons: [.noMembers]))
+        #expect(!result.countsAsLabSuccess)
+        #expect(result.isIceBarOffered)
     }
 
     @Test("D-c: an empty member set stays unverified even when a stray check says hidden")
     func emptyMemberSetIgnoresStrayChecks() {
         let stranger = item("z", pid: 9)
         let result = evaluate(membership([]), checks: [stranger.key: hiddenClean])
-        #expect(result.state == .requestedNotVerified(reasons: [.noMembers]))
+        #expect(result == .requestedNotVerified(reasons: [.noMembers]))
     }
 
     // MARK: - hiding requested, not verified
@@ -116,14 +115,14 @@ struct PreferenceHidingStateTests {
     func noLengthApplied() {
         let a = item("a", pid: 1)
         let result = evaluate(membership([a]), lengthApplied: false, checks: [a.key: .checked(.stillDrawn)])
-        #expect(result.state == .requestedNotVerified(reasons: [.lengthNotApplied]))
+        #expect(result == .requestedNotVerified(reasons: [.lengthNotApplied]))
     }
 
     @Test("D-c: no reference is named as such")
     func noReference() {
         let a = item("a", pid: 1)
         let result = evaluate(membership([a]), checks: [a.key: .skipped(.noReference)])
-        #expect(result.state == .requestedNotVerified(reasons: [.noReference, .membersUnchecked([a.tagKey])]))
+        #expect(result == .requestedNotVerified(reasons: [.noReference, .membersUnchecked([a.tagKey])]))
     }
 
     @Test("D-c: a refused baseline and a failed capture are named as capture refused", arguments: [
@@ -132,7 +131,7 @@ struct PreferenceHidingStateTests {
     func captureRefused(check: SectionItemCheck) {
         let a = item("a", pid: 1)
         let result = evaluate(membership([a]), checks: [a.key: check])
-        #expect(result.state == .requestedNotVerified(reasons: [.captureRefused, .membersUnchecked([a.tagKey])]))
+        #expect(result == .requestedNotVerified(reasons: [.captureRefused, .membersUnchecked([a.tagKey])]))
     }
 
     @Test("D-a, D-c: a stale member caps at not verified even when every other member is absent")
@@ -140,28 +139,28 @@ struct PreferenceHidingStateTests {
         let a = item("a", pid: 1)
         let gone = TagKey(namespace: "com.example.gone", title: "g/p9")
         let result = evaluate(membership([a], previous: [gone]), checks: [a.key: hiddenClean])
-        #expect(result.state == .requestedNotVerified(reasons: [.staleMembers([gone])]))
+        #expect(result == .requestedNotVerified(reasons: [.staleMembers([gone])]))
     }
 
     @Test("D-a, D-c: a stacked member caps at not verified, and the pixel check skipping it is not double-counted")
     func stackedMemberCaps() {
         let a = item("a", pid: 1), s = item("s", pid: 2, position: .stacked)
         let result = evaluate(membership([a, s]), checks: [a.key: hiddenClean, s.key: .skipped(.stacked)])
-        #expect(result.state == .requestedNotVerified(reasons: [.stackedMembers([s.tagKey])]))
+        #expect(result == .requestedNotVerified(reasons: [.stackedMembers([s.tagKey])]))
     }
 
     @Test("D-a, D-c: a stale member whose process cannot be read is named stale, not unchecked")
     func unreadableMemberIsNamedStale() {
         let a = item("a", pid: 1)
         let result = evaluate(membership([a], addressable: false), checks: [a.key: hiddenClean])
-        #expect(result.state == .requestedNotVerified(reasons: [.staleMembers([a.tagKey])]))
+        #expect(result == .requestedNotVerified(reasons: [.staleMembers([a.tagKey])]))
     }
 
     @Test("D-c: a pending layout change keeps the state at not verified until re-checked")
     func pendingLayoutChange() {
         let a = item("a", pid: 1)
         let result = evaluate(membership([a]), checks: [a.key: hiddenClean], pending: .frontmostAppChanged)
-        #expect(result.state == .requestedNotVerified(reasons: [.layoutChangePending(.frontmostAppChanged)]))
+        #expect(result == .requestedNotVerified(reasons: [.layoutChangePending(.frontmostAppChanged)]))
     }
 
     @Test("D-c: reasons accumulate, none is dropped")
@@ -171,7 +170,7 @@ struct PreferenceHidingStateTests {
         let result = evaluate(
             membership([s], previous: [gone]), lengthApplied: false, checks: [:], pending: .itemsAdded
         )
-        #expect(result.state == .requestedNotVerified(reasons: [
+        #expect(result == .requestedNotVerified(reasons: [
             .lengthNotApplied, .staleMembers([gone]), .stackedMembers([s.tagKey]), .layoutChangePending(.itemsAdded),
         ]))
     }
@@ -182,9 +181,9 @@ struct PreferenceHidingStateTests {
     func drawnMemberFails() {
         let a = item("a", pid: 1), b = item("b", pid: 2)
         let result = evaluate(membership([a, b]), checks: [a.key: hiddenClean, b.key: .checked(.stillDrawn)])
-        #expect(result.state == .visibleFailed(drawn: [b.tagKey]))
-        #expect(result.state.isIceBarOffered)
-        #expect(!result.state.countsAsLabSuccess)
+        #expect(result == .visibleFailed(drawn: [b.tagKey]))
+        #expect(result.isIceBarOffered)
+        #expect(!result.countsAsLabSuccess)
     }
 
     @Test("D-c: a drawn member is visible / failed regardless of caps, pending changes and other reasons")
@@ -194,47 +193,14 @@ struct PreferenceHidingStateTests {
         let result = evaluate(
             membership([a, s], previous: [gone]), checks: [a.key: .checked(.stillDrawn)], pending: .menusCrossingNotch
         )
-        #expect(result.state == .visibleFailed(drawn: [a.tagKey]))
+        #expect(result == .visibleFailed(drawn: [a.tagKey]))
     }
 
     @Test("D-c: several drawn members are all named, in member order")
     func severalDrawn() {
         let a = item("a", pid: 1), b = item("b", pid: 2)
         let result = evaluate(membership([a, b]), checks: [a.key: .checked(.stillDrawn), b.key: .checked(.stillDrawn)])
-        #expect(result.state == .visibleFailed(drawn: [a.tagKey, b.tagKey]))
-    }
-
-    // MARK: - D-b: the chevron is recorded, never a trigger
-
-    @Test("D-b: the chevron reading is carried for the record in every state", arguments: [true, false, nil] as [Bool?])
-    func chevronIsRecorded(chevron: Bool?) {
-        let a = item("a", pid: 1)
-        let result = evaluate(membership([a]), checks: [a.key: hiddenClean], chevronListed: chevron)
-        #expect(result.chevronListed == chevron)
-    }
-
-    @Test("D-b: the chevron reading never changes the state")
-    func chevronNeverChangesState() {
-        let a = item("a", pid: 1), b = item("b", pid: 2)
-        let scenarios: [[ItemKey: SectionItemCheck]] = [
-            [a.key: hiddenClean, b.key: hiddenClean],
-            [a.key: hiddenClean, b.key: .checked(.stillDrawn)],
-            [a.key: hiddenClean],
-            [:],
-        ]
-        for checks in scenarios {
-            let states = [true, false, nil].map { (chevron: Bool?) in
-                evaluate(membership([a, b]), checks: checks, chevronListed: chevron).state
-            }
-            #expect(states.allSatisfy { $0 == states[0] }, "state differs with the chevron for \(checks)")
-        }
-    }
-
-    @Test("D-b: a listed chevron with every member observed absent is still verified hidden")
-    func listedChevronStillVerified() {
-        let a = item("a", pid: 1)
-        let result = evaluate(membership([a]), checks: [a.key: hiddenClean], chevronListed: true)
-        #expect(result.state == .verifiedHidden)
+        #expect(result == .visibleFailed(drawn: [a.tagKey, b.tagKey]))
     }
 
     // MARK: - D-d: a fold is neither proof nor failure
@@ -243,23 +209,23 @@ struct PreferenceHidingStateTests {
     func foldIsNeitherProofNorFailure() {
         let a = item("a", pid: 1), b = item("b", pid: 2)
         let result = evaluate(membership([a, b]), checks: [a.key: hiddenClean, b.key: .checked(.hidden(folded: true))])
-        #expect(result.state == .requestedNotVerified(reasons: [.foldSeen([b.tagKey])]))
-        #expect(!result.state.countsAsLabSuccess)
-        if case .visibleFailed = result.state { Issue.record("a fold must not read as visible / failed") }
+        #expect(result == .requestedNotVerified(reasons: [.foldSeen([b.tagKey])]))
+        #expect(!result.countsAsLabSuccess)
+        if case .visibleFailed = result { Issue.record("a fold must not read as visible / failed") }
     }
 
     @Test("D-d: a fold on every member is still not verified, and not a failure")
     func foldOnEveryMember() {
         let a = item("a", pid: 1)
         let result = evaluate(membership([a]), checks: [a.key: .checked(.hidden(folded: true))])
-        #expect(result.state == .requestedNotVerified(reasons: [.foldSeen([a.tagKey])]))
+        #expect(result == .requestedNotVerified(reasons: [.foldSeen([a.tagKey])]))
     }
 
     @Test("D-d: a fold does not hide a member that was observed drawn")
     func foldDoesNotMaskDrawn() {
         let a = item("a", pid: 1), b = item("b", pid: 2)
         let result = evaluate(membership([a, b]), checks: [a.key: .checked(.hidden(folded: true)), b.key: .checked(.stillDrawn)])
-        #expect(result.state == .visibleFailed(drawn: [b.tagKey]))
+        #expect(result == .visibleFailed(drawn: [b.tagKey]))
     }
 
     // MARK: - D-d: no shipped constant
@@ -267,8 +233,8 @@ struct PreferenceHidingStateTests {
     @Test("D-d: the state carries no length, only whether one was applied")
     func noLengthIsCarried() {
         let a = item("a", pid: 1)
-        let applied = evaluate(membership([a]), lengthApplied: true, checks: [a.key: hiddenClean]).state
-        let notApplied = evaluate(membership([a]), lengthApplied: false, checks: [a.key: hiddenClean]).state
+        let applied = evaluate(membership([a]), lengthApplied: true, checks: [a.key: hiddenClean])
+        let notApplied = evaluate(membership([a]), lengthApplied: false, checks: [a.key: hiddenClean])
         #expect(applied == .verifiedHidden)
         #expect(notApplied != .verifiedHidden)
     }

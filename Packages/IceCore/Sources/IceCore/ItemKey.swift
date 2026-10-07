@@ -132,6 +132,14 @@ public struct ItemKey: Hashable, Sendable {
         TagKey(namespace: namespace, title: tagTitle(isSelf: isSelf))
     }
 
+    /// The tag without the child index: the same for one item whether its
+    /// basis is `.declared`, `.unnamed` or `.positional`, so a roster can
+    /// recognise an item across a basis change (plan
+    /// 2026-10-07-icebar-preference-hiding, D-a).
+    public func baseTagKey(isSelf: Bool) -> TagKey {
+        ItemKey(namespace: namespace, identifier: identifier, pid: pid, childIndex: nil).tagKey(isSelf: isSelf)
+    }
+
     /// Reads a `"<count>:"` prefix followed by exactly `count` characters,
     /// consuming both from `remainder`.
     private static func readLengthPrefixed(_ remainder: inout Substring) -> String? {

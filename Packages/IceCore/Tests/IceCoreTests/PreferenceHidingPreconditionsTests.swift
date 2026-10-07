@@ -50,10 +50,18 @@ struct PreferenceHidingPreconditionsTests {
         #expect(result == .blocked([.iceIconNotRightOfDivider(.iconLeftOfDivider)]))
     }
 
-    @Test("D-c (a): an icon exactly at the divider's mid-x is not right of it")
+    @Test("D-c (a): an icon whose mid-x is exactly the divider's minX is not right of it")
     func iconAtDividerBlocks() {
-        let result = evaluate(icon: rect(midX: 1469), hiddenDivider: divider(midX: 1469))
+        // divider midX 1469, width 20 -> minX 1459
+        let result = evaluate(icon: rect(midX: 1459), hiddenDivider: divider(midX: 1469))
         #expect(result == .blocked([.iceIconNotRightOfDivider(.iconLeftOfDivider)]))
+    }
+
+    @Test("D-c (a): the boundary is the divider's minX, so an icon between its minX and its mid-x is right of it")
+    func iconBetweenDividerMinAndMidIsRight() {
+        // divider minX 1459, midX 1469; the divider's width is not a bar position.
+        #expect(evaluate(icon: rect(midX: 1465), hiddenDivider: divider(midX: 1469)) == .ok)
+        #expect(evaluate(icon: rect(midX: 1459.5), hiddenDivider: divider(midX: 1469)) == .ok)
     }
 
     @Test("D-c (a): a missing icon reading is not right of the divider")
@@ -87,6 +95,32 @@ struct PreferenceHidingPreconditionsTests {
         #expect(evaluate(icon: infinite) == .blocked([.iceIconNotRightOfDivider(.iconUnreadable)]))
         let nanDivider = DividerReading(frame: nan, isUsable: true)
         #expect(evaluate(hiddenDivider: nanDivider) == .blocked([.iceIconNotRightOfDivider(.dividerUnusable)]))
+    }
+
+    @Test("D-c (a): every component of a frame must be finite, not only its mid-x")
+    func everyComponentMustBeFinite() {
+        let bad: [BarRect] = [
+            BarRect(minX: 1490, minY: .nan, width: 20, height: 24),
+            BarRect(minX: 1490, minY: 4.5, width: 20, height: .infinity),
+            BarRect(minX: 1490, minY: -.infinity, width: 20, height: 24),
+            BarRect(minX: 1490, minY: 4.5, width: .nan, height: 24),
+        ]
+        for frame in bad {
+            #expect(evaluate(icon: frame) == .blocked([.iceIconNotRightOfDivider(.iconUnreadable)]), "icon \(frame)")
+            let reading = DividerReading(frame: frame, isUsable: true)
+            #expect(evaluate(hiddenDivider: reading) == .blocked([.iceIconNotRightOfDivider(.dividerUnusable)]), "divider \(frame)")
+        }
+    }
+
+    @Test("D-c (a): a finite mid-x with a non-finite minY (icon) or height (divider) is unreadable / unusable")
+    func finiteMidXIsNotEnough() {
+        let icon = BarRect(minX: 1490, minY: .nan, width: 20, height: 24)
+        #expect(icon.midX.isFinite)
+        #expect(evaluate(icon: icon) == .blocked([.iceIconNotRightOfDivider(.iconUnreadable)]))
+        let tall = BarRect(minX: 1459, minY: 4.5, width: 20, height: .infinity)
+        #expect(tall.midX.isFinite)
+        #expect(evaluate(hiddenDivider: DividerReading(frame: tall, isUsable: true))
+            == .blocked([.iceIconNotRightOfDivider(.dividerUnusable)]))
     }
 
     // MARK: - (b) complete pass

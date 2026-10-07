@@ -91,6 +91,17 @@ struct ItemKeyTests {
         #expect(ItemKey.decode("3:abc1:x/p1") != nil) // sanity: the well-formed sibling of the cases above decodes
     }
 
+    @Test("the base tag drops only the child index: equal to the tag without one, the same across a basis change")
+    func baseTagKeyDropsTheChildIndex() {
+        let declared = ItemKey(namespace: "com.example.a", identifier: "x", pid: 12, childIndex: nil)
+        let positional = ItemKey(namespace: "com.example.a", identifier: "x", pid: 12, childIndex: 3)
+        for isSelf in [false, true] {
+            #expect(declared.baseTagKey(isSelf: isSelf) == declared.tagKey(isSelf: isSelf))
+            #expect(positional.baseTagKey(isSelf: isSelf) == declared.tagKey(isSelf: isSelf))
+        }
+        #expect(positional.baseTagKey(isSelf: false) != positional.tagKey(isSelf: false))
+    }
+
     @Test("an identifier that looks like another item's full tag does not become it")
     func identifierLookingLikeATagDoesNotCollide() {
         // "x/p12" is exactly what `tagTitle` would produce for identifier "x"

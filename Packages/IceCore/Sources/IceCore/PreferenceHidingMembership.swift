@@ -32,15 +32,14 @@ public enum PreferenceHidingMemberCondition: Equatable, Sendable {
 /// One entry of the roster.
 public struct PreferenceHidingMember: Equatable, Sendable {
     public let tag: TagKey
-    /// `nil` exactly for a previously known member the read no longer has.
+    /// `nil` exactly for a previously known member the read no longer has
+    /// (`key == nil` is what "missing from the read" means).
     public let key: ItemKey?
-    public let basis: IdentityBasis?
     public let condition: PreferenceHidingMemberCondition
 
-    public init(tag: TagKey, key: ItemKey?, basis: IdentityBasis?, condition: PreferenceHidingMemberCondition) {
+    public init(tag: TagKey, key: ItemKey?, condition: PreferenceHidingMemberCondition) {
         self.tag = tag
         self.key = key
-        self.basis = basis
         self.condition = condition
     }
 
@@ -51,11 +50,6 @@ public struct PreferenceHidingMember: Equatable, Sendable {
         case .ready, .stacked: return true
         case .stale: return false
         }
-    }
-
-    /// Anything but `ready` keeps the state at "not verified" (D-a).
-    public var capsAtNotVerified: Bool {
-        condition != .ready
     }
 }
 
@@ -76,39 +70,13 @@ public struct PreferenceHidingBlocker: Equatable, Sendable {
     }
 }
 
-/// Why a record was not selected as a member.
-public enum PreferenceHidingUnselectedReason: Equatable, Sendable {
-    case parked
-    case noFrame
-}
-
-/// A parked or frameless record that was not known as a member before, so it
-/// never becomes one (D-a). Reported rather than dropped silently.
-public struct PreferenceHidingUnselected: Equatable, Sendable {
-    public let tag: TagKey
-    public let reason: PreferenceHidingUnselectedReason
-
-    public init(tag: TagKey, reason: PreferenceHidingUnselectedReason) {
-        self.tag = tag
-        self.reason = reason
-    }
-}
-
 public struct PreferenceHidingMembership: Equatable, Sendable {
     public let members: [PreferenceHidingMember]
     public let blockers: [PreferenceHidingBlocker]
-    public let unselected: [PreferenceHidingUnselected]
 
-    public init(members: [PreferenceHidingMember], blockers: [PreferenceHidingBlocker], unselected: [PreferenceHidingUnselected]) {
+    public init(members: [PreferenceHidingMember], blockers: [PreferenceHidingBlocker]) {
         self.members = members
         self.blockers = blockers
-        self.unselected = unselected
-    }
-
-    /// True when any member is stale or stacked: the state cannot be
-    /// `verifiedHidden` (D-a).
-    public var capsAtNotVerified: Bool {
-        members.contains(where: \.capsAtNotVerified)
     }
 
     public var staleMembers: [PreferenceHidingMember] {
@@ -119,14 +87,79 @@ public struct PreferenceHidingMembership: Equatable, Sendable {
         members.filter { $0.condition == .stacked }
     }
 
+    /// The one sanctioned geometry for membership (D-a): everything of `set`
+    /// left of its hidden divider, so a caller cannot feed `resolve` the wrong
+    /// set. It derives, from `set.items` (third-party items, parked ones
+    /// included -- unlike `DiscoveredCachePlan`, which filters them) and
+    /// `set.hiddenDivider`:
+    /// - left of the divider: an item with a frame whose `midX` is less than the
+    ///   divider frame's `minX` (the section boundary of `CheckPlan` and
+    ///   `DiscoveredCachePlan`); also an item with no frame whose base tag is a
+    ///   previous member, so it becomes `stale(.noFrame)` rather than missing. A
+    ///   frameless item that was not a member is ignored;
+    /// - released: the base tags of previous members whose item in the set is on
+    ///   the bar (not parked) with `midX` at or right of the divider's `minX`
+    ///   (the owner moved them out); a parked member is never released, it
+    ///   stays `stale(.parked)` wherever its frame points;
+    /// - when the divider reading is `nil`, not usable, or has a non-finite frame
+    ///   component, no item is left of it and nothing is released: previous
+    ///   members become `stale(.missingFromRead)`. The preconditions block in
+    ///   that case anyway (D-c a).
+    ///
+    /// Previous members and released tags are compared by base tag (see
+    /// `resolve(leftOfDivider:previousMembers:releasedTags:childIdentifiersByPID:)`).
+    ///
+    /// The roster changes only on a boundary `DiscoveredCachePlan` trusts
+    /// (`hiddenDividerState` collapsed, settled, unchanged during the pass, own
+    /// read ok): a released member is dropped for good, so on any other pass the
+    /// roster is frozen -- previous members stay (wherever they read), nothing
+    /// is released and no new member is added (Codex review round 3).
+    public static func resolve(
+        set: DiscoveredItemSet,
+        hiddenDividerState: DividerState,
+        previousMembers: [TagKey],
+        childIdentifiersByPID: [Int32: [String?]]
+    ) -> PreferenceHidingMembership {
+        guard let boundary = boundary(of: set.hiddenDivider) else {
+            return resolve(
+                leftOfDivider: [], previousMembers: previousMembers, releasedTags: [],
+                childIdentifiersByPID: childIdentifiersByPID
+            )
+        }
+        let wasMember = Set(previousMembers)
+        let trusted = DiscoveredCachePlan.evaluate(
+            reading: set.hiddenDivider, state: hiddenDividerState, ownRead: set.ownRead
+        ).minX != nil
+        var left = [DiscoveredItem]()
+        var released = Set<TagKey>()
+        for item in set.items {
+            let known = wasMember.contains(baseTag(of: item))
+            // A parked or frameless member is off the bar, not moved by the
+            // owner: it stays listed, stale, wherever its frame points.
+            guard let frame = item.frame, item.position != .parked, trusted else {
+                if known { left.append(item) }
+                continue
+            }
+            if frame.midX < boundary {
+                left.append(item)
+            } else if known, frame.midX.isFinite {
+                released.insert(baseTag(of: item))
+            }
+        }
+        return resolve(
+            leftOfDivider: left, previousMembers: previousMembers, releasedTags: released,
+            childIdentifiersByPID: childIdentifiersByPID
+        )
+    }
+
     /// - Parameters:
     ///   - leftOfDivider: the third-party items the current pass reads left of
-    ///     Ice's hidden divider; the caller decides "left of" (as
-    ///     `DiscoveredCachePlan` does). Non-AX records never get here
-    ///     (`ItemCatalog` drops them before keying); not handled again.
+    ///     Ice's hidden divider; the caller decides "left of" (the public entry
+    ///     point `resolve(set:...)` is the sanctioned way). Non-AX records never
+    ///     get here (`ItemCatalog` drops them before keying); not handled again.
     ///   - previousMembers: the tags of the members known before this pass, in
     ///     their listed order. No persistence across restarts is promised (D-a).
-    ///   - releasedTags: tags of previously known members the current read
+    ///   - releasedTags: base tags of previously known members the current read
     ///     shows right of the divider (the owner moved them out). They are
     ///     dropped from the roster instead of being kept stale for ever. The
     ///     plan does not name this case; it follows from "missing from the
@@ -136,11 +169,19 @@ public struct PreferenceHidingMembership: Equatable, Sendable {
     ///     input of `PressTargetRule.index`. A pid absent here is unreadable.
     ///     Addressability is derived from this and nothing else.
     ///
+    /// Previous members and released tags are compared by base tag: the tag of
+    /// the item's key without a child index. For a `.declared` or `.unnamed`
+    /// item that is its `tagKey`; a previous member that has since become
+    /// `.positional` is thereby still recognised as known, and listed under its
+    /// previous tag.
+    ///
     /// The rule, one sentence per case. For an item in the read:
     /// - `.positional` is a blocker and no member, except that one that was a
-    ///   member stays listed as stale (it became ambiguous);
-    /// - `.parked` or `.noFrame` is never newly selected (`unselected`); a
-    ///   previously known member in that state stays listed, stale, disabled;
+    ///   member stays listed (under its previous tag) as stale (it became
+    ///   ambiguous);
+    /// - `.parked` or `.noFrame` that was not a member is not selected, and
+    ///   nothing is reported for it; a previously known member in that state
+    ///   stays listed, stale, disabled;
     /// - one that is not uniquely addressable now is listed, stale, disabled;
     /// - `.stacked` is a listed, pressable member that caps the state;
     /// - an `.onBar` one is a ready member.
@@ -151,7 +192,7 @@ public struct PreferenceHidingMembership: Equatable, Sendable {
     /// Duplicate tags in `leftOfDivider` (never produced by `ItemCatalog`,
     /// which drops collisions) make one stale entry for that tag, built from
     /// the first occurrence; later copies are ignored.
-    public static func resolve(
+    static func resolve(
         leftOfDivider: [DiscoveredItem],
         previousMembers: [TagKey],
         releasedTags: Set<TagKey>,
@@ -163,49 +204,57 @@ public struct PreferenceHidingMembership: Equatable, Sendable {
 
         var members = [PreferenceHidingMember]()
         var blockers = [PreferenceHidingBlocker]()
-        var unselected = [PreferenceHidingUnselected]()
         var seen = Set<TagKey>()
+        var listedPositional = Set<TagKey>()
 
         for item in leftOfDivider where seen.insert(item.tagKey).inserted {
-            let known = wasMember.contains(item.tagKey)
-            let unique = copies[item.tagKey] == 1
-            let addressable = unique && isAddressable(item, in: childIdentifiersByPID)
+            let known = wasMember.contains(baseTag(of: item))
+            let addressable = copies[item.tagKey] == 1 && isAddressable(item, in: childIdentifiersByPID)
             if item.basis == .positional {
                 blockers.append(PreferenceHidingBlocker(key: item.key, tag: item.tagKey, name: item.displayTitle))
-                if known { members.append(member(item, .stale(.ambiguousOrUnreadable))) }
-                continue
-            }
-            switch condition(of: item, known: known, addressable: addressable) {
-            case .member(let condition): members.append(member(item, condition))
-            case .unselected(let reason): unselected.append(PreferenceHidingUnselected(tag: item.tagKey, reason: reason))
+                if known, listedPositional.insert(baseTag(of: item)).inserted {
+                    members.append(member(item, .stale(.ambiguousOrUnreadable)))
+                }
+            } else if let condition = condition(of: item, known: known, addressable: addressable) {
+                members.append(member(item, condition))
             }
         }
 
-        let missing = previous.filter { !seen.contains($0) && !releasedTags.contains($0) }
-        members += missing.map {
-            PreferenceHidingMember(tag: $0, key: nil, basis: nil, condition: .stale(.missingFromRead))
-        }
-        return PreferenceHidingMembership(members: members, blockers: blockers, unselected: unselected)
+        let covered = Set(leftOfDivider.map(baseTag(of:)))
+        let missing = previous.filter { !covered.contains($0) && !releasedTags.contains($0) }
+        members += missing.map { PreferenceHidingMember(tag: $0, key: nil, condition: .stale(.missingFromRead)) }
+        return PreferenceHidingMembership(members: members, blockers: blockers)
     }
 
     // MARK: - private
 
-    private enum Classification {
-        case member(PreferenceHidingMemberCondition)
-        case unselected(PreferenceHidingUnselectedReason)
+    /// The divider's `minX` iff the reading is usable and every component of its
+    /// frame is finite.
+    private static func boundary(of divider: DividerReading?) -> Double? {
+        guard let divider, divider.isUsable, let frame = divider.frame, frame.hasFiniteComponents else { return nil }
+        return frame.minX
     }
 
-    private static func condition(of item: DiscoveredItem, known: Bool, addressable: Bool) -> Classification {
+    /// The item's tag with no child index: what a previous member is matched by,
+    /// so a basis change (`.declared` to `.positional`) does not lose it.
+    private static func baseTag(of item: DiscoveredItem) -> TagKey {
+        item.key.baseTagKey(isSelf: item.process.isSelf)
+    }
+
+    /// `nil`: never newly selected (a parked or frameless record that was not a
+    /// member).
+    private static func condition(of item: DiscoveredItem, known: Bool, addressable: Bool) -> PreferenceHidingMemberCondition? {
         switch item.position {
-        case .parked: return known ? .member(.stale(.parked)) : .unselected(.parked)
-        case .noFrame: return known ? .member(.stale(.noFrame)) : .unselected(.noFrame)
-        case .stacked: return .member(addressable ? .stacked : .stale(.ambiguousOrUnreadable))
-        case .onBar: return .member(addressable ? .ready : .stale(.ambiguousOrUnreadable))
+        case .parked: return known ? .stale(.parked) : nil
+        case .noFrame: return known ? .stale(.noFrame) : nil
+        case .stacked: return addressable ? .stacked : .stale(.ambiguousOrUnreadable)
+        case .onBar: return addressable ? .ready : .stale(.ambiguousOrUnreadable)
         }
     }
 
     private static func member(_ item: DiscoveredItem, _ condition: PreferenceHidingMemberCondition) -> PreferenceHidingMember {
-        PreferenceHidingMember(tag: item.tagKey, key: item.key, basis: item.basis, condition: condition)
+        let tag = item.basis == .positional ? baseTag(of: item) : item.tagKey
+        return PreferenceHidingMember(tag: tag, key: item.key, condition: condition)
     }
 
     private static func isAddressable(_ item: DiscoveredItem, in identifiers: [Int32: [String?]]) -> Bool {

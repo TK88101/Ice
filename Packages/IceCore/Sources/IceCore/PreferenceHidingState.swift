@@ -1,7 +1,7 @@
 /// The four states preference hiding can honestly be in (plan
 /// 2026-10-07-icebar-preference-hiding, S3 D-c), and what changes them without
-/// a new pixel check (D-e). The rule that derives a state from facts is
-/// `PreferenceHidingStateRule`.
+/// a new pixel check (D-e, documented on `PreferenceHidingStateRule.evaluate`).
+/// The rule that derives a state from facts is `PreferenceHidingStateRule`.
 
 /// An event after which an earlier "verified" no longer describes the bar (D-e).
 public enum PreferenceHidingLayoutChange: Equatable, Sendable {
@@ -55,24 +55,5 @@ public enum PreferenceHidingState: Equatable, Sendable {
     /// True only for `verifiedHidden`: "never a lab success" for the rest (O1).
     public var countsAsLabSuccess: Bool {
         self == .verifiedHidden
-    }
-
-    /// D-e. The state after `change`, before any re-check:
-    /// - `verifiedHidden` becomes `requestedNotVerified` pending the change;
-    /// - `requestedNotVerified` keeps its reasons and carries the change as its
-    ///   only pending one (an earlier pending change is replaced);
-    /// - `blocked` and `visibleFailed` stay as they are until re-evaluated.
-    /// No input produces a "show the section" result: no such state exists,
-    /// so a long menu cannot become one.
-    public func afterLayoutChange(_ change: PreferenceHidingLayoutChange) -> PreferenceHidingState {
-        switch self {
-        case .blocked, .visibleFailed:
-            return self
-        case .verifiedHidden:
-            return .requestedNotVerified(reasons: [.layoutChangePending(change)])
-        case .requestedNotVerified(let reasons):
-            let kept = reasons.filter { if case .layoutChangePending = $0 { return false } else { return true } }
-            return .requestedNotVerified(reasons: kept + [.layoutChangePending(change)])
-        }
     }
 }
