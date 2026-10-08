@@ -1,6 +1,6 @@
 # IceBar on macOS 27, re-aimed: preference hiding, proven in a harness before any owner sitting
 
-2026-10-07 · final (Codex round 5: CONVERGED; T2 design added 2026-10-08, Codex round 3: CONVERGED; Appendix) · T1, T3a implemented, T2 done 2026-10-08 (T2b: Q1 only, see its Result); T3b design added 2026-10-08, Codex round 4: CONVERGED · continues on `wip/icebar-build` from `6c61b96`.
+2026-10-07 · final (Codex round 5: CONVERGED; T2 design added 2026-10-08, Codex round 3: CONVERGED; Appendix) · T1, T3a implemented, T2 done 2026-10-08 (T2b: Q1 only, see its Result); T3b design added 2026-10-08, Codex round 4: CONVERGED · T4 design added 2026-10-08, Codex round 3: CONVERGED · continues on `wip/icebar-build` from `6c61b96`.
 Follows the owner's corrected goal and Codex's consult of 2026-10-07
 (`~/IceReverse-evidence/20261007-213730-t7/codex-consult.md`, handover beside it).
 Supersedes, where they conflict: `2026-10-03-icebar-build.md` sections 1, 3 (the
@@ -702,6 +702,235 @@ the best-effort length on a bar unlike T0's.
 - DoD: every verifiable scenario verified three runs in a row; the report is generated,
   with the unverified ones listed apart.
 
+#### S4 design (T4, added 2026-10-08 after T3b; review in the Appendix, "T4 design")
+
+Goal: one command in the `icetest` foreground session runs the matrix unattended, every
+scenario judged by a machine oracle from what the staged Ice itself reports, and writes
+the report. Non-goals: running it (O3: the owner starts it, at a time the owner names);
+fixing what it finds (T2d included); the IceBar panel's drawing and the mouse path into
+it (S5); a full Ice in the owner's account (R1). Serial: the report's format is the
+contract between Ice and the runner and is settled while both are written; nothing is
+dispatched.
+
+What the design rests on, and what it does not know:
+
+| # | Fact | Grade |
+|---|---|---|
+| L1 | Ice's log line carries case names and counts only (`IceBarHidingStatus.logSummary`); nothing outside Ice can read its roster, its cells or whether a length is set | MEASURED (code) |
+| L2 | A twin of a member's glyph refuses the baseline (`notUniqueAtBaseline`, `StripAssessor.swift:158`), and a fold present at the baseline refuses it too (`foldNotAbsentAtBaseline`, `:130`): neither can produce `visible / failed` | MEASURED (code) |
+| L3 | A new status item lands leftmost, so left of a leftmost hidden divider; an item started before Ice ends between Ice's divider and icon | MEASURED in the owner's account only (E2; T2a's runs; T2b's 2 of 2 smoke reads); in `icetest` INFERRED |
+| L4 | MenuBarAgent keys our ad-hoc helpers by process name, not bundle id (`status:vzhelper::<autosave name>`); whether it keys an ad-hoc Ice as `status:Ice::...` is unknown, and `icetest` has run such an Ice for minutes in seven sittings | MEASURED (helpers) / unknown (Ice). If it does, no bundle id is fresh there, and P2 would be that record replayed (INFERRED) |
+| L5 | `.stacked` is an overlap of more than 25 % with another extra's frame, what an item behind `«` shows (`ItemPosition.swift:27`, 54-68 % measured 2026-09-18) | MEASURED |
+| L6 | `vzhelper` has `--menu` (reports `menu {"event":"open"}`), `stall <s>` (stops answering Accessibility, <= 30 s), `--items 2 --identifiers a,a` (one identifier twice: positional), `--role menus` with `menus <n>`; `--autosave` takes one item only | MEASURED (code) |
+
+**D1 Ice reports, on request, what the lab must see (`-IceLabReport YES`).** Only under a
+`com.icespike4.lab.` identity (else exit 2, as trace mode; `LabReportRule` in IceCore
+beside `LabTraceRule`, tested). The launch is Ice's whole normal launch; nothing is
+skipped or replaced. Added, in `Ice/Main/LabReport.swift`, to standard output as JSON
+lines (evidence directory only: they carry bundle ids and Accessibility identifiers,
+never titles):
+
+- `start` once (marker `IceLabReport-start-v1`, pid, bundle id, the lab arguments);
+- an **event** line at the moment it happens, from the code path itself, so no poll can
+  miss one: `status` (each `.report`, the `logSummary`), `length` (each `.setLength`,
+  the value or null), `roster` (each change `updateIceBarRoster` publishes, the members'
+  identifiers: review round 2, so an order against `length` is observable), `press` and
+  `bar` (answers to the commands below);
+- a **snapshot** every 0.5 s when it differs from the last, and every 5 s regardless:
+  phase name, `lengthSet`, `lengthApplied`, the hidden control item's
+  `calibratedHiddenLength`, `isIceBarOffered`, `isIceBarPresented`, the roster (per
+  member: namespace, identifier, pid, condition, pressable), the blockers, the IceBar's
+  cells (`iceBarRoster.items`, each with `isIceBarCellDisabled`), the cache's three
+  sections as keys, `iconPlacement`, `hiddenBoundaryUsable`, the three control items'
+  frames and the completeness of the last discovery set, `pass` (how many discovery
+  passes have completed), the rest's per-member checks
+  (case names) and `chevronListed`, `isInteracting`.
+  The snapshot is a pure IceCore value (`LabReportSnapshot`), its JSON keys pinned by a
+  unit test and compared with the runner tool's list by `test-lab.sh`.
+- Transport (review round 1): the runner redirects Ice's standard output to a **file**
+  in the run directory, never a pipe, so nothing Ice writes can block it; every line
+  carries `seq`, counting from 1. The tool ignores an unfinished last line while Ice
+  runs; once Ice has stopped, a line that does not parse, a gap or a step back in
+  `seq`, or a report without `start` makes the scenario run `aborted`, never a pass.
+  Commands reach Ice through a FIFO the runner holds open; Ice reads it off the main
+  thread and acts on the main actor. A snapshot is bounded by the bar: one entry per
+  status item.
+- Commands on standard input, lab mode only, parsed by a pure rule: `bar open` /
+  `bar close` (the call the icon's click makes, `iceBarPanel.show(section:on:)`, under
+  the click's own guard `isIceBarOffered`, `MenuBarSection.swift:168-190`); `press
+  <namespace> <identifier>` (the cell's own action, `pressFromIceBar`, only for exactly
+  one cell with that key that is not disabled). Each answers `sent` or `refused` with
+  the reason. The lab never posts a mouse event and never AX-presses Ice's icon.
+- One deliberate fault, for scenario 11 only: `-IceLabHoldLength YES`. The coordinator
+  then reports each length the machine decides (`length` event, `held: true`; the
+  snapshot's `calibratedHiddenLength` stays null) and applies none, so a held length can
+  never be read as a hide: every other scenario's oracle refuses a report with `held`. Ice believes it hid; nothing moved; the member is drawn where its
+  baseline saw it. Chosen because L2 rules out a twin and no helper can refuse to be
+  pushed. Refused outside a lab identity like the mode itself.
+
+What this does not show, said in the report: that the panel draws the cells and that a
+mouse click reaches them. S5 is where the owner sees that.
+
+**D2 The identity of each Ice the lab starts.** Per scenario run the runner makes its
+own copy of the staged, hash-checked `Ice.app` in its run directory, with a bundle id
+and **an executable name of its own** (`CFBundleExecutable` set to match), re-signed ad
+hoc, as `run-trace.sh` stages its copies. The name is for L4: if MenuBarAgent keys an
+ad-hoc Ice by bundle id or by process name, this copy has no record of another Ice's.
+Which of the two it is, nobody has measured (the traces live 6 s and are not recorded;
+a longer-lived lab Ice in the owner's account would need the owner's yes after T2b), so
+the rename is **not** called a guard (review round 1): before each start the runner
+reads the store for any key holding the copy's bundle id or `status:<its name>::`, and
+after each scenario records which keys appeared or changed (`keyForm`: bundle id,
+process name, none, other). A key of another form, or a changed `status:Ice::` entry,
+is flagged in the report; placement itself is always judged from Ice's snapshot (D3).
+What the owner's account can show beforehand is only that a renamed copy starts:
+`run-trace.sh` gains an optional executable name, 3 runs.
+
+Names, and how many records they leave (review rounds 1-2). Three runs in a row must
+start from the same conditions, and a record MenuBarAgent keeps of an earlier run is a
+condition (P4), so **every identity is new in every run**: Ice
+`com.icespike4.lab.r<run>.<round><scenario>` / `IceLab<run><round><scenario>`, helper
+items `vz-lab-<run>-<round><scenario>-<i>`; only `placed-*` starts its one identity
+twice, inside its own run. MenuBarAgent's records cannot be deleted by us and must not
+grow without a bound: the references are started once per round and kept for every
+scenario but `noref`, which runs first in each round before they start; so a round
+leaves about 100 keys (about 45 member items, 2 references, about 54 for Ice's control
+items), a clean matrix about 300. The runner counts the lab-owned keys in the store at
+the start and prints the count; above 1500 (five matrices: a budget, not a measured
+limit) it refuses to start, and the README says what the owner does then (a new lab
+account; the store is MenuBarAgent's and no key of it is written or deleted by us).
+
+Ice is started by path as a child of the runner (so of Terminal: what Terminal is
+granted is what Ice gets, as in T7), its settings written to its empty domain before
+launch (`UseIceBar`, `ShowOnHover` and `ShowOnScroll` off, `EnableAlwaysHiddenSection`
+per scenario). Every domain the run creates is listed as it is created and deleted and
+verified empty on every way out.
+
+**D3 Placement by launch order (L3), checked, never assumed.** References (two helpers,
+glyphs `reference` and `alt`) start before Ice; members after it. Every helper item has
+an autosave name of its own (D2), also its identifier, so no record of another scenario
+or of T7 applies (P4); for that `vzhelper --autosave` is extended to two
+items (`<name>`, `<name>-2`). Before a scenario is judged its **setup** is read from
+Ice's snapshot: Ice's icon right of its divider, the roster exactly the members the
+runner started (namespace `com.icespike4.target`, their identifiers) and nothing else.
+A setup that is not reached is `notEstablished`: not a pass, not a failure of Ice,
+reported with what was read instead (counts on the Terminal, keys in the evidence).
+
+**D4 The scenarios.** `k` members with `--menu`; "rest" = `lengthApplied`. Waits are
+bounded (300 s for a first rest, as T7's `STATUS_LIMIT`).
+
+| id | plan # | setup and action | expected kind | oracle, beyond the setup |
+|---|---|---|---|---|
+| `sparse` | 1 | references, Ice, k = 1 | verified | status `verified`; cells = roster, none disabled; every member's check `hidden`, not folded; `length` events: one non-null value standing |
+| `k2` `k4` `k8` | 2 | k = 2, 4, 8 | verified | as `sparse` |
+| `press` | 3 | k = 2, verified; `bar open`; `press` each member; `closemenu`; `bar close` | verified | `bar open` sent and `isIceBarPresented`; per member `press` sent and that helper's `menu open` within 2 s; no cell disabled afterwards |
+| `addremove` | 4 | k = 2, verified; start a third; verified; quit the second; verified | verified | rosters {1,2}, {1,2,3}, {1,3}, each verified. Added: the `length` null event comes **before** the `roster` event that adds the third (a pass at a hiding length freezes the roster, `PreferenceHidingMembership.swift:130-142`; the new item is an item-list change, structural). Removed: the `roster` event that drops the second (its process gone, G1, at any length) comes **before** the `length` null event (the dropped tag is the structural change) |
+| `noref` | 5 | no references, k = 1 | unverified | status `notVerified(` with `noReference`, at a rest; `isIceBarOffered`; never `verified` |
+| `crowded` | 6, 12 | references, the menus helper in front, Ice, k = 2; then the ladder `menus 0, 1, ... 40` (`C2MenusCommand.maxMenus`), one step every 2.5 s -- a menu-width change restarts Ice's quiet period (3 s), so Ice stays at standard length while it climbs -- until **both** witnesses hold in one bracketed reading: an Ice snapshot with a `stacked` member and the preconditions ok, then `icewatch chevron` listing `«`, then an Ice snapshot with the same member frames and conditions (review round 2: else the two could be of different bar states). Best effort: Ice samples about once a second and a slow read delays it, so it may start a baseline mid-ladder; a non-null `length` before the bracketed witness makes the run `notEstablished`. On `dividerUnusable` one step back, once. The ladder ending, or the step back failing, is `notEstablished` | unverified | both witnesses read before the first non-null `length` event. 12: status `notVerified(` with `stacked:`, at a rest, the roster holding both members. 6: `«` still listed 15 s into the rest, with no `length` event in between |
+| `fresh-off` `fresh-on` | 7 | references, Ice with the always-hidden section off / on, k = 2 | verified | at standard length with the boundary usable: cache hidden + always-hidden keys = roster keys; then as `sparse`. `on` carries one more clause, reported under its own name `t2d`: always-hidden divider's minX < hidden divider's |
+| `placed-off` `placed-on` | 7 | the same copy and identity started a second time, after the first lived 45 s | verified | as `fresh-*`; the store's entries for this identity before the second start are recorded (which key form, which values), and both starts' control-item frames |
+| `front-short` | 8 | k = 1, verified; the menus helper to the front with 2 menus; Terminal back | verified | no `length` event from the first verified to the end; status passes through `layoutChanged:` and returns to `verified` each time |
+| `front-long` | 8 | the same with 24 menus | best effort: the final status is `verified` or `notVerified(` in each run; listed with the unverified, never counted as a verified scenario | no `length` event; never `blocked`, never `failed(`; the final status recorded (2026-09-29: a menu past the notch made the check unreadable) |
+| `relaunch` | 9 | k = 2, verified; Ice quit (TERM) and started again, same copy | verified | second roster = first roster by identifier; verified again; whether the members were back on the bar in between (their `selfread`) is recorded |
+| `positional` | 10 | references, Ice, one helper with two items of one identifier | blocked | status `blocked(` with `positional:`; **no** non-null `length` event in the whole run; `isIceBarOffered` never true; `bar open` refused; both items' own frames (`selfread`) as before, within 1 pt |
+| `inverted` | 14 | the copy's domain pre-seeded so the icon lands left of the divider (icon 5000, hidden divider 1: INFERRED from E1 and `inv`), references, Ice, k = 1 | blocked | status `blocked(iconLeftOfDivider`; no non-null `length` event; no IceBar; setup = the snapshot's `iconPlacement`, else `notEstablished` |
+| `drawn` | 11 | as `sparse` with `-IceLabHoldLength YES` | failed | a status `failed(drawn:`; never `verified` |
+| `incomplete` | 13 | k = 1, at a rest; `stall 25` to a reference helper | blocked | within the stall a status `blocked(discoveryIncomplete`, preceded by a null `length` event; not blocked again 30 s after `resumed` |
+
+The `t2d` clause is the open defect T2d (S2 design, exception), which that exception
+says does not block T4. It does stand between the matrix and S4's DoD (review round 1):
+while it fails, S4 is not green and T5 does not start. The runner treats it as
+**known open**: it is judged and reported every round, it does not by itself stop the
+rounds (D5), and the report's last line says "S4 DoD: not met (T2d open)".
+
+**Scenario 14's second half** ("moved there while hidden": `inverted-moved`) is listed
+by the runner as `notRun` and is **the owner's decision** (review, rounds 1-2). The
+only way to move Ice's icon on a live bar is a Command-drag. What is known of a
+synthetic one: `inject3` moved a helper item 3 of 4 times (FINDINGS "The move
+primitive"); `dragown`, its guarded successor, has never posted an event (T2b); and
+this drag is harder than either -- when it starts Ice retires the length
+(`isDragging` -> quiet), the bar reflows under the held icon, and the drop point, left
+of a divider that has just shrunk from the hiding length to standard, exists only
+after that. Either the lab gains that drag (a new injection probe for the lab account;
+whether it works three runs in a row is unknown until a sitting is spent on it), or
+S4's DoD drops this half and S5's sitting gains one step (the owner drags the icon
+left of the divider and back, and reads the pane's line each time). Not equivalent:
+the second gives one human observation, not three machine-judged runs; what it leaves
+INFERRED is that a placement change after start is published and retires the length
+(unit-tested per phase; `inverted` proves publication at start only).
+
+Results per scenario run: `pass` (setup reached, expected kind, oracle holds), `fail`,
+`notEstablished`, `aborted` (a guard stopped it). DoD as S4 says: every scenario `pass`
+in three rounds running; the report lists verified, unverified, blocked and failed-as-
+expected scenarios apart, with `notEstablished` and `fail` by name.
+
+**D5 The runner (`run-lab.sh`, staged by `stage-lab.sh` beside T7's staging, in
+`/Users/Shared/IceReverse-lab`).** One self-contained zsh file: nothing sourced, no
+path argument, no environment read (`lab.env` read as words, as `run-t7.sh` reads
+`t7.env`); `run-lab.sh` (the matrix), `run-lab.sh <scenario id>` (that scenario),
+`run-lab.sh --dry-run` (the guards, starts nothing). Guards as T7: the account, owner-
+owned unwritable files, the staged bundle and tools against recorded sha256, nothing of
+ours running, Accessibility and screen capture, the menu frame readable. Its judge is
+`lab-tool.py` (`python3 -I`, hashed with the rest; pure: `await` a predicate on the
+report, `judge` a scenario run, `report` the matrix), so every oracle above is a tested
+function, not shell.
+
+- Order and length: round by round, all scenarios, three rounds; after round 1 it stops
+  if any scenario did not pass, known-open clauses aside (three in a row is already out
+  of reach: no reason to spend two more hours). The report says "S4 DoD: met" only for
+  three rounds with every scenario and every clause passing. Estimate, not measured: 18 scenario runs of 2-5 minutes, about
+  one hour a round, three hours for a clean matrix. `caffeinate` holds the display for
+  the run. The owner starts it and leaves the Mac alone; a hover on the bar only delays
+  (`isInteracting`), and is visible in the snapshots.
+- A scenario never stops the matrix; only a failed guard or cleanup does. Every exit
+  path (also INT, TERM, HUP, the watchdog) stops Ice, quits the helpers (their own
+  deadmen remain: controller exit, lifetime), deletes and verifies the domains, prints
+  the report so far.
+- `icetest`'s MenuBarAgent store is exported before the run, before each second start
+  of `placed-*`, and after: recorded and diffed, never a stop (the account is the lab's;
+  T2b's guard was for the owner's entries). Unreadable is recorded as such.
+- Evidence in `/Users/Shared/IceReverse-lab/evidence/<run id>/<round>-<scenario>/`:
+  Ice's report and log, each helper's log, the runner's own steps, a capture of the bar
+  strip before and at the judgement, the verdict with its reasons.
+- Two read-only `icewatch` commands are added: `chevron` (the detector feed's
+  `ChevronReader`, as Ice reads it) and `activate <pid>` (`NSRunningApplication.activate`,
+  then whether that pid is frontmost: how the menus helper and Terminal are brought
+  forward, as C2 did).
+
+**What only the first run can tell** (each one a `notEstablished` or a recorded value,
+not a silent failure): placement by launch order in `icetest` (L3); the keying of an
+ad-hoc Ice (L4; the rename is the guard); whether hiding reaches a rest there at all
+(T7 never saw `active`); that a held length reads as `stillDrawn`; that the pre-seed
+inverts; that the crowding can be tuned to "members folded, divider not"; that a stall
+yields an incomplete pass rather than a quarantine; how long a walk takes; whether
+Terminal can export the store and activate another app there.
+
+**Tests.** IceCore first, RED before GREEN: `LabReportRule` (launch, refusals,
+arguments), the command parser, `LabReportSnapshot`'s encoding, the held length
+(a pure decision the coordinator asks); coverage >= 80 % of changed IceCore files.
+`test-lab.sh`: the tool on synthetic reports -- for every scenario a passing run, a
+failing one for each oracle clause, a `notEstablished` one; the runner against stub
+Ice, `vzhelper` and `icewatch` -- every guard refuses, every exit path cleans up, a
+scenario that times out does not stop the matrix, round 1's failure stops round 2.
+`xcodebuild` Debug; `check-a3a4.sh`; `test-trace.sh`, `test-t7.sh` unchanged and green;
+the probes package's tests for `vzhelper`'s parser and `icewatch`, and the full probes
+run (Swift changed; background, logged, capped at 90 min). E2E in the owner's account:
+`run-trace.sh` as Ice's start regression (off 3 of 3; on fails clause 4 only, T2d),
+again with the renamed executable; `stage-lab.sh icetest` with its dry check. The matrix
+itself: **not run** here; INFERRED until the owner's sitting.
+
+Touched: `Packages/IceCore` (lab report rule, snapshot, commands + tests); `Ice/`
+(`LabReport.swift`, `AppDelegate.swift`, `IceBarHidingCoordinator.swift`, the manager's
+IceBar27 extension for the snapshot's reads); probes (`vzhelper`, `icewatch`,
+`run-trace.sh`, new `run-lab.sh`, `stage-lab.sh`, `lab-tool.py`, `test-lab.sh`, README);
+`STATUS.md`. Frozen files untouched. Rollback: revert T4's commits; without the launch
+argument Ice is as after T3b.
+
+Risks: the first sitting meets several unknowns at once (above; each isolated per
+scenario so one does not hide another); a lab-only argument in Ice's sources (inert
+without it, refused outside the lab identity, as trace mode); three hours of the Mac for
+a clean matrix.
+
 ### S5 Owner acceptance (owner cost: one short sitting)
 
 Only after S4's DoD: one unattended command; then the owner looks at Ice on the bar
@@ -725,7 +954,8 @@ Debated in two rounds; the owner confirms the conclusion, not a choice.
 - **O3** The owner starts the lab matrix: one command in the `icetest` foreground
   session, unattended, fixed scenarios, no agent; asked for only after S1-S3 are built
   and reviewed. One fact to ask the owner then, not a decision: is there a second Mac
-  that could be dedicated to the lab.
+  that could be dedicated to the lab. Answered 2026-10-08: there is none. The lab is the
+  `icetest` session in front on this Mac, one owner-started sitting per matrix run.
 - **S2, added:** the placement fix aims, for a fresh Ice, at
   `hidden divider | other status items, system agents included | Ice's icon`, so that
   items such as the input menu are not swept into the hidden section by default (on the
@@ -922,3 +1152,27 @@ test files each wrapping `fixtureSignature`; `itemTags` public for tests only; t
 `#available` and mode branch; three derivations of "the boundary was trusted"
 (`hiddenBoundaryUsable`, `resolve`'s, `boundaryIssue`).
 
+
+### T4 design (S4 design subsection; Codex gpt-5.6-terra, 2026-10-08; cap 5 calls)
+
+| Round | Finding | Ruling |
+|---|---|---|
+| 1 | P0 `fresh-on` must verify, yet its always-hidden clause is T2d, open and not blocking T4: the DoD can never be met | taken, modified: the clause is reported as `t2d`, known open; it does not stop the rounds; the report says S4's DoD is not met while it fails. T2d blocks T5, not T4 |
+| 1 | P0 moving scenario 14's second half to S5 drops mandated live coverage | not moved silently: `notRun`, put to the owner with both options (a synthetic drag of Ice's icon in the lab, or one owner drag in S5) and what each leaves unproven. Codex, round 2: no deterministic non-drag mechanism is known; it is the owner's call; it recommends the S5 step |
+| 1 | P1 unique names per run grow MenuBarAgent's records without bound | taken (round 1: epoch-bounded names; replaced in round 2, below) |
+| 1 | P1 the renamed-executable trace proves only that a copy starts, not the key MenuBarAgent uses | taken: not called a guard; the store is read before each start and diffed after each scenario, the key form recorded, other forms flagged. A 30 s lab Ice in the owner's account would need the owner's yes (T2b), so no pre-sitting proof |
+| 1 | P1 the report's transport has no drain, order or malformed-line contract | taken: standard output to a file, `seq`, malformed or gapped reports `aborted`, commands by FIFO |
+| 1 | P1 `crowded`: no bound on the ladder, no witness of `«` before the length | taken: ladder 0-40, both witnesses before the first length, one step back, else `notEstablished` |
+| 1 | P2 `front-long`'s success rule unclear | taken: best effort, a fixed acceptable set, never counted as verified |
+| 1 | accepted as proposed: the lab report inside Ice (with the transport fix), `-IceLabHoldLength` (held lengths marked), merging 6 and 12 as unverified, splitting 8, three rounds with a stop after an unclean round 1, record-and-diff instead of a store guard in the lab account | -- |
+| 2 | (the first round-2 call's answer was lost to the assistant's own `head` closing the pipe; the round was sent again, one call spent) | process error, the assistant's |
+| 2 | round 1's items RESOLVED but `crowded`; new P1: reused identities make round 2-3 start from round 1's records, so three runs are not three equal runs | taken: every identity new in every run; references once per round, `noref` first; about 100 keys a round; a 1500-key budget, then a new lab account |
+| 2 | P1 `crowded`'s two witnesses could come from two bar states | taken: a bracketed reading (Ice snapshot, `icewatch chevron`, Ice snapshot unchanged) |
+| 2 | P1 `addremove`'s order not observable from 0.5 s snapshots | taken: a `roster` event at publication; and the order corrected per direction (added: length retired first; removed: roster first, G1) |
+| 2 | on the 2.5 s ladder: not a false pass (a length first is `notEstablished`), but "Ice stays at standard length" overstated | taken: said as best effort |
+| 3 | all three RESOLVED (the corrected `addremove` order checked against the code), no new P0/P1 | **CONVERGED** |
+
+P0/P1 per round: 6, 3, 0 (4 calls of the 5: one lost to the assistant's pipe, one to the
+usage limit, waited out). Of ten findings: eight taken, one modified, one turned into the
+owner's decision (scenario 14's second half), which Codex agrees is the owner's and for
+which it recommends the S5 step.
