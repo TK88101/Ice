@@ -24,6 +24,13 @@ final class MenuBarItemManager: ObservableObject {
     /// rotating cursor and `ItemCatalog.carryOver` both continue across
     /// passes (D11).
     private var lastDiscoveredSet: DiscoveredItemSet?
+    private var completedPasses = 0
+
+    /// The last discovery set and how many passes have completed, for the
+    /// lab report (plan 2026-10-07-icebar-preference-hiding, S4 design D1).
+    var labDiscovery: (set: DiscoveredItemSet?, passes: Int) {
+        (lastDiscoveredSet, completedPasses)
+    }
 
     /// One divider's state changes as Ice's own model reports them (D10,
     /// macOS 27 only): whether its control item is collapsed
@@ -587,6 +594,7 @@ extension MenuBarItemManager {
 
         let plan = DiscoveredCachePlan.make(set: discovery.set, dividerStates: states, previous: discoveredSectionMap)
         lastDiscoveredSet = discovery.set
+        completedPasses += 1
 
         switch plan {
         case .publish(let publication):

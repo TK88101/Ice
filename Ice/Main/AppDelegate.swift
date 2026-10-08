@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             LabTrace.exitIfRefused()
             return
         }
+        // A report launch is a normal one that also reports (S4 design D1).
+        LabReport.exitIfRefused()
 
         // Initial chore work.
         NSSplitViewItem.swizzle()
@@ -31,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             LabTrace.start(plan, appState: appState)
             return
         }
+        LabReport.startIfAsked(appState: appState)
 
         // Hide the main menu's items to add additional space to the
         // menu bar when we are the focused app.

@@ -38,6 +38,14 @@ final class IceBarHidingCoordinator {
         machine.lengthApplied
     }
 
+    /// What the lab report reads of the machine (S4 design D1).
+    var labFacts: LabReportMachineFacts {
+        machine.labFacts
+    }
+
+    /// The last sample's `isInteracting`, for the lab report.
+    private(set) var isInteracting = false
+
     init(appState: AppState) {
         self.appState = appState
     }
@@ -91,7 +99,9 @@ final class IceBarHidingCoordinator {
                 return
             }
             keepDividersHidden(appState: appState)
-            send(.sample(sample(appState: appState, screen: screen, menuMaxX: menuMaxX)))
+            let sample = sample(appState: appState, screen: screen, menuMaxX: menuMaxX)
+            isInteracting = sample.isInteracting
+            send(.sample(sample))
         }
     }
 
@@ -142,13 +152,17 @@ final class IceBarHidingCoordinator {
         }
         switch command {
         case .setLength(let length):
-            appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = length.map { CGFloat($0) }
+            // The length itself, except in a lab report launch that holds lengths (S4 design D1).
+            let outcome = LabReportRule.appliedLength(length, plan: LabReport.plan)
+            appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = outcome.applied.map { CGFloat($0) }
+            LabReport.record(.length(outcome, decided: length))
         case .takeBaseline(let token, let members, let ready):
             takeBaseline(token: token, members: members, ready: ready)
         case .observe(let token, let length):
             observe(token: token, length: length)
         case .report(let status):
             logger.info("IceBar hiding: \(status.logSummary, privacy: .public)")
+            LabReport.record(.status(status.logSummary))
             appState.hidingCheckStatus = status.message.map(HidingCheckStatus.init(message:))
         }
     }

@@ -26,6 +26,14 @@ struct IceBarRoster: Equatable {
     func isUnpressable(_ id: MenuBarItem.ID) -> Bool {
         rules.membership.members.first { lastItems[$0.tag]?.id == id }.map { !$0.isPressable } ?? false
     }
+
+    /// The members as the lab report names them (S4 design D1): by the key
+    /// last read, else by the tag.
+    var labMembers: [LabReportItem] {
+        rules.membership.members.map { member in
+            LabReportItem(namespace: member.tag.namespace, identifier: rules.lastKeys[member.tag]?.identifier ?? member.tag.title)
+        }
+    }
 }
 
 /// IceBar on macOS 27 (plan 2026-10-03-icebar-build, 9.3 and 9.5): the hiding
@@ -85,7 +93,12 @@ extension MenuBarItemManager {
         if !unpressableItems.isEmpty, Set(next.items.map(\.id)) != Set(iceBarRoster.items.map(\.id)) {
             unpressableItems = []
         }
+        let members = next.labMembers
+        let membersChanged = members != iceBarRoster.labMembers
         iceBarRoster = next
+        if membersChanged {
+            LabReport.record(.roster(members))
+        }
     }
 
     /// Empties the roster and the failed presses: called the moment IceBar
@@ -93,7 +106,11 @@ extension MenuBarItemManager {
     /// from nothing (Codex review, T3b round 2).
     func resetIceBarRoster() {
         if iceBarRoster != IceBarRoster() {
+            let hadMembers = !iceBarRoster.labMembers.isEmpty
             iceBarRoster = IceBarRoster()
+            if hadMembers {
+                LabReport.record(.roster([]))
+            }
         }
         if !unpressableItems.isEmpty || !pendingPresses.isEmpty {
             pressGeneration += 1

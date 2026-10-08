@@ -103,6 +103,19 @@ public struct VerificationSummary: Equatable, Sendable {
         return VerificationSummary(hidden: hidden, stillDrawn: stillDrawn, unverifiable: unverifiable, refused: refused, skipped: skipped)
     }
 
+    /// One check by the same bare names, for the lab report (plan
+    /// 2026-10-07-icebar-preference-hiding, S4 design D1): `hidden`,
+    /// `hiddenFolded`, `stillDrawn`, or why it says neither.
+    public static func name(of check: SectionItemCheck) -> String {
+        switch check {
+        case .checked(.hidden(let folded)): return folded ? "hiddenFolded" : "hidden"
+        case .checked(.stillDrawn): return "stillDrawn"
+        case .checked(.unverifiable(let reason)): return "unverifiable:\(caseName(reason))"
+        case .refusedAtBaseline(let rejection): return "refused:\(caseName(rejection))"
+        case .skipped(let reason): return "skipped:\(caseName(reason))"
+        }
+    }
+
     // Explicit switches, not a Mirror-based reflection: every case is named
     // once, deliberately, so a new case that forgets to update this file
     // fails to compile rather than silently missing from the summary.
