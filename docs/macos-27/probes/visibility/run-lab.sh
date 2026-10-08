@@ -123,7 +123,9 @@ preflight=$($icewatch preflight 2>/dev/null)
 [[ $preflight == *'"axTrusted":true'* && $preflight == *'"screenCapture":true'* ]] \
     || guard 1 "Terminal lacks Accessibility or Screen Recording: $preflight"
 menu_frame=$($icewatch menu-frame 2>/dev/null)
-[[ $menu_frame == *'"verdict":"fits"'* ]] || guard 1 "Ice could not read the menu's width (icewatch menu-frame: ${menu_frame:-nothing})"
+# The scenarios that verify need the front app's menu to end left of the notch
+# (2026-09-29: past it the check cannot read the bar): Terminal, in front.
+[[ $menu_frame == *'"verdict":"fits"'* ]] || guard 1 "the app in front must have a short menu (Terminal, in front); icewatch menu-frame: ${menu_frame:-nothing}"
 (( guard_failed )) && exit 2
 
 if (( dry_run )); then
