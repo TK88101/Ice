@@ -8,7 +8,7 @@ import Testing
 /// section to be shown.
 @Suite("PreferenceHidingLayoutChange")
 struct PreferenceHidingLayoutChangeTests {
-    static let events: [PreferenceHidingLayoutChange] = [.frontmostAppChanged, .menusCrossingNotch, .itemsAdded]
+    static let events: [PreferenceHidingLayoutChange] = [.displayChanged, .itemsChanged, .frontmostAppChanged, .menuWidthChanged, .spaceChanged]
     let hiddenClean = SectionItemCheck.checked(.hidden(folded: false))
 
     func item(_ identifier: String, pid: Int32, position: ItemPosition = .onBar) -> DiscoveredItem {
@@ -51,7 +51,7 @@ struct PreferenceHidingLayoutChangeTests {
         let a = item("a", pid: 1)
         let members = membership([a])
         let checks = [a.key: hiddenClean]
-        #expect(evaluate(members, checks: checks, pending: .itemsAdded) != .verifiedHidden)
+        #expect(evaluate(members, checks: checks, pending: .itemsChanged) != .verifiedHidden)
         #expect(evaluate(members, checks: checks, pending: nil) == .verifiedHidden)
     }
 
@@ -86,7 +86,7 @@ struct PreferenceHidingLayoutChangeTests {
         let gone = TagKey(namespace: "com.example.gone", title: "g/p9")
         let members = membership([a], previous: [gone])
         let before = members.members
-        _ = evaluate(members, checks: [a.key: hiddenClean], pending: .menusCrossingNotch)
+        _ = evaluate(members, checks: [a.key: hiddenClean], pending: .menuWidthChanged)
         #expect(members.members == before)
         #expect(members.members.map(\.tag) == [a.tagKey, gone])
     }
@@ -97,9 +97,61 @@ struct PreferenceHidingLayoutChangeTests {
         let members = membership([a])
         let scenarios: [[ItemKey: SectionItemCheck]] = [[a.key: hiddenClean], [:], [a.key: .checked(.stillDrawn)]]
         for checks in scenarios {
-            let next = evaluate(members, checks: checks, pending: .menusCrossingNotch)
+            let next = evaluate(members, checks: checks, pending: .menuWidthChanged)
             #expect(next.isIceBarOffered)
             if case .blocked = next { Issue.record("a layout change must not block") }
         }
+    }
+
+    // MARK: - Derived from two signatures, not classified by hand (T3b)
+
+    func signature(
+        visible: [String] = ["v1"],
+        hidden: [String] = ["h1"],
+        alwaysHidden: [String] = [],
+        frontmostPID: Int32? = 10,
+        menuMaxX: Double? = 400,
+        displayID: UInt32? = 1,
+        spaceID: UInt64? = 7
+    ) -> LayoutSignature {
+        LayoutSignature(
+            visible: visible, hidden: hidden, alwaysHidden: alwaysHidden, frontmostPID: frontmostPID,
+            menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID
+        )
+    }
+
+    @Test("equal signatures are no change")
+    func noChange() {
+        #expect(PreferenceHidingLayoutChange.between(signature(), signature()) == nil)
+    }
+
+    @Test("each field's difference is its own change")
+    func eachField() {
+        let old = signature()
+        #expect(PreferenceHidingLayoutChange.between(old, signature(displayID: 2)) == .displayChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(visible: ["v1", "v2"])) == .itemsChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(hidden: [])) == .itemsChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(alwaysHidden: ["a1"])) == .itemsChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(frontmostPID: 11)) == .frontmostAppChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(menuMaxX: 900)) == .menuWidthChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(menuMaxX: nil)) == .menuWidthChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(spaceID: 8)) == .spaceChanged)
+    }
+
+    @Test("several differences at once: the structural one is named, display before items")
+    func structuralWins() {
+        let old = signature()
+        #expect(PreferenceHidingLayoutChange.between(old, signature(hidden: [], frontmostPID: 11, spaceID: 8)) == .itemsChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(hidden: [], displayID: 2)) == .displayChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(frontmostPID: 11, menuMaxX: 900, spaceID: 8)) == .frontmostAppChanged)
+    }
+
+    @Test("the roster may be wrong only after a display or item change; a Space id alone says nothing of it")
+    func whichAreStructural() {
+        #expect(PreferenceHidingLayoutChange.displayChanged.isStructural)
+        #expect(PreferenceHidingLayoutChange.itemsChanged.isStructural)
+        #expect(!PreferenceHidingLayoutChange.frontmostAppChanged.isStructural)
+        #expect(!PreferenceHidingLayoutChange.menuWidthChanged.isStructural)
+        #expect(!PreferenceHidingLayoutChange.spaceChanged.isStructural)
     }
 }

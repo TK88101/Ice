@@ -83,7 +83,7 @@ struct DiscoveryResultStatusTests {
         let set = DiscoveredItemSet(items: items, visibleControlItem: nil, hiddenDivider: nil, alwaysHiddenDivider: nil, ownRead: .ok, systemElements: [], dropped: [], completeness: completeness)
         return DiscoveryResult(
             set: set, duration: 0, origin: DiscoveryOrigin(x: 0, y: 0), bounds: testBounds, nextCursor: 0,
-            quarantined: quarantined.map { testProcess(pid: $0) }, enumeratedPIDs: Set(enumerated)
+            quarantined: quarantined.map { testProcess(pid: $0) }, enumeratedPIDs: Set(enumerated), childIdentifiersByPID: [:]
         )
     }
 }

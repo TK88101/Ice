@@ -84,7 +84,8 @@ public struct C1Discoverer: Discovering {
         )
         return DiscoveryResult(
             set: composed, duration: result.duration, origin: result.origin, bounds: result.bounds,
-            nextCursor: result.nextCursor, quarantined: result.quarantined, enumeratedPIDs: result.enumeratedPIDs
+            nextCursor: result.nextCursor, quarantined: result.quarantined, enumeratedPIDs: result.enumeratedPIDs,
+            childIdentifiersByPID: result.childIdentifiersByPID
         )
     }
 }

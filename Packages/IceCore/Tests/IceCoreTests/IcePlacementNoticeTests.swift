@@ -35,24 +35,44 @@ struct IcePlacementNoticeTests {
 
     // MARK: - Which pass may say where the icon is
 
-    @Test("a pass whose hidden boundary is trusted replaces what Ice held", arguments: [
+    @Test("with the divider at standard length the pass's reading replaces what Ice held", arguments: [
         PreferenceHidingIconPlacement?.none, .iconLeftOfDivider, .iconUnreadable, .dividerUnusable,
     ])
-    func trustedPassReplaces(read: PreferenceHidingIconPlacement?) {
-        #expect(IcePlacementNotice.placement(held: .iconLeftOfDivider, read: read, hiddenBoundaryTrusted: true) == read)
-        #expect(IcePlacementNotice.placement(held: nil, read: read, hiddenBoundaryTrusted: true) == read)
+    func standardLengthPassReplaces(read: PreferenceHidingIconPlacement?) {
+        #expect(IcePlacementNotice.placement(held: .iconLeftOfDivider, read: read, dividerAtStandardLength: true) == read)
+        #expect(IcePlacementNotice.placement(held: nil, read: read, dividerAtStandardLength: true) == read)
     }
 
     @Test("while the divider is at a hiding length its left edge is not the boundary: an inversion Ice held is kept (Codex review, T2c)")
     func hidingDividerDoesNotClear() {
         // The expanded divider's minX is far left, so the icon reads right of it, or the divider unusable.
-        #expect(IcePlacementNotice.placement(held: .iconLeftOfDivider, read: nil, hiddenBoundaryTrusted: false) == .iconLeftOfDivider)
-        #expect(IcePlacementNotice.placement(held: .iconLeftOfDivider, read: .dividerUnusable, hiddenBoundaryTrusted: false) == .iconLeftOfDivider)
+        #expect(IcePlacementNotice.placement(held: .iconLeftOfDivider, read: nil, dividerAtStandardLength: false) == .iconLeftOfDivider)
+        #expect(IcePlacementNotice.placement(held: .iconLeftOfDivider, read: .dividerUnusable, dividerAtStandardLength: false) == .iconLeftOfDivider)
     }
 
-    @Test("nor does such a pass report an inversion Ice did not hold")
+    @Test("nor does such a pass report an inversion or an unusable divider Ice did not hold: there the divider always reads so (T3b, G3)")
     func hidingDividerDoesNotSet() {
-        #expect(IcePlacementNotice.placement(held: nil, read: .iconLeftOfDivider, hiddenBoundaryTrusted: false) == nil)
+        #expect(IcePlacementNotice.placement(held: nil, read: .iconLeftOfDivider, dividerAtStandardLength: false) == nil)
+        #expect(IcePlacementNotice.placement(held: nil, read: .dividerUnusable, dividerAtStandardLength: false) == nil)
+    }
+
+    @Test("an icon read as not on the bar is unreadable at once, at any length: it was carried off with the section (T3b, G3)")
+    func iconOffTheBarAtAHidingLength() {
+        #expect(IcePlacementNotice.placement(held: nil, read: .iconUnreadable, dividerAtStandardLength: false) == .iconUnreadable)
+        #expect(IcePlacementNotice.placement(held: .iconLeftOfDivider, read: .iconUnreadable, dividerAtStandardLength: false) == .iconUnreadable)
+    }
+
+    @Test("a divider is at standard length when Ice holds it enabled, collapsed, settled and unchanged during the pass")
+    func dividerAtStandardLength() {
+        func state(enabled: Bool = true, collapsed: Bool = true, collapsedFor: Double = 5, changed: Bool = false) -> DividerState {
+            DividerState(isEnabled: enabled, isCollapsed: collapsed, collapsedFor: collapsedFor, changedDuringPass: changed)
+        }
+        #expect(state().isAtStandardLength)
+        #expect(state(collapsedFor: DiscoveredCachePlan.settleSeconds).isAtStandardLength)
+        #expect(!state(enabled: false).isAtStandardLength)
+        #expect(!state(collapsed: false).isAtStandardLength)
+        #expect(!state(collapsedFor: 0.5).isAtStandardLength)
+        #expect(!state(changed: true).isAtStandardLength)
     }
 
     @Test("the text says what is wrong, what Ice does about it and the repair, and promises nothing about the drag lasting")

@@ -211,4 +211,29 @@ struct PreferenceHidingPreconditionsTests {
         #expect(result == expected.map { .blocked([.iceIconNotRightOfDivider($0)]) } ?? .ok)
         #expect(PreferenceHidingPreconditions.iconPlacement(icon: DiscoveredItem?.none, divider: divider(midX: 1469)) == .iconUnreadable)
     }
+
+    // MARK: - From a held placement (T3b, G3)
+
+    @Test("T3b G3: the placement Ice holds decides (a): none held is ok, any held blocks with it", arguments: [
+        PreferenceHidingIconPlacement.iconLeftOfDivider, .iconUnreadable, .dividerUnusable,
+    ])
+    func heldPlacementDecides(placement: PreferenceHidingIconPlacement) {
+        #expect(PreferenceHidingPreconditions.evaluate(iconPlacement: nil, completeness: .complete, ownRead: .ok, blockers: []) == .ok)
+        let result = PreferenceHidingPreconditions.evaluate(iconPlacement: placement, completeness: .complete, ownRead: .ok, blockers: [])
+        #expect(result == .blocked([.iceIconNotRightOfDivider(placement)]))
+    }
+
+    @Test("T3b G3: with a held placement the other reasons keep their order a, b, c")
+    func heldPlacementKeepsOrder() {
+        let positional = blocker("shared")
+        let result = PreferenceHidingPreconditions.evaluate(
+            iconPlacement: .iconUnreadable, completeness: .permissionDenied, ownRead: .notRead, blockers: [positional]
+        )
+        #expect(result == .blocked([
+            .iceIconNotRightOfDivider(.iconUnreadable),
+            .discoveryIncomplete(.permissionDenied),
+            .ownReadNotOk(.notRead),
+            .positionalItemsLeftOfDivider([positional]),
+        ]))
+    }
 }

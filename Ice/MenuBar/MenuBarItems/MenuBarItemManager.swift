@@ -47,12 +47,16 @@ final class MenuBarItemManager: ObservableObject {
     private(set) var hiddenBoundaryUsable = false
 
     /// Where Ice's icon is against its hidden divider, as the last macOS 27
-    /// pass with a trusted hidden boundary read it; `nil`: right of it (plan
-    /// 2026-10-07-icebar-preference-hiding, S2 design T2c). Left of it,
+    /// pass with the divider at standard length read it, or not on the bar
+    /// as any pass read it; `nil`: right of it (plan
+    /// 2026-10-07-icebar-preference-hiding, T2c and T3b design G3). Otherwise
     /// IceBar's hiding hides nothing and the layout pane says so. A pass that
-    /// publishes nothing (no Accessibility permission) leaves it as it was:
-    /// a held inversion keeps blocking, which changes no length.
+    /// publishes nothing (no Accessibility permission) leaves it as it was.
     @Published private(set) var iconPlacement: PreferenceHidingIconPlacement?
+
+    /// IceBar's roster and preconditions on macOS 27 in IceBar mode, updated
+    /// by every completed discovery pass (T3b design); empty otherwise.
+    @Published var preferenceHidingRoster = PreferenceHidingRoster()
 
     /// IceBar on macOS 27: items whose press failed, shown disabled in the
     /// IceBar, and items whose press has not returned yet (plan 9.5).
@@ -601,7 +605,7 @@ extension MenuBarItemManager {
                     icon: discovery.set.visibleControlItem,
                     divider: discovery.set.hiddenDivider
                 ),
-                hiddenBoundaryTrusted: hiddenBoundaryUsable
+                dividerAtStandardLength: states.hidden.isAtStandardLength
             )
             if iconPlacement != placement {
                 iconPlacement = placement
@@ -627,6 +631,9 @@ extension MenuBarItemManager {
                 logger.info("Still missing accessibility permission, will retry")
             }
         }
+        // Also after a pass the cache does not publish: its preconditions
+        // block (T3b design, review round 2).
+        updatePreferenceHidingRoster(discovery: discovery, hiddenDividerState: states.hidden)
     }
 
     /// A divider's latest snapshot, or -- before the first emission -- its

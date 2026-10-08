@@ -158,7 +158,14 @@ public final class MenuBarDiscoverer: @unchecked Sendable {
         cursor.set(rotation.nextCursor)
         quarantine.set(settlement.quarantine)
 
-        return DiscoveryResult(set: carried, duration: now() - passStart, origin: origin, bounds: displaySnapshot.bounds, nextCursor: rotation.nextCursor, quarantined: settlement.quarantined, enumeratedPIDs: Set(processes.map(\.pid)))
+        let childIdentifiers = Dictionary(
+            adjustedReads.compactMap { read in PressTargetRule.identifiers(of: read, timeout: timeout).map { (read.process.pid, $0) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return DiscoveryResult(
+            set: carried, duration: now() - passStart, origin: origin, bounds: displaySnapshot.bounds, nextCursor: rotation.nextCursor,
+            quarantined: settlement.quarantined, enumeratedPIDs: Set(processes.map(\.pid)), childIdentifiersByPID: childIdentifiers
+        )
     }
 
     /// One pass's rotation, from `startIndex`: every process not skipped by the

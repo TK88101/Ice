@@ -130,5 +130,5 @@ func fixtureSet(items: [DiscoveredItem], hiddenDivider: DividerReading? = nil, o
 }
 
 func fixtureDiscovery(set: DiscoveredItemSet, origin: DiscoveryOrigin = DiscoveryOrigin(x: 0, y: 0)) -> DiscoveryResult {
-    DiscoveryResult(set: set, duration: 0, origin: origin, bounds: fixtureBounds, nextCursor: 0, quarantined: [], enumeratedPIDs: Set(set.listedItems.map(\.process.pid)))
+    DiscoveryResult(set: set, duration: 0, origin: origin, bounds: fixtureBounds, nextCursor: 0, quarantined: [], enumeratedPIDs: Set(set.listedItems.map(\.process.pid)), childIdentifiersByPID: [:])
 }

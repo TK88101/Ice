@@ -162,9 +162,9 @@ final class MenuBarSection {
         }
 
         if useIceBar {
-            // On macOS 27 the IceBar is offered only while the hidden section
-            // is hidden cleanly; otherwise its items are on the bar and the
-            // layout pane says why (plan 2026-10-03-icebar-build, 9.3).
+            // On macOS 27 the IceBar is offered only while Ice rests at a
+            // hiding length; otherwise its items are on the bar and the layout
+            // pane says why (plan 2026-10-07-icebar-preference-hiding, T3b).
             if #available(macOS 27, *), appState?.itemManager.isIceBarOffered != true {
                 return
             }

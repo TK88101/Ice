@@ -39,12 +39,28 @@ public enum BaselineCoverage: Equatable, Sendable, CustomStringConvertible {
     }
 }
 
-/// D1's observation source on macOS 27 (plan 2026-10-03-icebar-build, section
-/// 9.3): a shown baseline of every hidden-section member, then, at each
-/// length Ice tries, whether the members are gone and no `«` is up.
+/// What Ice read at one length: each member's check against its shown
+/// baseline, and whether `MenuBarAgent` listed a `«` -- recorded beside the
+/// checks, never part of them (plan 2026-10-07-icebar-preference-hiding, D-b).
+public struct HiddenLengthReading: Equatable, Sendable {
+    public let checks: [ItemKey: SectionItemCheck]
+    /// `nil` when the agent could not be read.
+    public let chevronListed: Bool?
+
+    public init(checks: [ItemKey: SectionItemCheck], chevronListed: Bool?) {
+        self.checks = checks
+        self.chevronListed = chevronListed
+    }
+
+    static let nothing = HiddenLengthReading(checks: [:], chevronListed: nil)
+}
+
+/// IceBar's observation source on macOS 27 (plan 2026-10-03-icebar-build,
+/// section 9.3; re-aimed by plan 2026-10-07-icebar-preference-hiding, T3b
+/// design): a shown baseline of the roster, then each member's check at every
+/// length Ice applies.
 public actor HiddenLengthObserver {
     private let verification: HidingVerification
-    /// Also read on its own, at rest, by IceBar's hiding.
     public nonisolated let chevron: ChevronReader
     private let settle: Double
     private let sleep: @Sendable (Double) async -> Void
@@ -62,10 +78,10 @@ public actor HiddenLengthObserver {
         self.sleep = sleep
     }
 
-    /// Takes the baseline with the section shown; `.covered` only when every
-    /// member can be checked, and otherwise why not. The members are the
-    /// hidden section's items alone: always-hidden items are pushed along but
-    /// are not members.
+    /// Takes the baseline with the section shown, and says whether it covers
+    /// every member the section map names and if not why. What `prepare`
+    /// returned is kept either way (unless cancelled): a length Ice applies
+    /// best effort then reports each member's real skip or refusal.
     public func takeBaseline(sectionMap: [TagKey: ItemSection]) async -> BaselineCoverage {
         let fresh = await verification.prepare(
             sections: [.hidden],
@@ -73,24 +89,32 @@ public actor HiddenLengthObserver {
             explicitCandidates: nil,
             reusing: nil
         )
-        let coverage = Task.isCancelled ? .cancelled : Self.coverage(of: fresh)
-        prepared = coverage == .covered ? fresh : nil
-        return coverage
+        guard !Task.isCancelled else {
+            prepared = nil
+            return .cancelled
+        }
+        prepared = fresh
+        return Self.coverage(of: fresh)
     }
 
-    /// The outcome of the length the bar is at now, after the settle.
-    public func observe() async -> HiddenLengthOutcome {
-        guard let prepared else { return .unknown }
+    /// Whether the kept baseline can check every one of `keys` (the ready
+    /// members): ready, and each one baselined without a rejection.
+    public func covers(_ keys: [ItemKey]) -> Bool {
+        guard !keys.isEmpty, let prepared, case .ready(let ready) = prepared.state else { return false }
+        let checkable = Set(ready.checkableTargets).subtracting(ready.baselineRejections.keys)
+        return checkable.isSuperset(of: keys)
+    }
+
+    /// Each member's check at the length the bar is at now, after the
+    /// settle, and the `«` reading. Nothing without a baseline.
+    public func observe() async -> HiddenLengthReading {
+        guard let prepared else { return .nothing }
         await sleep(settle)
-        guard !Task.isCancelled else { return .unknown }
+        guard !Task.isCancelled else { return .nothing }
         let results = await verification.verify(prepared)
-        guard !Task.isCancelled else { return .unknown }
+        guard !Task.isCancelled else { return .nothing }
         let listed = await chevron.chevronListed()
-        return HiddenLengthOutcomeRule.outcome(
-            chevronListed: listed,
-            checks: prepared.targets.compactMap { results[$0] },
-            memberCount: prepared.targets.count
-        )
+        return HiddenLengthReading(checks: results, chevronListed: listed)
     }
 
     /// A baseline is complete when it is ready, names at least one member,

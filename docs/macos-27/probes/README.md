@@ -114,7 +114,10 @@ staged Ice by path (its os_log copied to stderr) and `vzhelper` members with men
 walks the checklist with the owner, and on every exit path stops them, restores
 `com.jordanbaird.Ice` and prints the report. `t7-lib.zsh` holds the shared
 functions; `test-t7.sh` tests all three against stubs (side effects: none; a
-sacrificial defaults domain, deleted).
+sacrificial defaults domain, deleted). Superseded since T3b (plan
+2026-10-07-icebar-preference-hiding): `t7-lib.zsh` parses statuses (`active`,
+`checking`, `shown(...)`) that Ice no longer logs, so the report cannot read a
+current Ice; the scripts stay until S4's runner replaces them.
 
 Both live stages check the bundle ids and that no helper is already running
 before anything else, delete and verify-empty a helper's defaults domain before

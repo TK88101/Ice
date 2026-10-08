@@ -281,7 +281,13 @@ private struct IceBarContentView: View {
     let section: MenuBarSection.Name
 
     private var items: [MenuBarItem] {
-        itemManager.itemCache.managedItems(for: section)
+        // On macOS 27 the IceBar lists the roster, for either section: always-
+        // hidden items are left of the hidden divider too (plan
+        // 2026-10-07-icebar-preference-hiding, T3b design).
+        if #available(macOS 27, *), appState.settings.general.useIceBar {
+            return itemManager.preferenceHidingRoster.items
+        }
+        return itemManager.itemCache.managedItems(for: section)
     }
 
     private var configuration: MenuBarAppearanceConfigurationV2 {
@@ -479,7 +485,7 @@ private struct IceBarItemView: View {
                 menuBarManager: menuBarManager,
                 item: item,
                 section: section,
-                isDisabled: itemManager.unpressableItems.contains(item.id)
+                isDisabled: itemManager.isIceBarCellDisabled(item)
             )
         }
     }

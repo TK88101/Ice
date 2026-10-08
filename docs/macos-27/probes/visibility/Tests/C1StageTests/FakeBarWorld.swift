@@ -704,7 +704,7 @@ final class FakeBarWorld: @unchecked Sendable {
         if shouldBreakComposition { enumeratedPIDs.insert(599) }
         return DiscoveryResult(
             set: set, duration: 0, origin: DiscoveryOrigin(x: 0, y: 0), bounds: Self.bounds,
-            nextCursor: 0, quarantined: [], enumeratedPIDs: enumeratedPIDs
+            nextCursor: 0, quarantined: [], enumeratedPIDs: enumeratedPIDs, childIdentifiersByPID: [:]
         )
     }
 

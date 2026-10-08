@@ -3,11 +3,40 @@
 /// a new pixel check (D-e, documented on `PreferenceHidingStateRule.evaluate`).
 /// The rule that derives a state from facts is `PreferenceHidingStateRule`.
 
-/// An event after which an earlier "verified" no longer describes the bar (D-e).
+/// A difference after which an earlier "verified" no longer describes the bar
+/// (D-e). Derived from two layout signatures by `between`, never classified by
+/// hand; the cases are the signature's fields (it has no notch, and cannot
+/// tell an item added from one removed).
 public enum PreferenceHidingLayoutChange: Equatable, Sendable {
+    case displayChanged
+    case itemsChanged
     case frontmostAppChanged
-    case menusCrossingNotch
-    case itemsAdded
+    case menuWidthChanged
+    case spaceChanged
+
+    /// Whether the roster itself may be wrong after it: another display, or
+    /// another set of items. The roster advances only at standard length, so
+    /// such a change retires an applied length; after any other the length
+    /// stays and only the checks are owed again. A Space that shows other
+    /// items differs in the item lists; its id alone says nothing of them.
+    public var isStructural: Bool {
+        switch self {
+        case .displayChanged, .itemsChanged: true
+        case .frontmostAppChanged, .menuWidthChanged, .spaceChanged: false
+        }
+    }
+
+    /// What changed from `old` to `new`, `nil` when they are equal. With
+    /// several differences the first in the order above is named, so a
+    /// structural one is never hidden behind a soft one.
+    public static func between(_ old: LayoutSignature, _ new: LayoutSignature) -> PreferenceHidingLayoutChange? {
+        if old.displayID != new.displayID { return .displayChanged }
+        if old.visible != new.visible || old.hidden != new.hidden || old.alwaysHidden != new.alwaysHidden { return .itemsChanged }
+        if old.frontmostPID != new.frontmostPID { return .frontmostAppChanged }
+        if old.menuMaxX != new.menuMaxX { return .menuWidthChanged }
+        if old.spaceID != new.spaceID { return .spaceChanged }
+        return nil
+    }
 }
 
 /// Why Ice applied (or may apply) a length and could not verify it.

@@ -55,55 +55,80 @@ struct HiddenLengthObserverTests {
         return (observer, settles)
     }
 
-    @Test("both members gone with no fold is a clean length, after the settle")
+    static let clean = SectionItemCheck.checked(.hidden(folded: false))
+
+    @Test("both members gone: each member's check says so, after the settle")
     func cleanLength() async {
         let (observer, settles) = Self.observer()
         #expect(await observer.takeBaseline(sectionMap: Self.sectionMap) == .covered)
-        #expect(await observer.observe() == .hiddenClean)
+        let reading = await observer.observe()
+        #expect(reading.checks == [Self.items.t1.key: Self.clean, Self.items.t2.key: Self.clean])
+        #expect(reading.chevronListed == false)
         #expect(settles.get() == [1.5])
     }
 
-    @Test("members still drawn is a drawn length")
+    @Test("members still drawn: their checks say so")
     func drawnLength() async {
         let (observer, _) = Self.observer(observeImage: HidingVerificationTests.drawnImage(), observeSnapshot: Self.drawnSnapshot)
         #expect(await observer.takeBaseline(sectionMap: Self.sectionMap) == .covered)
-        #expect(await observer.observe() == .drawn)
+        #expect(await observer.observe().checks.values.allSatisfy { $0 == .checked(.stillDrawn) })
     }
 
-    @Test("a listed chevron is a folded length")
-    func foldedLength() async {
-        let (observer, _) = Self.observer(chevron: [Self.agents(chevron: true)])
+    @Test("D-b: a listed chevron is recorded beside the checks and changes none of them", arguments: [true, false])
+    func chevronIsRecorded(listed: Bool) async {
+        let (observer, _) = Self.observer(chevron: [Self.agents(chevron: listed)])
         #expect(await observer.takeBaseline(sectionMap: Self.sectionMap) == .covered)
-        #expect(await observer.observe() == .folded)
+        let reading = await observer.observe()
+        #expect(reading.chevronListed == listed)
+        #expect(reading.checks.values.allSatisfy { $0 == Self.clean })
     }
 
-    @Test("an unreadable agent is an unknown length")
+    @Test("an unreadable agent is an unknown chevron, not an unknown length")
     func unreadableAgent() async {
         let (observer, _) = Self.observer(chevron: [nil])
         #expect(await observer.takeBaseline(sectionMap: Self.sectionMap) == .covered)
-        #expect(await observer.observe() == .unknown)
+        let reading = await observer.observe()
+        #expect(reading.chevronListed == nil)
+        #expect(reading.checks.count == 2)
     }
 
-    @Test("no discovery means no baseline, and any observation is unknown")
+    @Test("no discovery means no baseline: nothing is checked")
     func noBaseline() async {
-        let (observer, settles) = Self.observer(discovery: nil)
+        let (observer, _) = Self.observer(discovery: nil)
         #expect(await observer.takeBaseline(sectionMap: Self.sectionMap) != .covered)
-        #expect(await observer.observe() == .unknown)
+        #expect(await observer.observe().checks.isEmpty)
+        #expect(await !observer.covers([Self.items.t1.key]))
+    }
+
+    @Test("observing before any baseline checks nothing, without a settle")
+    func observeWithoutBaseline() async {
+        let (observer, settles) = Self.observer()
+        let reading = await observer.observe()
+        #expect(reading.checks.isEmpty)
+        #expect(reading.chevronListed == nil)
         #expect(settles.get().isEmpty)
     }
 
-    @Test("observing before any baseline is unknown")
-    func observeWithoutBaseline() async {
-        let (observer, _) = Self.observer()
-        #expect(await observer.observe() == .unknown)
-    }
-
-    @Test("a member the detector cannot check fails the baseline", arguments: [IdentityBasis.positional])
+    @Test("a member the detector cannot check fails the section's coverage, not the others': the ready ones are covered", arguments: [IdentityBasis.positional])
     func uncheckableMember(basis: IdentityBasis) async {
         let positional = Scenario.discoveredItem(identifier: "t3", pid: 604, rawMinX: 100, basis: basis)
         let map = Self.sectionMap.merging(Scenario.sectionMap([positional])) { first, _ in first }
         let (observer, _) = Self.observer(discovery: Scenario.discovery([Self.items.t1, Self.items.t2, positional, Self.items.ref]))
         #expect(await observer.takeBaseline(sectionMap: map) != .covered)
+        #expect(await observer.covers([Self.items.t1.key, Self.items.t2.key]))
+        #expect(await !observer.covers([Self.items.t1.key, positional.key]))
+        #expect(await !observer.covers([]))
+    }
+
+    @Test("T3b: a baseline that does not cover the section is kept, so a best-effort length reports each member's real skip")
+    func uncoveredBaselineIsKept() async {
+        let positional = Scenario.discoveredItem(identifier: "t3", pid: 604, rawMinX: 100, basis: .positional)
+        let map = Self.sectionMap.merging(Scenario.sectionMap([positional])) { first, _ in first }
+        let (observer, _) = Self.observer(discovery: Scenario.discovery([Self.items.t1, Self.items.t2, positional, Self.items.ref]))
+        _ = await observer.takeBaseline(sectionMap: map)
+        let checks = await observer.observe().checks
+        #expect(checks[positional.key] == .skipped(.positional))
+        #expect(checks[Self.items.t1.key] == Self.clean)
     }
 
     // MARK: - Coverage rule

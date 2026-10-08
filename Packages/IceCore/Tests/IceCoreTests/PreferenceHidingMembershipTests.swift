@@ -469,4 +469,34 @@ struct PreferenceHidingMembershipTests {
         #expect(result.members.map(\.tag) == [before.tagKey])
         #expect(result.members.first?.condition == .stale(.ambiguousOrUnreadable))
     }
+
+    // MARK: - A member whose process has exited (T3b, G1)
+
+    @Test("T3b G1: a previous member is dropped only when the process of its last read key no longer exists")
+    func exitedProcessIsDropped() {
+        let a = item("a", pid: 1)
+        let b = item("b", pid: 2)
+        let carried = PreferenceHidingMembership.carried(
+            previous: [a.tagKey, b.tagKey], lastKeys: [a.tagKey: a.key, b.tagKey: b.key], hasExited: { $0 == 2 }
+        )
+        #expect(carried == [a.tagKey])
+    }
+
+    @Test("T3b G1: a live process keeps its member, read or not, in the listed order")
+    func liveProcessIsKept() {
+        let a = item("a", pid: 1)
+        let b = item("b", pid: 2)
+        let tags = [b.tagKey, a.tagKey]
+        let carried = PreferenceHidingMembership.carried(
+            previous: tags, lastKeys: [a.tagKey: a.key, b.tagKey: b.key], hasExited: { _ in false }
+        )
+        #expect(carried == tags)
+    }
+
+    @Test("T3b G1: a member with no recorded key is kept: nothing says its process is gone")
+    func unknownKeyIsKept() {
+        let a = item("a", pid: 1)
+        let carried = PreferenceHidingMembership.carried(previous: [a.tagKey], lastKeys: [:], hasExited: { _ in true })
+        #expect(carried == [a.tagKey])
+    }
 }

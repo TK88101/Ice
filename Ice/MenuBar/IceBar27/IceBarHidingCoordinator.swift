@@ -10,9 +10,10 @@ import MenuBarDetectorFeed
 import OSLog
 
 /// Runs `IceBarHidingMachine` against the live bar on macOS 27 (plan
-/// 2026-10-03-icebar-build, D1 and 9.3): samples the layout once a second,
-/// carries out the machine's commands, and while resting watches, by
-/// Accessibility alone, for a `«`.
+/// 2026-10-07-icebar-preference-hiding, S3 and its T3b design): samples the
+/// roster, the preconditions and the layout once a second, and carries out
+/// the machine's commands. The `«` is read with every observation and only
+/// logged (D-b).
 @available(macOS 27, *)
 @MainActor
 final class IceBarHidingCoordinator {
@@ -27,16 +28,16 @@ final class IceBarHidingCoordinator {
     /// The baseline or observation under way.
     private var work: Task<Void, Never>?
     private var isSampling = false
-    private var isWatching = false
+    /// The last sample sent: the roster a baseline is taken of.
+    private var lastSample: IceBarHidingSample?
 
     private var observer: (displayID: CGDirectDisplayID, observer: HiddenLengthObserver)?
 
     private let logger = Logger(category: "IceBarHiding")
 
-    /// Whether the hidden section is hidden at a calibrated length, so the
-    /// IceBar may be offered.
-    var isResting: Bool {
-        if case .resting = machine.phase { true } else { false }
+    /// Whether Ice rests at a length, so the IceBar may be offered.
+    var isLengthApplied: Bool {
+        machine.lengthApplied
     }
 
     init(appState: AppState) {
@@ -70,8 +71,8 @@ final class IceBarHidingCoordinator {
         for command in commands {
             execute(command)
         }
-        // The items are back on the bar: an open IceBar would list them twice.
-        if !isResting, let appState, appState.navigationState.isIceBarPresented {
+        // At standard length the items are back on the bar: an open IceBar would list them twice.
+        if !isLengthApplied, let appState, appState.navigationState.isIceBarPresented {
             appState.menuBarManager.iceBarPanel.close()
         }
     }
@@ -89,36 +90,36 @@ final class IceBarHidingCoordinator {
                 return
             }
             keepDividersHidden(appState: appState)
-            send(.sample(sample(appState: appState, screen: screen, menuMaxX: menuMaxX)))
-            if isResting {
-                watchChevron()
-            }
+            let sample = sample(appState: appState, screen: screen, menuMaxX: menuMaxX)
+            lastSample = sample
+            send(.sample(sample))
         }
     }
 
+    /// The roster's tags stand for the hidden section (D-a: never
+    /// `CachePublication.hidden`); every item the pass read, parked ones
+    /// included, for the rest, so an item that appears anywhere is an item
+    /// change. The menu edge is read, the notch is not: a long menu changes
+    /// nothing but the checks owed (D-e).
     private func sample(appState: AppState, screen: NSScreen, menuMaxX: CGFloat?) -> IceBarHidingSample {
-        let cache = appState.itemManager.itemCache
-        func ids(_ name: MenuBarSection.Name) -> [String] {
-            cache[name].map { String(describing: $0.id) }
-        }
-        let menuEdge = menuMaxX.map(Double.init)
+        let roster = appState.itemManager.preferenceHidingRoster
         let signature = LayoutSignature(
-            visible: ids(.visible),
-            hidden: ids(.hidden),
-            alwaysHidden: ids(.alwaysHidden),
+            visible: roster.itemTags,
+            hidden: roster.membership.members.map { String(describing: $0.tag) },
+            alwaysHidden: [],
             frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
-            menuMaxX: menuEdge,
+            menuMaxX: menuMaxX.map(Double.init),
             displayID: screen.displayID,
             spaceID: UInt64(truncatingIfNeeded: appState.activeSpace.spaceID)
         )
         let isMouseOnBar = appState.hidEventManager.isMouseInsideMenuBar(appState: appState, screen: screen)
         return IceBarHidingSample(
             signature: signature,
-            menuVerdict: MenuWidthRule.verdict(menuMaxX: menuEdge, notchMinX: screen.frameOfNotch.map { Double($0.minX) }),
+            preconditions: roster.preconditions,
+            membership: roster.membership,
             isInteracting: isMouseOnBar || appState.navigationState.isIceBarPresented,
             isDragging: appState.isDraggingMenuBarItem,
-            boundaryUsable: appState.itemManager.hiddenBoundaryUsable,
-            iconLeftOfDivider: appState.itemManager.iconPlacement == .iconLeftOfDivider
+            boundaryUsable: appState.itemManager.hiddenBoundaryUsable
         )
     }
 
@@ -139,21 +140,6 @@ final class IceBarHidingCoordinator {
         hidden.hide()
     }
 
-    private func watchChevron() {
-        guard !isWatching, let reader = currentObserver()?.chevron else {
-            return
-        }
-        isWatching = true
-        Task {
-            let listed = await reader.chevronListed()
-            isWatching = false
-            if listed == true, isResting {
-                logger.info("A fold appeared at rest; showing the hidden section")
-                send(.chevronSeenAtRest)
-            }
-        }
-    }
-
     // MARK: - Commands
 
     private func execute(_ command: IceBarHidingCommand) {
@@ -164,33 +150,51 @@ final class IceBarHidingCoordinator {
         case .setLength(let length):
             appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = length.map { CGFloat($0) }
         case .takeBaseline(let token):
-            let sectionMap = appState.itemManager.discoveredSectionMap
-            let observer = currentObserver()
-            work?.cancel()
-            work = Task {
-                let coverage = await observer?.takeBaseline(sectionMap: sectionMap)
-                let ok = coverage == .covered
-                // Read by the T7 report (probes/visibility/t7-lib.zsh); a
-                // cancelled result is not one. The coverage says why a
-                // baseline failed: reasons and counts, no item names.
-                if !Task.isCancelled {
-                    logger.info("IceBar baseline: ok \(ok, privacy: .public) coverage \(coverage?.description ?? "noObserver", privacy: .public)")
-                }
-                send(.baseline(token: token, ok: ok))
-            }
+            takeBaseline(token: token)
         case .observe(let token, let length):
-            let observer = currentObserver()
-            work?.cancel()
-            work = Task {
-                let outcome = await observer?.observe() ?? .unknown
-                if !Task.isCancelled {
-                    logger.info("IceBar trial: length \(length, privacy: .public) outcome \(String(describing: outcome), privacy: .public)")
-                }
-                send(.observed(token: token, outcome: outcome))
-            }
+            observe(token: token, length: length)
         case .report(let status):
-            logger.info("IceBar hiding: \(String(describing: status), privacy: .public)")
+            logger.info("IceBar hiding: \(status.logSummary, privacy: .public)")
             appState.hidingCheckStatus = status.message.map(HidingCheckStatus.init(message:))
+        }
+    }
+
+    /// A baseline of the roster (its tags as the section map), and whether
+    /// it covers every ready member.
+    private func takeBaseline(token: Int) {
+        let members = lastSample?.membership.members ?? []
+        let sectionMap = Dictionary(members.map { ($0.tag, ItemSection.hidden) }, uniquingKeysWith: { first, _ in first })
+        let ready = members.filter { $0.condition == .ready }.compactMap(\.key)
+        let observer = currentObserver()
+        work?.cancel()
+        work = Task {
+            let coverage = await observer?.takeBaseline(sectionMap: sectionMap)
+            let ok = await observer?.covers(ready) ?? false
+            // Reasons and counts, no item names.
+            if !Task.isCancelled {
+                logger.info("IceBar baseline: ok \(ok, privacy: .public) coverage \(coverage?.description ?? "noObserver", privacy: .public)")
+            }
+            send(.baseline(token: token, ok: ok))
+        }
+    }
+
+    private func observe(token: Int, length: Double) {
+        let observer = currentObserver()
+        work?.cancel()
+        work = Task {
+            let reading = await observer?.observe() ?? HiddenLengthReading(checks: [:], chevronListed: nil)
+            if !Task.isCancelled {
+                let summary = VerificationSummary.make(reading.checks)
+                let chevron = reading.chevronListed.map(String.init) ?? "unread"
+                logger.info(
+                    """
+                    IceBar trial: length \(length, privacy: .public) hidden \(summary.hidden, privacy: .public) \
+                    drawn \(summary.stillDrawn, privacy: .public) of \(reading.checks.count, privacy: .public) \
+                    chevron \(chevron, privacy: .public)
+                    """
+                )
+            }
+            send(.observed(token: token, checks: reading.checks, chevronListed: reading.chevronListed))
         }
     }
 

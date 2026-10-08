@@ -7,9 +7,9 @@
 
 /// What one length did to the bar.
 public enum HiddenLengthOutcome: Equatable, Sendable {
-    /// A `«` is on the bar.
+    /// A member's check saw the fold go up with it.
     case folded
-    /// No `«`, and every hidden-section item positively assessed absent.
+    /// Every member positively assessed absent, none under the fold.
     case hiddenClean
     /// Some hidden-section item is drawn on the bar.
     case drawn

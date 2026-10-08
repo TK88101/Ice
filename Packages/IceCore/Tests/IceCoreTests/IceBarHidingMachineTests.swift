@@ -1,54 +1,78 @@
 import Testing
 @testable import IceCore
 
-/// When Ice hides the hidden section on macOS 27, and when it puts it back
-/// (plan 2026-10-03-icebar-build, D1 and section 9.2). The machine never
-/// touches the bar: these tests feed it events and read its commands.
+/// When Ice hides the chosen items on macOS 27, what it says of them, and the
+/// few ways it puts them back (plan 2026-10-07-icebar-preference-hiding, S3
+/// and its T3b design). The machine never touches the bar: these tests feed
+/// it events and read its commands.
 @Suite("IceBarHidingMachine")
 struct IceBarHidingMachineTests {
     // MARK: - Fixtures
 
-    static func signature(hidden: [String] = ["h1", "h2"], frontmostPID: Int32 = 10) -> LayoutSignature {
+    static let clean = SectionItemCheck.checked(.hidden(folded: false))
+    static let folded = SectionItemCheck.checked(.hidden(folded: true))
+    static let drawn = SectionItemCheck.checked(.stillDrawn)
+
+    static func key(_ pid: Int32) -> ItemKey {
+        ItemKey(namespace: "com.example.app\(pid)", identifier: "item", pid: pid, childIndex: nil)
+    }
+
+    static func member(_ pid: Int32, _ condition: PreferenceHidingMemberCondition = .ready) -> PreferenceHidingMember {
+        PreferenceHidingMember(tag: key(pid).tagKey(isSelf: false), key: key(pid), condition: condition)
+    }
+
+    static func roster(_ members: [PreferenceHidingMember] = [member(1), member(2)]) -> PreferenceHidingMembership {
+        PreferenceHidingMembership(members: members, blockers: [])
+    }
+
+    static func signature(
+        visible: [String] = ["v1"],
+        hidden: [String] = ["m1", "m2"],
+        frontmostPID: Int32 = 10,
+        menuMaxX: Double? = 400,
+        displayID: UInt32 = 1,
+        spaceID: UInt64 = 7
+    ) -> LayoutSignature {
         LayoutSignature(
-            visible: ["v1"],
-            hidden: hidden,
-            alwaysHidden: [],
-            frontmostPID: frontmostPID,
-            menuMaxX: 400,
-            displayID: 1,
-            spaceID: 7
+            visible: visible, hidden: hidden, alwaysHidden: [], frontmostPID: frontmostPID,
+            menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID
         )
     }
 
     static func sample(
         _ signature: LayoutSignature = signature(),
-        menu: MenuWidthVerdict = .fits,
+        preconditions: PreferenceHidingPreconditionResult = .ok,
+        membership: PreferenceHidingMembership = roster(),
         interacting: Bool = false,
         dragging: Bool = false,
-        boundaryUsable: Bool = true,
-        iconLeftOfDivider: Bool = false
+        boundaryUsable: Bool = true
     ) -> IceBarHidingSample {
         IceBarHidingSample(
-            signature: signature,
-            menuVerdict: menu,
-            isInteracting: interacting,
-            isDragging: dragging,
-            boundaryUsable: boundaryUsable,
-            iconLeftOfDivider: iconLeftOfDivider
+            signature: signature, preconditions: preconditions, membership: membership,
+            isInteracting: interacting, isDragging: dragging, boundaryUsable: boundaryUsable
         )
     }
 
-    /// A band: folded below `lo`, clean to `hi`, drawn above. T0's by default.
-    static func band(_ lo: Double = 632, _ hi: Double = 840) -> @Sendable (Double) -> HiddenLengthOutcome {
+    /// Every precondition failing in turn (D-c a, b, c).
+    static let blocks: [PreferenceHidingPreconditionResult] = [
+        .blocked([.iceIconNotRightOfDivider(.iconLeftOfDivider)]),
+        .blocked([.iceIconNotRightOfDivider(.iconUnreadable)]),
+        .blocked([.discoveryIncomplete(.incomplete(failedPIDs: [5]))]),
+        .blocked([.discoveryIncomplete(.permissionDenied)]),
+        .blocked([.positionalItemsLeftOfDivider([PreferenceHidingBlocker(key: key(9), tag: key(9).tagKey(isSelf: false), name: nil)])]),
+    ]
+
+    /// A band: members folded below `lo`, absent to `hi`, drawn above. T0's by default.
+    static func band(_ lo: Double = 632, _ hi: Double = 840) -> @Sendable (Double) -> SectionItemCheck {
         { length in
-            if length < lo { return .folded }
-            if length > hi { return .drawn }
-            return .hiddenClean
+            if length < lo { return folded }
+            if length > hi { return drawn }
+            return clean
         }
     }
 
     /// Feeds the machine and plays the bar: it keeps the length the commands
-    /// set, and can answer baselines and observations from a world.
+    /// set, and answers baselines and observations from a world.
     struct Driver {
         var machine = IceBarHidingMachine()
         var now = 0.0
@@ -57,10 +81,13 @@ struct IceBarHidingMachineTests {
         /// The lengths observed, each with the bar's length at that moment.
         var observed = [(asked: Double, barLength: Double?)]()
         var baselines = 0
-        var world: (Double) -> HiddenLengthOutcome = IceBarHidingMachineTests.band()
+        /// What each member's check says at a length.
+        var world: (Double) -> SectionItemCheck = IceBarHidingMachineTests.band()
         var baselineOK = true
+        var chevron: Bool? = false
         /// When false, baselines and observations are left unanswered.
         var answers = true
+        var members = IceBarHidingMachineTests.roster()
 
         @discardableResult
         mutating func send(_ event: IceBarHidingEvent) -> [IceBarHidingCommand] {
@@ -76,7 +103,7 @@ struct IceBarHidingMachineTests {
                     if answers { send(.baseline(token: token, ok: baselineOK)) }
                 case .observe(let token, let asked):
                     observed.append((asked, length))
-                    if answers { send(.observed(token: token, outcome: world(asked))) }
+                    if answers { send(.observed(token: token, checks: checks(at: asked), chevronListed: chevron)) }
                 case .report:
                     break
                 }
@@ -84,590 +111,506 @@ struct IceBarHidingMachineTests {
             return commands
         }
 
+        func checks(at length: Double) -> [ItemKey: SectionItemCheck] {
+            Dictionary(uniqueKeysWithValues: members.members.compactMap(\.key).map { ($0, world(length)) })
+        }
+
         @discardableResult
-        mutating func tick(_ sample: IceBarHidingSample = IceBarHidingMachineTests.sample(), seconds: Double = 1) -> [IceBarHidingCommand] {
+        mutating func tick(_ sample: IceBarHidingSample? = nil, seconds: Double = 1) -> [IceBarHidingCommand] {
             now += seconds
-            return send(.sample(sample))
+            return send(.sample(sample ?? IceBarHidingMachineTests.sample(membership: members)))
         }
 
-        mutating func ticks(_ count: Int, _ sample: IceBarHidingSample = IceBarHidingMachineTests.sample()) {
-            for _ in 0..<count { tick(sample) }
+        mutating func run(_ sample: IceBarHidingSample? = nil, ticks: Int) {
+            for _ in 0..<ticks { tick(sample) }
         }
 
-        /// IceBar mode on if it is off, then ticks until the machine rests or
-        /// shows.
-        mutating func settle(_ sample: IceBarHidingSample = IceBarHidingMachineTests.sample(), maxTicks: Int = 400) {
-            if machine.phase == .off { send(.mode(isIceBar: true)) }
-            for _ in 0..<maxTicks {
-                tick(sample)
-                switch machine.phase {
-                case .resting, .shown: return
-                default: continue
-                }
-            }
+        /// IceBar mode on, then ticks enough for any calibration to end.
+        mutating func settle(_ sample: IceBarHidingSample? = nil, ticks: Int = 60) {
+            send(.mode(isIceBar: true))
+            run(sample, ticks: ticks)
         }
 
-        var lastStatus: IceBarHidingStatus? {
-            for command in log.reversed() {
-                if case .report(let status) = command { return status }
-            }
-            return nil
+        var reports: [IceBarHidingStatus] {
+            log.compactMap { if case .report(let status) = $0 { status } else { nil } }
         }
+
+        var state: PreferenceHidingState? {
+            if case .state(let state) = machine.status { state } else { nil }
+        }
+
+        var restLength: Double? {
+            if case .resting(let rest) = machine.phase { rest.length } else { nil }
+        }
+
+        /// Commands logged since `mark`.
+        func since(_ mark: Int) -> [IceBarHidingCommand] { Array(log[mark...]) }
     }
 
-    // MARK: - Off and on
+    // MARK: - Mode
 
-    @Test("the machine starts off and ignores everything but the mode")
-    func startsOff() {
+    @Test("off until IceBar mode is on; then getting ready, at standard length")
+    func modeOn() {
         var driver = Driver()
-        #expect(driver.machine.phase == .off)
-        #expect(driver.tick().isEmpty)
-        #expect(driver.send(.baseline(token: 0, ok: true)).isEmpty)
-        #expect(driver.send(.observed(token: 0, outcome: .hiddenClean)).isEmpty)
-        #expect(driver.send(.chevronSeenAtRest).isEmpty)
-        #expect(driver.send(.mode(isIceBar: false)).isEmpty)
-        #expect(driver.machine.phase == .off)
-    }
-
-    @Test("IceBar mode on waits for a quiet period before anything is tried")
-    func modeOnStartsQuiet() {
-        var driver = Driver()
+        #expect(driver.machine.status == .off)
         let commands = driver.send(.mode(isIceBar: true))
-        #expect(commands == [.report(.checking)])
-        #expect(driver.machine.phase == .quiet(since: 0))
-        driver.ticks(3)
-        #expect(driver.baselines == 0)
-        driver.ticks(2)
-        #expect(driver.baselines == 1)
+        #expect(commands == [.report(.state(.requestedNotVerified(reasons: [.lengthNotApplied])))])
+        #expect(!driver.machine.lengthApplied)
     }
 
-    @Test("IceBar mode on twice changes nothing")
-    func modeOnTwice() {
+    @Test("a sample before IceBar mode does nothing")
+    func sampleWhileOff() {
         var driver = Driver()
-        driver.settle()
-        #expect(driver.send(.mode(isIceBar: true)).isEmpty)
-        #expect(driver.machine.phase == .resting(length: 736))
+        #expect(driver.tick().isEmpty)
     }
 
-    @Test("IceBar mode off restores the standard length")
-    func modeOffRestores() {
+    @Test("leaving IceBar mode from a rest retires the length, then reports off")
+    func modeOffFromRest() {
         var driver = Driver()
         driver.settle()
-        #expect(driver.length == 736)
-        let commands = driver.send(.mode(isIceBar: false))
-        #expect(commands == [.setLength(nil), .report(.off)])
+        #expect(driver.restLength != nil)
+        #expect(driver.send(.mode(isIceBar: false)) == [.setLength(nil), .report(.off)])
         #expect(driver.machine.phase == .off)
-        #expect(driver.length == nil)
     }
 
-    // MARK: - Calibration
+    @Test("a late answer after the mode was toggled matches no new request: tokens never restart")
+    func tokensNeverRestart() {
+        var driver = Driver()
+        driver.answers = false
+        driver.settle(ticks: 4)
+        guard case .takeBaseline(let old)? = driver.log.last(where: { if case .takeBaseline = $0 { true } else { false } }) else {
+            Issue.record("no baseline asked"); return
+        }
+        driver.send(.mode(isIceBar: false))
+        driver.send(.mode(isIceBar: true))
+        driver.now += 100
+        driver.run(ticks: 4)
+        guard case .baselining(let fresh) = driver.machine.phase else { Issue.record("not baselining"); return }
+        #expect(fresh != old)
+        #expect(driver.send(.baseline(token: old, ok: true)).isEmpty)
+    }
 
-    @Test("T0's band is walked and rested at 736 pt")
-    func walksT0Band() {
+    // MARK: - Reaching a rest
+
+    @Test("a quiet bar is baselined after the quiet period, never before")
+    func quietPeriod() {
+        var driver = Driver()
+        driver.answers = false
+        driver.send(.mode(isIceBar: true))
+        driver.run(ticks: 2)
+        #expect(driver.baselines == 0)
+        driver.tick()
+        #expect(driver.baselines == 1)
+    }
+
+    @Test("a first run walks the band, settles once at its midpoint and rests verified")
+    func firstRunVerifies() {
         var driver = Driver()
         driver.settle()
-        #expect(driver.machine.phase == .resting(length: 736))
+        #expect(driver.restLength == 736)
         #expect(driver.length == 736)
-        #expect(driver.lastStatus == .active)
-        #expect(driver.baselines == 1)
-        // 736 down to the folded edge at 624, then up to the drawn edge at 848.
-        #expect(driver.observed.map(\.asked).min() == 624)
-        #expect(driver.observed.map(\.asked).max() == 848)
-        #expect(driver.observed.count == 15)
-        // Every observation is taken with the bar at the length asked about.
+        #expect(driver.state == .verifiedHidden)
+        #expect(driver.machine.lengthApplied)
+        // Every observation was taken at the length it asked for.
         #expect(driver.observed.allSatisfy { $0.asked == $0.barLength })
+        // The walk's trials end back at standard length; only the last one stays.
+        #expect(driver.observed.last?.asked == 736)
     }
 
-    @Test("every trial is a jump from the standard length")
+    @Test("every trial of a walk is a jump from standard length (T0)")
     func trialsJumpFromRest() {
         var driver = Driver()
         driver.settle()
-        var current: Double?
-        var lengthBeforeLastSet: Double?
-        var previous: IceBarHidingCommand?
-        var trials = 0
-        var jumpsFromRest = 0
+        var previous: Double? = nil
         for command in driver.log {
-            if case .setLength(let value) = command {
-                lengthBeforeLastSet = current
-                current = value
-            }
-            if case .observe = command {
-                trials += 1
-                if case .setLength(_?)? = previous, lengthBeforeLastSet == nil { jumpsFromRest += 1 }
-            }
-            previous = command
+            guard case .setLength(let value) = command else { continue }
+            if value != nil { #expect(previous == nil) }
+            previous = value
         }
-        #expect(trials == 15)
-        #expect(jumpsFromRest == trials)
     }
 
-    @Test("a trial waits for the rest dwell after the previous one")
-    func trialsAreSpacedByTheDwell() {
+    @Test("an empty roster is never baselined: nothing is left of the divider")
+    func emptyRoster() {
         var driver = Driver()
-        driver.send(.mode(isIceBar: true))
-        driver.ticks(5)
-        #expect(driver.observed.count == 1)
-        driver.tick(seconds: 0.5)
-        #expect(driver.observed.count == 1)
-        driver.tick(seconds: 0.5)
-        #expect(driver.observed.count == 2)
+        driver.members = Self.roster([])
+        driver.settle(ticks: 20)
+        #expect(driver.baselines == 0)
+        #expect(driver.state == .requestedNotVerified(reasons: [.lengthNotApplied, .noMembers]))
+        #expect(driver.length == nil)
     }
 
-    @Test("no calibration starts before the hidden boundary decided the sections")
-    func waitsForBoundary() {
+    @Test("no baseline before a pass has placed the sections by the divider at standard length")
+    func boundaryNotUsable() {
         var driver = Driver()
-        driver.send(.mode(isIceBar: true))
-        driver.ticks(20, Self.sample(boundaryUsable: false))
+        driver.settle(Self.sample(boundaryUsable: false), ticks: 20)
         #expect(driver.baselines == 0)
         driver.tick()
         #expect(driver.baselines == 1)
     }
 
-    @Test("no calibration starts while the user is on the bar")
-    func waitsForInteractionToEnd() {
+    @Test("no baseline while the pointer is in the bar or the IceBar is up")
+    func interactionDelaysStart() {
         var driver = Driver()
-        driver.send(.mode(isIceBar: true))
-        driver.ticks(20, Self.sample(interacting: true))
-        #expect(driver.baselines == 0)
-        driver.tick()
-        #expect(driver.baselines == 1)
-    }
-
-    @Test("interaction during a calibration puts the section back")
-    func interactionAborts() {
-        var driver = Driver()
-        driver.send(.mode(isIceBar: true))
-        driver.ticks(6)
-        #expect(driver.observed.count >= 1)
-        driver.answers = false
-        driver.tick()
-        #expect(driver.length != nil)
-        driver.tick(Self.sample(interacting: true))
-        #expect(driver.length == nil)
-        #expect(driver.machine.phase == .quiet(since: driver.now))
-    }
-
-    // MARK: - Showing instead
-
-    @Test("a frontmost app whose menus reach the notch shows the section", arguments: [
-        (MenuWidthVerdict.crossesNotch, IceBarShownReason.longMenu),
-        (MenuWidthVerdict.unreadable, IceBarShownReason.menuUnreadable),
-    ])
-    func longMenuShows(verdict: MenuWidthVerdict, reason: IceBarShownReason) {
-        var driver = Driver()
-        driver.settle()
-        let commands = driver.tick(Self.sample(menu: verdict))
-        #expect(commands.contains(.setLength(nil)))
-        #expect(driver.machine.phase == .shown(reason))
-        #expect(driver.lastStatus == .shown(reason))
-        #expect(driver.length == nil)
-    }
-
-    // MARK: - Ice's icon left of its divider (plan 2026-10-07-icebar-preference-hiding, T2c)
-
-    /// A machine brought to each phase a sample can meet, by name.
-    static func driver(in phase: String) -> Driver {
-        var driver = Driver()
-        switch phase {
-        case "quiet":
-            driver.send(.mode(isIceBar: true))
-        case "baselining":
-            driver.answers = false
-            driver.send(.mode(isIceBar: true))
-            driver.ticks(4)
-        case "calibrating":
-            driver.send(.mode(isIceBar: true))
-            driver.ticks(4)
-        case "trial":
-            driver.send(.mode(isIceBar: true))
-            driver.ticks(4)
-            driver.answers = false
-            driver.ticks(2)
-        case "confirming":
-            driver.settle()
-            driver.tick(sample(dragging: true))
-            driver.now += 60
-            // The baseline is answered, the observation of the remembered length is not.
-            driver.answers = false
-            driver.ticks(4)
-            if case .baselining(let token) = driver.machine.phase {
-                driver.send(.baseline(token: token, ok: true))
-            }
-        case "resting":
-            driver.settle()
-        case "shownForAnotherReason":
-            driver.settle()
-            driver.tick(sample(menu: .crossesNotch))
-        case "unstable":
-            driver.world = { _ in .unknown }
-            for _ in 0..<3 {
-                driver.settle()
-                driver.now += 60
-                driver.tick()
-            }
-        default:
-            Issue.record("no such phase: \(phase)")
-        }
-        return driver
-    }
-
-    @Test("the fixture reaches the phase it names")
-    func fixturePhases() {
-        func isPhase(_ name: String, _ matches: (IceBarHidingMachine.Phase) -> Bool) -> Bool {
-            matches(Self.driver(in: name).machine.phase)
-        }
-        #expect(isPhase("quiet") { if case .quiet = $0 { true } else { false } })
-        #expect(isPhase("baselining") { if case .baselining = $0 { true } else { false } })
-        #expect(isPhase("calibrating") { if case .calibrating(_, nil, _) = $0 { true } else { false } })
-        #expect(isPhase("trial") { if case .calibrating(_, .some, _) = $0 { true } else { false } })
-        #expect(isPhase("confirming") { if case .confirming = $0 { true } else { false } })
-        #expect(isPhase("resting") { if case .resting = $0 { true } else { false } })
-        #expect(isPhase("shownForAnotherReason") { $0 == .shown(.longMenu) })
-        #expect(isPhase("unstable") { $0 == .shown(.unstableLayout) })
-    }
-
-    @Test("Ice's icon left of its divider puts the section back and says so, from every phase", arguments: [
-        "quiet", "baselining", "calibrating", "trial", "confirming", "resting", "shownForAnotherReason", "unstable",
-    ])
-    func iconLeftOfDividerShows(phase: String) {
-        var driver = Self.driver(in: phase)
-        let commands = driver.tick(Self.sample(iconLeftOfDivider: true))
-        #expect(commands.contains(.setLength(nil)))
-        #expect(commands.last == .report(.shown(.iconLeftOfDivider)))
-        #expect(driver.machine.phase == .shown(.iconLeftOfDivider))
-        #expect(driver.length == nil)
-    }
-
-    @Test("it comes before every other reason to show the section", arguments: [
-        MenuWidthVerdict.crossesNotch, .unreadable,
-    ])
-    func iconLeftOfDividerComesFirst(verdict: MenuWidthVerdict) {
-        var driver = Driver()
-        driver.settle()
-        driver.tick(Self.sample(Self.signature(hidden: []), menu: verdict, iconLeftOfDivider: true))
-        #expect(driver.machine.phase == .shown(.iconLeftOfDivider))
-    }
-
-    @Test("while it lasts nothing is tried and nothing is said twice")
-    func iconLeftOfDividerHolds() {
-        var driver = Driver()
-        driver.settle()
-        driver.tick(Self.sample(iconLeftOfDivider: true))
-        let baselines = driver.baselines
-        driver.now += 600
-        var later = [IceBarHidingCommand]()
-        for _ in 0..<10 { later += driver.tick(Self.sample(iconLeftOfDivider: true)) }
-        #expect(later.isEmpty)
-        #expect(driver.baselines == baselines)
-        #expect(driver.length == nil)
-    }
-
-    @Test("once the icon is right of the divider again the machine waits out the quiet period, then hides")
-    func iconLeftOfDividerClears() {
-        var driver = Driver()
-        driver.settle()
-        driver.tick(Self.sample(iconLeftOfDivider: true))
-        let commands = driver.tick()
-        #expect(commands == [.setLength(nil), .report(.checking)])
-        #expect(driver.machine.phase == .quiet(since: driver.now))
-        driver.now += 60
-        driver.settle()
-        #expect(driver.machine.phase == .resting(length: 736))
-    }
-
-    @Test("a drag under way is the owner arranging: quiet, not the notice, until it ends")
-    func iconLeftOfDividerDuringDrag() {
-        var driver = Driver()
-        driver.settle()
-        driver.tick(Self.sample(dragging: true, iconLeftOfDivider: true))
-        #expect(driver.machine.phase == .quiet(since: driver.now))
-        driver.tick(Self.sample(iconLeftOfDivider: true))
-        #expect(driver.machine.phase == .shown(.iconLeftOfDivider))
-    }
-
-    @Test("its status line is the notice's text, with nothing added")
-    func iconLeftOfDividerMessage() {
-        #expect(IceBarHidingStatus.shown(.iconLeftOfDivider).message == IcePlacementNotice.iconLeftOfDivider.message)
-    }
-
-    @Test("short menus again hide the section after the quiet period")
-    func shortMenusHideAgain() {
-        var driver = Driver()
-        driver.settle()
-        driver.tick(Self.sample(menu: .crossesNotch))
-        driver.tick()
-        #expect(driver.machine.phase == .quiet(since: driver.now))
-        driver.now += 60
-        driver.settle()
-        #expect(driver.machine.phase == .resting(length: 736))
-    }
-
-    @Test("an empty hidden section is shown as such and nothing is tried")
-    func noMembersShows() {
-        var driver = Driver()
-        driver.settle(Self.sample(Self.signature(hidden: [])))
-        #expect(driver.machine.phase == .shown(.noMembers))
+        driver.settle(Self.sample(interacting: true), ticks: 20)
         #expect(driver.baselines == 0)
     }
 
-    @Test("a baseline that could not cover every member shows the section")
-    func failedBaselineShows() {
+    // MARK: - O1: hiding best effort when it cannot be verified (N4)
+
+    @Test("a baseline that does not cover the members hides anyway, at the lab's first length, and says not verified")
+    func uncoveredBaselineHidesBestEffort() {
         var driver = Driver()
         driver.baselineOK = false
+        driver.world = { _ in .skipped(.noReference) }
         driver.settle()
-        #expect(driver.machine.phase == .shown(.cannotAssess))
-        #expect(driver.lastStatus == .shown(.cannotAssess))
-        #expect(driver.observed.isEmpty)
-        #expect(driver.length == nil)
+        #expect(driver.restLength == IceBarHidingParameters.standard.calibration.defaultStart)
+        #expect(driver.observed.count == 1, "no walk without a baseline")
+        guard case .requestedNotVerified(let reasons)? = driver.state else { Issue.record("not 'not verified'"); return }
+        #expect(reasons.contains(.noReference))
+        #expect(!reasons.contains(.lengthNotApplied))
+        #expect(driver.state?.countsAsLabSuccess == false)
     }
 
-    @Test("an unknown outcome shows the section at once")
-    func unknownOutcomeShows() {
+    @Test("a walk that finds no absent length hides best effort and says what it saw")
+    func failedWalkHidesBestEffort() {
         var driver = Driver()
-        driver.world = { _ in .unknown }
-        driver.settle()
-        #expect(driver.machine.phase == .shown(.cannotAssess))
-        #expect(driver.observed.count == 1)
-        #expect(driver.length == nil)
+        driver.world = { _ in Self.folded }
+        driver.settle(ticks: 120)
+        #expect(driver.restLength == IceBarHidingParameters.standard.calibration.defaultStart)
+        #expect(driver.state == .requestedNotVerified(reasons: [.foldSeen([Self.member(1).tag, Self.member(2).tag])]))
     }
 
-    @Test("folded on one side and drawn on the other shows the section")
-    func noBandShows() {
+    @Test("a walk that only ever sees the members drawn rests and says visible / failed, not hidden")
+    func alwaysDrawnIsFailed() {
         var driver = Driver()
-        driver.world = { $0 < 760 ? .folded : .drawn }
-        driver.settle()
-        #expect(driver.machine.phase == .shown(.noCleanLength(.noBand)))
-        #expect(driver.length == nil)
+        driver.world = { _ in Self.drawn }
+        driver.settle(ticks: 120)
+        #expect(driver.restLength != nil)
+        #expect(driver.state == .visibleFailed(drawn: [Self.member(1).tag, Self.member(2).tag]))
     }
 
-    @Test("a band too narrow for the rest margin is not rested in")
-    func narrowBandShows() {
+    @Test("a check that cannot be read ends the walk at once, best effort, at the midpoint of what was seen absent")
+    func unknownEndsTheWalkAtCleanMidpoint() {
         var driver = Driver()
-        // Clean at 720, 736 and 752 only: the midpoint has 16 pt either side.
-        driver.world = Self.band(720, 752)
+        // 736 and 720 absent, then nothing readable.
+        driver.world = { length in length >= 720 && length <= 736 ? Self.clean : .checked(.unverifiable(.captureUnstable)) }
         driver.settle()
-        #expect(driver.machine.phase == .shown(.noCleanLength(.noBand)))
-        #expect(driver.length == nil)
+        #expect(driver.restLength == 728)
     }
 
-    @Test("a band just wide enough for the rest margin is rested in")
-    func marginBandRests() {
+    @Test("stale and stacked members cap the state, they do not stop the walk for the others")
+    func staleMembersDoNotStopTheWalk() {
         var driver = Driver()
-        // Clean from 704 to 768: 32 pt either side of 736.
-        driver.world = Self.band(704, 768)
+        driver.members = Self.roster([Self.member(1), Self.member(2, .stacked), Self.member(3, .stale(.missingFromRead))])
+        driver.world = Self.band()
         driver.settle()
-        #expect(driver.machine.phase == .resting(length: 736))
+        #expect(driver.restLength == 736)
+        #expect(driver.observed.count > 1, "the walk ran")
+        guard case .requestedNotVerified(let reasons)? = driver.state else { Issue.record("capped states are not verified"); return }
+        #expect(reasons.contains(.stackedMembers([Self.member(2).tag])))
+        #expect(reasons.contains(.staleMembers([Self.member(3).tag])))
     }
 
-    // MARK: - Invalidation
+    // MARK: - The last verified length
 
-    @Test("a new layout signature restores the standard length at once, in every phase")
-    func signatureChangeRestores() {
-        let other = Self.sample(Self.signature(hidden: ["h1", "h2", "h3"]))
-
-        var resting = Driver()
-        resting.settle()
-        #expect(resting.tick(other).first == .setLength(nil))
-        #expect(resting.machine.phase == .quiet(since: resting.now))
-
-        var baselining = Driver()
-        baselining.answers = false
-        baselining.send(.mode(isIceBar: true))
-        baselining.ticks(5)
-        #expect(baselining.baselines == 1)
-        baselining.tick(other)
-        #expect(baselining.machine.phase == .quiet(since: baselining.now))
-
-        var trying = Driver()
-        trying.send(.mode(isIceBar: true))
-        trying.ticks(5)
-        trying.answers = false
-        trying.ticks(2)
-        #expect(trying.length != nil)
-        trying.tick(other)
-        #expect(trying.length == nil)
-        #expect(trying.machine.phase == .quiet(since: trying.now))
-
-        var shown = Driver()
-        shown.baselineOK = false
-        shown.settle()
-        shown.tick(other)
-        #expect(shown.machine.phase == .quiet(since: shown.now))
+    @Test("after a rest was retired, the last verified length is settled at first: one observation, no walk")
+    func lastGoodIsTriedFirst() {
+        var driver = Driver()
+        driver.settle()
+        let before = driver.observed.count
+        driver.tick(Self.sample(dragging: true))
+        driver.now += 100
+        driver.run(ticks: 8)
+        #expect(driver.restLength == 736)
+        #expect(driver.observed.count == before + 1)
+        #expect(driver.state == .verifiedHidden)
     }
 
-    @Test("a result for an abandoned baseline is ignored")
-    func staleBaselineIsIgnored() {
+    @Test("a last verified length that no longer hides starts a walk from that observation")
+    func refusedLastGoodWalks() {
+        var driver = Driver()
+        driver.settle()
+        driver.world = Self.band(800, 1000)
+        driver.tick(Self.sample(dragging: true))
+        driver.now += 100
+        driver.run(ticks: 60)
+        #expect(driver.restLength == 896)
+        #expect(driver.state == .verifiedHidden)
+    }
+
+    // MARK: - D-e: layout changes (N1, N2)
+
+    @Test("a frontmost app, menu width or Space change at rest keeps the length and drops to not verified", arguments: [
+        (signature(frontmostPID: 11), PreferenceHidingLayoutChange.frontmostAppChanged),
+        (signature(menuMaxX: 1400), .menuWidthChanged),
+        (signature(menuMaxX: nil), .menuWidthChanged),
+        (signature(spaceID: 8), .spaceChanged),
+    ])
+    func softChangeKeepsTheLength(changed: LayoutSignature, change: PreferenceHidingLayoutChange) {
+        var driver = Driver()
+        driver.settle()
+        let mark = driver.log.count
+        driver.tick(Self.sample(changed))
+        #expect(driver.restLength == 736)
+        #expect(driver.length == 736)
+        #expect(driver.since(mark) == [.report(.state(.requestedNotVerified(reasons: [.layoutChangePending(change)])))])
+    }
+
+    @Test("the re-check after a soft change is one observation at the same length, after the quiet period, and verifies again")
+    func softChangeIsRechecked() {
+        var driver = Driver()
+        driver.settle()
+        let before = driver.observed.count
+        let changed = Self.sample(Self.signature(frontmostPID: 11))
+        driver.run(changed, ticks: 3)
+        #expect(driver.observed.count == before)
+        driver.tick(changed)
+        #expect(driver.observed.count == before + 1)
+        #expect(driver.observed.last?.asked == 736)
+        #expect(driver.state == .verifiedHidden)
+        #expect(!driver.log.dropFirst(driver.log.count - 3).contains(.setLength(nil)))
+        driver.run(changed, ticks: 10)
+        #expect(driver.observed.count == before + 1, "one re-check per change")
+    }
+
+    @Test("a re-check waits while the pointer is in the bar or the IceBar is up")
+    func recheckWaitsForInteraction() {
+        var driver = Driver()
+        driver.settle()
+        let before = driver.observed.count
+        let changed = Self.signature(frontmostPID: 11)
+        driver.run(Self.sample(changed, interacting: true), ticks: 10)
+        #expect(driver.observed.count == before)
+        #expect(driver.restLength == 736)
+        driver.tick(Self.sample(changed))
+        #expect(driver.observed.count == before + 1)
+    }
+
+    @Test("a soft change during a re-check restarts the wait: the answer under way is not taken for the new layout")
+    func softChangeDuringRecheck() {
+        var driver = Driver()
+        driver.settle()
+        driver.answers = false
+        driver.run(Self.sample(Self.signature(frontmostPID: 11)), ticks: 4)
+        guard case .observe(let token, _)? = driver.log.last else { Issue.record("no re-check asked"); return }
+        driver.tick(Self.sample(Self.signature(frontmostPID: 12)))
+        driver.send(.observed(token: token, checks: driver.checks(at: 736), chevronListed: false))
+        #expect(driver.state == .requestedNotVerified(reasons: [.layoutChangePending(.frontmostAppChanged)]))
+    }
+
+    @Test("a soft change before any rest restarts the quiet period")
+    func softChangeBeforeRest() {
         var driver = Driver()
         driver.answers = false
         driver.send(.mode(isIceBar: true))
-        driver.ticks(5)
-        guard case .baselining(let token) = driver.machine.phase else {
-            Issue.record("expected baselining, got \(driver.machine.phase)")
-            return
-        }
-        #expect(driver.send(.baseline(token: token + 1, ok: true)).isEmpty)
-        #expect(driver.machine.phase == .baselining(token: token))
-
-        // A signature change abandons the baseline; its late answer changes nothing.
+        driver.run(ticks: 2)
         driver.tick(Self.sample(Self.signature(frontmostPID: 11)))
-        let phase = driver.machine.phase
-        #expect(driver.send(.baseline(token: token, ok: true)).isEmpty)
-        #expect(driver.send(.observed(token: token, outcome: .hiddenClean)).isEmpty)
-        #expect(driver.machine.phase == phase)
+        driver.run(Self.sample(Self.signature(frontmostPID: 11)), ticks: 2)
+        #expect(driver.baselines == 0)
+        driver.tick(Self.sample(Self.signature(frontmostPID: 11)))
+        #expect(driver.baselines == 1)
     }
 
-    @Test("an observation for an abandoned trial is ignored")
-    func staleObservationIsIgnored() {
+    @Test("an item or display change at rest retires the length: the roster may be wrong and advances only at standard length", arguments: [
+        signature(visible: ["v1", "v2"]), signature(hidden: ["m1"]), signature(displayID: 2),
+    ])
+    func structuralChangeRetires(changed: LayoutSignature) {
+        var driver = Driver()
+        driver.settle()
+        let mark = driver.log.count
+        driver.tick(Self.sample(changed))
+        #expect(driver.since(mark) == [.setLength(nil), .report(.state(.requestedNotVerified(reasons: [.lengthNotApplied])))])
+        #expect(driver.length == nil)
+    }
+
+    @Test("a baseline too old to read is not re-taken by showing the section: the length stays, not verified")
+    func staleBaselineNeverShows() {
+        var driver = Driver()
+        driver.settle()
+        driver.world = { _ in .skipped(.baselineStale) }
+        let mark = driver.log.count
+        driver.run(Self.sample(Self.signature(frontmostPID: 11)), ticks: 40)
+        #expect(!driver.since(mark).contains(.setLength(nil)))
+        #expect(driver.restLength == 736)
+        #expect(driver.state == .requestedNotVerified(reasons: [.membersUnchecked([Self.member(1).tag, Self.member(2).tag])]))
+    }
+
+    // MARK: - D-b: the chevron (N3)
+
+    @Test("a listed chevron changes nothing: the length verifies, and the reading is recorded", arguments: [true, false, nil] as [Bool?])
+    func chevronIsRecordedOnly(listed: Bool?) {
+        var driver = Driver()
+        driver.chevron = listed
+        driver.settle()
+        #expect(driver.restLength == 736)
+        #expect(driver.state == .verifiedHidden)
+        #expect(driver.machine.chevronListed == listed)
+    }
+
+    // MARK: - D-c: blocked, from every phase
+
+    @Test("a failed precondition at rest retires the length first, then says blocked", arguments: blocks)
+    func blockedFromRest(preconditions: PreferenceHidingPreconditionResult) {
+        var driver = Driver()
+        driver.settle()
+        let commands = driver.tick(Self.sample(preconditions: preconditions))
+        #expect(commands == [.setLength(nil), .report(.state(.blocked(reasons: preconditions.reasons)))])
+        #expect(driver.machine.phase == .blocked)
+        #expect(!driver.machine.lengthApplied)
+    }
+
+    @Test("a failed precondition during a trial or a settle retires that length first", arguments: [1, 2, 5, 9, 20])
+    func blockedDuringCalibration(ticksIn: Int) {
+        var driver = Driver()
+        driver.answers = false
+        driver.send(.mode(isIceBar: true))
+        driver.run(ticks: 3)
+        // Answer by hand so a trial can be left pending.
+        for _ in 0..<ticksIn {
+            for command in driver.log.suffix(2) {
+                if case .takeBaseline(let token) = command { driver.send(.baseline(token: token, ok: true)) }
+            }
+            driver.tick()
+            if driver.machine.lengthSet { break }
+            if case .observe(let token, let asked)? = driver.log.last { driver.send(.observed(token: token, checks: driver.checks(at: asked), chevronListed: false)) }
+        }
+        let hadLength = driver.machine.lengthSet
+        let commands = driver.tick(Self.sample(preconditions: Self.blocks[0]))
+        #expect(commands.last == .report(.state(.blocked(reasons: Self.blocks[0].reasons))))
+        #expect(commands.contains(.setLength(nil)) == hadLength)
+        #expect(driver.length == nil)
+        #expect(!driver.machine.lengthSet)
+    }
+
+    @Test("blocked before anything was applied changes no length at all")
+    func blockedFromQuietChangesNothing() {
         var driver = Driver()
         driver.send(.mode(isIceBar: true))
-        driver.ticks(4)
-        driver.answers = false
-        driver.ticks(3)
-        guard case .calibrating(_, let pending?, _) = driver.machine.phase else {
-            Issue.record("expected a pending trial, got \(driver.machine.phase)")
-            return
-        }
-        let phase = driver.machine.phase
-        #expect(driver.send(.observed(token: pending.token + 1, outcome: .hiddenClean)).isEmpty)
-        #expect(driver.machine.phase == phase)
-        driver.send(.mode(isIceBar: false))
-        #expect(driver.send(.observed(token: pending.token, outcome: .hiddenClean)).isEmpty)
-        #expect(driver.machine.phase == .off)
+        let commands = driver.tick(Self.sample(preconditions: Self.blocks[2]))
+        #expect(commands == [.report(.state(.blocked(reasons: Self.blocks[2].reasons)))])
+        driver.run(Self.sample(preconditions: Self.blocks[2]), ticks: 20)
+        #expect(driver.baselines == 0)
+        #expect(!driver.log.contains { if case .setLength = $0 { true } else { false } })
     }
 
-    @Test("a Command-drag at rest puts the section back so it can be arranged")
-    func dragRestores() {
+    @Test("when the precondition holds again the machine waits out the quiet period and hides again")
+    func blockedClears() {
+        var driver = Driver()
+        driver.settle()
+        driver.tick(Self.sample(preconditions: Self.blocks[0]))
+        driver.now += 100
+        driver.tick()
+        #expect(driver.machine.phase == .quiet(since: driver.now))
+        #expect(driver.state == .requestedNotVerified(reasons: [.lengthNotApplied]))
+        driver.run(ticks: 8)
+        #expect(driver.restLength == 736)
+        #expect(driver.state == .verifiedHidden)
+    }
+
+    @Test("blocked reasons that change are reported again; unchanged ones are not")
+    func blockedReasonsAreReportedOnChange() {
+        var driver = Driver()
+        driver.send(.mode(isIceBar: true))
+        driver.tick(Self.sample(preconditions: Self.blocks[0]))
+        #expect(driver.tick(Self.sample(preconditions: Self.blocks[0])).isEmpty)
+        #expect(driver.tick(Self.sample(preconditions: Self.blocks[1])) == [.report(.state(.blocked(reasons: Self.blocks[1].reasons)))])
+    }
+
+    // MARK: - Drags and interaction
+
+    @Test("a Command-drag at rest gives the owner the real divider back")
+    func dragRetires() {
         var driver = Driver()
         driver.settle()
         let commands = driver.tick(Self.sample(dragging: true))
         #expect(commands.first == .setLength(nil))
         #expect(driver.machine.phase == .quiet(since: driver.now))
-        // Still dragging: the quiet period keeps restarting.
-        driver.ticks(10, Self.sample(dragging: true))
-        #expect(driver.machine.phase == .quiet(since: driver.now))
-        #expect(driver.baselines == 1)
     }
 
-    @Test("a chevron seen at rest puts the section back and forgets the length")
-    func chevronAtRestRestores() {
+    @Test("the pointer entering the bar during a trial ends it at standard length; at rest it changes nothing")
+    func interactionDuringCalibration() {
         var driver = Driver()
-        driver.settle()
-        let trialsBefore = driver.observed.count
-        let commands = driver.send(.chevronSeenAtRest)
-        #expect(commands.first == .setLength(nil))
-        #expect(driver.machine.phase == .quiet(since: driver.now))
-        driver.now += 60
-        driver.settle()
-        // A full calibration again, not a one-observation confirmation.
-        #expect(driver.observed.count == trialsBefore + 15)
-    }
-
-    @Test("a chevron event outside rest is ignored")
-    func chevronOutsideRestIsIgnored() {
-        var driver = Driver()
+        driver.answers = false
         driver.send(.mode(isIceBar: true))
-        #expect(driver.send(.chevronSeenAtRest).isEmpty)
+        driver.run(ticks: 3)
+        if case .takeBaseline(let token)? = driver.log.last { driver.send(.baseline(token: token, ok: true)) }
+        driver.tick()
+        #expect(driver.machine.lengthSet)
+        driver.tick(Self.sample(interacting: true))
+        #expect(driver.length == nil)
+
+        var resting = Driver()
+        resting.settle()
+        #expect(resting.tick(Self.sample(interacting: true)).isEmpty)
+        #expect(resting.restLength == 736)
     }
 
-    // MARK: - Reuse and rate limit
+    // MARK: - A member seen drawn at rest
 
-    @Test("a signature seen before is confirmed with one observation")
-    func cachedLengthIsConfirmed() {
-        let other = Self.sample(Self.signature(frontmostPID: 11))
+    @Test("a re-check that sees a member drawn starts a new cycle, and that cycle may find a length again")
+    func drawnRecheckRecycles() {
         var driver = Driver()
         driver.settle()
-        driver.now += 60
-        driver.settle(other)
-        let trialsBefore = driver.observed.count
-        let baselinesBefore = driver.baselines
-        driver.now += 60
-        driver.settle()
-        #expect(driver.machine.phase == .resting(length: 736))
-        #expect(driver.observed.count == trialsBefore + 1)
-        #expect(driver.observed.last?.asked == 736)
-        #expect(driver.observed.last?.barLength == 736)
-        #expect(driver.baselines == baselinesBefore + 1)
+        driver.now += 100
+        // 736 is now above the band: the members are drawn there.
+        driver.world = Self.band(500, 700)
+        let changed = Self.sample(Self.signature(frontmostPID: 11))
+        driver.run(changed, ticks: 4)
+        #expect(driver.length == nil, "the length was retired for a new cycle")
+        driver.run(changed, ticks: 60)
+        #expect(driver.restLength == 600)
+        #expect(driver.state == .verifiedHidden)
     }
 
-    @Test("a cached length that no longer hides cleanly is dropped and the band walked again")
-    func refusedConfirmationRecalibrates() {
-        let other = Self.sample(Self.signature(frontmostPID: 11))
+    @Test("with the members drawn whatever the length, cycles stop after the limit and the rest says visible / failed")
+    func drawnRecheckIsBounded() {
         var driver = Driver()
         driver.settle()
-        driver.now += 60
-        driver.settle(other)
-        driver.now += 60
-        let trialsBefore = driver.observed.count
-        // The band moved up: 736 pt now folds.
-        driver.world = Self.band(760, 904)
-        driver.settle()
-        #expect(driver.observed[trialsBefore].asked == 736)
-        guard case .resting(let length) = driver.machine.phase else {
-            Issue.record("expected resting, got \(driver.machine.phase)")
-            return
+        driver.world = { _ in Self.drawn }
+        let limit = driver.machine.parameters.maxFailures
+        var pid: Int32 = 11
+        for _ in 0..<(limit + 3) {
+            driver.now += 100
+            pid += 1
+            driver.run(Self.sample(Self.signature(frontmostPID: pid)), ticks: 120)
         }
-        #expect(length >= 760 + 32)
-        #expect(length <= 904 - 32)
-        // The refused confirmation is the walk's first observation, not repeated.
-        #expect(driver.observed[(trialsBefore + 1)...].allSatisfy { $0.asked != 736 })
+        #expect(driver.baselines == 1 + limit)
+        #expect(driver.restLength != nil)
+        #expect(driver.state == .visibleFailed(drawn: [Self.member(1).tag, Self.member(2).tag]))
     }
 
-    @Test("calibrations start no closer together than the minimum interval")
-    func minimumInterval() {
+    @Test("a drawn re-check too soon after the last cycle keeps the rest and says visible / failed")
+    func drawnRecheckRespectsTheInterval() {
         var driver = Driver()
-        driver.baselineOK = false
+        driver.settle(ticks: 25)
+        #expect(driver.restLength == 736)
+        driver.world = { _ in Self.drawn }
+        let mark = driver.log.count
+        driver.run(Self.sample(Self.signature(frontmostPID: 11)), ticks: 5)
+        #expect(!driver.since(mark).contains(.setLength(nil)))
+        #expect(driver.state == .visibleFailed(drawn: [Self.member(1).tag, Self.member(2).tag]))
+    }
+
+    // MARK: - Late and foreign answers
+
+    @Test("an answer for a request the machine no longer waits on is ignored")
+    func staleAnswersAreIgnored() {
+        var driver = Driver()
         driver.settle()
-        #expect(driver.baselines == 1)
-        let failedAt = driver.now
-        driver.ticks(20)
-        #expect(driver.baselines == 1)
-        while driver.baselines == 1, driver.now < failedAt + 120 { driver.tick() }
-        #expect(driver.baselines == 2)
-        #expect(driver.now - failedAt >= 30)
+        let phase = driver.machine.phase
+        #expect(driver.send(.observed(token: 1, checks: [:], chevronListed: true)).isEmpty)
+        #expect(driver.send(.baseline(token: 1, ok: false)).isEmpty)
+        #expect(driver.machine.phase == phase)
     }
 
-    @Test("three failed calibrations for one signature stop the trying")
-    func repeatedFailuresStop() {
+    @Test("a status is reported once per change, and never before the length it speaks of was retired")
+    func reportsOncePerChange() {
         var driver = Driver()
-        driver.baselineOK = false
-        driver.send(.mode(isIceBar: true))
-        driver.ticks(400)
-        #expect(driver.baselines == 3)
-        #expect(driver.machine.phase == .shown(.unstableLayout))
-        #expect(driver.lastStatus == .shown(.unstableLayout))
-
-        // A new signature may be tried again.
-        driver.baselineOK = true
-        driver.settle(Self.sample(Self.signature(frontmostPID: 11)))
-        #expect(driver.machine.phase == .resting(length: 736))
-    }
-
-    @Test("the remembered lengths are bounded")
-    func cacheIsBounded() {
-        var driver = Driver()
-        let parameters = IceBarHidingParameters.standard
-        for pid in 0..<Int32(parameters.maxCachedLengths + 2) {
-            driver.now += 60
-            driver.settle(Self.sample(Self.signature(frontmostPID: 100 + pid)))
-            #expect(driver.machine.phase == .resting(length: 736))
-        }
-        #expect(driver.machine.cachedLengthCount <= parameters.maxCachedLengths)
-    }
-
-    // MARK: - Status
-
-    @Test("every status but off has its own line for the layout pane")
-    func statusMessages() {
-        #expect(IceBarHidingStatus.off.message == nil)
-        let statuses: [IceBarHidingStatus] = [
-            .checking, .active,
-            .shown(.longMenu), .shown(.menuUnreadable), .shown(.noMembers), .shown(.cannotAssess),
-            .shown(.noCleanLength(.noBand)), .shown(.unstableLayout), .shown(.iconLeftOfDivider),
-        ]
-        let messages = statuses.compactMap(\.message)
-        #expect(messages.count == statuses.count)
-        #expect(Set(messages).count == statuses.count)
-        #expect(messages.allSatisfy { !$0.isEmpty })
+        driver.settle()
+        driver.tick(Self.sample(preconditions: Self.blocks[0]))
+        driver.run(Self.sample(preconditions: Self.blocks[0]), ticks: 5)
+        let reports = driver.reports
+        #expect(zip(reports, reports.dropFirst()).allSatisfy { $0 != $1 })
+        #expect(reports.last == .state(.blocked(reasons: Self.blocks[0].reasons)))
     }
 }

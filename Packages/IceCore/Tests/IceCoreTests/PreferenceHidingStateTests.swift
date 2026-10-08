@@ -168,10 +168,10 @@ struct PreferenceHidingStateTests {
         let s = item("s", pid: 2, position: .stacked)
         let gone = TagKey(namespace: "com.example.gone", title: "g/p9")
         let result = evaluate(
-            membership([s], previous: [gone]), lengthApplied: false, checks: [:], pending: .itemsAdded
+            membership([s], previous: [gone]), lengthApplied: false, checks: [:], pending: .itemsChanged
         )
         #expect(result == .requestedNotVerified(reasons: [
-            .lengthNotApplied, .staleMembers([gone]), .stackedMembers([s.tagKey]), .layoutChangePending(.itemsAdded),
+            .lengthNotApplied, .staleMembers([gone]), .stackedMembers([s.tagKey]), .layoutChangePending(.itemsChanged),
         ]))
     }
 
@@ -191,7 +191,7 @@ struct PreferenceHidingStateTests {
         let a = item("a", pid: 1), s = item("s", pid: 2, position: .stacked)
         let gone = TagKey(namespace: "com.example.gone", title: "g/p9")
         let result = evaluate(
-            membership([a, s], previous: [gone]), checks: [a.key: .checked(.stillDrawn)], pending: .menusCrossingNotch
+            membership([a, s], previous: [gone]), checks: [a.key: .checked(.stillDrawn)], pending: .menuWidthChanged
         )
         #expect(result == .visibleFailed(drawn: [a.tagKey]))
     }

@@ -79,9 +79,25 @@ public enum PreferenceHidingPreconditions {
         ownRead: OwnReadStatus,
         blockers: [PreferenceHidingBlocker]
     ) -> PreferenceHidingPreconditionResult {
+        evaluate(
+            iconPlacement: iconPlacement(icon: iceIcon, divider: hiddenDivider),
+            completeness: completeness, ownRead: ownRead, blockers: blockers
+        )
+    }
+
+    /// The same three preconditions from the placement Ice holds
+    /// (`IcePlacementNotice.placement(held:read:dividerAtStandardLength:)`)
+    /// instead of one pass's frames: at a hiding length a pass cannot read
+    /// which side of the divider the icon is on (T3b design G3).
+    public static func evaluate(
+        iconPlacement: PreferenceHidingIconPlacement?,
+        completeness: Completeness,
+        ownRead: OwnReadStatus,
+        blockers: [PreferenceHidingBlocker]
+    ) -> PreferenceHidingPreconditionResult {
         var reasons = [PreferenceHidingBlockReason]()
-        if let placement = iconPlacement(icon: iceIcon, divider: hiddenDivider) {
-            reasons.append(.iceIconNotRightOfDivider(placement))
+        if let iconPlacement {
+            reasons.append(.iceIconNotRightOfDivider(iconPlacement))
         }
         if completeness != .complete {
             reasons.append(.discoveryIncomplete(completeness))
@@ -118,6 +134,16 @@ extension ItemPosition {
     /// still on it; `.parked` and `.noFrame` are not.
     var isOnBar: Bool {
         self == .onBar || self == .stacked
+    }
+}
+
+extension DividerState {
+    /// Ice holds the divider enabled, collapsed for at least
+    /// `DiscoveredCachePlan.settleSeconds` and unchanged during the pass: its
+    /// frame, if readable, is then where it draws its boundary. Ice's own
+    /// state only; `DiscoveredCachePlan.evaluate` adds the reading.
+    public var isAtStandardLength: Bool {
+        isEnabled && isCollapsed && collapsedFor >= DiscoveredCachePlan.settleSeconds && !changedDuringPass
     }
 }
 

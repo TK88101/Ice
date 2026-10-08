@@ -35,10 +35,26 @@ public struct DiscoveryResult: Sendable {
     /// Every pid this pass enumerated, read or not -- what tells "read clean,
     /// nothing on the bar" apart from "not asked about at all" (`status(of:)`).
     public let enumeratedPIDs: Set<Int32>
+    /// Each admitted process's `AXExtrasMenuBar` children as this pass read
+    /// them (`PressTargetRule.identifiers(of:)`), by pid: what tells a roster
+    /// which members a press could reach (plan 2026-10-07-icebar-preference-
+    /// hiding, D-f and T3b design G2). A pid whose read failed, or that was
+    /// not read, is absent: unreadable, so not pressable.
+    public let childIdentifiersByPID: [Int32: [String?]]
 
-    /// No default for `quarantined` or `enumeratedPIDs`: a site that rebuilds a
-    /// result must say what it carries over, or it would silently drop them.
-    public init(set: DiscoveredItemSet, duration: Double, origin: DiscoveryOrigin, bounds: BarBounds, nextCursor: Int, quarantined: [ProcessInfoRecord], enumeratedPIDs: Set<Int32>) {
+    /// No default for `quarantined`, `enumeratedPIDs` or
+    /// `childIdentifiersByPID`: a site that rebuilds a result must say what it
+    /// carries over, or it would silently drop them.
+    public init(
+        set: DiscoveredItemSet,
+        duration: Double,
+        origin: DiscoveryOrigin,
+        bounds: BarBounds,
+        nextCursor: Int,
+        quarantined: [ProcessInfoRecord],
+        enumeratedPIDs: Set<Int32>,
+        childIdentifiersByPID: [Int32: [String?]]
+    ) {
         self.set = set
         self.duration = duration
         self.origin = origin
@@ -46,6 +62,7 @@ public struct DiscoveryResult: Sendable {
         self.nextCursor = nextCursor
         self.quarantined = quarantined
         self.enumeratedPIDs = enumeratedPIDs
+        self.childIdentifiersByPID = childIdentifiersByPID
     }
 
     /// What this pass says about one pid (hardening plan H6). Facts only; each

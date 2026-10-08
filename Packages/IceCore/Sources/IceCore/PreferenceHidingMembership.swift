@@ -152,6 +152,28 @@ public struct PreferenceHidingMembership: Equatable, Sendable {
         )
     }
 
+    /// The previous members a pass still has to account for: all of them,
+    /// in order, but for one whose process is positively gone. A process that
+    /// does not exist owns no status item, so nothing of it can be carried
+    /// off the bar unlisted; kept, it would stay `stale(.missingFromRead)`
+    /// and cap the state for ever (T3b design G1). Absence from a pass is not
+    /// that evidence: a live process may be unread, quarantined or failing.
+    /// - Parameters:
+    ///   - lastKeys: the key each member was last read with; a member
+    ///     without one is kept.
+    ///   - hasExited: whether no process has this pid any more. A reused pid
+    ///     reads as alive, which keeps the member, stale.
+    public static func carried(
+        previous: [TagKey],
+        lastKeys: [TagKey: ItemKey],
+        hasExited: (Int32) -> Bool
+    ) -> [TagKey] {
+        previous.filter { tag in
+            guard let key = lastKeys[tag] else { return true }
+            return !hasExited(key.pid)
+        }
+    }
+
     /// - Parameters:
     ///   - leftOfDivider: the third-party items the current pass reads left of
     ///     Ice's hidden divider; the caller decides "left of" (the public entry

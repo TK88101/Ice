@@ -85,4 +85,48 @@ struct PressOutcomeTests {
     func otherErrorFails(elapsed: Double) {
         #expect(PressOutcome.classify(succeeded: false, timedOut: false, elapsed: elapsed) == .failed)
     }
+
+    // MARK: - The children a discovery pass read (T3b, G2)
+
+    func record(_ index: Int, role: String = "AXMenuBarItem", identifier: String?) -> ExtrasRecord {
+        let none = AttributeRead<String>(value: nil, error: "noValue")
+        return ExtrasRecord(
+            childIndex: index,
+            role: AttributeRead(value: role, error: "success"),
+            identifier: AttributeRead(value: identifier, error: identifier == nil ? "noValue" : "success"),
+            title: none, description: none, help: none,
+            frame: AttributeRead(value: BarRect(minX: 100 + Double(index) * 30, minY: 4.5, width: 24, height: 24), error: "success")
+        )
+    }
+
+    func read(_ records: [ExtrasRecord], extrasError: String = "success", childCount: Int? = nil) -> RawRead {
+        RawRead(
+            process: ProcessInfoRecord(pid: 42, bundleID: "com.example.app", localizedName: nil, executableName: nil, launchTime: 1, isSelf: false),
+            extrasError: extrasError, extrasElapsed: 0.01, childrenError: extrasError == "success" ? "success" : nil,
+            childrenElapsed: extrasError == "success" ? 0.01 : nil, records: records, walkInterrupted: false, childCount: childCount ?? records.count
+        )
+    }
+
+    @Test("T3b G2: a clean read gives each child's identifier in child order, empty for none, nil for a child that is not an item")
+    func identifiersOfACleanRead() {
+        let raw = read([record(0, identifier: "wifi"), record(1, role: "AXGroup", identifier: "x"), record(2, identifier: nil)])
+        #expect(PressTargetRule.identifiers(of: raw) == ["wifi", nil, ""])
+    }
+
+    @Test("T3b G2: what a pass read is what the press rule is asked: the key's child is found")
+    func identifiersFeedTheRule() throws {
+        let raw = read([record(0, identifier: "wifi"), record(1, identifier: "clock")])
+        let identifiers = try #require(PressTargetRule.identifiers(of: raw))
+        #expect(PressTargetRule.index(for: ItemKey(namespace: "com.example.app", identifier: "clock", pid: 42, childIndex: nil), identifiers: identifiers) == 1)
+    }
+
+    @Test("T3b G2: a read that failed gives nothing: its process is unreadable, never an empty bar")
+    func identifiersOfAFailedRead() {
+        #expect(PressTargetRule.identifiers(of: read([], extrasError: "failure")) == nil)
+    }
+
+    @Test("T3b G2: a process with no extras bar gives an empty list")
+    func identifiersOfNoExtras() {
+        #expect(PressTargetRule.identifiers(of: read([], extrasError: "noValue")) == [])
+    }
 }

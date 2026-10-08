@@ -1,6 +1,6 @@
 # IceBar on macOS 27, re-aimed: preference hiding, proven in a harness before any owner sitting
 
-2026-10-07 · final (Codex round 5: CONVERGED; T2 design added 2026-10-08, Codex round 3: CONVERGED; Appendix) · T1, T3a implemented, T2 done 2026-10-08 (T2b: Q1 only, see its Result) · continues on `wip/icebar-build` from `6c61b96`.
+2026-10-07 · final (Codex round 5: CONVERGED; T2 design added 2026-10-08, Codex round 3: CONVERGED; Appendix) · T1, T3a implemented, T2 done 2026-10-08 (T2b: Q1 only, see its Result); T3b design added 2026-10-08, Codex round 4: CONVERGED · continues on `wip/icebar-build` from `6c61b96`.
 Follows the owner's corrected goal and Codex's consult of 2026-10-07
 (`~/IceReverse-evidence/20261007-213730-t7/codex-consult.md`, handover beside it).
 Supersedes, where they conflict: `2026-10-03-icebar-build.md` sections 1, 3 (the
@@ -428,6 +428,231 @@ seed rule's 26 path is untouched.
   -- `blocked` promises that no length is changed (T3a review round 3).
 - DoD: unit tests per rule (TDD, coverage >= 80 % of changed files); `/simcodex`.
 
+#### S3 design (T3b, added 2026-10-08 after T2; review in the Appendix, "T3b design")
+
+Goal: the live machine and coordinator decide by T3a's rules and nothing else. Non-goals:
+any new rule of membership beyond G1 below; a live run (R1: S4); macOS 26 and earlier;
+the non-IceBar hiding check (`HidingVerifier`), untouched. Serial; nothing dispatched.
+
+What the code does now, and what contradicts S3 (all MEASURED, code):
+
+| # | Now | Against |
+|---|---|---|
+| N1 | any signature change, a frontmost-app switch included, puts the section back and re-baselines (`IceBarHidingMachine.swift:257-261`) | D-e |
+| N2 | `.crossesNotch` and `.unreadable` menus show the section (`:272-276`) | D-e |
+| N3 | a listed `«` is `.folded` (`HiddenLengthOutcomeRule.swift:14`) and, at rest, re-calibrates (`:227-230`, `IceBarHidingCoordinator.swift:142-155`) | D-b |
+| N4 | a baseline that does not cover every member, or a walk without a band, ends `shown(...)`: Ice hides nothing | O1 |
+| N5 | members are `itemCache[.hidden]` (`IceBar.swift:284`, the coordinator's signature and section map) | D-a, S3's "never from `CachePublication.hidden`" |
+| N6 | no caller of `PreferenceHidingMembership`, `PreferenceHidingPreconditions`, `PreferenceHidingStateRule` outside tests | S3 |
+
+**The machine (`IceBarHidingMachine`, rewritten in place; the calibrator is not changed).**
+
+- Sample: `signature`, `preconditions: PreferenceHidingPreconditionResult`,
+  `membership: PreferenceHidingMembership`, `isInteracting`, `isDragging`,
+  `boundaryUsable`. Gone: `menuVerdict`, `iconLeftOfDivider`.
+- Events: `mode`, `sample`, `baseline(token:ok:)`,
+  `observed(token:checks:chevronListed:)`. Gone: `chevronSeenAtRest`.
+- Phases: `off`; `blocked`; `quiet(since:)`; `baselining` -- all three at standard
+  length: entering `blocked` or `quiet` from a phase with a length set emits
+  `.setLength(nil)` first, as `enterQuiet` and `enterShown` do now (`:391-401`);
+  `calibrating` (as now); `settling(trial, kind)` -- the one observation at a length Ice
+  means to rest at, `kind` = `.lastGood` (not clean: the walk starts from that
+  observation, as `confirming` does now) or `.final` (rest whatever was seen);
+  `resting(Rest)` with `Rest` = length, the checks of its last observation, the chevron
+  reading, the pending layout change and when it came, the re-check under way.
+- Two computed properties, neither stored. `lengthSet`: the phase holds a non-nil
+  length (a trial, a settle, a rest) -- what `blocked` must retire first.
+  `lengthApplied`: the phase is `.resting` -- the rule's input and what offers the
+  IceBar. Every unverified rest is a rest, so D-c's "the IceBar is offered" holds for
+  it. Not offered during a trial or a settle (review round 2, P1, taken in part): a
+  presented IceBar is `isInteracting`, which ends the observation
+  (`IceBarHidingMachine.swift:294-297`), and such a length lasts one settle (about
+  1 s) before it is a rest or is retired. Not offered at standard length either,
+  though the rule's `isIceBarOffered` is true for every state but `blocked`: the
+  members are on the bar there and the IceBar would list them twice
+  (`IceBarHidingCoordinator.swift:73-76`). The status is
+  `PreferenceHidingStateRule.evaluate` on the last sample's preconditions and
+  membership, that flag, the rest's checks and pending change -- a computed property;
+  after every event the machine appends `.report(status)` iff it differs from the last
+  one reported, so a report can never precede the `.setLength(nil)` of the same step.
+- Order within a sample: (1) a drag -> quiet (as now); (2) preconditions blocked ->
+  `blocked`, `.setLength(nil)` first if any length is set (trial, settle or rest);
+  (3) signature difference, classified by the one new pure function
+  `PreferenceHidingLayoutChange.between(_:_:)`: **structural** (an item list or the
+  display differs: the roster may be wrong, and it advances only at standard length)
+  -> quiet from any phase; **soft** (frontmost pid, menu edge, Space) -> while resting
+  the length stays, the change is held as `pendingLayoutChange` (state: not verified)
+  and after `quietPeriod` without interaction one re-check `.observe` is sent, whose
+  checks replace the rest's and clear the pending change; in any earlier phase a soft
+  change restarts the quiet period as now. The enum's cases become
+  `displayChanged`, `itemsChanged` (structural), `frontmostAppChanged`,
+  `menuWidthChanged`, `spaceChanged` (soft): the signature has no notch and cannot
+  tell added from removed. A Space is soft because the signature's item lists are
+  the roster's and the cache's: a Space that shows other items differs in those
+  lists and is structural by them; the Space id alone says nothing about the roster,
+  and treating it as structural would show the section on every Space switch (N1).
+- From `blocked`, a sample whose preconditions are ok enters `quiet(since: now)`
+  and waits out the quiet period, as a cleared blocker does now (`:286-288`).
+- Start (from quiet, after `quietPeriod`): as now -- `boundaryUsable` included, which
+  is false from the moment the divider's collapsed-ness changes until a pass has
+  placed the sections by it (`MenuBarItemManager.swift:160-166, 595`), so no baseline
+  is taken before a standard-length pass has resolved the roster -- and only with a
+  non-empty roster.
+  An empty roster stays quiet; the rule says `requestedNotVerified([.lengthNotApplied, .noMembers])`.
+- After the baseline. `ok` (every ready member checkable): settle at the last verified
+  length if there is one (`.lastGood`), else walk. Not `ok`: settle `.final` at the
+  best-effort length. The walk's end: `.rest(L)` within the margins -> settle `.final`
+  at L; give-up -> settle `.final` at the best-effort length. (Corrected while
+  building: "or margins not met" went, with `restMargin`: the best-effort midpoint
+  of a walk is the same L, so the check changed nothing; the settle's own
+  observation decides the state.)
+  **Best-effort length** = the last verified length, else the midpoint of the clean
+  lengths this walk saw, else `calibration.defaultStart` (the injected parameter, no
+  new literal). That value is 736 pt, the lab's first probe (P8): under O1 Ice must
+  apply some length when it cannot verify, and this is the only one with any
+  measurement behind it; a rest there without clean checks is
+  `requestedNotVerified`, never a success (D-d). INFERRED that it hides anything on
+  another bar.
+- The walk's outcome per trial is `HiddenLengthOutcomeRule.outcome(checks:memberCount:)`
+  over the **ready** members only (stale and stacked ones cap the state through the
+  rule, they do not stop the walk); no chevron parameter. A check that saw the fold
+  (`hidden(folded: true)`) is still `.folded` for the walk's direction: a per-member
+  pixel reading (D-d), not the `«` listing. The chevron reading rides on every
+  `observed` event, is stored in the rest, logged, and read by nothing.
+- At rest nothing retries by a timer. Only: a re-check that sees a member drawn
+  starts one new cycle (quiet -> baseline -> ...) if fewer than `maxFailures` cycles
+  failed for this roster and display and `minInterval` has passed; otherwise the rest
+  stays and says `visible / failed`.
+- A stale baseline. `verify` answers `skipped(.baselineStale)` once the baseline is
+  older than `BaselineReuse.maxAge` (600 s, `HidingVerification.swift:264-267`), and a
+  baseline can only be taken with the section **shown** (`HiddenLengthObserver.swift:65-68`:
+  the members' templates are what is later looked for). So a re-check then cannot
+  verify without putting the members back on the bar for a cycle. The design: it does
+  not; the length stays, the state stays `requestedNotVerified` until a structural
+  change, a drag or a mode change runs a cycle anyway. Reason: D-e ("nothing is shown
+  merely because a menu is long") and the goal (kept in Ice; not "certified"). Cost,
+  said: in daily use, ten minutes after the last cycle a frontmost-app change leaves
+  the pane at "not verified". The lab's scenarios are shorter than that.
+- The per-signature length cache and `maxCachedLengths` go: a rest now survives the
+  changes the cache was keyed by; `lastGood` remains.
+- Retired with the above: `IceBarShownReason` whole; `IceBarHidingStatus`'s
+  `checking / active / shown`. `IceBarHidingStatus` = `.off` or
+  `.state(PreferenceHidingState)`, with `message` (the pane's line, item names
+  allowed) and `logSummary` (case names and counts only).
+
+**Lines the pane shows** (one per state; the first failing reason speaks):
+blocked a `iconLeftOfDivider` -> T2c's text; a `iconUnreadable` -> "Ice's icon is not
+on the menu bar, so Ice hides nothing. Turn on Show Ice icon, or make room for it.";
+a `dividerUnusable` -> "Ice's hidden-section divider is not on the menu bar, so Ice
+hides nothing."; b -> "Ice could not read every menu bar item, so it hides nothing
+until it can."; c -> "Ice cannot tell <names> from another item of the same app, so
+it hides nothing. Hold Command and drag it to the right of Ice's divider.";
+verified -> "Ice Bar: the chosen items are hidden (checked)."; not verified with no
+length -> "Ice Bar: getting ready to hide the chosen items." or, roster empty,
+"Ice Bar: nothing is left of Ice's divider, so nothing is hidden."; not verified at a
+length -> "Ice Bar: hiding requested, not verified (<why>)."; failed -> "Ice Bar: an
+item meant to be hidden is still drawn on the menu bar." The notch clause of the
+limits sentence goes.
+
+**The roster and the preconditions (`MenuBarItemManager`, macOS 27, IceBar mode;
+cleared outside it).** Each **completed** pass, before the cache plan's branch:
+`PreferenceHidingMembership.resolve(set:hiddenDividerState:previousMembers:
+childIdentifiersByPID:)`, then `PreferenceHidingPreconditions.evaluate`. A pass the
+cache does not publish (`.keepPrevious(.permissionDenied)`,
+`MenuBarItemManager.swift:623-629`) still updates the preconditions --
+`discoveryIncomplete(.permissionDenied)` blocks and the machine retires the length --
+and keeps the roster as it was (review round 2, P0). Calling `resolve` on a pass
+taken while a length is set does not advance the roster: the divider is not
+collapsed then, `DiscoveredCachePlan.evaluate` gives no boundary, and `resolve`
+freezes -- no member added, none released (`PreferenceHidingMembership.swift:112-116,
+130-142`). What such a pass may still change is a member's condition (ready to
+stale: D-a, it caps the state) and, by G1, drop a member whose process has exited;
+a dropped tag is an item-list difference, structural, so the length is retired.
+Checks are matched to members by key and one for a non-member is ignored
+(`PreferenceHidingStateRule.swift:24-26`), so an older rest's checks cannot speak
+for a changed roster. Three things the rules need that do not exist:
+
+- G1 **A member whose process has exited.** `missingFromRead` keeps it listed, stale,
+  for ever, and caps the state for ever: after any member's app quits nothing is
+  verified again and a dead cell stays in the IceBar. The wiring drops, before
+  `resolve`, a previous member only on positive evidence that the process of its
+  last read key no longer exists (`kill(pid, 0)` failing with `ESRCH`; pure
+  `PreferenceHidingMembership.carried(previous:lastKeys:hasExited:)`, tested): a
+  process that does not exist owns no status item, so nothing is carried off the bar
+  unlisted. Not the pass's `enumeratedPIDs` (round 1: that list leaves out
+  `.prohibited` apps, so absence there is not removal). A live process that is
+  unread, quarantined or failing stays stale, as T3a wrote it; a reused pid reads as
+  alive and keeps the member stale (the safe side).
+- G2 **`childIdentifiersByPID`.** No pass exposes it. `DiscoveryResult` gains it as a
+  required `init` parameter (round 1: no default; that init's own note), built in
+  `MenuBarDiscoverer` from the admitted reads by pure
+  `PressTargetRule.identifiers(of: RawRead)` (`nil` for a failed read, so the pid is
+  absent = unreadable = not pressable). The eight sites that build a result say what
+  they carry; five are probes Swift, so the full probes test run is owed (section 4).
+- G3 **Precondition a at a hiding length.** There the divider's frame is not where
+  the section boundary was (corrected while building, 2026-10-08: the design first said
+  "starts off the bar"; T0's samples show a helper spacer at 634 pt read at minX 1229,
+  inside the bar, its width running past the right edge, while the item it pushed off
+  kept its frame at x 1201 -- MEASURED, run `20261004-105226-spike`, `samples.jsonl`;
+  Ice's own divider is not measured). Read naively, the icon's side and the divider's
+  usability would then say whatever that frame says, and a `dividerUnusable` would
+  block, retire the length, hide again, for ever. `evaluate` gains an overload taking the held placement, and
+  T2c's hold rule becomes `placement(held:read:dividerAtStandardLength:)`: at
+  standard length (Ice's own divider state collapsed, settled, unchanged in the
+  pass -- no longer "the reading was usable", so an unusable divider at standard
+  length is now read and blocks) the read stands; otherwise the held value stands,
+  except that an icon read as not on the bar is `iconUnreadable` at once (STATUS's
+  first "not covered" row: an icon carried off with the section). The second row
+  (Show Ice icon off) blocks by the same reading: on macOS 27 IceBar hiding needs
+  Ice's icon on the bar. A limit, said in STATUS and by the pane.
+
+The signature's `hidden` list is the roster's tags; `visible` and `alwaysHidden` stay
+the cache's. The IceBar on macOS 27 lists the roster for either section it is asked
+for (always-hidden items are left of the hidden divider too, and are members): a
+member's item from the current set, else the last one read for its tag; its cell is
+disabled when the member is not `isPressable` or its press failed.
+
+**Coordinator.** Builds the sample from the manager's roster and preconditions;
+`takeBaseline` passes a section map made of the roster's tags; `observe` returns the
+checks and the chevron reading. `HiddenLengthObserver` keeps what `prepare` returned
+also when it does not cover the section, so a best-effort settle reports each
+member's real skip or refusal (`noReference`, `refusedAtBaseline`) instead of
+nothing. `watchChevron` goes. `isIceBarOffered` stays "the machine is resting".
+
+**T7's files.** `t7-lib.zsh` and `run-t7.sh` parse the retired statuses; T7 is
+superseded (this plan's header). `test-t7.sh`'s block "what t7_summary reads is what
+Ice's sources write" is removed with a note, the runner's README row says it reads a
+grammar Ice no longer writes; the scripts themselves stay (S4 replaces them). The
+new contract, `logSummary`'s exact strings per state, is pinned by IceCore unit
+tests, for T4's runner to parse.
+
+**Tests.** IceCore first, RED before GREEN: the machine per phase and per row N1-N4
+(a soft change keeps the length; a long menu shows nothing; a listed `«` changes
+nothing; an uncovered baseline and a failed walk rest best effort and say not
+verified; every precondition from every phase retires the length before `blocked`;
+a drawn re-check re-cycles at most `maxFailures` times; a stale baseline never
+shows the section); `between`; the outcome rule; `message` / `logSummary`; the hold
+rule; `carried`; `identifiers(of:)`. `MenuBarDetectorFeedTests` for the observer,
+`MenuBarDiscoveryTests` for the new field. Coverage >= 80 % of changed IceCore
+files. `xcodebuild` Debug; `check-a3a4.sh`; `test-t7.sh`, `test-trace.sh`; the full
+probes test run (G2; in the background, logged, capped at 90 min). E2E:
+`run-trace.sh` 9 of 9 as the regression of Ice's own start (trace mode starts
+neither the item manager nor the coordinator, so it proves nothing of T3b's wiring).
+The wiring itself is **not run live** before S4 (R1): INFERRED, and reported so.
+
+Touched: `Packages/IceCore` (machine, outcome rule, state enum, preconditions,
+notice, membership, press rule + tests); `Packages/MenuBarDiscovery` (result,
+discoverer, observer + tests); `Ice/` (`IceBarHidingCoordinator.swift`,
+`MenuBarItemManager.swift`, `MenuBarItemManager+IceBar27.swift`, `IceBar.swift`,
+`LabTrace.swift` if the hold rule's label reaches it); probes (the five sites of
+G2, `test-t7.sh`, README); `STATUS.md`. Frozen files untouched. Rollback: revert
+T3b's commits; T2c's gate comes back with them.
+
+Risks: a pass is often incomplete for a moment (STATUS "Discovery keeps up"), and
+each such pass at rest retires the length for at least `quietPeriod` -- how often
+on a real bar is not measured (S4 scenario 13 measures the block, not the rate);
+the best-effort length on a bar unlike T0's.
+
 ### S4 A fixed lab matrix, foreground (owner cost: see O3)
 
 - Default (round 1, P1): no agent and no cross-account control plane. The lab is the
@@ -577,6 +802,28 @@ revision is checked in the file before it is sent.
 
 Round 1: 2 P0 + 5 P1 + 1 P2. Round 2: 2 P1. Round 3: 0. Of round 1's eight, five
 taken as given, three modified with evidence and accepted.
+
+### T3b design (S3 design subsection; Codex gpt-5.6-terra, 2026-10-08; cap 5 calls, 4 used)
+
+| Round | Finding | Ruling |
+|---|---|---|
+| 1 | (sent before the subsection was in the file: the edit had been stopped by a hook and the call went out beside it -- the assistant's process error, the third of its kind in this plan; Codex ruled on the seven choices named in the prompt only) P1 G1 drops by `enumeratedPIDs`, which leaves out `.prohibited` apps | modified, accepted in round 2: dropped only when `kill(pid, 0)` says the process does not exist |
+| 1 | P1 `childIdentifiersByPID` defaulting to `[:]` loses a pass fact silently | taken: a required parameter; the probes' five sites change, the full probes run is owed |
+| 1 | P1 a stale baseline must be re-taken before a re-check | rejected, conceded in round 2: a baseline needs the section shown (`HiddenLengthObserver.swift:65-68`); Codex: "whether to show on expiry is an owner value judgement; retaining the length and reporting unverified is consistent with confirmed D-e" |
+| 1 | P1 a Space change is structural | rejected, conceded in round 2: the signature's item lists already carry any roster difference |
+| 1 | accepted as proposed: the best-effort length (no new literal), structural versus soft, Show Ice icon off blocks, `test-t7.sh`'s block removed (the new contract pinned by unit tests) | -- |
+| 2 | P0 a permission-denied pass is not published, so the preconditions would not block | taken: the preconditions are evaluated on every completed pass, before the cache plan's branch |
+| 2 | P1 `lengthApplied` is false during a settle; offer the IceBar from `isIceBarOffered` | taken in part (`lengthSet` named beside `lengthApplied`); the rest rejected, conceded in round 3: a presented IceBar aborts the observation, and at standard length it would list on-bar items twice |
+| 3 | P1 a structural change does not retire the length | a wording gap, not the design: `quiet` and `blocked` are standard-length phases; said so |
+| 3 | P1 `blocked` has no exit | taken: preconditions ok -> `quiet` |
+| 3 | P1 `resolve` on every pass contradicts "advances only at standard length" | rejected, conceded in round 4: `resolve` freezes without a trusted boundary (`PreferenceHidingMembership.swift:130-142`) |
+| 4 | all three RESOLVED, no new P0/P1 | **CONVERGED** |
+
+P0/P1 per round: 4 (on the prompt alone), 2, 3, 0. Of twelve findings: five taken, two
+modified, four rejected with evidence and conceded, one a wording gap. For the owner,
+one value judgement Codex named and did not rule: when a re-check meets a baseline older
+than ten minutes, Ice keeps the items hidden and says "not verified" rather than put
+them back on the bar to re-baseline.
 
 ### T2a code review (/simcodex, 2026-10-08; 3 rounds, the stated cap)
 

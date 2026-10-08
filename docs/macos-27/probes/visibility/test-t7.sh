@@ -263,26 +263,10 @@ for json in "$(reply vz-t7-other2 '[1210,0,24,32]')" "$(reply vz-t7-hidden2 '"x"
     [[ $? == 2 ]]; expect "placement: unknown for ${json[1,50]}"
 done
 
-# What t7_summary reads is what Ice's sources write.
-ice27=$repo/Ice/MenuBar/IceBar27
-core=$repo/Packages/IceCore/Sources/IceCore
-for literal in 'IceBar hiding: ' 'IceBar trial: length ' 'IceBar baseline: ok ' ') coverage ' 'A fold appeared at rest' 'category: "IceBarHiding"'; do
-    grep -q -F -- $literal $ice27/IceBarHidingCoordinator.swift; expect "Ice still logs: $literal"
-done
-grep -q -F 'Press failed' "$ice27/MenuBarItemManager+IceBar27.swift" && grep -q -F 'category: "IceBarPress"' "$ice27/MenuBarItemManager+IceBar27.swift"
-expect "Ice still logs: Press failed"
-# Each enum's own declaration only: `Phase` has an `off` and a `shown` of its own.
-enum_has() { # <file> <enum> <case, as a regex>
-    awk -v start="enum $2[: ]" '$0 ~ start, /^}/' $1 | grep -q -E "^ +case $3( |\$)"
-}
-for name in checking active off 'shown[(]IceBarShownReason[)]'; do
-    enum_has $core/IceBarHidingMachine.swift IceBarHidingStatus $name; expect "IceBarHidingStatus still has: $name"
-done
-enum_has $core/IceBarHidingMachine.swift IceBarShownReason longMenu; expect "IceBarShownReason still has: longMenu"
-for name in hiddenClean folded drawn unknown; do
-    enum_has $core/HiddenLengthCalibrator.swift HiddenLengthOutcome $name; expect "HiddenLengthOutcome still has: $name"
-done
-! enum_has $core/IceBarHidingMachine.swift IceBarHidingStatus resting; expect "a case of another enum is not found"
+# The block that pinned t7_summary's grammar to Ice's sources went with T3b (plan
+# 2026-10-07-icebar-preference-hiding, S3 design): Ice no longer writes
+# `active`, `checking` or `shown(...)`, so T7's report cannot read a new Ice. The
+# new status line is pinned by IceCore's IceBarHidingStatusTests for S4's runner.
 
 # --- run-t7.sh --dry-run --------------------------------------------------------
 build_staging

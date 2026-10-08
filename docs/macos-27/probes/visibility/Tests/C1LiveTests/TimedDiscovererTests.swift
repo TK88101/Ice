@@ -38,7 +38,7 @@ struct TimedDiscovererTests {
 
     func fixtureResult() -> DiscoveryResult {
         let set = DiscoveredItemSet(items: [], visibleControlItem: nil, hiddenDivider: nil, alwaysHiddenDivider: nil, ownRead: .ok, systemElements: [], dropped: [], completeness: .complete)
-        return DiscoveryResult(set: set, duration: 0, origin: DiscoveryOrigin(x: 0, y: 0), bounds: bounds, nextCursor: 0, quarantined: [], enumeratedPIDs: [])
+        return DiscoveryResult(set: set, duration: 0, origin: DiscoveryOrigin(x: 0, y: 0), bounds: bounds, nextCursor: 0, quarantined: [], enumeratedPIDs: [], childIdentifiersByPID: [:])
     }
 
     @Test("a fast discovery pass is passed through unchanged, and onLate never fires")

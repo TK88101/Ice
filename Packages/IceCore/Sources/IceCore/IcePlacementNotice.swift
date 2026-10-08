@@ -17,27 +17,34 @@ public enum IcePlacementNotice: Equatable, Sendable {
         }
     }
 
-    /// Where Ice holds its icon to be after a discovery pass. Only a pass whose
-    /// hidden boundary is trusted may say: the divider read at standard
-    /// length, settled (`DiscoveredCachePlan` placed the sections by it). At a
-    /// hiding length the divider's left edge is far left of where it draws
-    /// the boundary, so the icon reads right of it, or the divider unusable,
-    /// wherever the icon is; what Ice held from the last trusted pass stands.
+    /// Where Ice holds its icon to be after a discovery pass. Only a pass
+    /// taken with the hidden divider at standard length may say which side
+    /// of it the icon is on, or that the divider cannot be used: at a hiding
+    /// length the divider's left edge is far left of where it draws the
+    /// boundary, off the bar, so there the icon always reads right of it or
+    /// the divider unusable, wherever either is; what Ice held stands. One
+    /// reading counts at any length: an icon that is not on the bar (carried
+    /// off with the section, or not shown at all) is unreadable at once
+    /// (plan 2026-10-07-icebar-preference-hiding, T3b design G3).
     /// - Parameters:
     ///   - held: the placement after the previous pass; `nil` is "right of
     ///     the divider", also before any pass.
     ///   - read: `PreferenceHidingPreconditions.iconPlacement` for this pass.
+    ///   - dividerAtStandardLength: `DividerState.isAtStandardLength` for the
+    ///     hidden divider: Ice's own state, not whether the reading was
+    ///     usable, so an unusable divider at standard length is read as such.
     public static func placement(
         held: PreferenceHidingIconPlacement?,
         read: PreferenceHidingIconPlacement?,
-        hiddenBoundaryTrusted: Bool
+        dividerAtStandardLength: Bool
     ) -> PreferenceHidingIconPlacement? {
-        hiddenBoundaryTrusted ? read : held
+        if dividerAtStandardLength || read == .iconUnreadable { return read }
+        return held
     }
 
     /// The notice owed for the placement Ice holds, or `nil`.
     /// - Parameters:
-    ///   - placement: `placement(held:read:hiddenBoundaryTrusted:)`; `nil` is
+    ///   - placement: `placement(held:read:dividerAtStandardLength:)`; `nil` is
     ///     "right of the divider". An icon or a divider that could not be
     ///     read is not an inversion Ice saw, and is not reported as one.
     ///   - isIceBarMode: outside it the divider hides nothing by its place

@@ -40,6 +40,31 @@ struct MenuBarDiscovererTests {
         #expect(result.set.items.map(\.process.pid) == [200])
     }
 
+    @Test("T3b G2: the pass carries each read process's children for the press rule; a failed read's pid is absent")
+    func childIdentifiersByPID() async throws {
+        let reading = testProcess(pid: 200)
+        let failing = testProcess(pid: 300)
+        let records = [
+            extrasRecord(childIndex: 0, identifier: "vz-a", minX: 100),
+            extrasRecord(childIndex: 1, identifier: "group", minX: 130, role: "AXGroup"),
+        ]
+        let reader = FakeExtrasReader { process, _ in
+            guard process.pid == reading.pid else {
+                return RawRead(process: process, extrasError: "failure", extrasElapsed: 0.01, childrenError: nil, childrenElapsed: nil, records: [], walkInterrupted: false, childCount: 0)
+            }
+            return rawRead(process: process, records: records)
+        }
+        let discoverer = MenuBarDiscoverer(
+            apps: FakeRunningApps(allProcesses: [reading, failing], agent: nil), reader: reader,
+            display: FakeDisplay(result: (testBounds, DiscoveryOrigin(x: 0, y: 0))),
+            isTrusted: { true }, ownIdentifiers: testOwnIdentifiers, now: { 0 }
+        )
+
+        let result = try #require(await discoverer.discover(previous: nil))
+
+        #expect(result.childIdentifiersByPID == [200: ["vz-a", nil]])
+    }
+
     @Test("c1: two concurrent passes never overlap inside the reader -- the discoverer owns one serial queue (hardening plan H4)")
     func concurrentPassesNeverOverlap() async {
         let processes = (0..<3).map { testProcess(pid: Int32(300 + $0)) }
