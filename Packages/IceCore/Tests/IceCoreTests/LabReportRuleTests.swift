@@ -95,10 +95,4 @@ struct LabReportRuleTests {
         // Not offered speaks first: without an IceBar there are no cells to press.
         #expect(target("missing", offered: false) == .refused(.notOffered))
     }
-
-    @Test("the IceBar opens only when it is offered")
-    func barAnswer() {
-        #expect(LabReportRule.mayOpenBar(isIceBarOffered: true))
-        #expect(!LabReportRule.mayOpenBar(isIceBarOffered: false))
-    }
 }

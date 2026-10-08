@@ -63,7 +63,13 @@ final class MenuBarItemManager: ObservableObject {
 
     /// IceBar's roster and preconditions on macOS 27 in IceBar mode, updated
     /// by every completed discovery pass (T3b design); empty otherwise.
-    @Published var iceBarRoster = IceBarRoster()
+    @Published var iceBarRoster = IceBarRoster() {
+        didSet {
+            if #available(macOS 27, *) {
+                LabReport.recordRoster(from: oldValue, to: iceBarRoster)
+            }
+        }
+    }
 
     /// IceBar on macOS 27: items whose press failed, shown disabled in the
     /// IceBar, and items whose press has not returned yet (plan 9.5).

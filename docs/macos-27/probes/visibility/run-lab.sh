@@ -154,6 +154,9 @@ ref_fds=()
 ref_ids=()
 menus_pid=
 menus_fd=
+# Every helper this run started, from the moment it starts: the cleanup quits
+# them all, also one that was starting when a signal came.
+spawned_pids=()
 terminal_pid=
 watchdog_pid=
 caffeinate_pid=
@@ -238,6 +241,9 @@ cleanup() {
     quit_members
     quit_references
     quit_menus
+    # Every helper this run started, also one a signal caught while it started:
+    # given a moment to end, then terminated.
+    quit_pids $spawned_pids
     delete_domains || { domains=FAILED; code=1; }
     rm -rf -- $stage
     [[ -n $caffeinate_pid ]] && kill $caffeinate_pid 2>/dev/null
@@ -298,6 +304,7 @@ start_helper() { # <app> <log> <vzhelper arguments...>
     mkfifo $fifo || return 1
     $apps/$app/Contents/MacOS/vzhelper --controller $$ "$@" --lifetime $HELPER_LIFETIME < $fifo > $log 2>&1 &
     REPLY_PID=$!
+    spawned_pids+=($REPLY_PID)
     exec {fd}> $fifo
     rm -f $fifo
     REPLY_FD=$fd
@@ -382,13 +389,7 @@ start_ice() { # <app> <executable> <bundle id> <report file> <always-hidden true
     rm -f $fifo
     ice_fd=$fd
     note "Ice $id started, pid $ice_pid"
-    local tries=$(( START_LIMIT * 5 ))
-    while (( tries-- > 0 )); do
-        kill -0 $ice_pid 2>/dev/null || return 1
-        lab await $report started >/dev/null && return 0
-        sleep 0.2
-    done
-    return 1
+    lab wait $report $START_LIMIT $ice_pid started >/dev/null
 }
 
 send_ice() { [[ -n $ice_fd ]] && print -u $ice_fd -- "$*"; }
@@ -397,8 +398,11 @@ send_ice() { [[ -n $ice_fd ]] && print -u $ice_fd -- "$*"; }
 
 dir=
 report=
+# The report's last complete line's seq: its line number (lab-tool.py's judge
+# refuses a report where they differ).
+seq_now() { [[ -f $report ]] && print $(( $(wc -l < $report) )) || print 0; }
 mark() { # <step> [raw JSON fields]
-    local seq=$(lab seq $report 2>/dev/null)
+    local seq=$(seq_now)
     print -r -- "{\"step\":\"$1\",\"seq\":${seq:-0},\"t\":$EPOCHREALTIME${2:+,$2}}" >> $dir/steps.jsonl
 }
 abort_run() { # <why>
@@ -407,19 +411,20 @@ abort_run() { # <why>
     return 1
 }
 
-# Waits for a predicate on the current report; 3 (damaged) aborts the run.
+# Waits for a predicate on the current report, in one lab-tool.py process
+# that reads only what was appended (D5); a damaged report or Ice ending
+# aborts the run.
 await() { # <seconds> <predicate> [args...]
-    local deadline=$(( EPOCHREALTIME + $1 * TIME_SCALE )) code
+    local seconds=$(( $1 * TIME_SCALE )) code
     shift
-    while (( EPOCHREALTIME < deadline )); do
-        lab await $report "$@" >/dev/null
-        code=$?
-        (( code == 0 )) && return 0
-        (( code == 3 )) && { abort_run "the report is damaged"; return 3; }
-        kill -0 $ice_pid 2>/dev/null || { abort_run "Ice ended"; return 3; }
-        sleep 0.5
-    done
-    return 1
+    lab wait $report $seconds ${ice_pid:-0} "$@" >/dev/null
+    code=$?
+    case $code in
+        0) return 0 ;;
+        3) abort_run "the report is damaged"; return 3 ;;
+        4) abort_run "Ice ended"; return 3 ;;
+        *) return 1 ;;
+    esac
 }
 
 chevron() { # prints true, false or null
@@ -516,10 +521,10 @@ s_addremove() {
     expected addremove "${(j:,:)members}" "\"added\":\"$third\""
     mark added
     start_member $dir $third $glyphs[3] || { abort_run "the third member did not start"; return 1; }
-    local since=$(lab seq $report)
+    local since=$(seq_now)
     await $STATUS_LIMIT length-null $since && hide $since || return
     mark removed
-    since=$(lab seq $report)
+    since=$(seq_now)
     local fd=$helper_fds[2]
     exec {fd}>&-
     quit_pids $helper_pids[2]
@@ -531,7 +536,7 @@ s_crowded() {
     start_menus $dir 0 || { abort_run "the menus helper did not start"; return 1; }
     bring_forward $menus_pid || { abort_run "the menus helper could not be brought forward"; return 1; }
     begin $round crowded 2 || return
-    since=$(lab seq $report)
+    since=$(seq_now)
     for n in {0..40}; do
         print -u $menus_fd -- "menus $n"
         nap 2.5
@@ -579,10 +584,10 @@ front() { # <round> <scenario> <menus>
     begin $1 $2 1 && hide || return
     local since
     start_menus $dir $3 || { abort_run "the menus helper did not start"; return 1; }
-    since=$(lab seq $report)
+    since=$(seq_now)
     if bring_forward $menus_pid; then mark front '"ok":true'; else mark front '"ok":false'; return; fi
     [[ $2 == front-short ]] && hide $since || nap 20
-    since=$(lab seq $report)
+    since=$(seq_now)
     if bring_forward $terminal_pid; then mark back '"ok":true'; else mark back '"ok":false'; return; fi
     [[ $2 == front-short ]] && hide $since || nap 20
 }
@@ -621,7 +626,7 @@ s_positional() {
     nap 1
     frames=$(selfread_frames $dir/helper-$id.log $helper_fds[1] $id)
     mark frames "\"when\":\"before\",\"frames\":$frames"
-    since=$(lab seq $report)
+    since=$(seq_now)
     await 60 blockers $since 2
     send_ice bar open
     nap 20

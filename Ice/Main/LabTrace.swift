@@ -17,13 +17,9 @@ import MenuBarDiscovery
 enum LabTrace {
     /// Decided once, from the launch arguments only, never a stored default.
     static let launch: LabTraceLaunch = {
-        let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-        func value(_ name: String) -> String? {
-            arguments[name].map { $0 as? String ?? String(describing: $0) }
-        }
-        return LabTraceRule.launch(
-            trace: value(LabTraceRule.traceArgument),
-            alwaysHidden: value(LabTraceRule.alwaysHiddenArgument),
+        LabTraceRule.launch(
+            trace: LabReport.launchArgument(LabTraceRule.traceArgument),
+            alwaysHidden: LabReport.launchArgument(LabTraceRule.alwaysHiddenArgument),
             bundleID: Bundle.main.bundleIdentifier
         )
     }()

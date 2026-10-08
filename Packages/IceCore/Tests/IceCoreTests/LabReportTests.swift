@@ -124,6 +124,15 @@ struct LabReportTests {
         #expect(VerificationSummary.name(of: .skipped(.noReference)) == "skipped:noReference")
     }
 
+    @Test("a member keeps its name while it goes stale: its key, else the key it was last read with, else its tag")
+    func memberNames() {
+        let tag = TagKey(namespace: "com.icespike4.target", title: "a title")
+        #expect(LabReportItem(member: PreferenceHidingMember(tag: tag, key: memberKey, condition: .ready), lastKey: nil) == LabReportItem(memberKey))
+        let missing = PreferenceHidingMember(tag: tag, key: nil, condition: .stale(.missingFromRead))
+        #expect(LabReportItem(member: missing, lastKey: memberKey) == LabReportItem(memberKey))
+        #expect(LabReportItem(member: missing, lastKey: nil) == LabReportItem(namespace: "com.icespike4.target", identifier: "a title"))
+    }
+
     @Test("completeness, by name")
     func completenessNames() {
         #expect(LabReportNames.completeness(.complete) == "complete")

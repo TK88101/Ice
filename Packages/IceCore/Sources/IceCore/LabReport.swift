@@ -77,6 +77,14 @@ public struct LabReportItem: Equatable, Sendable {
         self.init(namespace: key.namespace, identifier: key.identifier)
     }
 
+    /// A roster member: by the key it was read with, else (the read no
+    /// longer has it) by the key it was last read with, else by its tag. The
+    /// roster event and the snapshot both name members this way, so a member
+    /// keeps its name while it goes stale and until it is dropped.
+    public init(member: PreferenceHidingMember, lastKey: ItemKey?) {
+        self.init(namespace: member.tag.namespace, identifier: (member.key ?? lastKey)?.identifier ?? member.tag.title)
+    }
+
     var json: LabJSON {
         .object(["namespace": .string(namespace), "identifier": .string(identifier)])
     }

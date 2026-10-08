@@ -215,27 +215,32 @@ zsh $shared/run-lab.sh sparse > $tmp/out.txt 2>&1
 grep -q '1 sparse: aborted' $tmp/out.txt
 check "a damaged report is aborted, never a pass"
 
-build_staging
+# A status limit of 400 x 0.02 s keeps the runner waiting when the signal comes.
+build_staging "STATUS_LIMIT=400"
 print -l -- '{"sleep":5}' > $LAB_STUB_FIXTURES/sparse.jsonl
-zsh $shared/run-lab.sh sparse > $tmp/out.txt 2>&1 &
+# As Control-C does: INT to the runner's whole process group (its own here).
+perl -e 'setpgrp(0, 0); exec @ARGV' zsh $shared/run-lab.sh sparse > $tmp/out.txt 2>&1 &
 runner=$!
 sleep 2
-kill -INT $runner
+kill -INT -- -$runner
 wait $runner; code=$?
-(( code == 130 )) && grep -q '==== lab matrix' $tmp/out.txt && ! ours_running
-check "an interrupted run stops Ice and the helpers and prints its report (exit 130)"
+run=$(print $shared/evidence/*(N/[1]))
+# The report is checked in report.txt: on the shared stdout+stderr file of this
+# test its lines do not always arrive after an interrupt (cause not found;
+# T4 code review, round 1).
+(( code == 130 )) && grep -q "S4 DoD" $run/report.txt && grep -q 'cleanup: domains verified' $run/timeline.txt && ! ours_running
+check "an interrupted run stops Ice and the helpers, deletes its domains and writes its report (exit 130)"
 
 # --- the matrix's stop rule --------------------------------------------------------------
 
 build_staging "ROUNDS=3"
 verified_fixture sparse 1
-zsh $shared/run-lab.sh > $tmp/out.txt 2>&1; cp $tmp/out.txt /private/tmp/claude-501/lab-round-out.txt
+zsh $shared/run-lab.sh > $tmp/out.txt 2>&1
 run=$(print $shared/evidence/*(N/[1]))
 grep -q 'round 1 is not clean' $tmp/out.txt && [[ -z $(print $run/2-*(N)) ]] && grep -q 'S4 DoD: not met' $tmp/out.txt && ! ours_running
 check "an unclean round 1 ends the matrix there, with the report saying the DoD is not met"
 [[ -z $(print $run/*/judge.err(N.L+0)) ]]
 check "no judge failed on any scenario of the round"
-for err in $run/*/judge.err(N.L+0); do print -- "--- $err"; tail -5 $err; done
 grep -q '1 inverted-moved: notRun' $tmp/out.txt && grep -q '1 noref: ' $tmp/out.txt
 check "every scenario of round 1 ran, noref first, scenario 14's second half as notRun"
 

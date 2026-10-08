@@ -152,10 +152,7 @@ final class IceBarHidingCoordinator {
         }
         switch command {
         case .setLength(let length):
-            // The length itself, except in a lab report launch that holds lengths (S4 design D1).
-            let outcome = LabReportRule.appliedLength(length, plan: LabReport.plan)
-            appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = outcome.applied.map { CGFloat($0) }
-            LabReport.record(.length(outcome, decided: length))
+            appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = LabReport.applied(length).map { CGFloat($0) }
         case .takeBaseline(let token, let members, let ready):
             takeBaseline(token: token, members: members, ready: ready)
         case .observe(let token, let length):

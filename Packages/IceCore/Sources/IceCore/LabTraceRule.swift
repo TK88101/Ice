@@ -120,32 +120,17 @@ public enum LabTraceRule {
     ///   - bundleID: the running bundle's identifier.
     public static func launch(trace: String?, alwaysHidden: String?, bundleID: String?) -> LabTraceLaunch {
         guard let trace else { return .normal }
-        guard let isOn = flag(trace) else {
+        guard let isOn = LabLaunchArguments.flag(trace) else {
             return .refused(.badArgument(name: traceArgument, value: trace))
         }
         guard isOn else { return .normal }
-        guard let bundleID, isLabIdentity(bundleID) else {
+        guard let bundleID, LabLaunchArguments.isLabIdentity(bundleID, prefix: labBundleIDPrefix) else {
             return .refused(.notLabIdentity(bundleID))
         }
         let alwaysHiddenValue = alwaysHidden ?? "NO"
-        guard let alwaysHiddenSection = flag(alwaysHiddenValue) else {
+        guard let alwaysHiddenSection = LabLaunchArguments.flag(alwaysHiddenValue) else {
             return .refused(.badArgument(name: alwaysHiddenArgument, value: alwaysHiddenValue))
         }
         return .trace(LabTracePlan(alwaysHiddenSection: alwaysHiddenSection))
-    }
-
-    /// A prefix and at least one character after it.
-    private static func isLabIdentity(_ bundleID: String) -> Bool {
-        bundleID.hasPrefix(labBundleIDPrefix) && bundleID.count > labBundleIDPrefix.count
-    }
-
-    /// Exactly `YES` or `NO`, as `defaults` writes them; anything else is not
-    /// guessed at.
-    private static func flag(_ value: String) -> Bool? {
-        switch value {
-        case "YES": true
-        case "NO": false
-        default: nil
-        }
     }
 }

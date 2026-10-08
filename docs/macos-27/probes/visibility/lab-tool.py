@@ -11,8 +11,9 @@ A scenario run's directory holds:
   expected.json                    {"scenario", "members": [...], "blockers": [...], "added"?}
 
   lab-tool.py check <report>                       exit 0 complete, 3 damaged (Ice stopped)
-  lab-tool.py seq <report>                         the last complete line's seq (0 if none)
   lab-tool.py await <report> <predicate> [args]    exit 0 holds now, 1 not yet, 3 damaged
+  lab-tool.py wait <report> <seconds> <pid> <predicate> [args]
+                                                   waits in this one process: exit 0 held, 1 timed out, 3 damaged, 4 the pid ended
   lab-tool.py bracket <report>                     the latest snapshot's member frames and conditions
   lab-tool.py selfread-frames <line> <identifier>  a helper's items' frames, as JSON
   lab-tool.py judge <run directory>                the verdict, as JSON; exit 0 pass, 1 otherwise
@@ -23,6 +24,7 @@ A scenario run's directory holds:
 import json
 import os
 import sys
+import time
 
 MARKER = "IceLabReport-start-v1"
 TARGET = "com.icespike4.target"
@@ -38,32 +40,39 @@ SNAPSHOT_KEYS = [
 # The matrix, in the order a round runs it (D2: `noref` before the references
 # start). kind: what the run must end as. `inverted-moved` is not run (D4).
 SCENARIOS = {
-    "noref": {"kind": "unverified", "members": 1},
-    "sparse": {"kind": "verified", "members": 1},
-    "k2": {"kind": "verified", "members": 2},
-    "k4": {"kind": "verified", "members": 4},
-    "k8": {"kind": "verified", "members": 8},
-    "press": {"kind": "verified", "members": 2},
-    "addremove": {"kind": "verified", "members": 2},
-    "crowded": {"kind": "unverified", "members": 2},
-    "fresh-off": {"kind": "verified", "members": 2},
-    "fresh-on": {"kind": "verified", "members": 2, "clauses": ["t2d"]},
-    "placed-off": {"kind": "verified", "members": 2},
-    "placed-on": {"kind": "verified", "members": 2, "clauses": ["t2d"]},
-    "front-short": {"kind": "verified", "members": 1},
-    "front-long": {"kind": "bestEffort", "members": 1},
-    "relaunch": {"kind": "verified", "members": 2},
-    "positional": {"kind": "blocked", "members": 0},
-    "inverted": {"kind": "blocked", "members": 1},
-    "drawn": {"kind": "failed", "members": 1},
-    "incomplete": {"kind": "blocked", "members": 1},
-    "inverted-moved": {"kind": "notRun", "members": 0},
+    "noref": {"kind": "unverified"},
+    "sparse": {"kind": "verified"},
+    "k2": {"kind": "verified"},
+    "k4": {"kind": "verified"},
+    "k8": {"kind": "verified"},
+    "press": {"kind": "verified"},
+    "addremove": {"kind": "verified"},
+    "crowded": {"kind": "unverified"},
+    "fresh-off": {"kind": "verified"},
+    "fresh-on": {"kind": "verified", "clauses": ["t2d"]},
+    "placed-off": {"kind": "verified"},
+    "placed-on": {"kind": "verified", "clauses": ["t2d"]},
+    "front-short": {"kind": "verified"},
+    "front-long": {"kind": "bestEffort"},
+    "relaunch": {"kind": "verified"},
+    "positional": {"kind": "blocked"},
+    "inverted": {"kind": "blocked"},
+    "drawn": {"kind": "failed"},
+    "incomplete": {"kind": "blocked"},
+    "inverted-moved": {"kind": "notRun"},
 }
 ORDER = list(SCENARIOS)
 # Judged and reported every round, never a reason by itself to stop the rounds (D4).
 KNOWN_OPEN = {"t2d"}
 ROUNDS = 3
-TWO_STARTS = {"placed-off", "placed-on", "relaunch"}
+# Whose last status is not their kind (Codex, T4 code review round 1):
+# `incomplete` must leave `blocked` once the stall ends; `drawn` re-cycles up
+# to three times, so a run may end in the middle of a cycle.
+ENDS_ELSEWHERE = {"incomplete", "drawn"}
+# Exempt from the `«`-at-start setup clause (S4 design, corrected while
+# building): `crowded` sets up the `«` itself; the two blocked ones are judged
+# on no check.
+NO_CHECK_AT_START = {"crowded", "positional", "inverted"}
 
 
 class Damaged(Exception):
@@ -85,8 +94,21 @@ def load_report(path, final=True):
     trailing = pieces.pop()
     if trailing and final:
         raise Damaged("the report's last line is unfinished")
+    events = parse_lines(pieces, first_seq=1)
+    if final and not events:
+        raise Damaged("the report is empty")
+    check_start(events)
+    return events
+
+
+SNAPSHOT_LINE_KEYS = set(SNAPSHOT_KEYS) | {"event", "seq", "t"}
+
+
+def parse_lines(pieces, first_seq):
+    """Complete lines, numbered from `first_seq`: each must be an event whose
+    `seq` is its line number, a snapshot with exactly the pinned keys."""
     events = []
-    for number, piece in enumerate(pieces, start=1):
+    for number, piece in enumerate(pieces, start=first_seq):
         try:
             event = json.loads(piece.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
@@ -95,16 +117,17 @@ def load_report(path, final=True):
             raise Damaged(f"line {number} is not an event")
         if event.get("seq") != number:
             raise Damaged(f"line {number} carries seq {event.get('seq')!r}")
-        if event["event"] == "snapshot" and set(event) != set(SNAPSHOT_KEYS) | {"event", "seq", "t"}:
+        if event["event"] == "snapshot" and set(event) != SNAPSHOT_LINE_KEYS:
             raise Damaged(f"snapshot {number} has other keys than the pinned ones")
+        if event["event"] == "start" and number != 1:
+            raise Damaged("a second start line")
         events.append(event)
-    if final and not events:
-        raise Damaged("the report is empty")
+    return events
+
+
+def check_start(events):
     if events and (events[0]["event"] != "start" or events[0].get("marker") != MARKER):
         raise Damaged("the report does not begin with Ice's start line")
-    if any(event["event"] == "start" for event in events[1:]):
-        raise Damaged("a second start line")
-    return events
 
 
 def load_steps(path):
@@ -210,15 +233,10 @@ def predicate_holds(events, name, args):
         return bool(events)
     if name == "status":  # <since> <prefix>
         return first_status(events, args[1], since) is not None
-    if name == "status-with":  # <since> <prefix> <needle>
-        return any(e["status"].startswith(args[1]) and args[2] in e["status"] for e in statuses(events, since))
     if name == "verified":  # <since>
         return first_status(events, "verified", since) is not None
     if name == "rest":
         return bool(latest and latest["lengthApplied"])
-    if name == "roster":  # <since> <id,id,...>
-        wanted = sorted(filter(None, args[1].split(","))) if len(args) > 1 else []
-        return bool(latest and latest["seq"] > since and ids(latest["roster"]) == wanted)
     if name == "blockers":  # <since> <count>
         return bool(latest and latest["seq"] > since and len(latest["blockers"]) == int(args[1]))
     if name == "length-null":  # <since>
@@ -234,8 +252,6 @@ def predicate_holds(events, name, args):
         )
     if name == "divider-unusable":
         return bool(latest and "dividerUnusable" in latest["status"])
-    if name == "event":  # <since> <event name>
-        return any(event["event"] == args[1] for event in events if event["seq"] > since)
     raise SystemExit(f"lab-tool: unknown predicate {name}")
 
 
@@ -351,8 +367,7 @@ def first_length_seq(events):
     return found[0]["seq"] if found else None
 
 
-def standard_setup(verdict, events, expected, steps):
-    chevron_at_start(verdict, steps)
+def standard_setup(verdict, events, expected):
     length_seq = first_length_seq(events)
     if length_seq is None:
         verdict.fail("no length was applied")
@@ -361,13 +376,13 @@ def standard_setup(verdict, events, expected, steps):
 
 def judge_sparse(verdict, run):
     events = run.report(1)
-    standard_setup(verdict, events, run.expected, run.steps)
+    standard_setup(verdict, events, run.expected)
     verified_rest(verdict, events, run.expected["members"])
 
 
 def judge_press(verdict, run):
     events = run.report(1)
-    standard_setup(verdict, events, run.expected, run.steps)
+    standard_setup(verdict, events, run.expected)
     if verified_rest(verdict, events, run.expected["members"]) is None:
         return
     opened = [event for event in of(events, "bar") if event["action"] == "open"]
@@ -389,7 +404,7 @@ def judge_press(verdict, run):
 
 def judge_addremove(verdict, run):
     events, steps = run.report(1), run.steps
-    standard_setup(verdict, events, run.expected, steps)
+    standard_setup(verdict, events, run.expected)
     if len(run.expected["members"]) != 2 or "added" not in run.expected:
         verdict.fail("the runner did not reach the add and the removal")
         return
@@ -418,7 +433,7 @@ def judge_addremove(verdict, run):
 
 def judge_noref(verdict, run):
     events = run.report(1)
-    standard_setup(verdict, events, run.expected, run.steps)
+    standard_setup(verdict, events, run.expected)
     if first_status(events, "verified"):
         verdict.fail("verified without a reference")
     status = next((e for e in statuses(events) if e["status"].startswith("notVerified(") and "noReference" in e["status"]), None)
@@ -458,7 +473,7 @@ def judge_crowded(verdict, run):
 
 def judge_fresh(verdict, run, report_number=1):
     events = run.report(report_number)
-    _, length_seq = standard_setup(verdict, events, run.expected, run.steps)
+    _, length_seq = standard_setup(verdict, events, run.expected)
     if length_seq is None:
         return
     standard = [e for e in snapshots(events) if e["seq"] < length_seq and e["hiddenBoundaryUsable"] and not e["lengthSet"] and e["roster"]]
@@ -484,7 +499,7 @@ def judge_placed(verdict, run):
 
 def judge_front(verdict, run, long_menus):
     events, steps = run.report(1), run.steps
-    standard_setup(verdict, events, run.expected, steps)
+    standard_setup(verdict, events, run.expected)
     verified = verified_rest(verdict, events, run.expected["members"])
     if verified is None:
         return
@@ -514,7 +529,7 @@ def judge_front(verdict, run, long_menus):
 
 def judge_relaunch(verdict, run):
     first = run.report(1)
-    standard_setup(verdict, first, run.expected, run.steps)
+    standard_setup(verdict, first, run.expected)
     verified_rest(verdict, first, run.expected["members"])
     if not os.path.exists(run.path("report-2.jsonl")):
         verdict.fail("no second start")
@@ -560,7 +575,6 @@ def judge_drawn(verdict, run):
     events = run.report(1)
     if not events[0].get("holdLength"):
         verdict.not_established("the report does not hold lengths")
-    chevron_at_start(verdict, run.steps)
     if first_status(events, "verified"):
         verdict.fail("verified while lengths were held")
     if first_status(events, "failed(drawn:") is None:
@@ -599,6 +613,62 @@ JUDGES = {
 }
 
 
+class ReportReader:
+    """`load_report(final=False)` for a report that grows: only the complete
+    lines added since the last read are parsed (the runner's waits)."""
+
+    def __init__(self, path):
+        self.path = path
+        self.offset = 0
+        self.events = []
+
+    def read(self):
+        try:
+            with open(self.path, "rb") as handle:
+                handle.seek(self.offset)
+                data = handle.read()
+        except FileNotFoundError:
+            return self.events
+        end = data.rfind(b"\n") + 1
+        if end:
+            chunk = data[:end]
+            self.offset += end
+            self.events.extend(parse_lines(chunk.split(b"\n")[:-1], first_seq=len(self.events) + 1))
+            check_start(self.events)
+        return self.events
+
+
+def wait(path, seconds, pid, name, args, interval=0.5, clock=time.monotonic, sleep=time.sleep, alive=None):
+    """Waits for a predicate in one process (D5): 0 held, 1 timed out, 3 a
+    damaged report, 4 the pid ended first."""
+    alive = alive or process_alive
+    reader = ReportReader(path)
+    deadline = clock() + seconds
+    while True:
+        try:
+            if predicate_holds(reader.read(), name, args):
+                return 0
+        except Damaged:
+            return 3
+        if not alive(pid):
+            return 4
+        if clock() >= deadline:
+            return 1
+        sleep(interval)
+
+
+def process_alive(pid):
+    if pid <= 0:  # no process to watch (os.kill would signal a process group)
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 class Run:
     def __init__(self, directory):
         self.directory = directory
@@ -633,10 +703,16 @@ def judge(directory):
         events = run.report(1)
         if run.scenario != "drawn" and (events[0].get("holdLength") or any(e.get("held") for e in of(events, "length"))):
             verdict.fail("lengths were held in a scenario that must apply them")
+        if run.scenario not in NO_CHECK_AT_START:
+            chevron_at_start(verdict, run.steps)
         JUDGES[run.scenario](verdict, run)
         if verdict.kind is None:
-            last = run.report(2) if run.scenario in TWO_STARTS and os.path.exists(run.path("report-2.jsonl")) else events
+            last = run.report(2) if os.path.exists(run.path("report-2.jsonl")) else events
             verdict.kind = kind_of(last)
+        wanted = SCENARIOS[run.scenario]["kind"]
+        accepted = {"bestEffort": {"verified", "unverified"}}.get(wanted, {wanted})
+        if run.scenario not in ENDS_ELSEWHERE and verdict.kind not in accepted:
+            verdict.fail(f"ended {verdict.kind}, expected {wanted}")
     except Damaged as error:
         verdict.result = "aborted"
         verdict.reasons.append(str(error))
@@ -726,13 +802,8 @@ def main(argv):
             print(error)
             return 3
         return 0
-    if command == "seq":
-        try:
-            events = load_report(rest[0], final=False)
-        except Damaged:
-            events = []
-        print(events[-1]["seq"] if events else 0)
-        return 0
+    if command == "wait":
+        return wait(rest[0], float(rest[1]), int(rest[2]), rest[3], rest[4:])
     if command == "await":
         try:
             events = load_report(rest[0], final=False)

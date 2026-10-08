@@ -103,15 +103,15 @@ public enum LabReportRule {
     ///   - bundleID: the running bundle's identifier.
     public static func launch(report: String?, holdLength: String?, bundleID: String?) -> LabReportLaunch {
         guard let report else { return .normal }
-        guard let isOn = flag(report) else {
+        guard let isOn = LabLaunchArguments.flag(report) else {
             return .refused(.badArgument(name: reportArgument, value: report))
         }
         guard isOn else { return .normal }
-        guard let bundleID, isLabIdentity(bundleID) else {
+        guard let bundleID, LabLaunchArguments.isLabIdentity(bundleID, prefix: labBundleIDPrefix) else {
             return .refused(.notLabIdentity(bundleID))
         }
         let holdLengthValue = holdLength ?? "NO"
-        guard let holds = flag(holdLengthValue) else {
+        guard let holds = LabLaunchArguments.flag(holdLengthValue) else {
             return .refused(.badArgument(name: holdLengthArgument, value: holdLengthValue))
         }
         return .report(LabReportPlan(holdLength: holds))
@@ -128,12 +128,6 @@ public enum LabReportRule {
         return LabReportLength(applied: nil, held: true)
     }
 
-    /// The icon's click shows the IceBar only while it is offered
-    /// (`MenuBarSection.show`'s guard on macOS 27).
-    public static func mayOpenBar(isIceBarOffered: Bool) -> Bool {
-        isIceBarOffered
-    }
-
     /// The one cell a press is for: as a click, it needs an offered IceBar
     /// and a cell that takes clicks.
     public static func pressTarget(
@@ -148,14 +142,20 @@ public enum LabReportRule {
         guard matches.count == 1 else { return .refused(.ambiguous) }
         return cells[index].disabled ? .refused(.disabled) : .cell(index)
     }
+}
 
+/// How the lab modes read their launch arguments (`LabTraceRule`,
+/// `LabReportRule`): one place for the gate that keeps either mode off a
+/// real identity.
+enum LabLaunchArguments {
     /// A prefix and at least one character after it.
-    private static func isLabIdentity(_ bundleID: String) -> Bool {
-        bundleID.hasPrefix(labBundleIDPrefix) && bundleID.count > labBundleIDPrefix.count
+    static func isLabIdentity(_ bundleID: String, prefix: String) -> Bool {
+        bundleID.hasPrefix(prefix) && bundleID.count > prefix.count
     }
 
-    /// Exactly `YES` or `NO`, as `defaults` writes them.
-    private static func flag(_ value: String) -> Bool? {
+    /// Exactly `YES` or `NO`, as `defaults` writes them; anything else is not
+    /// guessed at.
+    static func flag(_ value: String) -> Bool? {
         switch value {
         case "YES": true
         case "NO": false

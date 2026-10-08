@@ -163,8 +163,6 @@ class LabToolTests(unittest.TestCase):
         path = self.write(report.text())
         events = lab.load_report(path, final=False)
         self.assertTrue(lab.predicate_holds(events, "stacked", []))
-        self.assertTrue(lab.predicate_holds(events, "roster", ["0", "a"]))
-        self.assertFalse(lab.predicate_holds(events, "roster", ["0", "a,b"]))
         self.assertFalse(lab.predicate_holds(events, "rest", []))
         self.assertFalse(lab.predicate_holds(events, "verified", ["0"]))
         report.length(736)
@@ -174,16 +172,42 @@ class LabToolTests(unittest.TestCase):
         self.assertFalse(lab.predicate_holds(events, "verified", [str(len(report.lines))]))
         self.assertTrue(lab.predicate_holds(events, "any-length", ["0"]))
 
-    def test_status_with_and_selfread_frames(self):
-        report = Report()
-        report.status("notVerified(noReference,unchecked:1)")
-        events = lab.load_report(self.write(report.text()), final=False)
-        self.assertTrue(lab.predicate_holds(events, "status-with", ["0", "notVerified(", "noReference"]))
-        self.assertFalse(lab.predicate_holds(events, "status-with", ["0", "notVerified(", "stacked:"]))
+    def test_selfread_frames(self):
         line = 'selfread {"children":[{"identifier":"p","frame":[900,4,14,22]},{"identifier":"q","frame":[1,2,3,4]},{"identifier":"p","frame":[930,4,14,22]}]}'
         self.assertEqual(lab.selfread_frames(line, "p"), [[900, 4, 14, 22], [930, 4, 14, 22]])
         self.assertEqual(lab.selfread_frames("selfread nope", "p"), [])
         self.assertEqual(lab.selfread_frames('frames {"items":[]}', "p"), [])
+
+    def test_wait_reads_a_growing_report_in_one_process(self):
+        path = os.path.join(self.root, "grow.jsonl")
+        report = Report()
+        report.snap()
+        with open(path, "w") as handle:
+            handle.write(report.text())
+        ticks = []
+
+        def sleep(_):
+            ticks.append(1)
+            if len(ticks) == 2:
+                report.status("verified")
+                with open(path, "w") as handle:
+                    handle.write(report.text() + '{"event":"sta')
+
+        clock = iter(range(100)).__next__
+        self.assertEqual(lab.wait(path, 50, 1, "verified", ["0"], clock=clock, sleep=sleep, alive=lambda pid: True), 0)
+        self.assertEqual(lab.wait(path, 3, 1, "rest", [], clock=iter(range(100)).__next__, sleep=lambda _: None, alive=lambda pid: True), 1)
+        self.assertEqual(lab.wait(path, 3, 1, "rest", [], clock=iter(range(100)).__next__, sleep=lambda _: None, alive=lambda pid: False), 4)
+        with open(path, "a") as handle:
+            handle.write("\nnope\n")
+        self.assertEqual(lab.wait(path, 3, 1, "rest", [], clock=iter(range(100)).__next__, sleep=lambda _: None, alive=lambda pid: True), 3)
+
+    def test_a_run_that_ends_in_another_kind_fails(self):
+        report = Report()
+        report.standard(["a"])
+        report.status("failed(drawn:1)")
+        verdict = self.judge("sparse", [report], members=["a"])
+        self.assertEqual((verdict["result"], verdict["kind"]), ("fail", "failed"))
+        self.assertIn("ended failed, expected verified", verdict["reasons"])
 
     def test_bracket_key_follows_frames_and_conditions(self):
         one, two = Report(), Report()
@@ -259,7 +283,6 @@ class LabToolTests(unittest.TestCase):
         report = Report()
         report.standard(["a", "b"])
         added = report.add("noop")
-        first, second = (report.length, report.roster) if retire_first_on_add else (report.roster, report.length)
         if retire_first_on_add:
             report.length(None)
             report.roster("a", "b", "c")
@@ -462,6 +485,16 @@ class LabToolTests(unittest.TestCase):
             with self.subTest(options):
                 report, steps = make(**options)
                 self.assertEqual(self.result("incomplete", [report], steps=steps, members=["a"]), wanted)
+
+    def test_the_chevron_at_start_clause_applies_to_every_checked_scenario(self):
+        listed = [{"step": "chevronAtStart", "listed": True}]
+        report = Report()
+        report.standard(["a"])
+        for scenario in ("sparse", "incomplete", "drawn", "noref"):
+            with self.subTest(scenario):
+                self.assertEqual(self.result(scenario, [report], steps=listed, members=["a"]), "notEstablished")
+        crowded, steps = self.crowded()
+        self.assertEqual(self.result("crowded", [crowded], steps=steps + listed, members=["a", "b"]), "pass")
 
     def test_inverted_moved_is_not_run(self):
         self.assertEqual(self.result("inverted-moved", [Report()]), "notRun")

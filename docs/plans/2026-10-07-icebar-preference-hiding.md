@@ -1193,3 +1193,28 @@ P0/P1 per round: 6, 3, 0 (4 calls of the 5: one lost to the assistant's pipe, on
 usage limit, waited out). Of ten findings: eight taken, one modified, one turned into the
 owner's decision (scenario 14's second half), which Codex agrees is the owner's and for
 which it recommends the S5 step.
+
+### T4 code review (/simcodex, 2026-10-08; 3 rounds, the stated cap, then one Codex confirmation)
+
+Reviewed: `git diff bb7cb78` (checkpoints `e0a788b`, `2bfac73` plus the fixes, uncommitted). Codex by
+`codex review --base` in round 1, then `codex exec` on the working tree.
+
+| Round | simplify | Codex | Ruling |
+|---|---|---|---|
+| 1 | 4 views: 9 P1 -- lab hooks spread over three production types, `labMembers` built in every launch and named two ways; the hold-length fault split between the coordinator and the rule; every poll a new Python process re-parsing the whole report; dead predicates and a dead `members` field; debug lines in the test; `mayOpenBar` returning its argument; launch-argument parsing copied from trace mode; `stage-lab.sh` near `stage-t7.sh`; the status kind read from `logSummary`'s text | 1 P1: the judge never compared a run's last status with the scenario's kind | all taken, except: `logSummary` **rejected** (T3b made its strings the runner's contract, pinned by `IceBarHidingStatusTests`); `stage-t7.sh` sharing **deferred** (T7's scripts are superseded). Codex's P1 taken, `incomplete` (must leave blocked) and `drawn` (re-cycles) exempt. Found while verifying: a helper caught starting by a signal escaped the cleanup -- every helper is now recorded when it starts |
+| 2 | 1 P1: a stale member's name flipped from its last key to its tag, so `addremove`'s order could be judged on the stale transition | round 1's items RESOLVED; 1 P1: `incomplete` skipped the `«`-at-start clause | both taken: one naming rule (key, else last key, else tag) for event and snapshot; the clause applied once in `judge()` for every checked scenario |
+| 3 | 1 P1: `standard_setup`'s unused parameter | RESOLVED, no new P0/P1: **CONVERGED** | taken; Codex confirmed the late change: CONVERGED |
+
+P0/P1 per round: simplify 9, 1, 1; Codex 1, 1, 0, then 0. No security-sensitive change (no auth,
+payment, personal data, crypto or network; files written only in the run's own directories): no
+security review. Not found, said: after an interrupt the runner's report lines do not always reach a
+standard output shared with standard error (seen only in `test-lab.sh`; three attempts at the cause);
+the cleanup itself ran every time -- `report.txt` written, domains deleted, no process left -- and the
+test checks those. Left as P2: the scenario sets `ENDS_ELSEWHERE` / `NO_CHECK_AT_START` beside
+`SCENARIOS` instead of flags in it; `LabLaunchArguments` at the foot of the report rule's file and
+`LabReport.launchArgument` used by trace mode; `LabReportItem(member:lastKey:)` looked up by both
+callers; two "complete lines" splitters in `lab-tool.py`; `spawned_pids` never pruned; the four
+`{namespace, identifier}` types in `LabReport.swift`; the snapshot key list kept by hand in Swift and
+Python (compared by `test-lab.sh`); icewatch `chevron` / `activate` writing JSON by hand; per-poll
+`lab await` in `crowded`'s ladder; `stage-lab.sh` beside `stage-t7.sh`.
+

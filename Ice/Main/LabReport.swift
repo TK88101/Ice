@@ -14,17 +14,18 @@ import IceCore
 @MainActor
 enum LabReport {
     /// Decided once, from the launch arguments only, never a stored default.
-    static let launch: LabReportLaunch = {
+    static let launch = LabReportRule.launch(
+        report: launchArgument(LabReportRule.reportArgument),
+        holdLength: launchArgument(LabReportRule.holdLengthArgument),
+        bundleID: Bundle.main.bundleIdentifier
+    )
+
+    /// A launch argument's value, from the arguments only, never a stored
+    /// default (both lab modes read theirs this way).
+    nonisolated static func launchArgument(_ name: String) -> String? {
         let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-        func value(_ name: String) -> String? {
-            arguments[name].map { $0 as? String ?? String(describing: $0) }
-        }
-        return LabReportRule.launch(
-            report: value(LabReportRule.reportArgument),
-            holdLength: value(LabReportRule.holdLengthArgument),
-            bundleID: Bundle.main.bundleIdentifier
-        )
-    }()
+        return arguments[name].map { $0 as? String ?? String(describing: $0) }
+    }
 
     /// The report launch's settings; `nil` in every other launch.
     static var plan: LabReportPlan? {
@@ -64,6 +65,32 @@ enum LabReport {
     /// a report runs.
     static func record(_ event: @autoclosure () -> LabReportEvent) {
         session?.write(event())
+    }
+
+    /// What the hidden control item is given for a length the machine
+    /// decided: the length itself, except in a report launch that holds
+    /// lengths (scenario 11's fault). Records the length event.
+    static func applied(_ decided: Double?) -> Double? {
+        let outcome = LabReportRule.appliedLength(decided, plan: plan)
+        record(.length(outcome, decided: decided))
+        return outcome.applied
+    }
+
+    /// Records the roster's members when they changed; nothing is computed
+    /// unless a report runs.
+    @available(macOS 27, *)
+    static func recordRoster(from old: IceBarRoster, to new: IceBarRoster) {
+        guard session != nil else {
+            return
+        }
+        let members = names(of: new.rules)
+        if members != names(of: old.rules) {
+            record(.roster(members))
+        }
+    }
+
+    private static func names(of rules: PreferenceHidingRoster) -> [LabReportItem] {
+        rules.membership.members.map { LabReportItem(member: $0, lastKey: rules.lastKeys[$0.tag]) }
     }
 }
 
@@ -140,7 +167,8 @@ extension LabReport {
             let manager = appState.itemManager
             switch command {
             case .barOpen:
-                guard LabReportRule.mayOpenBar(isIceBarOffered: manager.isIceBarOffered) else {
+                // The icon's click shows the IceBar only while it is offered (`MenuBarSection.show`).
+                guard manager.isIceBarOffered else {
                     write(.bar(action: "open", answer: "refused:notOffered"))
                     return
                 }
@@ -193,7 +221,8 @@ extension LabReport {
             let discovery = manager.labDiscovery
             let set = discovery.set
             let frames = Dictionary((set?.items ?? []).map { ($0.key, $0.frame) }, uniquingKeysWith: { first, _ in first })
-            let membership = manager.iceBarRoster.rules.membership
+            let rules = manager.iceBarRoster.rules
+            let membership = rules.membership
 
             func items(_ section: MenuBarSection.Name) -> [LabReportItem] {
                 manager.itemCache[section].compactMap { key(of: $0).map(LabReportItem.init) }
@@ -212,9 +241,10 @@ extension LabReport {
                 isIceBarPresented: appState.navigationState.isIceBarPresented,
                 isInteracting: coordinator?.isInteracting ?? false,
                 roster: membership.members.map { member in
-                    LabReportMember(
-                        namespace: member.tag.namespace,
-                        identifier: member.key?.identifier ?? member.tag.title,
+                    let item = LabReportItem(member: member, lastKey: rules.lastKeys[member.tag])
+                    return LabReportMember(
+                        namespace: item.namespace,
+                        identifier: item.identifier,
                         pid: member.key?.pid,
                         condition: LabReportNames.condition(member.condition),
                         pressable: member.isPressable,
