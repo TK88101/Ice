@@ -3,6 +3,7 @@
 //  Ice
 //
 
+import IceCore
 import SwiftUI
 
 struct MenuBarLayoutSettingsPane: View {
@@ -22,6 +23,7 @@ struct MenuBarLayoutSettingsPane: View {
             IceForm(spacing: 20) {
                 header
                 hidingCheckStatusLine
+                placementNoticeLine
                 layoutBars
             }
         }
@@ -102,12 +104,32 @@ struct MenuBarLayoutSettingsPane: View {
     @ViewBuilder
     private var hidingCheckStatusLine: some View {
         if let status = appState.hidingCheckStatus {
-            IceSection {
-                Text(status.message)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(10)
-            }
+            statusLine(status.message)
+        }
+    }
+
+    private func statusLine(_ message: String) -> some View {
+        IceSection {
+            Text(message)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(10)
+        }
+    }
+
+    /// On macOS 27 in IceBar mode: Ice's icon is left of its hidden divider,
+    /// and how to repair it (plan 2026-10-07-icebar-preference-hiding, T2c).
+    /// The hiding status line says the same once the hiding has put the
+    /// section back; then this line is not repeated.
+    @ViewBuilder
+    private var placementNoticeLine: some View {
+        let notice = IcePlacementNotice.notice(
+            placement: itemManager.iconPlacement,
+            isIceBarMode: appState.settings.general.useIceBar,
+            isDragging: appState.isDraggingMenuBarItem
+        )
+        if let notice, appState.hidingCheckStatus?.message != notice.message {
+            statusLine(notice.message)
         }
     }
 

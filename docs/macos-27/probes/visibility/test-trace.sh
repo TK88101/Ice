@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Tests for trace-tool.py (plan 2026-10-07-icebar-preference-hiding, S1 and S2
-# design T2a, T2b) on synthetic stores, traces and reads. No app is launched and
+# design T2a, T2b, T2c) on synthetic stores, traces and reads. No app is launched and
 # nothing is written outside a temporary directory; two files of the repo are
 # read (LabTraceRule.swift and run-trace.sh, for the identity prefix).
 #
@@ -187,6 +187,32 @@ check "placement: a trace that declares no discovery passes (a T1 build) exits 1
 sed 's/"discoveryPasses":2/"discoveryPasses":1/' $tmp/one-pass.jsonl > $tmp/declares-one.jsonl
 check "placement: a build that declares and runs one pass exits 1: the count is the tool's" 1 python3 -I $tool summary $tmp/declares-one.jsonl $lab off
 contains "placement: the pass-count mismatch is named" '"discoveryPasses"'
+
+# The inverted variant (S2 design, T2c): the icon's default is written large
+# before launch; whether that inverts the layout is a diagnostic, but an
+# inverted pass must carry the notice.
+notice='"notice":"iconLeftOfDivider"'
+trace false "$(both 1285 1469 null 9 0 $notice)" > $tmp/inv-noticed.jsonl
+check "inv: an inverted layout that carries the notice exits 0" 0 python3 -I $tool summary $tmp/inv-noticed.jsonl $lab inv
+contains "inv: the verdict is said" '"placement": "invertedWithNotice"'
+trace false "$(both 1285 1469 null 9 0)" > $tmp/inv-silent.jsonl
+check "inv: an inverted layout without the notice fails" 1 python3 -I $tool summary $tmp/inv-silent.jsonl $lab inv
+contains "inv: the missing notice is said" '"placement": "invertedWithoutNotice"'
+trace false "$(both 1508 1009 null 0 12)" > $tmp/inv-not.jsonl
+check "inv: a layout the stored value did not invert is recorded, not failed" 0 python3 -I $tool summary $tmp/inv-not.jsonl $lab inv
+contains "inv: not inverted is said" '"placement": "notInverted"'
+trace false "$(both 1508 1009 null 0 12 $notice)" > $tmp/inv-false-notice.jsonl
+check "inv: a notice on a layout that is not inverted fails" 1 python3 -I $tool summary $tmp/inv-false-notice.jsonl $lab inv
+contains "inv: the false notice is said" '"placement": "noticeWithoutInversion"'
+trace false "$(both 1285 1469 null 9 0 $notice)" | sed 's/"iconOnBar":true/"iconOnBar":false/' > $tmp/inv-parked.jsonl
+check "inv: an icon that is not on the bar is not inverted, whatever its frame: its notice fails" 1 python3 -I $tool summary $tmp/inv-parked.jsonl $lab inv
+trace false "$(placement 1 1285 1469 null 9 0 $notice)" "$(placement 2 1285 1469 null 8 1 $notice)" > $tmp/inv-disagree.jsonl
+check "inv: two passes that disagree are indeterminate, exit 1" 1 python3 -I $tool summary $tmp/inv-disagree.jsonl $lab inv
+contains "inv: indeterminate is said" '"placement": "indeterminate"'
+check "inv: a trace that never finished exits 1" 1 python3 -I $tool summary $tmp/capped.jsonl $lab inv
+trace true "$(both 1285 1469 990 9 0 $notice)" > $tmp/inv-on.jsonl
+check "inv: runs with the always-hidden section off: an on trace is not it" 1 python3 -I $tool summary $tmp/inv-on.jsonl $lab inv
+check "usage: an unknown variant exits 2" 2 python3 -I $tool summary $tmp/good-off.jsonl $lab sideways
 
 # Remembered positions (S2 design, T2b): the store guard over the run's two
 # exact keys, one entry, and the three-read verdicts of Q3 and Q4. The keys

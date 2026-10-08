@@ -117,7 +117,8 @@ final class IceBarHidingCoordinator {
             menuVerdict: MenuWidthRule.verdict(menuMaxX: menuEdge, notchMinX: screen.frameOfNotch.map { Double($0.minX) }),
             isInteracting: isMouseOnBar || appState.navigationState.isIceBarPresented,
             isDragging: appState.isDraggingMenuBarItem,
-            boundaryUsable: appState.itemManager.hiddenBoundaryUsable
+            boundaryUsable: appState.itemManager.hiddenBoundaryUsable,
+            iconLeftOfDivider: appState.itemManager.iconPlacement == .iconLeftOfDivider
         )
     }
 

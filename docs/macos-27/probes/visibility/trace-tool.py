@@ -1,4 +1,4 @@
-"""Helpers for run-trace.sh (Ice's trace mode: S1, S2 design T2a) and run-remembered.sh
+"""Helpers for run-trace.sh (Ice's trace mode: S1, S2 design T2a, T2c) and run-remembered.sh
 (remembered positions: S2 design T2b) of plan 2026-10-07-icebar-preference-hiding.
 
   trace-tool.py guard <store-before.json> <store-after.json> <own> [<own> ...]
@@ -25,7 +25,7 @@
       missing slot says nothing about the seed) and never says more than
       "not the slot, and on the side the seed would put it". Anything else
       is "inconclusive" with its reason, exit 1.
-  trace-tool.py summary <trace.jsonl> <lab bundle id> <off|on>
+  trace-tool.py summary <trace.jsonl> <lab bundle id> <off|on|inv>
       one JSON object on stdout: the preferred positions per control item and
       point, the AX frames, the icon-versus-divider layout, and the placement
       verdict; two lines for a person on stderr. Exits 1 unless the trace is
@@ -39,7 +39,14 @@
       between the two; the control items are on the bar; with "on", the
       always-hidden divider is left of the hidden one; and as many other
       items are on the bar as in the baseline pass taken before Ice's items
-      existed.
+      existed. With "inv" (S2 design, T2c: the runner wrote the icon's
+      default large before launch; always-hidden off) the oracle is another:
+      the trace complete and the two passes agreeing, and then, if the pass
+      has the icon on the bar with its middle not right of the usable hidden
+      divider's left edge, the pass must carry the notice
+      ("invertedWithNotice"; without it the run fails); a layout the stored
+      value did not invert is recorded as "notInverted" and passes, unless it
+      carries the notice all the same.
 
 Standard library only; run with python3 -I.
 """
@@ -64,6 +71,12 @@ READ_FIELDS = ("agent", "default", "side", "adjacent", "x")
 STEPS = ["stopPermissionChecks", "setSettingsInMemory", "readBaseline", "setUpSections"]
 READINGS = ["ownExtras", "discover"]
 DISCOVERY_PASSES = 2
+# The placement verdicts a run of each variant may end on.
+PASSING = {
+    "off": ("dividerOthersIcon",),
+    "on": ("dividerOthersIcon",),
+    "inv": ("invertedWithNotice", "notInverted"),
+}
 # The fields of a "placement" event that are not the pass's reading itself.
 PLACEMENT_ENVELOPE = ("event", "pass", "t")
 
@@ -211,6 +224,20 @@ def failed_clauses(reading, baseline, on_bar, variant):
     return [name for name, holds in clauses.items() if not holds]
 
 
+def inverted_verdict(reading):
+    """The `inv` variant's verdict on one pass: is it inverted by its own frames, and does it say so?
+
+    The frames are judged here, apart from the app's rule, whose word is the notice being checked."""
+    inverted = (
+        reading.get("iconOnBar") is True and reading.get("hiddenDividerUsable") is True
+        and layout(reading.get("icon"), reading.get("hiddenDivider")) == "iconLeftOfDivider"
+    )
+    noticed = reading.get("notice") == "iconLeftOfDivider"
+    if inverted:
+        return "invertedWithNotice" if noticed else "invertedWithoutNotice"
+    return "noticeWithoutInversion" if noticed else "notInverted"
+
+
 def placement(events, baseline, on_bar, variant):
     """(verdict, failed clauses, the readings): judged on the last pass, and only if every pass agrees."""
     passes = sorted((event for event in events if event.get("event") == "placement"), key=lambda event: event.get("pass", 0))
@@ -220,6 +247,8 @@ def placement(events, baseline, on_bar, variant):
         return "missing", [], readings
     if any(reading != readings[-1] for reading in readings):
         return "indeterminate", [], readings
+    if variant == "inv":
+        return inverted_verdict(readings[-1]), [], readings
     failed = failed_clauses(readings[-1], baseline, on_bar, variant)
     return ("failed" if failed else "dividerOthersIcon"), failed, readings
 
@@ -271,12 +300,13 @@ def summary(path, bundle_id, variant):
           f"onBar={result['onBar']} missing={missing} startMismatches={mismatches}", file=sys.stderr)
     last = readings[-1] if readings else {}
     print(f"   placement={verdict} failedClauses={failed} hiddenDivider={last.get('hiddenDivider')} icon={last.get('icon')} "
+          f"iconPlacement={last.get('iconPlacement')} notice={last.get('notice')} "
           f"alwaysHiddenDivider={last.get('alwaysHiddenDivider')} othersLeft={last.get('othersLeftOfHiddenDivider')} "
           f"between={last.get('othersBetween')} rightOfIcon={last.get('othersRightOfIcon')} unplaced={last.get('othersUnplaced')} "
           f"onBar={last.get('othersOnBar')} onBarBefore={baseline_on_bar} baselineComplete={baseline.get('complete')} "
           f"baselineAttempts={baseline.get('attempts')} baselineFailedReads={baseline.get('failedReads')}",
           file=sys.stderr)
-    return 0 if complete and verdict == "dividerOthersIcon" else 1
+    return 0 if complete and verdict in PASSING[variant] else 1
 
 
 def main(argv):
@@ -288,7 +318,7 @@ def main(argv):
         return remembered("q3", argv[3], argv[4])
     if len(argv) == 6 and argv[1:3] == ["remembered", "q4"] and argv[3] in SIDES:
         return remembered("q4", argv[3], argv[4], argv[5])
-    if len(argv) == 5 and argv[1] == "summary" and argv[4] in ("off", "on"):
+    if len(argv) == 5 and argv[1] == "summary" and argv[4] in PASSING:
         return summary(argv[2], argv[3], argv[4])
     print(__doc__, file=sys.stderr)
     return 2

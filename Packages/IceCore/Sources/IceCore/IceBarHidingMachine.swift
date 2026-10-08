@@ -52,6 +52,10 @@ public struct IceBarHidingParameters: Equatable, Sendable {
 
 /// Why the hidden section is on the bar although IceBar mode is on.
 public enum IceBarShownReason: Equatable, Sendable {
+    /// Ice's icon is left of its hidden divider: a length would carry the icon
+    /// off the bar with the section (plan 2026-10-07-icebar-preference-hiding,
+    /// S2 design T2c; T3b's `blocked` state replaces this).
+    case iconLeftOfDivider
     /// The frontmost app's menus cross the notch.
     case longMenu
     /// The menu frame or the notch could not be read.
@@ -83,6 +87,9 @@ public enum IceBarHidingStatus: Equatable, Sendable {
         let line: String
         switch self {
         case .off: return nil
+        // The notice's own text: it names the repair, and the limits below
+        // are about an IceBar that is not offered in this state.
+        case .shown(.iconLeftOfDivider): return IcePlacementNotice.iconLeftOfDivider.message
         case .checking: line = "Ice Bar: checking whether the hidden items can be hidden cleanly"
         case .active: line = "Ice Bar active"
         case .shown(.longMenu): line = "Items shown: the frontmost app's menus reach the notch"
@@ -107,19 +114,25 @@ public struct IceBarHidingSample: Equatable, Sendable {
     /// The hidden divider decided the sections in a cache pass since the
     /// length last became standard.
     public let boundaryUsable: Bool
+    /// Ice holds its icon to be on the bar, left of its hidden divider: the
+    /// reading of the last discovery pass whose hidden boundary was trusted
+    /// (`IcePlacementNotice.placement(held:read:hiddenBoundaryTrusted:)`).
+    public let iconLeftOfDivider: Bool
 
     public init(
         signature: LayoutSignature,
         menuVerdict: MenuWidthVerdict,
         isInteracting: Bool,
         isDragging: Bool,
-        boundaryUsable: Bool
+        boundaryUsable: Bool,
+        iconLeftOfDivider: Bool
     ) {
         self.signature = signature
         self.menuVerdict = menuVerdict
         self.isInteracting = isInteracting
         self.isDragging = isDragging
         self.boundaryUsable = boundaryUsable
+        self.iconLeftOfDivider = iconLeftOfDivider
     }
 }
 
@@ -252,8 +265,10 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         return commands + advance(sample, now: now)
     }
 
-    /// What makes hiding pointless or unreadable whatever the length.
+    /// What makes hiding pointless, harmful or unreadable whatever the length.
+    /// Read on every sample, in every phase: a resting length is retired too.
     private static func blocker(in sample: IceBarHidingSample) -> IceBarShownReason? {
+        if sample.iconLeftOfDivider { return .iconLeftOfDivider }
         switch sample.menuVerdict {
         case .crossesNotch: return .longMenu
         case .unreadable: return .menuUnreadable
@@ -268,7 +283,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         switch phase {
         case .off, .resting, .shown(.unstableLayout):
             return []
-        case .shown(.longMenu), .shown(.menuUnreadable), .shown(.noMembers):
+        case .shown(.iconLeftOfDivider), .shown(.longMenu), .shown(.menuUnreadable), .shown(.noMembers):
             // The blocker is gone.
             return enterQuiet(now)
         case .shown(.cannotAssess), .shown(.noCleanLength):

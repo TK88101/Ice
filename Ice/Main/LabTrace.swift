@@ -208,6 +208,8 @@ enum LabTrace {
             "alwaysHiddenDividerUsable": placement.alwaysHiddenDividerUsable,
             // `null`: the icon is right of its hidden divider.
             "iconPlacement": placement.iconPlacement.map { String(describing: $0) } ?? NSNull(),
+            // What the layout pane would say of this pass in IceBar mode; `null`: nothing.
+            "notice": placement.notice.map { String(describing: $0) } ?? NSNull(),
             "othersLeftOfHiddenDivider": placement.othersLeftOfHiddenDivider,
             "othersBetween": placement.othersBetween,
             "othersRightOfIcon": placement.othersRightOfIcon,

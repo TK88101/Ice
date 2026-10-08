@@ -150,4 +150,12 @@ struct LabTracePlacementTests {
         #expect(inverted.iconPlacement == .iconLeftOfDivider)
         #expect(placement([], icon: .some(nil)).iconPlacement == .iconUnreadable)
     }
+
+    @Test("the notice is the rule's, for IceBar mode with no drag: only an icon read left of the divider carries it (T2c)")
+    func notice() {
+        #expect(placement([]).notice == nil)
+        let inverted = placement([], icon: .some(fixtureItem(identifier: "Ice.ControlItem.Visible", pid: 9, frame: barFrame(minX: 100, width: 35), isSelf: true)))
+        #expect(inverted.notice == .iconLeftOfDivider)
+        #expect(placement([], icon: .some(nil)).notice == nil)
+    }
 }

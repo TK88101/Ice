@@ -25,14 +25,16 @@ struct IceBarHidingMachineTests {
         menu: MenuWidthVerdict = .fits,
         interacting: Bool = false,
         dragging: Bool = false,
-        boundaryUsable: Bool = true
+        boundaryUsable: Bool = true,
+        iconLeftOfDivider: Bool = false
     ) -> IceBarHidingSample {
         IceBarHidingSample(
             signature: signature,
             menuVerdict: menu,
             isInteracting: interacting,
             isDragging: dragging,
-            boundaryUsable: boundaryUsable
+            boundaryUsable: boundaryUsable,
+            iconLeftOfDivider: iconLeftOfDivider
         )
     }
 
@@ -260,6 +262,133 @@ struct IceBarHidingMachineTests {
         #expect(driver.machine.phase == .shown(reason))
         #expect(driver.lastStatus == .shown(reason))
         #expect(driver.length == nil)
+    }
+
+    // MARK: - Ice's icon left of its divider (plan 2026-10-07-icebar-preference-hiding, T2c)
+
+    /// A machine brought to each phase a sample can meet, by name.
+    static func driver(in phase: String) -> Driver {
+        var driver = Driver()
+        switch phase {
+        case "quiet":
+            driver.send(.mode(isIceBar: true))
+        case "baselining":
+            driver.answers = false
+            driver.send(.mode(isIceBar: true))
+            driver.ticks(4)
+        case "calibrating":
+            driver.send(.mode(isIceBar: true))
+            driver.ticks(4)
+        case "trial":
+            driver.send(.mode(isIceBar: true))
+            driver.ticks(4)
+            driver.answers = false
+            driver.ticks(2)
+        case "confirming":
+            driver.settle()
+            driver.tick(sample(dragging: true))
+            driver.now += 60
+            // The baseline is answered, the observation of the remembered length is not.
+            driver.answers = false
+            driver.ticks(4)
+            if case .baselining(let token) = driver.machine.phase {
+                driver.send(.baseline(token: token, ok: true))
+            }
+        case "resting":
+            driver.settle()
+        case "shownForAnotherReason":
+            driver.settle()
+            driver.tick(sample(menu: .crossesNotch))
+        case "unstable":
+            driver.world = { _ in .unknown }
+            for _ in 0..<3 {
+                driver.settle()
+                driver.now += 60
+                driver.tick()
+            }
+        default:
+            Issue.record("no such phase: \(phase)")
+        }
+        return driver
+    }
+
+    @Test("the fixture reaches the phase it names")
+    func fixturePhases() {
+        func isPhase(_ name: String, _ matches: (IceBarHidingMachine.Phase) -> Bool) -> Bool {
+            matches(Self.driver(in: name).machine.phase)
+        }
+        #expect(isPhase("quiet") { if case .quiet = $0 { true } else { false } })
+        #expect(isPhase("baselining") { if case .baselining = $0 { true } else { false } })
+        #expect(isPhase("calibrating") { if case .calibrating(_, nil, _) = $0 { true } else { false } })
+        #expect(isPhase("trial") { if case .calibrating(_, .some, _) = $0 { true } else { false } })
+        #expect(isPhase("confirming") { if case .confirming = $0 { true } else { false } })
+        #expect(isPhase("resting") { if case .resting = $0 { true } else { false } })
+        #expect(isPhase("shownForAnotherReason") { $0 == .shown(.longMenu) })
+        #expect(isPhase("unstable") { $0 == .shown(.unstableLayout) })
+    }
+
+    @Test("Ice's icon left of its divider puts the section back and says so, from every phase", arguments: [
+        "quiet", "baselining", "calibrating", "trial", "confirming", "resting", "shownForAnotherReason", "unstable",
+    ])
+    func iconLeftOfDividerShows(phase: String) {
+        var driver = Self.driver(in: phase)
+        let commands = driver.tick(Self.sample(iconLeftOfDivider: true))
+        #expect(commands.contains(.setLength(nil)))
+        #expect(commands.last == .report(.shown(.iconLeftOfDivider)))
+        #expect(driver.machine.phase == .shown(.iconLeftOfDivider))
+        #expect(driver.length == nil)
+    }
+
+    @Test("it comes before every other reason to show the section", arguments: [
+        MenuWidthVerdict.crossesNotch, .unreadable,
+    ])
+    func iconLeftOfDividerComesFirst(verdict: MenuWidthVerdict) {
+        var driver = Driver()
+        driver.settle()
+        driver.tick(Self.sample(Self.signature(hidden: []), menu: verdict, iconLeftOfDivider: true))
+        #expect(driver.machine.phase == .shown(.iconLeftOfDivider))
+    }
+
+    @Test("while it lasts nothing is tried and nothing is said twice")
+    func iconLeftOfDividerHolds() {
+        var driver = Driver()
+        driver.settle()
+        driver.tick(Self.sample(iconLeftOfDivider: true))
+        let baselines = driver.baselines
+        driver.now += 600
+        var later = [IceBarHidingCommand]()
+        for _ in 0..<10 { later += driver.tick(Self.sample(iconLeftOfDivider: true)) }
+        #expect(later.isEmpty)
+        #expect(driver.baselines == baselines)
+        #expect(driver.length == nil)
+    }
+
+    @Test("once the icon is right of the divider again the machine waits out the quiet period, then hides")
+    func iconLeftOfDividerClears() {
+        var driver = Driver()
+        driver.settle()
+        driver.tick(Self.sample(iconLeftOfDivider: true))
+        let commands = driver.tick()
+        #expect(commands == [.setLength(nil), .report(.checking)])
+        #expect(driver.machine.phase == .quiet(since: driver.now))
+        driver.now += 60
+        driver.settle()
+        #expect(driver.machine.phase == .resting(length: 736))
+    }
+
+    @Test("a drag under way is the owner arranging: quiet, not the notice, until it ends")
+    func iconLeftOfDividerDuringDrag() {
+        var driver = Driver()
+        driver.settle()
+        driver.tick(Self.sample(dragging: true, iconLeftOfDivider: true))
+        #expect(driver.machine.phase == .quiet(since: driver.now))
+        driver.tick(Self.sample(iconLeftOfDivider: true))
+        #expect(driver.machine.phase == .shown(.iconLeftOfDivider))
+    }
+
+    @Test("its status line is the notice's text, with nothing added")
+    func iconLeftOfDividerMessage() {
+        #expect(IceBarHidingStatus.shown(.iconLeftOfDivider).message == IcePlacementNotice.iconLeftOfDivider.message)
     }
 
     @Test("short menus again hide the section after the quiet period")
@@ -534,7 +663,7 @@ struct IceBarHidingMachineTests {
         let statuses: [IceBarHidingStatus] = [
             .checking, .active,
             .shown(.longMenu), .shown(.menuUnreadable), .shown(.noMembers), .shown(.cannotAssess),
-            .shown(.noCleanLength(.noBand)), .shown(.unstableLayout),
+            .shown(.noCleanLength(.noBand)), .shown(.unstableLayout), .shown(.iconLeftOfDivider),
         ]
         let messages = statuses.compactMap(\.message)
         #expect(messages.count == statuses.count)

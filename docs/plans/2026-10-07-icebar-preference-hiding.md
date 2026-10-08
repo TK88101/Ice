@@ -1,6 +1,6 @@
 # IceBar on macOS 27, re-aimed: preference hiding, proven in a harness before any owner sitting
 
-2026-10-07 · final (Codex round 5: CONVERGED; T2 design added 2026-10-08, Codex round 3: CONVERGED; Appendix) · T1, T3a implemented · continues on `wip/icebar-build` from `6c61b96`.
+2026-10-07 · final (Codex round 5: CONVERGED; T2 design added 2026-10-08, Codex round 3: CONVERGED; Appendix) · T1, T3a implemented, T2 done 2026-10-08 (T2b: Q1 only, see its Result) · continues on `wip/icebar-build` from `6c61b96`.
 Follows the owner's corrected goal and Codex's consult of 2026-10-07
 (`~/IceReverse-evidence/20261007-213730-t7/codex-consult.md`, handover beside it).
 Supersedes, where they conflict: `2026-10-03-icebar-build.md` sections 1, 3 (the
@@ -311,7 +311,10 @@ the gate. Serial (each needs the one before); nothing is dispatched.
   is left of its hidden-section divider, so Ice hides nothing. Hold Command and drag
   Ice's icon to the right of the divider."
 - Wiring: `MenuBarItemManager.cacheDiscoveredItems` (27 only) evaluates the rule on
-  each discovery pass it publishes and publishes the notice; a pass is skipped for
+  each discovery pass it publishes and publishes the notice (as built, after the
+  code review: it publishes the icon's placement, held from the last pass whose
+  hidden boundary was trusted -- a divider at a hiding length does not draw the
+  boundary at its left edge -- and the pane applies the rule to it); a pass is skipped for
   1 s after a move (`MenuBarItemManager.swift:542-545`), so the notice follows a
   change by up to that plus one pass. The layout pane shows it as a line above the
   bars, beside `hidingCheckStatusLine`.
@@ -611,3 +614,20 @@ store-before save in both runners; an explicit "something is right of P" reading
 x is recorded instead); a retry after a `notMoved` attempt may drag T back;
 `placement()`'s unused seventh argument in `test-trace.sh`; `vzhelper`'s own comment
 on `--autosave`.
+
+### T2c code review (/simcodex, 2026-10-08; 3 rounds, the stated cap, then two Codex confirmations)
+
+| Round | simplify (4 views) | Codex | Ruling |
+|---|---|---|---|
+| 1 | 0 P0/P1 (8 + 3 P2) | 1 P0 (the gate read any usable divider, also one at a hiding length, so a held inversion could clear with the length applied) + 2 P1 (stale flag and notice; `inv`'s cleanup not guaranteed) | all taken: the placement is held from the last pass with a trusted hidden boundary (a pure rule, tested); one published placement, the pane applies the rule live; an EXIT cleanup. Kept on purpose: a pass that publishes nothing leaves a held inversion, which changes no length |
+| 2 | 2 P1 (a signal left the launched trace running past the cleanup; one doc comment) | P0 and the stale-state P1 RESOLVED; 1 P1 (a failed cleanup still cleared its record and exited 0) | all taken |
+| 3 | 0 P0/P1 | 1 P1 (a signal between staging and its record) | taken |
+| after | -- | that one RESOLVED, 1 new P1 (an unremovable domain overwritten by the next run's record); then RESOLVED, **CONVERGED** | taken: the runner ends there |
+
+Trend, P0/P1 per round: simplify 0, 2, 0; Codex 3, 1, 1, then 1, 0. No security-sensitive
+change, no security review. E2E: `run-trace.sh` 9 of 9 twice (the second with the
+runner as reviewed but for its last line, an exit no normal run reaches). Left as P2:
+the string-keyed phase fixture in the machine's tests; `PASSING` doubling as the
+variant list in `trace-tool.py`; the pane telling "same line" by comparing texts; the
+placement computed on passes that may not update it; `placement()`'s seventh argument
+now used only by `inv`'s tests. Open for T3b: the two "not covered" rows of STATUS.

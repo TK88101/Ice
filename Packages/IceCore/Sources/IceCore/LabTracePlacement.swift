@@ -15,6 +15,9 @@ public struct LabTracePlacement: Equatable, Sendable {
     /// `PreferenceHidingPreconditions.iconPlacement` on the discovered icon:
     /// `nil` when it is on the bar and right of the hidden divider.
     public let iconPlacement: PreferenceHidingIconPlacement?
+    /// `IcePlacementNotice.notice` for that placement in the state the trace
+    /// runs in: IceBar mode, no drag (S2 design T2c, the `inv` variant).
+    public let notice: IcePlacementNotice?
     /// On the bar, mid-x left of the hidden divider's boundary
     /// (`DividerReading.boundaryMinX`). Geometry of this pass only: the
     /// membership rule shares the boundary and the on-bar condition but also
@@ -47,6 +50,7 @@ public struct LabTracePlacement: Equatable, Sendable {
         alwaysHiddenDivider = set.alwaysHiddenDivider?.frame
         alwaysHiddenDividerUsable = set.alwaysHiddenDivider?.isUsable ?? false
         iconPlacement = PreferenceHidingPreconditions.iconPlacement(icon: set.visibleControlItem, divider: set.hiddenDivider)
+        notice = IcePlacementNotice.notice(placement: iconPlacement, isIceBarMode: true, isDragging: false)
         isComplete = set.completeness == .complete
         failedReads = if case .incomplete(let failedPIDs) = set.completeness { failedPIDs.count } else { 0 }
         ownReadOk = set.ownRead == .ok

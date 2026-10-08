@@ -46,6 +46,14 @@ final class MenuBarItemManager: ObservableObject {
     /// after the sections were read at standard length.
     private(set) var hiddenBoundaryUsable = false
 
+    /// Where Ice's icon is against its hidden divider, as the last macOS 27
+    /// pass with a trusted hidden boundary read it; `nil`: right of it (plan
+    /// 2026-10-07-icebar-preference-hiding, S2 design T2c). Left of it,
+    /// IceBar's hiding hides nothing and the layout pane says so. A pass that
+    /// publishes nothing (no Accessibility permission) leaves it as it was:
+    /// a held inversion keeps blocking, which changes no length.
+    @Published private(set) var iconPlacement: PreferenceHidingIconPlacement?
+
     /// IceBar on macOS 27: items whose press failed, shown disabled in the
     /// IceBar, and items whose press has not returned yet (plan 9.5).
     @Published var unpressableItems = Set<MenuBarItem.ID>()
@@ -586,6 +594,17 @@ extension MenuBarItemManager {
             }
             hiddenBoundaryUsable = !publication.notes.contains { note in
                 if case .hidden = note { true } else { false }
+            }
+            let placement = IcePlacementNotice.placement(
+                held: iconPlacement,
+                read: PreferenceHidingPreconditions.iconPlacement(
+                    icon: discovery.set.visibleControlItem,
+                    divider: discovery.set.hiddenDivider
+                ),
+                hiddenBoundaryTrusted: hiddenBoundaryUsable
+            )
+            if iconPlacement != placement {
+                iconPlacement = placement
             }
             if !unpressableItems.isEmpty, Set(cache.managedItems.map(\.id)) != Set(itemCache.managedItems.map(\.id)) {
                 // A failed press is retried once the set of items changes.
