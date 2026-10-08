@@ -89,6 +89,7 @@ public enum PreferenceHidingStateRule {
         let checks = memberChecks.compactMap(\.check)
         if checks.contains(.skipped(.noReference)) { reasons.append(.noReference) }
         if checks.contains(where: isCaptureRefusal) { reasons.append(.captureRefused) }
+        if checks.contains(.skipped(.baselineStale)) { reasons.append(.baselineStale) }
         let folded = memberChecks.filter { $0.check == .checked(.hidden(folded: true)) }.map(\.member.tag)
         if !folded.isEmpty { reasons.append(.foldSeen(folded)) }
         let concluded: [SectionItemCheck] = [.checked(.hidden(folded: false)), .checked(.hidden(folded: true))]

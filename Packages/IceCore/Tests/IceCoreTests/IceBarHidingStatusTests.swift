@@ -65,6 +65,7 @@ struct IceBarHidingStatusTests {
     @Test("not verified at a length says so, and why, by its first reason", arguments: [
         (PreferenceHidingNotVerifiedReason.noReference, "no item to compare with"),
         (.captureRefused, "the menu bar could not be captured"),
+        (.baselineStale, "the last check is more than ten minutes old"),
         (.foldSeen([tag("a")]), "an item may be folded behind «"),
         (.membersUnchecked([tag("a")]), "an item could not be checked"),
         (.staleMembers([tag("a")]), "an item cannot be reached right now"),
@@ -86,10 +87,10 @@ struct IceBarHidingStatusTests {
         ])).logSummary == "blocked(iconLeftOfDivider,iconUnreadable,dividerUnusable,discoveryIncomplete,permissionDenied,ownReadNotOk,positional:2)")
         #expect(IceBarHidingStatus.state(.verifiedHidden).logSummary == "verified")
         #expect(IceBarHidingStatus.state(.requestedNotVerified(reasons: [
-            .lengthNotApplied, .noMembers, .noReference, .captureRefused, .foldSeen([Self.tag("a")]),
+            .lengthNotApplied, .noMembers, .noReference, .captureRefused, .baselineStale, .foldSeen([Self.tag("a")]),
             .membersUnchecked([Self.tag("a"), Self.tag("b")]), .staleMembers([Self.tag("c")]), .stackedMembers([Self.tag("d")]),
             .layoutChangePending(.menuWidthChanged),
-        ])).logSummary == "notVerified(lengthNotApplied,noMembers,noReference,captureRefused,folded:1,unchecked:2,stale:1,stacked:1,layoutChanged:menuWidthChanged)")
+        ])).logSummary == "notVerified(lengthNotApplied,noMembers,noReference,captureRefused,baselineStale,folded:1,unchecked:2,stale:1,stacked:1,layoutChanged:menuWidthChanged)")
         #expect(IceBarHidingStatus.state(.visibleFailed(drawn: [Self.tag("a"), Self.tag("b")])).logSummary == "failed(drawn:2)")
     }
 

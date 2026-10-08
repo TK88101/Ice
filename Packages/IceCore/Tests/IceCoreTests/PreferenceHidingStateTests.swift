@@ -250,4 +250,21 @@ struct PreferenceHidingStateTests {
         #expect(states.map(\.isIceBarOffered) == [false, true, true, true])
         #expect(states.map(\.countsAsLabSuccess) == [false, true, false, false])
     }
+
+    @Test("a check refused because its baseline is too old is its own reason, after a capture refusal, the member still unchecked")
+    func staleBaselineIsItsOwnReason() {
+        let a = fixtureItem(identifier: "a", pid: 1, frame: barFrame(minX: 40, width: 24))
+        let b = fixtureItem(identifier: "b", pid: 2, frame: barFrame(minX: 80, width: 24))
+        let membership = PreferenceHidingMembership.resolve(
+            leftOfDivider: [a, b], previousMembers: [], releasedTags: [],
+            childIdentifiersByPID: [1: ["a"], 2: ["b"]]
+        )
+        let state = PreferenceHidingStateRule.evaluate(
+            preconditions: .ok, membership: membership, lengthApplied: true,
+            checks: [a.key: .skipped(.baselineStale), b.key: .refusedAtBaseline(.noInk)],
+            pendingLayoutChange: nil
+        )
+        #expect(state == .requestedNotVerified(reasons: [.captureRefused, .baselineStale, .membersUnchecked([a.tagKey, b.tagKey])]))
+    }
 }
+

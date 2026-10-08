@@ -456,7 +456,7 @@ struct IceBarHidingMachineTests {
         driver.run(Self.sample(Self.signature(frontmostPID: 11)), ticks: 40)
         #expect(!driver.since(mark).contains(.setLength(nil)))
         #expect(driver.restLength == 736)
-        #expect(driver.state == .requestedNotVerified(reasons: [.membersUnchecked([Self.member(1).tag, Self.member(2).tag])]))
+        #expect(driver.state == .requestedNotVerified(reasons: [.baselineStale, .membersUnchecked([Self.member(1).tag, Self.member(2).tag])]))
     }
 
     // MARK: - D-b: the chevron (N3)

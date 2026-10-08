@@ -51,6 +51,10 @@ public enum PreferenceHidingNotVerifiedReason: Equatable, Sendable {
     /// A capture was refused or failed (`SectionItemCheck.refusedAtBaseline`,
     /// `CheckSkipReason.captureFailed`).
     case captureRefused
+    /// A member's check was refused because its baseline is older than
+    /// `BaselineReuse.maxAge`: a baseline needs the section shown, and Ice
+    /// does not show it only to refresh one (T3b design, stale reason).
+    case baselineStale
     /// Members that are stale (D-a).
     case staleMembers([TagKey])
     /// Members that are stacked; the pixel check skips them (D-a).

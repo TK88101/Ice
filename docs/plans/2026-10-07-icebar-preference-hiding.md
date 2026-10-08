@@ -206,6 +206,14 @@ the gate. Serial (each needs the one before); nothing is dispatched.
   were considered and dropped: whether a value beyond the bar is honoured is
   unknown, and it would be a second production path, round 1) without a new plan
   review.
+- Exception, recorded 2026-10-08 after T3b (thecure with Codex, converged; the owner
+  confirmed): the rule above was T2a's acceptance gate, and T2a passed it (6 of 6, both
+  variants, runs `20261008-092213-WTCPNh-trace`, `-092507-liCEDD-trace`). A later
+  failure of clause 4 alone -- both dividers read at one frame, x 981, 3 of 3, also
+  with the build before T3b (runs `20261008-100625-RDzm4C-trace`, control
+  `20261008-100830-3EZ9B3-trace`) -- is not answered by the revert, which would bring
+  back E1/E3 for both variants to address one. It is an open defect, **T2d**, to be
+  investigated under its own plan review; it does not block T4. S4 scenario 7 measures it.
 - Limits stated in STATUS: measured in this account only (P2's `icetest` layout is
   still unexplained, S4 scenario 1); a later-installed app's new item lands leftmost
   too (INFERRED from E2), so left of the divider, a member by default until the
@@ -533,6 +541,11 @@ What the code does now, and what contradicts S3 (all MEASURED, code):
   merely because a menu is long") and the goal (kept in Ice; not "certified"). Cost,
   said: in daily use, ten minutes after the last cycle a frontmost-app change leaves
   the pane at "not verified". The lab's scenarios are shorter than that.
+- The stale reason (added 2026-10-08, thecure with Codex, the owner confirmed): a
+  member's check `skipped(.baselineStale)` adds the not-verified reason `baselineStale`
+  (placed after `captureRefused`; the member is still counted in `membersUnchecked`),
+  so the pane says "the last check is more than ten minutes old" and the log
+  `baselineStale`, instead of a generic "could not be checked".
 - The per-signature length cache and `maxCachedLengths` go: a rest now survives the
   changes the cache was keyed by; `lastGood` remains.
 - Retired with the above: `IceBarShownReason` whole; `IceBarHidingStatus`'s
@@ -667,7 +680,11 @@ the best-effort length on a bar unlike T0's.
   real Ice under the staged id: (1) sparse bar, one member; (2) k = 2, 4, 8; (3) press
   from the IceBar with the helper's menu-open signal; (4) add and remove a member;
   (5) no reference on the bar; (6) a `«` already present; (7) fresh and previously
-  placed identity; (8) frontmost app and long menus changing while hidden; (9) Ice
+  placed identity, with the always-hidden section off and on (2026-10-08, T2d): the
+  always-hidden divider left of the hidden one, the pane's roster holding every member,
+  and the cache's hidden and always-hidden sections together matching the roster --
+  the hidden section non-empty only when a member lies between the two dividers;
+  (8) frontmost app and long menus changing while hidden; (9) Ice
   relaunched (membership and identity); (10) a positional item left of the divider: blocked, nothing moved;
   (14) Ice's icon left of its divider, at start and moved there while hidden: blocked,
   the notice, no length applied (T2c);
@@ -747,6 +764,7 @@ be able to establish `divider | others | icon`; remembered positions).
 | T2 | placement fix + inverted-layout notice (S2): T2a seed and trace oracle, T2b remembered-position measurement, T2c notice and machine blocker (S2 design) | T1 | none |
 | T3a | hiding rules as pure IceCore types + tests (S3) | this plan's review | none |
 | T3b | the rules wired into the live machine and coordinator (S3) | T2, T3a | none |
+| T2d | always-hidden divider read at the hidden divider's frame on a fresh identity (S2 design, exception) | its own plan review | none |
 | T4 | fixed-matrix lab runner (S4) | T3b; the owner starts it (section 5, O3) | one sitting per matrix run |
 | T5 | owner acceptance (S5) | T4 green x3 | one short sitting |
 
