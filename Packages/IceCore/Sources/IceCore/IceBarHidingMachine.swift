@@ -45,8 +45,8 @@ public struct IceBarHidingParameters: Equatable, Sendable {
 
 /// What Ice reads once a tick.
 public struct IceBarHidingSample: Equatable, Sendable {
-    /// The roster's tags as `hidden`, the cache's other sections, and what
-    /// the bar is shown with.
+    /// `PreferenceHidingRoster.signature`: every item read, the roster's
+    /// tags, and what the bar is shown with.
     public let signature: LayoutSignature
     public let preconditions: PreferenceHidingPreconditionResult
     public let membership: PreferenceHidingMembership
@@ -89,8 +89,9 @@ public enum IceBarHidingEvent: Equatable, Sendable {
 public enum IceBarHidingCommand: Equatable, Sendable {
     /// The hidden control item's length; `nil` is the standard length.
     case setLength(Double?)
-    /// Take a baseline of the roster with the section shown.
-    case takeBaseline(token: Int)
+    /// Take a baseline of the roster with the section shown: the members'
+    /// tags, and the ready members' keys it must cover.
+    case takeBaseline(token: Int, members: [TagKey], ready: [ItemKey])
     /// Check the members at the length the bar is now at.
     case observe(token: Int, length: Double)
     case report(IceBarHidingStatus)
@@ -115,6 +116,8 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     public struct PendingChange: Equatable, Sendable {
         public let change: PreferenceHidingLayoutChange
         public let since: Double
+        /// The token of the re-check under way.
+        public var recheck: Int?
     }
 
     /// A length Ice keeps applied, and what it last saw there.
@@ -123,8 +126,6 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         public var checks: [ItemKey: SectionItemCheck]
         public var chevronListed: Bool?
         public var pending: PendingChange?
-        /// The token of the re-check under way.
-        public var recheck: Int?
     }
 
     public enum Phase: Equatable, Sendable {
@@ -166,7 +167,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
 
     /// A length other than the standard one is set: what `blocked` and
     /// `quiet` must retire first.
-    public var lengthSet: Bool {
+    var lengthSet: Bool {
         switch phase {
         case .calibrating(_, let pending, _): pending != nil
         case .settling, .resting: true
@@ -178,23 +179,25 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     /// is offered exactly then (not during a trial or a settle: a presented
     /// IceBar would end that observation).
     public var lengthApplied: Bool {
-        if case .resting = phase { true } else { false }
+        rest != nil
     }
 
     /// The `«` reading of the rest's last observation; recorded, never acted on.
     public var chevronListed: Bool? {
-        if case .resting(let rest) = phase { rest.chevronListed } else { nil }
+        rest?.chevronListed
+    }
+
+    private var rest: Rest? {
+        if case .resting(let rest) = phase { rest } else { nil }
     }
 
     public var status: IceBarHidingStatus {
         if phase == .off { return .off }
         guard let sample else { return .state(.requestedNotVerified(reasons: [.lengthNotApplied])) }
-        var rest: Rest?
-        if case .resting(let value) = phase { rest = value }
         return .state(PreferenceHidingStateRule.evaluate(
             preconditions: sample.preconditions,
             membership: sample.membership,
-            lengthApplied: rest != nil,
+            lengthApplied: lengthApplied,
             checks: rest?.checks ?? [:],
             pendingLayoutChange: rest?.pending?.change
         ))
@@ -258,14 +261,10 @@ public struct IceBarHidingMachine: Equatable, Sendable {
                 failures = 0
                 return enterQuiet(now)
             }
-            if case .resting(var rest) = phase {
-                // D-e: the length stays; the checks are owed again.
-                rest.pending = PendingChange(change: change, since: now)
-                rest.recheck = nil
-                phase = .resting(rest)
-            } else if phase != .blocked {
-                return restartQuiet(now)
-            }
+            guard case .resting(var rest) = phase else { return enterQuiet(now) }
+            // D-e: the length stays; the checks are owed again.
+            rest.pending = PendingChange(change: change, since: now)
+            phase = .resting(rest)
         }
         return advance(sample, now: now)
     }
@@ -288,13 +287,13 @@ public struct IceBarHidingMachine: Equatable, Sendable {
             return propose(after: observations, now: now)
         case .resting(var rest):
             guard
-                let pending = rest.pending, rest.recheck == nil, !sample.isInteracting,
+                let pending = rest.pending, pending.recheck == nil, !sample.isInteracting,
                 now - pending.since >= parameters.quietPeriod
             else {
                 return []
             }
             let token = takeToken()
-            rest.recheck = token
+            rest.pending?.recheck = token
             phase = .resting(rest)
             return [.observe(token: token, length: rest.length)]
         }
@@ -303,12 +302,11 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     // MARK: - Calibration
 
     private mutating func start(_ sample: IceBarHidingSample, now: Double) -> [IceBarHidingCommand] {
-        guard !sample.isInteracting, sample.boundaryUsable, !sample.membership.members.isEmpty else { return [] }
-        if let lastStart, now - lastStart < parameters.minInterval { return [] }
+        guard !sample.isInteracting, sample.boundaryUsable, !sample.membership.members.isEmpty, !throttled(now) else { return [] }
         lastStart = now
         let token = takeToken()
         phase = .baselining(token: token)
-        return [.takeBaseline(token: token)]
+        return [.takeBaseline(token: token, members: sample.membership.members.map(\.tag), ready: sample.membership.readyKeys)]
     }
 
     private mutating func baselineTaken(token: Int, ok: Bool, now: Double) -> [IceBarHidingCommand] {
@@ -341,15 +339,17 @@ public struct IceBarHidingMachine: Equatable, Sendable {
                 lastGood = trial.length
                 failures = 0
             }
-            phase = .resting(Rest(length: trial.length, checks: checks, chevronListed: chevronListed, pending: nil, recheck: nil))
+            phase = .resting(Rest(length: trial.length, checks: checks, chevronListed: chevronListed, pending: nil))
             return []
         case .calibrating(let observations, let trial?, _) where trial.token == token:
             let observation = HiddenLengthObservation(length: trial.length, outcome: outcome(of: checks))
             phase = .calibrating(observations: observations + [observation], pending: nil, restedAt: now)
             // Back to rest, so the next trial is again a jump from rest (T0).
             return [.setLength(nil)]
-        case .resting(var rest) where rest.recheck == token:
-            rest = Rest(length: rest.length, checks: checks, chevronListed: chevronListed, pending: nil, recheck: nil)
+        case .resting(var rest) where rest.pending?.recheck == token:
+            rest.checks = checks
+            rest.chevronListed = chevronListed
+            rest.pending = nil
             phase = .resting(rest)
             return recycleIfDrawn(now: now)
         default:
@@ -360,8 +360,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     /// A member seen drawn at rest starts one new cycle, a bounded number of
     /// times; otherwise the rest stays and the state says `visibleFailed`.
     private mutating func recycleIfDrawn(now: Double) -> [IceBarHidingCommand] {
-        guard case .state(.visibleFailed) = status, failures < parameters.maxFailures else { return [] }
-        if let lastStart, now - lastStart < parameters.minInterval { return [] }
+        guard case .state(.visibleFailed) = status, failures < parameters.maxFailures, !throttled(now) else { return [] }
         failures += 1
         return enterQuiet(now)
     }
@@ -404,27 +403,31 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     /// The walk's outcome over the ready members: stale and stacked ones
     /// cap the state through the rule, they do not stop the walk.
     private func outcome(of checks: [ItemKey: SectionItemCheck]) -> HiddenLengthOutcome {
-        let ready = (sample?.membership.members ?? []).filter { $0.condition == .ready }.compactMap(\.key)
+        let ready = sample?.membership.readyKeys ?? []
         return HiddenLengthOutcomeRule.outcome(checks: ready.compactMap { checks[$0] }, memberCount: ready.count)
     }
 
     // MARK: - Transitions
 
+    /// Quiet from now: a drag or a layout change while already quiet starts
+    /// the period again (Codex review, T3b round 1).
     private mutating func enterQuiet(_ now: Double) -> [IceBarHidingCommand] {
-        if case .quiet = phase { return [] }
-        return restartQuiet(now)
-    }
-
-    private mutating func restartQuiet(_ now: Double) -> [IceBarHidingCommand] {
-        let retire = lengthSet
-        phase = .quiet(since: now)
-        return retire ? [.setLength(nil)] : []
+        move(to: .quiet(since: now))
     }
 
     private mutating func enterBlocked() -> [IceBarHidingCommand] {
+        move(to: .blocked)
+    }
+
+    /// Into a standard-length phase, retiring any length first.
+    private mutating func move(to standardPhase: Phase) -> [IceBarHidingCommand] {
         let retire = lengthSet
-        phase = .blocked
+        phase = standardPhase
         return retire ? [.setLength(nil)] : []
+    }
+
+    private func throttled(_ now: Double) -> Bool {
+        lastStart.map { now - $0 < parameters.minInterval } ?? false
     }
 
     private mutating func takeToken() -> Int {

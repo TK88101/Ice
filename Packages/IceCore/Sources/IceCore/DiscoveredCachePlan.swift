@@ -186,10 +186,28 @@ public enum DiscoveredCachePlan {
 
         guard let reading else { return (nil, .missing) }
         guard reading.isUsable, let frame = reading.frame else { return (nil, .unusable) }
-        guard state.isEnabled else { return (nil, .disabled) }
-        guard state.isCollapsed else { return (nil, .expanded) }
-        guard state.collapsedFor >= settleSeconds else { return (nil, .settling) }
-        guard !state.changedDuringPass else { return (nil, .changedDuringPass) }
+        if let issue = state.boundaryIssue { return (nil, issue) }
         return (frame.minX, nil)
+    }
+}
+
+extension DividerState {
+    /// Why Ice's own state of this divider keeps its frame from bounding a
+    /// section, the first of disabled, expanded, settling and changed during
+    /// the pass; `nil` when it may. The state half of
+    /// `DiscoveredCachePlan.evaluate`, so the roster and the icon's placement
+    /// (T3b design G3) cannot disagree on it.
+    public var boundaryIssue: BoundaryIssue? {
+        if !isEnabled { return .disabled }
+        if !isCollapsed { return .expanded }
+        if collapsedFor < DiscoveredCachePlan.settleSeconds { return .settling }
+        if changedDuringPass { return .changedDuringPass }
+        return nil
+    }
+
+    /// Ice holds the divider at standard length, settled and unchanged during
+    /// the pass: its frame, if readable, is where it draws its boundary.
+    public var isAtStandardLength: Bool {
+        boundaryIssue == nil
     }
 }

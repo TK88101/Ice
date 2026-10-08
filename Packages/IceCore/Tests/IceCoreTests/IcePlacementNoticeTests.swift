@@ -75,6 +75,24 @@ struct IcePlacementNoticeTests {
         #expect(!state(changed: true).isAtStandardLength)
     }
 
+    @Test("the one definition: the cache plan's boundary verdict and the placement read the same state rule, first issue first")
+    func boundaryIssueIsShared() {
+        func state(enabled: Bool = true, collapsed: Bool = true, collapsedFor: Double = 5, changed: Bool = false) -> DividerState {
+            DividerState(isEnabled: enabled, isCollapsed: collapsed, collapsedFor: collapsedFor, changedDuringPass: changed)
+        }
+        #expect(state().boundaryIssue == nil)
+        #expect(state(enabled: false, collapsed: false).boundaryIssue == .disabled)
+        #expect(state(collapsed: false, changed: true).boundaryIssue == .expanded)
+        #expect(state(collapsedFor: 0.2, changed: true).boundaryIssue == .settling)
+        #expect(state(changed: true).boundaryIssue == .changedDuringPass)
+        let reading = DividerReading(frame: BarRect(minX: 900, minY: 4.5, width: 18, height: 24), isUsable: true)
+        for candidate in [state(), state(enabled: false), state(collapsed: false), state(collapsedFor: 0.2), state(changed: true)] {
+            let verdict = DiscoveredCachePlan.evaluate(reading: reading, state: candidate, ownRead: .ok)
+            #expect(verdict.issue == candidate.boundaryIssue)
+            #expect((verdict.minX != nil) == candidate.isAtStandardLength)
+        }
+    }
+
     @Test("the text says what is wrong, what Ice does about it and the repair, and promises nothing about the drag lasting")
     func text() {
         let message = IcePlacementNotice.iconLeftOfDivider.message

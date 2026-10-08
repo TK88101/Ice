@@ -31,7 +31,7 @@ public enum PreferenceHidingLayoutChange: Equatable, Sendable {
     /// structural one is never hidden behind a soft one.
     public static func between(_ old: LayoutSignature, _ new: LayoutSignature) -> PreferenceHidingLayoutChange? {
         if old.displayID != new.displayID { return .displayChanged }
-        if old.visible != new.visible || old.hidden != new.hidden || old.alwaysHidden != new.alwaysHidden { return .itemsChanged }
+        if old.items != new.items || old.members != new.members { return .itemsChanged }
         if old.frontmostPID != new.frontmostPID { return .frontmostAppChanged }
         if old.menuMaxX != new.menuMaxX { return .menuWidthChanged }
         if old.spaceID != new.spaceID { return .spaceChanged }

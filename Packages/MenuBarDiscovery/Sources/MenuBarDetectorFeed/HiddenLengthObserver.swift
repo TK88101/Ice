@@ -52,7 +52,7 @@ public struct HiddenLengthReading: Equatable, Sendable {
         self.chevronListed = chevronListed
     }
 
-    static let nothing = HiddenLengthReading(checks: [:], chevronListed: nil)
+    public static let nothing = HiddenLengthReading(checks: [:], chevronListed: nil)
 }
 
 /// IceBar's observation source on macOS 27 (plan 2026-10-03-icebar-build,
@@ -61,10 +61,14 @@ public struct HiddenLengthReading: Equatable, Sendable {
 /// length Ice applies.
 public actor HiddenLengthObserver {
     private let verification: HidingVerification
-    public nonisolated let chevron: ChevronReader
+    private let chevron: ChevronReader
     private let settle: Double
     private let sleep: @Sendable (Double) async -> Void
     private var prepared: PreparedVerification?
+    /// Which `takeBaseline` call may still set `prepared`: the actor is
+    /// reentrant across `prepare`, so an older call can resume after a newer
+    /// one (Codex review, T3b round 3).
+    private var generation = 0
 
     public init(
         verification: HidingVerification,
@@ -83,12 +87,15 @@ public actor HiddenLengthObserver {
     /// returned is kept either way (unless cancelled): a length Ice applies
     /// best effort then reports each member's real skip or refusal.
     public func takeBaseline(sectionMap: [TagKey: ItemSection]) async -> BaselineCoverage {
+        generation += 1
+        let mine = generation
         let fresh = await verification.prepare(
             sections: [.hidden],
             sectionMap: sectionMap,
             explicitCandidates: nil,
             reusing: nil
         )
+        guard mine == generation else { return .cancelled }
         guard !Task.isCancelled else {
             prepared = nil
             return .cancelled

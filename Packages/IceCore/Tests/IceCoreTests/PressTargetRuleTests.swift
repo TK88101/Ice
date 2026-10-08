@@ -129,4 +129,12 @@ struct PressOutcomeTests {
     func identifiersOfNoExtras() {
         #expect(PressTargetRule.identifiers(of: read([], extrasError: "noValue")) == [])
     }
+
+    @Test("T3b: one rule for a child's entry, shared by the pass and the press: an item's identifier, empty for none, nil for any other role")
+    func identifierOfOneChild() {
+        #expect(PressTargetRule.identifier(role: PressTargetRule.itemRole, identifier: "clock") == "clock")
+        #expect(PressTargetRule.identifier(role: "AXMenuBarItem", identifier: nil) == "")
+        #expect(PressTargetRule.identifier(role: "AXGroup", identifier: "clock") == nil)
+        #expect(PressTargetRule.identifier(role: nil, identifier: "clock") == nil)
+    }
 }

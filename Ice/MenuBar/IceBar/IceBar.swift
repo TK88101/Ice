@@ -285,7 +285,7 @@ private struct IceBarContentView: View {
         // hidden items are left of the hidden divider too (plan
         // 2026-10-07-icebar-preference-hiding, T3b design).
         if #available(macOS 27, *), appState.settings.general.useIceBar {
-            return itemManager.preferenceHidingRoster.items
+            return itemManager.iceBarRoster.items
         }
         return itemManager.itemCache.managedItems(for: section)
     }

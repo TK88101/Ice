@@ -56,12 +56,15 @@ final class MenuBarItemManager: ObservableObject {
 
     /// IceBar's roster and preconditions on macOS 27 in IceBar mode, updated
     /// by every completed discovery pass (T3b design); empty otherwise.
-    @Published var preferenceHidingRoster = PreferenceHidingRoster()
+    @Published var iceBarRoster = IceBarRoster()
 
     /// IceBar on macOS 27: items whose press failed, shown disabled in the
     /// IceBar, and items whose press has not returned yet (plan 9.5).
     @Published var unpressableItems = Set<MenuBarItem.ID>()
     var pendingPresses = Set<MenuBarItem.ID>()
+    /// Bumped when the IceBar's roster is reset: a press that returns after
+    /// that changes nothing (T3b, Codex review round 3).
+    var pressGeneration = 0
 
     /// IceBar's hiding on macOS 27 (`IceBarHidingCoordinator`), kept untyped
     /// because the type exists only there.
@@ -610,13 +613,11 @@ extension MenuBarItemManager {
             if iconPlacement != placement {
                 iconPlacement = placement
             }
-            if !unpressableItems.isEmpty, Set(cache.managedItems.map(\.id)) != Set(itemCache.managedItems.map(\.id)) {
-                // A failed press is retried once the set of items changes.
-                unpressableItems = []
-            }
             if itemCache != cache {
                 itemCache = cache
             }
+            // In the same main-actor turn as the cache, so views see one change.
+            updateIceBarRoster(discovery: discovery, hiddenDividerState: states.hidden)
 
             if await cacheActor.commitCachedItemWindowIDs([]) {
                 logger.info("Accessibility permission is back, resuming menu bar item cache")
@@ -625,15 +626,14 @@ extension MenuBarItemManager {
                 logger.debug("Menu bar item cache boundary note: \(String(describing: note), privacy: .public)")
             }
         case .keepPrevious(.permissionDenied):
+            // The roster stays and its preconditions block (T3b design, review round 2).
+            updateIceBarRoster(discovery: discovery, hiddenDividerState: states.hidden)
             if await cacheActor.recordCacheFailure() {
                 logger.warning("Accessibility permission denied, keeping the previous menu bar item cache")
             } else {
                 logger.info("Still missing accessibility permission, will retry")
             }
         }
-        // Also after a pass the cache does not publish: its preconditions
-        // block (T3b design, review round 2).
-        updatePreferenceHidingRoster(discovery: discovery, hiddenDividerState: states.hidden)
     }
 
     /// A divider's latest snapshot, or -- before the first emission -- its

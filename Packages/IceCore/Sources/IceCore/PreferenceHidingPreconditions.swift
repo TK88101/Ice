@@ -137,16 +137,6 @@ extension ItemPosition {
     }
 }
 
-extension DividerState {
-    /// Ice holds the divider enabled, collapsed for at least
-    /// `DiscoveredCachePlan.settleSeconds` and unchanged during the pass: its
-    /// frame, if readable, is then where it draws its boundary. Ice's own
-    /// state only; `DiscoveredCachePlan.evaluate` adds the reading.
-    public var isAtStandardLength: Bool {
-        isEnabled && isCollapsed && collapsedFor >= DiscoveredCachePlan.settleSeconds && !changedDuringPass
-    }
-}
-
 extension DividerReading {
     /// The section boundary this divider draws: its frame's `minX` iff the
     /// reading is usable and every component of the frame is finite. Shared

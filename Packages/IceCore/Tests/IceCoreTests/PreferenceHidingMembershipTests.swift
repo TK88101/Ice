@@ -499,4 +499,14 @@ struct PreferenceHidingMembershipTests {
         let carried = PreferenceHidingMembership.carried(previous: [a.tagKey], lastKeys: [:], hasExited: { _ in true })
         #expect(carried == [a.tagKey])
     }
+
+    @Test("ready keys: the members a pixel check can speak for, in roster order; stacked, stale and missing ones are not")
+    func readyKeys() {
+        let a = item("a", pid: 1)
+        let b = item("b", pid: 2, position: .stacked)
+        let c = item("c", pid: 3)
+        let gone = TagKey(namespace: "com.example.gone", title: "g/p9")
+        let membership = resolve([c, a, b], previous: [gone])
+        #expect(membership.readyKeys == [c.key, a.key])
+    }
 }

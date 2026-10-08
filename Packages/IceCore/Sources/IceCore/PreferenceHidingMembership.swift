@@ -87,6 +87,12 @@ public struct PreferenceHidingMembership: Equatable, Sendable {
         members.filter { $0.condition == .stacked }
     }
 
+    /// The keys of the members a pixel check can speak for, in roster order:
+    /// what a baseline must cover and what a length's outcome is judged on.
+    public var readyKeys: [ItemKey] {
+        members.filter { $0.condition == .ready }.compactMap(\.key)
+    }
+
     /// The one sanctioned geometry for membership (D-a): everything of `set`
     /// left of its hidden divider, so a caller cannot feed `resolve` the wrong
     /// set. It derives, from `set.items` (third-party items, parked ones

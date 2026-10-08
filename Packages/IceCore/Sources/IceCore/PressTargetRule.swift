@@ -21,6 +21,15 @@ public enum PressTargetRule {
     /// The role of a child that can be pressed as a status item.
     static let itemRole = "AXMenuBarItem"
 
+    /// One child's entry in `index(for:identifiers:)`'s input: its identifier
+    /// (`""` when it has none) if it is a status item, else `nil`. Shared by a
+    /// discovery pass and the press itself, so a cell marked pressable is
+    /// judged by the rule the press uses. The identifier is read only for a
+    /// status item (one Accessibility call fewer per other child).
+    public static func identifier(role: String?, identifier: @autoclosure () -> String?) -> String? {
+        role == itemRole ? identifier() ?? "" : nil
+    }
+
     /// `index(for:identifiers:)`'s input as a discovery pass read it, so a
     /// roster can say before any click which members a press could reach
     /// (plan 2026-10-07-icebar-preference-hiding, D-f and T3b design G2).
@@ -35,8 +44,8 @@ public enum PressTargetRule {
         case .items(let records):
             let count = max(raw.childCount, (records.map(\.childIndex).max() ?? -1) + 1)
             var identifiers = [String?](repeating: nil, count: count)
-            for record in records where identifiers.indices.contains(record.childIndex) && record.role.value == itemRole {
-                identifiers[record.childIndex] = record.identifier.value ?? ""
+            for record in records where identifiers.indices.contains(record.childIndex) {
+                identifiers[record.childIndex] = identifier(role: record.role.value, identifier: record.identifier.value)
             }
             return identifiers
         }

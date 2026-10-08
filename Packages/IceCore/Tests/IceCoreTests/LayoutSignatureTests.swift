@@ -1,28 +1,20 @@
 import Testing
 @testable import IceCore
 
-/// What a calibrated length is valid for (plan 2026-10-03-icebar-build, D1 and
-/// section 9.2): any difference here sends the hidden section back to the bar.
+/// The layout a hiding length was applied in (plan 2026-10-07-icebar-preference-
+/// hiding, T3b design): every item a pass read, the roster, and what the bar is
+/// shown with. `PreferenceHidingLayoutChange.between` names the difference.
 @Suite("LayoutSignature")
 struct LayoutSignatureTests {
     func signature(
-        visible: [String] = ["v1"],
-        hidden: [String] = ["h1", "h2"],
-        alwaysHidden: [String] = [],
+        items: [String] = ["v1", "h1", "h2"],
+        members: [String] = ["h1", "h2"],
         frontmostPID: Int32? = 10,
         menuMaxX: Double? = 400,
         displayID: UInt32? = 1,
         spaceID: UInt64? = 7
     ) -> LayoutSignature {
-        LayoutSignature(
-            visible: visible,
-            hidden: hidden,
-            alwaysHidden: alwaysHidden,
-            frontmostPID: frontmostPID,
-            menuMaxX: menuMaxX,
-            displayID: displayID,
-            spaceID: spaceID
-        )
+        fixtureSignature(items: items, members: members, frontmostPID: frontmostPID, menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID)
     }
 
     @Test("the same layout gives the same signature")
@@ -31,17 +23,16 @@ struct LayoutSignatureTests {
         #expect(signature().hashValue == signature().hashValue)
     }
 
-    @Test("an item added, removed or moved to another section changes it")
+    @Test("an item added or removed, or a member added or released, changes it")
     func itemSetChanges() {
-        #expect(signature(hidden: ["h1"]) != signature())
-        #expect(signature(hidden: ["h1", "h2", "h3"]) != signature())
-        #expect(signature(visible: ["v1", "h2"], hidden: ["h1"]) != signature())
-        #expect(signature(hidden: ["h1"], alwaysHidden: ["h2"]) != signature())
+        #expect(signature(items: ["v1", "h1"]) != signature())
+        #expect(signature(items: ["v1", "h1", "h2", "h3"]) != signature())
+        #expect(signature(members: ["h1"]) != signature())
     }
 
-    @Test("the order of items changes it")
+    @Test("the roster's order changes it")
     func orderChanges() {
-        #expect(signature(hidden: ["h2", "h1"]) != signature())
+        #expect(signature(members: ["h2", "h1"]) != signature())
     }
 
     @Test("the frontmost app, the display and the space change it")

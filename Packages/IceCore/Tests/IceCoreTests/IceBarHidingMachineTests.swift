@@ -26,17 +26,14 @@ struct IceBarHidingMachineTests {
     }
 
     static func signature(
-        visible: [String] = ["v1"],
-        hidden: [String] = ["m1", "m2"],
+        items: [String] = ["v1", "m1", "m2"],
+        members: [String] = ["m1", "m2"],
         frontmostPID: Int32 = 10,
         menuMaxX: Double? = 400,
         displayID: UInt32 = 1,
         spaceID: UInt64 = 7
     ) -> LayoutSignature {
-        LayoutSignature(
-            visible: visible, hidden: hidden, alwaysHidden: [], frontmostPID: frontmostPID,
-            menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID
-        )
+        fixtureSignature(items: items, members: members, frontmostPID: frontmostPID, menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID)
     }
 
     static func sample(
@@ -98,7 +95,7 @@ struct IceBarHidingMachineTests {
                 switch command {
                 case .setLength(let value):
                     length = value
-                case .takeBaseline(let token):
+                case .takeBaseline(let token, _, _):
                     baselines += 1
                     if answers { send(.baseline(token: token, ok: baselineOK)) }
                 case .observe(let token, let asked):
@@ -178,7 +175,7 @@ struct IceBarHidingMachineTests {
         var driver = Driver()
         driver.answers = false
         driver.settle(ticks: 4)
-        guard case .takeBaseline(let old)? = driver.log.last(where: { if case .takeBaseline = $0 { true } else { false } }) else {
+        guard case .takeBaseline(let old, _, _)? = driver.log.last(where: { if case .takeBaseline = $0 { true } else { false } }) else {
             Issue.record("no baseline asked"); return
         }
         driver.send(.mode(isIceBar: false))
@@ -237,6 +234,33 @@ struct IceBarHidingMachineTests {
         #expect(driver.baselines == 0)
         #expect(driver.state == .requestedNotVerified(reasons: [.lengthNotApplied, .noMembers]))
         #expect(driver.length == nil)
+    }
+
+    @Test("the baseline is asked for the roster the machine sampled: its tags, and the ready members' keys")
+    func baselineCarriesTheRoster() {
+        var driver = Driver()
+        driver.members = Self.roster([Self.member(1), Self.member(2, .stacked)])
+        driver.answers = false
+        driver.settle(ticks: 3)
+        guard case .takeBaseline(_, let members, let ready)? = driver.log.last else { Issue.record("no baseline asked"); return }
+        #expect(members == [Self.member(1).tag, Self.member(2).tag])
+        #expect(ready == [Self.key(1)])
+    }
+
+    @Test("a drag or an item change while already quiet starts the quiet period again (Codex review, T3b round 1)", arguments: [
+        sample(dragging: true), sample(signature(items: ["v1", "v2", "m1", "m2"])),
+    ])
+    func quietRestarts(interruption: IceBarHidingSample) {
+        var driver = Driver()
+        driver.answers = false
+        driver.send(.mode(isIceBar: true))
+        driver.run(Self.sample(boundaryUsable: false), ticks: 10)
+        driver.tick(interruption)
+        let after = interruption.isDragging ? Self.sample() : interruption
+        driver.run(after, ticks: 2)
+        #expect(driver.baselines == 0)
+        driver.tick(after)
+        #expect(driver.baselines == 1)
     }
 
     @Test("no baseline before a pass has placed the sections by the divider at standard length")
@@ -412,7 +436,7 @@ struct IceBarHidingMachineTests {
     }
 
     @Test("an item or display change at rest retires the length: the roster may be wrong and advances only at standard length", arguments: [
-        signature(visible: ["v1", "v2"]), signature(hidden: ["m1"]), signature(displayID: 2),
+        signature(items: ["v1", "v2", "m1", "m2"]), signature(members: ["m1"]), signature(displayID: 2),
     ])
     func structuralChangeRetires(changed: LayoutSignature) {
         var driver = Driver()
@@ -468,7 +492,7 @@ struct IceBarHidingMachineTests {
         // Answer by hand so a trial can be left pending.
         for _ in 0..<ticksIn {
             for command in driver.log.suffix(2) {
-                if case .takeBaseline(let token) = command { driver.send(.baseline(token: token, ok: true)) }
+                if case .takeBaseline(let token, _, _) = command { driver.send(.baseline(token: token, ok: true)) }
             }
             driver.tick()
             if driver.machine.lengthSet { break }
@@ -533,7 +557,7 @@ struct IceBarHidingMachineTests {
         driver.answers = false
         driver.send(.mode(isIceBar: true))
         driver.run(ticks: 3)
-        if case .takeBaseline(let token)? = driver.log.last { driver.send(.baseline(token: token, ok: true)) }
+        if case .takeBaseline(let token, _, _)? = driver.log.last { driver.send(.baseline(token: token, ok: true)) }
         driver.tick()
         #expect(driver.machine.lengthSet)
         driver.tick(Self.sample(interacting: true))

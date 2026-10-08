@@ -47,3 +47,22 @@ func fixtureSet(
         ownRead: ownRead, systemElements: [], dropped: dropped, staleProcesses: staleProcesses, completeness: completeness
     )
 }
+
+/// A tag from a short name, for signatures and rosters.
+func fixtureTag(_ name: String) -> TagKey {
+    TagKey(namespace: "com.example.\(name)", title: "\(name)/p1")
+}
+
+func fixtureSignature(
+    items: [String] = ["v1", "m1", "m2"],
+    members: [String] = ["m1", "m2"],
+    frontmostPID: Int32? = 10,
+    menuMaxX: Double? = 400,
+    displayID: UInt32? = 1,
+    spaceID: UInt64? = 7
+) -> LayoutSignature {
+    LayoutSignature(
+        items: items.map(fixtureTag), members: members.map(fixtureTag), frontmostPID: frontmostPID,
+        menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID
+    )
+}

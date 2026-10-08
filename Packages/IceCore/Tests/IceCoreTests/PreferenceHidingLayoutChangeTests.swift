@@ -106,18 +106,14 @@ struct PreferenceHidingLayoutChangeTests {
     // MARK: - Derived from two signatures, not classified by hand (T3b)
 
     func signature(
-        visible: [String] = ["v1"],
-        hidden: [String] = ["h1"],
-        alwaysHidden: [String] = [],
+        items: [String] = ["v1", "h1"],
+        members: [String] = ["h1"],
         frontmostPID: Int32? = 10,
         menuMaxX: Double? = 400,
         displayID: UInt32? = 1,
         spaceID: UInt64? = 7
     ) -> LayoutSignature {
-        LayoutSignature(
-            visible: visible, hidden: hidden, alwaysHidden: alwaysHidden, frontmostPID: frontmostPID,
-            menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID
-        )
+        fixtureSignature(items: items, members: members, frontmostPID: frontmostPID, menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID)
     }
 
     @Test("equal signatures are no change")
@@ -129,9 +125,8 @@ struct PreferenceHidingLayoutChangeTests {
     func eachField() {
         let old = signature()
         #expect(PreferenceHidingLayoutChange.between(old, signature(displayID: 2)) == .displayChanged)
-        #expect(PreferenceHidingLayoutChange.between(old, signature(visible: ["v1", "v2"])) == .itemsChanged)
-        #expect(PreferenceHidingLayoutChange.between(old, signature(hidden: [])) == .itemsChanged)
-        #expect(PreferenceHidingLayoutChange.between(old, signature(alwaysHidden: ["a1"])) == .itemsChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(items: ["v1", "v2", "h1"])) == .itemsChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(members: [])) == .itemsChanged)
         #expect(PreferenceHidingLayoutChange.between(old, signature(frontmostPID: 11)) == .frontmostAppChanged)
         #expect(PreferenceHidingLayoutChange.between(old, signature(menuMaxX: 900)) == .menuWidthChanged)
         #expect(PreferenceHidingLayoutChange.between(old, signature(menuMaxX: nil)) == .menuWidthChanged)
@@ -141,8 +136,8 @@ struct PreferenceHidingLayoutChangeTests {
     @Test("several differences at once: the structural one is named, display before items")
     func structuralWins() {
         let old = signature()
-        #expect(PreferenceHidingLayoutChange.between(old, signature(hidden: [], frontmostPID: 11, spaceID: 8)) == .itemsChanged)
-        #expect(PreferenceHidingLayoutChange.between(old, signature(hidden: [], displayID: 2)) == .displayChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(members: [], frontmostPID: 11, spaceID: 8)) == .itemsChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(members: [], displayID: 2)) == .displayChanged)
         #expect(PreferenceHidingLayoutChange.between(old, signature(frontmostPID: 11, menuMaxX: 900, spaceID: 8)) == .frontmostAppChanged)
     }
 

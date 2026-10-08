@@ -38,10 +38,8 @@ enum MenuBarItemPresser {
         let children = LiveExtrasReader.childElements(attribute(bar, kAXChildrenAttribute))
         let identifiers = children.map { child -> String? in
             AXUIElementSetMessagingTimeout(child, readTimeout)
-            guard string(child, kAXRoleAttribute) == "AXMenuBarItem" else {
-                return nil
-            }
-            return string(child, "AXIdentifier") ?? ""
+            // The rule a discovery pass used to mark this cell pressable.
+            return PressTargetRule.identifier(role: string(child, kAXRoleAttribute), identifier: string(child, "AXIdentifier"))
         }
         guard let index = PressTargetRule.index(for: key, identifiers: identifiers) else {
             return .failed

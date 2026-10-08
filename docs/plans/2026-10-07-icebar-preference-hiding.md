@@ -878,3 +878,29 @@ the string-keyed phase fixture in the machine's tests; `PASSING` doubling as the
 variant list in `trace-tool.py`; the pane telling "same line" by comparing texts; the
 placement computed on passes that may not update it; `placement()`'s seventh argument
 now used only by `inv`'s tests. Open for T3b: the two "not covered" rows of STATUS.
+
+### T3b code review (/simcodex, 2026-10-08; 3 rounds, the stated cap, then one Codex confirmation)
+
+Reviewed: `git diff 226d84e` (the pre-review checkpoint `707ffe3` plus the fixes, uncommitted). Codex
+by `codex review --base` in round 1, then `codex exec` on the working tree.
+
+| Round | simplify | Codex | Ruling |
+|---|---|---|---|
+| 1 | 4 views: 9 P1 -- roster bookkeeping untested in the app layer; the ready set built twice from two samples; `LayoutSignature`'s field names repurposed; the press-failure retry watching the cache, not the IceBar's cells; `isAtStandardLength` restating `DiscoveredCachePlan.evaluate`; the roster published in a later turn than the cache, and frame-sensitive; two near-identical phase transitions; the `«` threaded through the machine and read by nothing; stored fields derivable from others | 1 (labelled P2, a behaviour defect): a drag or structural change while already quiet did not restart the quiet period | taken: the quiet fix; `PreferenceHidingRoster` (IceCore, tested); `DividerState.boundaryIssue`; `readyKeys`, the baseline command carrying the roster; `LayoutSignature(items:members:)`; the retry following the roster; the roster updated in the cache's turn; `move(to:)`. **Rejected**: taking the `«` out of the machine -- S3's T3b bullet requires the machine to record it. Frame-sensitive equality left (P2) |
+| 2 | 1 P1: the old cache-based retry left beside the new one | 1 P1: IceBar mode off did not empty the roster until the next pass, so a mode turned on again could hide with the old roster; 1 P2: no wiring-level test | all taken; the P2 is a limit: `Ice/` has no test target |
+| 3 | 0 P1 | 2 P1: `HiddenLengthObserver` is a reentrant actor, so a cancelled baseline could resume after a newer one and clear it; a press in flight across a reset re-disabled a cell of the new roster | both taken: a baseline generation; a press generation bumped by the reset |
+| after | -- | both RESOLVED, no new P0/P1: **CONVERGED** | -- |
+
+P0/P1 per round: simplify 9, 1, 0; Codex 1, 1, 2, then 0. No security-sensitive change (no
+auth, payment, personal data, crypto, file or network I/O beyond what the reads already did): no
+security review. Left as P2: `MenuBarItem` equality includes frames, so the roster republishes when a
+member's frame moves; `childIdentifiersByPID` classifies each read a second time and is built
+outside IceBar mode too; the `«` read in `observe` runs after the verify, not beside it; the
+"AXMenuBarItem" literal in `ItemCatalog` and `DiscoveredFrameReader`; the item-by-key index built in
+three places with three collision policies; `PreparedVerification.Ready` without an
+`observedTargets`; `BaselineCoverage` now feeds only the log; `IceBarHidingStatus` could be methods
+on an optional `PreferenceHidingState`; `setMode(false)`'s save-and-restore of two fields; three
+test files each wrapping `fixtureSignature`; `itemTags` public for tests only; the IceBar view's own
+`#available` and mode branch; three derivations of "the boundary was trusted"
+(`hiddenBoundaryUsable`, `resolve`'s, `boundaryIssue`).
+
