@@ -24,9 +24,10 @@
 //       --mimic-nodivider  each item is put into Ice's `.noDivider` shown
 //                     state exactly as ControlItem.swift does it (af4baf1,
 //                     :69-86, :337-339, :369-374, :408-428)
-//       --autosave    only for T8b step 10; one item only; written to this
-//                     bundle id's own defaults domain, which the harness
-//                     deletes before and after
+//       --autosave    T8b step 10 and the lab matrix (S4 design D3): the
+//                     item's autosave name; with two items the second is
+//                     `<name>-2`; written to this bundle id's own defaults
+//                     domain, which the harness deletes before and after
 //
 // Never a filled block: every glyph is VZGlyphs' stroked shape.
 //
@@ -149,8 +150,8 @@ func parseConfig() -> Config {
         usage("--glyphs is required unless --mimic-nodivider")
     }
 
+    // With two items the second is named `<name>-2` (SpikeHelperFlags.autosaveName).
     let autosave = option("--autosave")
-    if autosave != nil, count != 1 { usage("--autosave takes one item only") }
 
     let items = zip(identifiers, glyphs).map { ItemSpec(identifier: $0, glyph: $1) }
     var itemsConfig = Config(items: items, mimicNoDivider: mimic, autosave: autosave, lifetime: lifetime, spacer: false)
@@ -238,7 +239,7 @@ final class HelperItem {
 func makePlainItem(index: Int, spec: ItemSpec, menuTarget: Delegate? = nil) -> HelperItem {
     let item = NSStatusBar.system.statusItem(withLength: itemLengthPt)
     if let autosave = config.autosave {
-        item.autosaveName = autosave
+        item.autosaveName = SpikeHelperFlags.autosaveName(autosave, index: index)
     }
     if let button = item.button {
         if let identifier = spec.identifier {
@@ -277,7 +278,7 @@ func makePlainItem(index: Int, spec: ItemSpec, menuTarget: Delegate? = nil) -> H
 func makeNoDividerItem(index: Int, spec: ItemSpec, target: Delegate) -> HelperItem {
     let item = NSStatusBar.system.statusItem(withLength: 0)
     if let autosave = config.autosave {
-        item.autosaveName = autosave
+        item.autosaveName = SpikeHelperFlags.autosaveName(autosave, index: index)
     }
 
     var constraint: NSLayoutConstraint?

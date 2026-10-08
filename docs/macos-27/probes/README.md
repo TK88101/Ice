@@ -137,3 +137,22 @@ the two helper ids, which stay). `store-lib.zsh` reads MenuBarAgent's store for
 both, `trace-tool.py` guards and judges, `test-trace.sh` tests the tool on
 synthetic input (side effects: none).
 
+The lab matrix (same plan, S4 design, T4): `stage-lab.sh icetest` builds the
+probes and Ice, stages them with `run-lab.sh` and `lab-tool.py` to
+`/Users/Shared/IceReverse-lab`, records their sha256 in `lab.env` and runs
+`run-lab.sh --dry-run`. `run-lab.sh` is the one command the owner starts in the
+`icetest` session, in front: every scenario with a fresh copy of Ice under its
+own bundle id and executable name, started with `-IceLabReport YES` (Ice's lab
+report mode: JSON events and snapshots on standard output, `bar open|close` and
+`press` on standard input; refused outside `com.icespike4.lab.`), sacrificial
+helpers, up to three rounds, judged by `lab-tool.py`. Side effects: the copies'
+and helpers' items on the bar, their defaults domains (deleted and checked
+empty), MenuBarAgent's records of them (left; about 100 keys a round; above 1500
+lab keys the runner refuses: the reset is a new lab account), the menus helper
+and Terminal brought to the front in turn. It never posts an input event.
+`test_lab_tool.py` and `test-lab.sh` test the judge and the runner against stubs
+(side effects: the stub copies' and helpers' defaults domains, deleted).
+`icewatch chevron` (read-only) and `icewatch activate --pid` (brings that app
+forward) are the runner's; `vzhelper --autosave` with two items names the second
+`<name>-2`.
+

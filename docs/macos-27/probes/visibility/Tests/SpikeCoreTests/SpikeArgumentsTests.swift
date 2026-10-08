@@ -46,4 +46,10 @@ struct SpikeArgumentsTests {
         #expect(SpikeHelperFlags.closeMenu == "closemenu")
         #expect(SpikeHelperFlags.menuReply == "menu")
     }
+
+    @Test("a two-item helper's autosave names: the name itself, then the name with -2 (S4 design D3)")
+    func autosaveNames() {
+        #expect(SpikeHelperFlags.autosaveName("vz-lab-r1-1sparse-1", index: 0) == "vz-lab-r1-1sparse-1")
+        #expect(SpikeHelperFlags.autosaveName("vz-lab-r1-1sparse-1", index: 1) == "vz-lab-r1-1sparse-1-2")
+    }
 }

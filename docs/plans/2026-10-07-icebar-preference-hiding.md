@@ -926,6 +926,23 @@ IceBar27 extension for the snapshot's reads); probes (`vzhelper`, `icewatch`,
 `STATUS.md`. Frozen files untouched. Rollback: revert T4's commits; without the launch
 argument Ice is as after T3b.
 
+Corrected while building (2026-10-08), put to Codex in T4's code review:
+- A setup clause added to every scenario that is judged on a check (`chevronAtStart`):
+  `«` listed when the scenario begins makes the run `notEstablished`, since a baseline
+  refuses with a fold present (L2). Found by `icewatch chevron` reading `listed: true`
+  on the owner's own bar at the time; `crowded` alone is exempt.
+- The runner's copy of the staged bundle is made writable before it is renamed and
+  re-signed (`ditto` keeps the staged files' read-only modes); `expected.json` is
+  written when a scenario begins, so a run that stops early is judged `aborted` with
+  the runner's reason; a judge that fails writes an `aborted` verdict.
+- Ice's start regression with T4's build (`run-trace.sh`, plain and renamed, runs
+  `20261008-141724-79DOiX-trace`, `-141922-GTxPkE-trace`): every run's layout the same
+  as before (hidden divider x 993, 11 others, icon x 1508; with the always-hidden
+  section its divider at x 977, left of the hidden one, 6 of 6: the T2d clause held
+  this time); the runs that failed, failed on clause 6's complete baseline (two
+  incomplete passes, on-bar counts 11 = 11) or two disagreeing passes. The trace's
+  code path is untouched by T4. A renamed copy started and traced 9 of 9.
+
 Risks: the first sitting meets several unknowns at once (above; each isolated per
 scenario so one does not hide another); a lab-only argument in Ice's sources (inert
 without it, refused outside the lab identity, as trace mode); three hours of the Mac for

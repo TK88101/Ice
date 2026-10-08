@@ -13,6 +13,14 @@ public enum SpikeHelperFlags {
     public static let menuItemTitle = "Spike"
 
     public static func withMenu(_ arguments: [String]) -> [String] { arguments + [menu] }
+
+    /// vzhelper `--autosave <name>` with two items (plan
+    /// 2026-10-07-icebar-preference-hiding, S4 design D3): `<name>`, then
+    /// `<name>-2`, so neither item takes AppKit's default name, whose
+    /// remembered position other runs share.
+    public static func autosaveName(_ base: String, index: Int) -> String {
+        index == 0 ? base : "\(base)-\(index + 1)"
+    }
 }
 
 public struct SpikeArguments: Equatable, Sendable {

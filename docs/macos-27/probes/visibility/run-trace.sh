@@ -17,7 +17,12 @@
 # read of another app's group container from Ice could raise a privacy prompt
 # in the owner's session.
 #
-#   run-trace.sh <built Ice.app with trace mode> <scratch directory outside ~/Documents> [runs per variant, 1-20, default 3]
+#   run-trace.sh <built Ice.app with trace mode> <scratch directory outside ~/Documents> [runs per variant, 1-20, default 3] [executable name]
+#
+# With an executable name each staged copy's executable is renamed to it
+# (`CFBundleExecutable` to match), as the lab runner stages its copies (S4
+# design D2): this shows that a renamed copy starts, nothing about how
+# MenuBarAgent keys it.
 #
 # Side effects: three status items of the lab identity on the bar for about
 # six seconds per run (the bar reflows while they are there); three read-only
@@ -41,7 +46,9 @@ lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchSe
 built=${1:?built Ice.app}
 scratch=${2:?scratch directory outside ~/Documents}
 runs=${3:-3}
+executable=${4:-Ice}
 [[ $runs == <1-20> ]] || { print -u2 -- "run-trace: runs must be 1-20"; exit 2; }
+[[ $executable =~ '^[A-Za-z][A-Za-z0-9]{0,30}$' ]] || { print -u2 -- "run-trace: the executable name must be letters and digits"; exit 2; }
 [[ -x $built/Contents/MacOS/Ice ]] || { print -u2 -- "run-trace: $built is not an Ice.app"; exit 2; }
 [[ ${built:A} != /Applications/* ]] || { print -u2 -- "run-trace: not a release Ice in /Applications"; exit 2; }
 # A build without trace mode would ignore the argument and run as a normal Ice:
@@ -67,6 +74,10 @@ stage() { # <bundle id> <stage directory> -> path of the staged app
     mkdir -- $2 || return 1
     ditto -- $built $2/Ice.app || return 1
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $1" $2/Ice.app/Contents/Info.plist || return 1
+    if [[ $executable != Ice ]]; then
+        mv -- $2/Ice.app/Contents/MacOS/Ice $2/Ice.app/Contents/MacOS/$executable || return 1
+        /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $executable" $2/Ice.app/Contents/Info.plist || return 1
+    fi
     codesign --force --deep --sign - $2/Ice.app 2> $2/codesign.log || return 1
     codesign --verify --deep --strict $2/Ice.app || return 1
     [[ $(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" $2/Ice.app/Contents/Info.plist) == $1 ]] || return 1
@@ -79,7 +90,7 @@ unstage() { # <stage directory>
 }
 
 launch() { # <app> <always-hidden YES|NO> <out directory> -> the trace's exit status
-    perl -e 'alarm 30; exec @ARGV' $1/Contents/MacOS/Ice -IceLabTrace YES -IceLabTraceAlwaysHidden $2 \
+    perl -e 'alarm 30; exec @ARGV' $1/Contents/MacOS/$executable -IceLabTrace YES -IceLabTraceAlwaysHidden $2 \
         > $3/trace.jsonl 2> $3/stderr.log &
     local pid=$! tries=0
     launched_pid=$pid
@@ -188,7 +199,7 @@ trace_one() { # <variant: off|on|inv> <n>; stops the runner when the store guard
     [[ $code == 0 && $summary_code == 0 && $defaults_code == 0 ]]
 }
 
-print -- "run-trace: $run_id, $runs run(s) per variant, evidence $evidence"
+print -- "run-trace: $run_id, $runs run(s) per variant, executable $executable, evidence $evidence"
 failed=0
 for variant in off on inv; do
     for n in {1..$runs}; do

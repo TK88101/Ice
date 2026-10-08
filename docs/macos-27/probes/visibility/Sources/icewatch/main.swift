@@ -4,6 +4,8 @@
 //   icewatch preflight
 //   icewatch menu-frame
 //   icewatch references
+//   icewatch chevron
+//   icewatch activate --pid <pid>
 //   icewatch dry-run --seconds N --evidence <dir> [--interval 0.2]
 //   icewatch dump-windows --pid <pid>
 //   icewatch run (--app <X.app> | --exec <path>) --domain <d> --backup <plist>
@@ -30,13 +32,15 @@ func fail(_ message: String) -> Never {
 }
 
 var arguments = Array(CommandLine.arguments.dropFirst())
-guard let command = arguments.first else { fail("usage: icewatch preflight|menu-frame|references|dry-run|dump-windows|run ...") }
+guard let command = arguments.first else { fail("usage: icewatch preflight|menu-frame|references|chevron|activate|dry-run|dump-windows|run ...") }
 arguments.removeFirst()
 
 let valuedOptions: [String: Set<String>] = [
     "preflight": [],
     "menu-frame": [],
     "references": [],
+    "chevron": [],
+    "activate": ["--pid"],
     "dump-windows": ["--pid"],
     "dry-run": ["--seconds", "--evidence", "--interval"],
     "run": ["--app", "--exec", "--domain", "--backup", "--set", "--log", "--controller", "--evidence", "--interval", "--go-timeout"],
@@ -64,6 +68,13 @@ case "menu-frame":
 
 case "references":
     exit(await References.run())
+
+case "chevron":
+    exit(await Chevron.run())
+
+case "activate":
+    guard let pid = value("--pid").flatMap(Int32.init) else { fail("activate needs --pid") }
+    exit(await Activate.run(pid: pid))
 
 case "dump-windows":
     guard let pid = value("--pid").flatMap(Int32.init) else { fail("dump-windows needs --pid") }

@@ -1,5 +1,7 @@
-// icewatch's read-only subcommands: `preflight`, `menu-frame`, `references`,
-// `dry-run`, `dump-windows`.
+// icewatch's subcommands besides `run`: `preflight`, `menu-frame`,
+// `references`, `chevron`, `dry-run`, `dump-windows` (read-only), and
+// `activate` (brings one app forward, the lab runner's way of changing the
+// frontmost app, as C2 did).
 import AppKit
 import ApplicationServices
 import CoreGraphics
@@ -99,6 +101,48 @@ enum References {
             }
         ))
         return complete && !check.references.isEmpty ? 0 : 1
+    }
+}
+
+enum Chevron {
+    /// Whether MenuBarAgent lists `«` on the bar, read as Ice reads it
+    /// (`ChevronReader`, Accessibility only: no capture), for the lab
+    /// matrix's `crowded` scenario (plan 2026-10-07-icebar-preference-hiding,
+    /// S4 design D4). Exit 0 listed, 1 not listed, 2 unreadable.
+    static func run() async -> Int32 {
+        guard let screen = NSScreen.main, let reader = ChevronReader.live(screen: screen) else {
+            print(#"{"listed":null}"#)
+            return 2
+        }
+        let listed = await reader.chevronListed()
+        print(listed.map { #"{"listed":\#($0)}"# } ?? #"{"listed":null}"#)
+        return listed.map { $0 ? 0 : 1 } ?? 2
+    }
+}
+
+enum Activate {
+    static let waitSeconds = 2.0
+    static let pollSeconds = 0.1
+
+    /// Asks the app with this pid to come forward (`NSRunningApplication.activate`)
+    /// and waits up to `waitSeconds` for it to be frontmost. Exit 0 only then.
+    @MainActor
+    static func run(pid: pid_t) async -> Int32 {
+        guard let app = NSRunningApplication(processIdentifier: pid) else {
+            print(#"{"frontmost":false,"reason":"noSuchApp"}"#)
+            return 1
+        }
+        let asked = app.activate()
+        let deadline = ProcessInfo.processInfo.systemUptime + waitSeconds
+        while ProcessInfo.processInfo.systemUptime < deadline {
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid {
+                print(#"{"frontmost":true,"asked":\#(asked)}"#)
+                return 0
+            }
+            try? await Task.sleep(for: .seconds(pollSeconds))
+        }
+        print(#"{"frontmost":false,"asked":\#(asked)}"#)
+        return 1
     }
 }
 
