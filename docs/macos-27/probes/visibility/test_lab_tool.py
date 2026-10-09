@@ -330,12 +330,14 @@ class LabToolTests(unittest.TestCase):
 
     # --- crowded -------------------------------------------------------------------------
 
-    def crowded(self, witness_ok=True, listed_later=True, stacked_status=True):
+    def crowded(self, witness_ok=True, listed_later=True, stacked_status=True, length_at_witness=False):
         report = Report()
         stacked = [member("a", "stacked"), member("b")]
         report.snap(roster=stacked)
         witness = report.add("noop")
-        report.length(736)
+        length = report.length(736)
+        if length_at_witness:  # the length is the report's last line when the runner marks the witness
+            witness = length
         text = "notVerified(stacked:1)" if stacked_status else "verified"
         report.status(text)
         report.rest(["a", "b"], status=text, roster=stacked)
@@ -355,6 +357,9 @@ class LabToolTests(unittest.TestCase):
         self.assertEqual(self.judge("crowded", [report], steps=steps, **expected)["clauses"]["12"], "fail")
         report, steps = self.crowded(witness_ok=False)
         self.assertEqual(self.result("crowded", [report], steps=steps, **expected), "notEstablished")
+        report, steps = self.crowded(length_at_witness=True)
+        verdict = self.judge("crowded", [report], steps=steps, **expected)
+        self.assertEqual((verdict["result"], verdict["reasons"][0]), ("notEstablished", "setup: a length came before the bracketed witness"))
 
     # --- fresh, placed, t2d ------------------------------------------------------------------
 
@@ -470,21 +475,41 @@ class LabToolTests(unittest.TestCase):
 
     def test_incomplete(self):
         def make(retire=True, recover=True):
+            """As the runner marks: a step's `seq` is the report's last line then."""
             report = Report()
-            report.standard(["a"])
-            stall = report.add("noop")
+            stall = report.standard(["a"])
             if retire:
                 report.length(None)
-            report.status("blocked(discoveryIncomplete)")
-            resumed = report.add("noop")
-            if recover:
-                report.status("notVerified(lengthNotApplied)")
-            settled = report.add("noop")
+            resumed = report.status("blocked(discoveryIncomplete)")
+            settled = report.status("notVerified(lengthNotApplied)") if recover else resumed
             return report, [{"step": "stall", "seq": stall}, {"step": "resumed", "seq": resumed}, {"step": "settled", "seq": settled}]
         for options, wanted in (({}, "pass"), ({"retire": False}, "fail"), ({"recover": False}, "fail")):
             with self.subTest(options):
                 report, steps = make(**options)
                 self.assertEqual(self.result("incomplete", [report], steps=steps, members=["a"]), wanted)
+
+    def test_incomplete_needs_a_rest_at_the_stall(self):
+        report = Report()
+        report.snap(roster=[member("a")])
+        stall = report.length(736)  # a length set, no rest yet
+        resumed = report.status("blocked(discoveryIncomplete)")
+        settled = report.status("notVerified(lengthNotApplied)")
+        steps = [{"step": "stall", "seq": stall}, {"step": "resumed", "seq": resumed}, {"step": "settled", "seq": settled}]
+        self.assertEqual(self.result("incomplete", [report], steps=steps, members=["a"]), "notEstablished")
+        steps[0]["seq"] = 0  # marked before the report held a line
+        self.assertEqual(self.result("incomplete", [report], steps=steps, members=["a"]), "notEstablished")
+
+    def test_a_snapshot_at_a_steps_seq_is_before_the_step(self):
+        report = Report()
+        first = report.snap(phase="settling")
+        report.status("notVerified(unchecked:1)")
+        second = report.rest(["a"])
+        events = lab.load_report(self.write(report.text()))
+        self.assertEqual(lab.snapshot_at_or_before(events, second)["phase"], "resting")
+        self.assertEqual(lab.snapshot_at_or_before(events, second - 1)["phase"], "settling")
+        self.assertEqual(lab.snapshot_at_or_before(events, first)["phase"], "settling")
+        self.assertIsNone(lab.snapshot_at_or_before(events, first - 1))
+        self.assertIsNone(lab.snapshot_at_or_before(events, 0))
 
     def test_the_chevron_at_start_clause_applies_to_every_checked_scenario(self):
         listed = [{"step": "chevronAtStart", "listed": True}]

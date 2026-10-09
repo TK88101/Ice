@@ -202,6 +202,14 @@ def snapshot_before(events, seq):
     return found[-1] if found else None
 
 
+def snapshot_at_or_before(events, cut):
+    """The snapshot the runner had at a step. A step's `seq` is a cut of the
+    report (`mark` in run-lab.sh: the lines it held then): a line with
+    `seq <= cut` was written before the step, one with `seq > cut` after it."""
+    found = [event for event in snapshots(events) if event["seq"] <= cut]
+    return found[-1] if found else None
+
+
 def snapshot_after(events, seq):
     return next((event for event in snapshots(events) if event["seq"] > seq), None)
 
@@ -451,7 +459,7 @@ def judge_crowded(verdict, run):
     length_seq = first_length_seq(events)
     if not witness or not witness.get("ok"):
         verdict.not_established((witness or {}).get("why", "no bracketed witness"))
-    elif length_seq is not None and witness["seq"] > length_seq:
+    elif length_seq is not None and witness["seq"] >= length_seq:
         verdict.not_established("a length came before the bracketed witness")
     if length_seq is None:
         verdict.fail("no length was applied")
@@ -587,7 +595,7 @@ def judge_incomplete(verdict, run):
     if not stall or not resumed or not settled:
         verdict.fail("the runner did not reach the stall, its end and 30 s after")
         return
-    rest = snapshot_before(events, stall["seq"])
+    rest = snapshot_at_or_before(events, stall["seq"])
     if rest is None or not rest["lengthApplied"]:
         verdict.not_established("not at a rest when the stall began")
     blocked = first_status(events, "blocked(discoveryIncomplete", stall["seq"])
@@ -597,7 +605,7 @@ def judge_incomplete(verdict, run):
     retired = first_retire(events, stall["seq"])
     if rest and rest["lengthApplied"] and (retired is None or retired["seq"] > blocked["seq"]):
         verdict.fail("the length was not retired before blocked")
-    before = [event for event in statuses(events) if event["seq"] < settled["seq"]]
+    before = [event for event in statuses(events) if event["seq"] <= settled["seq"]]
     if before and before[-1]["status"].startswith("blocked("):
         verdict.fail("still blocked 30 s after the stall ended")
 

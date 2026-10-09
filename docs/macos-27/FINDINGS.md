@@ -753,3 +753,42 @@ frontmost, 15 of 15 baseline attempts over three processes read the fold
 item, and the menu ink sits inside it. Calibrating before activation never
 reached `long` (2026-09-29 00:30, a background app's titles do not grow on the
 bar -- INFERRED from the fix that made calibration work).
+
+## The lab matrix's first run: what moved the references (read 2026-10-09)
+
+Run `20261008-234718` (`icetest`, build `1a33df4`, evidence in
+`/Users/Shared/IceReverse-lab/evidence/`); nothing was run again, the run's reports,
+logs and bar captures were read. Plan `2026-10-09-lab-first-run-followup`, section 1.
+
+**MEASURED -- the bar moves under Ice between its baseline and its trials.** `drawn`
+applies no length (every `length` event `applied: null`), yet the member's and the hidden
+divider's Accessibility x both go from 1269 / 1289 to 1221 / 1241 between the discovery
+passes at t = 17 s and 22 s, and back between 47 s and 52 s; Ice's icon stays at 1517.
+The baseline was reported at 13.6 s, the trials at 26.8 s and 40.9 s.
+
+**MEASURED -- a coloured block, 48 pt of displacement, beside Ice's capturing.** 4 of
+the runner's 37 bar captures show a coloured block about 40 pt wide between our helpers
+and Apple's input menu; in those 4 both reference helpers' glyphs are 48 pt left of
+where the other 33 have them (1315.0 -> 1267.0, 1343.0 -> 1295.0), and nothing right of
+the block moves but the clock (3 pt, with the dot of 2026-09-18). The 4 were taken 1.5 s
+and 4.2 s after a baseline or trial was logged, or during one that was never logged; of
+the 33, 31 were taken 246 s or more after one and 2 at 11.2 s and 15.5 s. `positional`,
+where Ice never took a baseline, has no block in either capture.
+
+**MEASURED -- 3 of 36 trials read `hidden`**, each the first after a baseline
+(`placed-off`, `placed-on`'s second start, `incomplete`'s second baseline). `noref`,
+whose references are Apple's items right of the block, is the one scenario that never
+read `captureUnstable` (52 of 52 `foldUnreadable`).
+
+**INFERRED -- the block is the screen-capture indicator and it is what refused the
+trials.** It arrives seconds after Ice starts capturing, so after the baseline's
+templates are cut, and pushes everything left of it, our references included, 48 pt;
+`CaptureStability` refuses a reference more than 1 pt from its template's origin. On
+2026-09-19 the indicator was about 20 pt and left of the third-party items, where it
+moved none of them. Not measured: which references a baseline accepted, what the
+matcher read in any observation, which stability condition refused. **TBD**: whether
+another condition refuses too; whether `noref`'s unreadable fold is the block; where the
+block lands on the owner's bar.
+
+At a rest Ice does not check again, so one refused observation stands as
+`notVerified(unchecked:n)` for as long as the rest lasts.
