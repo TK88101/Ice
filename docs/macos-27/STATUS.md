@@ -173,3 +173,17 @@ was posted. T2b did not complete its three-run protocol.
 | How MenuBarAgent keys an ad-hoc Ice | still unknown; the runner records the store before and after every scenario and says which key form appeared | TBD until the first sitting |
 | What only the first sitting can tell | placement by launch order in `icetest`; whether Ice reaches a rest there; that a held length reads as drawn; that the pre-seed inverts the icon; that the crowding ladder reaches "members folded, divider on the bar"; that a stall makes a pass incomplete; how long a round takes (estimated one hour, not measured) | INFERRED |
 
+## The lab matrix's first run (2026-10-08 23:47, `icetest`, run `20261008-234718`, build `1a33df4`)
+
+| what | status | tag |
+|---|---|---|
+| Ice applies a length and rests in `icetest` | yes, in 15 of the 17 scenarios that reach a roster: 736 pt applied, the roster exactly our members, Ice's icon right of its divider, every pass complete. T7 never got this far | MEASURED |
+| The member leaves the bar at 736 pt | yes, in the bar captures: `sparse`'s member is gone at the end, while in `drawn` (lengths held, nothing applied) it stays drawn | MEASURED (captures, 1 scenario each); not judged by machine |
+| Ice can verify it | **no**: every member check at every rest was `unverifiable:captureUnstable` (`noref`: `foldUnreadable`), so no scenario reached `verified`, and `drawn` never saw `stillDrawn` -- also with nothing moved. Cause unknown; the macOS screen-recording indicator, which a capture summons at the bar's right end, was seen in a capture (INFERRED as a candidate, not shown) | MEASURED (the outcome) / TBD (the cause) |
+| `positional` | blocked, no length, no IceBar, nothing moved: **pass** | MEASURED |
+| `incomplete` | the stall at a rest retired the length and Ice said `blocked(discoveryIncomplete)`, then recovered -- what the scenario expects; judged `notEstablished` by a judge defect (it looked for the rest in a snapshot taken before the rest's first snapshot) | MEASURED (the report); judge to fix |
+| `crowded` | the bracketed witness held at 20 menus, but the roster then flapped between `stacked:2` and `noMembers` and Ice never applied a length | MEASURED; why the folded members drop out of the roster: TBD |
+| `inverted` | the pre-seed (icon 5000, divider 1) did not put the icon left of the divider: `notEstablished` | MEASURED |
+| `«` when a scenario began | never (0 of 19) | MEASURED |
+| Cleanup | every domain deleted and verified empty; MenuBarAgent held 0 lab keys before | MEASURED |
+
