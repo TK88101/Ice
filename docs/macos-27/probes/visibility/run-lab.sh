@@ -122,6 +122,10 @@ done
 ours=$(ps -U $(id -u) -o comm= | grep -c -E '/IceLab[A-Za-z0-9]*$|/vzhelper$' || true)
 (( ours == 0 )) || guard 0 "$ours Ice copy or helper process(es) of ours are already running"
 preflight=$($icewatch preflight 2>/dev/null)
+# The system's capture indicator answers to anybody's captures, ours too: it
+# came 10 s after the runner's own strip and into Ice's baseline (run
+# 20261009-234913). So Ice is never started within CLEAR_AFTER of one.
+last_capture=$EPOCHREALTIME
 [[ $preflight == *'"axTrusted":true'* && $preflight == *'"screenCapture":true'* ]] \
     || guard 1 "Terminal lacks Accessibility or Screen Recording: $preflight"
 menu_frame=$($icewatch menu-frame 2>/dev/null)
@@ -444,6 +448,16 @@ capture() { # <name>
     (( CAPTURE )) || return 0
     local width=${${menu_frame#*\"displayWidth\":}%%[,\}]*} height=${${menu_frame#*\"barHeight\":}%%[,\}]*}
     screencapture -x -R0,0,${width%.*},${height%.*} $dir/bar-$1.png 2>/dev/null
+    last_capture=$EPOCHREALTIME
+}
+
+# CaptureBurstParameters.standard.clearAfter (IceCore).
+CLEAR_AFTER=22
+cool_down() {
+    local left=$(( CLEAR_AFTER - (EPOCHREALTIME - last_capture) ))
+    (( left > 0 )) || return 0
+    note "cooling down ${left%.*} s: the bar clear of the runner's own capture"
+    nap $left
 }
 
 expected() { # <scenario> <members, comma-separated> [extra JSON fields]
@@ -472,6 +486,7 @@ begin() { # <round> <scenario> <members> [always-hidden true|false] [hold]
     ice_id=com.icespike4.lab.r$run_id.$round${name//[^a-z0-9]/}
     ice_name=IceLab${run_id//[^0-9]/}$round${${name//[^a-z0-9]/}[1,8]}
     ice_app=$(stage_ice $ice_id $ice_name) || { abort_run "staging the copy failed"; return 1; }
+    cool_down
     start_ice $ice_app $ice_name $ice_id $report $always $hold || { abort_run "Ice did not start"; return 1; }
     nap 2
     members=(${(f)"$(member_ids $round $name $count)"})
@@ -479,7 +494,6 @@ begin() { # <round> <scenario> <members> [always-hidden true|false] [hold]
         start_member $dir $members[i] $glyphs[i] || { abort_run "a member did not start"; return 1; }
     done
     expected $name "${(j:,:)members}"
-    capture before
 }
 
 finish() {

@@ -846,3 +846,13 @@ capture (every arrival and departure lies within 0.3 s of a multiple of 10.12 s 
 it), shows the block when it saw capturing in the period before, and removes it after
 a period without. Not measured: what a new session meets when it starts while the
 clock's shift is still there.
+
+**MEASURED, run `20261009-234913`** (`icetest`, `sparse` alone, build `0715cbd`): the
+runner captured its "before" strip at 23:49:21; Ice's baseline captured for 4.5 s from
+about :27.5 (the `observation` event's burst age 4.46 s); the member and the divider
+read 48 pt left between :27.7 and :32.7, inside the baseline, which then accepted no
+reference (`skip(noReference)`). **INFERRED**: the system's period is anchored at any
+process's capture -- :21 plus 10.3 s is :31.3 -- so a capture Ice does not know of
+brings the block into a burst Ice counted as clean. The first run's runner took the
+same strip at each scenario's start (about 6 s in, the shift seen between 17 and 22 s):
+its `captureUnstable` readings may owe as much to the runner as to Ice. Not separated.

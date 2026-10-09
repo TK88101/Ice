@@ -195,6 +195,8 @@ zsh $shared/run-lab.sh sparse > $tmp/out.txt 2>&1; code=$?
 run=$(print $shared/evidence/*(N/[1]))
 (( code == 0 )) && grep -q '1 sparse: pass' $tmp/out.txt && [[ $(< $run/1-sparse/verdict.json) == *'"result": "pass"'* ]]
 check "sparse with a verified report passes, judged from Ice's report"
+grep -q 'cooling down' $run/timeline.txt && [[ ! -e $run/1-sparse/bar-before.png ]]
+check "Ice is not started within 22 s of a capture of the runner's own (the preflight's), and no strip is captured before Ice's cycle"
 ! ours_running
 check "no stub process of the run is left"
 grep -q 'defaults domains of the run: verified' $tmp/out.txt && ! grep -q 'STILL HAS DEFAULTS' $tmp/out.txt

@@ -233,3 +233,8 @@ P0/P1 per round: 1, 1, 1, 0. The stated cap of three rounds, then one confirmati
   Ice failing its checks (Codex's worry; `test-lab.sh` has the case).
 - The sitting is in two parts: `run-lab.sh sparse` first (minutes), its `observation`
   events read here; then `k2`; the whole matrix only if those verify.
+- After the first try (run `20261009-234913`, `sparse`: `noReference`): the runner's
+  "before" strip, taken 6 s ahead of Ice's baseline, brought the block into it. The
+  runner takes no strip before Ice's cycle any more and waits out 22 s after any capture
+  of its own (the preflight's, a scenario's end strip) before it starts Ice
+  (`cool_down`; `test-lab.sh` has the case, red first).
