@@ -687,7 +687,8 @@ the best-effort length on a bar unlike T0's.
   (8) frontmost app and long menus changing while hidden; (9) Ice
   relaunched (membership and identity); (10) a positional item left of the divider: blocked, nothing moved;
   (14) Ice's icon left of its divider, at start and moved there while hidden: blocked,
-  the notice, no length applied (T2c);
+  the notice, no length applied (T2c) -- the second half ("moved there while hidden")
+  moved to S5 by the owner's decision, 2026-10-09 (S4 design, D4);
   (11) a member kept visible on purpose must yield `visible / failed`, never `verified`;
   (12) a stacked member: `not verified`, the roster includes it; (13) an incomplete
   discovery pass: blocked.
@@ -844,7 +845,8 @@ while it fails, S4 is not green and T5 does not start. The runner treats it as
 rounds (D5), and the report's last line says "S4 DoD: not met (T2d open)".
 
 **Scenario 14's second half** ("moved there while hidden": `inverted-moved`) is listed
-by the runner as `notRun` and is **the owner's decision** (review, rounds 1-2). The
+by the runner as `notRun`; **decided by the owner, 2026-10-09: it moves to S5** (the
+option below that Codex recommended). The
 only way to move Ice's icon on a live bar is a Command-drag. What is known of a
 synthetic one: `inject3` moved a helper item 3 of 4 times (FINDINGS "The move
 primitive"); `dragown`, its guarded successor, has never posted an event (T2b); and
@@ -951,7 +953,10 @@ a clean matrix.
 ### S5 Owner acceptance (owner cost: one short sitting)
 
 Only after S4's DoD: one unattended command; then the owner looks at Ice on the bar
-once (does the IceBar hold what was chosen; does a click open the menu).
+once (does the IceBar hold what was chosen; does a click open the menu), and, with the
+items hidden, Command-drags Ice's icon left of its divider and back, reading the
+layout pane's line each time (scenario 14's second half, moved here from S4 by the
+owner's decision, 2026-10-09).
 
 ## 4. Tests and review
 

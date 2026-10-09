@@ -697,7 +697,7 @@ def judge(directory):
     verdict = Verdict(run.scenario)
     if SCENARIOS[run.scenario]["kind"] == "notRun":
         verdict.result = "notRun"
-        verdict.reasons.append("needs a Command-drag of Ice's icon: the owner's decision (S4 design D4)")
+        verdict.reasons.append("needs a Command-drag of Ice's icon: moved to S5 by the owner, 2026-10-09 (S4 design D4)")
         return verdict
     try:
         events = run.report(1)
@@ -782,7 +782,7 @@ def report(evidence):
                 met = False
     t2d_open = any(v.get("clauses", {}).get("t2d") == "fail" for r in rounds.values() for v in r.values())
     if met:
-        lines.append("S4 DoD: met (every scenario passed in three rounds); scenario 14's second half not run (the owner's decision)")
+        lines.append("S4 DoD: met (every scenario passed in three rounds); scenario 14's second half is S5's (the owner's decision, 2026-10-09)")
     else:
         lines.append("S4 DoD: not met" + (" (T2d open)" if t2d_open else ""))
     print("\n".join(lines))
