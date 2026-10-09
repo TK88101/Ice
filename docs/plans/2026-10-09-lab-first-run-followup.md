@@ -100,3 +100,24 @@ Codex `gpt-5.6-terra`, reasoning medium, 2026-10-09; two rounds, converged.
 |---|---|---|
 | 1 | 18 items. Section 1: the table wrote a strong timing correlation as a settled cause (the conclusion row "fatal": no observation's matcher result is on record; `settled` can refuse too); C1 proves an Accessibility shift, not pixels; the capture's start is not logged; the captures need their times; the indicator's identity and `noref`'s reading graded too high; the goal says "why". Section 2: J1-J3 correct, but "read as after" is imprecise -- define the `seq` as a prefix cut; name the helper for what it does and test `seq` 0, no snapshot, equal; J3 better split out; validate `steps.jsonl`'s `seq`; T3's "byte for byte" proves nothing about the equal branches | **taken**: the goal reworded; C1 as an Accessibility shift; the capture's start INFERRED; the pixel row states pixels only, with a row of capture times added (C4); the refusal row lists the other conditions; `noref` as support only; the 3-of-36 row as a pattern; `noref`'s fold to TBD; the cut rule, the helper's name and its tests; T3 as a regression check on `result` and `reasons`. **Disputed**, to round 2: the indicator's and the conclusion's grades, a second helper family, J3's place, the `steps` validation |
 | 2 | Answers to the five | **Mine upheld**: the indicator row stays INFERRED on the new capture times (4 of 4 with the block beside a capture session, 33 of 33 without it away from one or with none); one helper only (`since` already says "after"); J3 stays, named as the same rule with a zero expected difference on the real run; the `steps` validation withdrawn (only the runner writes the file; the damage rules are T4's). **Codex's upheld**: `drawn`'s second trial is not "deduced" -- no matcher result of that observation exists, and the references are whichever candidates the baseline accepted, not "the two leftmost" -- so the conclusion row says "first refusal path, INFERRED" and names what is not measured |
+
+## What follows (thecure with Codex, 2026-10-09; the owner's go-ahead for S1 the same day)
+
+One proposal, converged in two calls. Mine withdrawn: "warm up until the references'
+frames stop moving" (they are still before the block comes, so it would pass at once);
+and re-baselining at a rest (ruled out in T3b). Codex's taken: avoid the block rather
+than wait for it -- a check read with the block up certifies a bar 48 pt narrower than
+the one the owner sees, and at a rest Ice does not look again.
+
+| # | Step | State |
+|---|---|---|
+| S1 | In the owner's account, no sitting: the block's timing against Ice's own session shapes (`vizprobe indicator`) | **done**, run `20261009-111216-indicator`; FINDINGS "The capture indicator, timed" |
+| S2 | Gate: the shortest arrival (10.2 s) against a baseline's 4.2 s | **passed** |
+| S3 | Ice, frozen files untouched, no baseline at a rest: (a) the lab report records, per observation, each reference's identity, match, mismatch and distance from its template's origin, and `captureStable`; (b) every capture session lies in a window without the block -- its design to be written from S1's numbers and reviewed before any code | open |
+| S4 | Restage; one `icetest` sitting: the diagnostics and the change judged together | open |
+
+What S1 adds to S3(b)'s design: a baseline fits before the block and always summons it,
+so the first observation after a baseline either ends within about 10 s of the
+baseline's first capture or waits until about 21 s after it; a later observation alone
+(1.5 s) summons nothing. Not measured: where between 1.5 s and 4.2 s the system starts
+to react, and whether Ice's other captures (the item image cache) count towards it.

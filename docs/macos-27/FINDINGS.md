@@ -792,3 +792,39 @@ block lands on the owner's bar.
 
 At a rest Ice does not check again, so one refused observation stands as
 `notVerified(unchecked:n)` for as long as the rest lasts.
+
+## The capture indicator, timed (2026-10-09, owner's account)
+
+Run `~/IceReverse-evidence/20261009-111216-indicator` (`vizprobe indicator`, macOS build
+26A434, built-in display, 555 s; 820 captures through
+`CGWindowListStripCapturer` and `Sampler`, none failed; 2156 Accessibility reads at
+4 Hz, none failed; two reference helpers of ours at x 1204 and 1232). Four session
+shapes, three times each, 30 s without capturing after each.
+
+| shape | captures for | the block arrives, after the first capture | the block leaves |
+|---|---|---|---|
+| A continuous | 30.2 s | 10.35, 10.29, 10.28 s | 10.2 s after the last capture (3 of 3) |
+| B a baseline's shape (4 warm-up, samples for 3 s) | 4.2 s | 10.48, 10.26, 10.34 s -- **6 s after the capturing ended** | 16.1-16.4 s after the last capture, 9.8-10.3 s after arriving |
+| C an observation's shape (4 warm-up, 2 samples) | 1.5 s | never (3 of 3) | -- |
+| D a baseline, 2 s, five observations 1 s apart | 18.1 s | 10.2, 10.3, 10.4 s | 12.3-12.7 s after the last capture |
+
+**MEASURED.** The block is a `MenuBarAgent` item, 20 pt wide in Accessibility, at
+x 1251, right of both helpers; while it is there both helpers, and every item left of
+it, read 48 pt further left (1204 -> 1156, 1232 -> 1184), and the captures show a violet
+capsule about 40 pt wide with a screen-and-person glyph where it is listed. Items right
+of it do not move. The clock moves 3 pt left within 0.3 s of the first capture of every
+session, the 1.5 s ones included, and returns 10-20 s after the last. One of the
+owner's own items sits between the helpers and the block and was pushed with them, and
+came back each time.
+
+**INFERRED.** The system decides about 10.3 s after a capture session begins, and shows
+the block whether or not the capturing has stopped by then; a session of 1.5 s (8
+captures) is below what it reacts to, one of 4.2 s (about 26 captures) is not. Where
+the threshold lies between the two, and whether it counts time or captures: not
+measured. This is the icetest run's shift (48 pt, right of our helpers, a baseline cut
+before it, trials read after), now seen in a second account with the session shapes
+Ice uses; that the lab's refusals were this is still INFERRED from outside Ice.
+
+Consequence for Ice: a baseline (4.2 s) always fits before the block, and always
+summons it; whatever is read between 10.3 s and about 20.5 s after a baseline began is
+read on a bar 48 pt off its templates.

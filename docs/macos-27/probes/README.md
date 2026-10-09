@@ -87,6 +87,7 @@ IceCore and are never changed from here.
 | `vzhelper` | the sacrificial status items: `--role` (2026-09-19), or `--items 1\|2 --identifiers none\|a,b --glyphs target\|reference\|alt`, `--mimic-nodivider` (Ice's `.noDivider` shown state, reached as Ice reaches it, never expanded), `--autosave` (step 10; `run-remembered.sh`); stdin commands `hide`, `show`, `frames`, `selfread`, `quit` | one or two status items under `com.icespike4.target` / `.protected` |
 | `VZGlyphs` | the helpers' stroked glyphs, shared so the dry run can check them | none |
 | `vizprobe` | the live harness: `--dry-run` and `live` (2026-09-19); `discover` and `verify` (2026-09-23 section 6), each with its own `--dry-run` | launches helpers, captures the bar; never moves, clicks or resizes anything of the user's |
+| `vizprobe indicator` | the capture indicator's timing against Ice's session shapes (plan 2026-10-09-lab-first-run-followup, S1) | two `com.icespike4.protected` items for about nine minutes; **summons the capture indicator**, which pushes every item left of it 48 pt while it is up; the helper's defaults domain, deleted |
 
 ```sh
 ./visibility/build.sh                         # -> /private/tmp/claude-501/visibility-live/apps

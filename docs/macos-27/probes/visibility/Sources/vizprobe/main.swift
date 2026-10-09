@@ -98,6 +98,10 @@ if arguments.first == "icebar-dry" { IceBarDryCommand.run(arguments) }
 if arguments.first == "spike-run" { SpikeRunCommand.run(arguments) }
 if arguments.first == "spike-dry" { SpikeDryCommand.run(arguments) }
 
+// Plan 2026-10-09-lab-first-run-followup, S1: the capture indicator's timing
+// against Ice's own session shapes (`IndicatorTiming.swift`).
+if arguments.first == "indicator" { IndicatorTimingCommand.run(arguments) }
+
 // I5: `vizprobe c1` (docs/plans/2026-09-26-c1-protocol.md, Amendment v4).
 // `--dry` never sends `length` (C1ExpansionDriver, C1Live) -- the one part
 // of this stage that is safe to run before the owner names a time.
