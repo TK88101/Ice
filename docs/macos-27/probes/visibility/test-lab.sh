@@ -96,6 +96,8 @@ for (( i = 1; i < $#; i++ )); do [[ ${@[i]} == --identifiers ]] && id=${@[i+1]};
 # Members only: the references run under the Protected app.
 [[ $0 == */Target.app/* ]] && print -r -- ${id%%,*} >> $LAB_STUB_MARKS/members
 print "up {\"pid\":$$}"
+# A reference that dies as soon as it is up (its lifetime ran out mid-round).
+[[ -n ${LAB_STUB_REF_DIES:-} && $0 == */Protected.app/* ]] && exit 0
 while IFS= read -r command; do
     case $command in
         selfread) print "selfread {\"children\":[{\"identifier\":\"${id%%,*}\",\"frame\":[900,4,14,22]}]}" ;;
@@ -208,6 +210,12 @@ sed -i '' -e 's/"status":"verified"/"status":"notVerified(noReference)"/' $LAB_S
 zsh $shared/run-lab.sh sparse > $tmp/out.txt 2>&1
 grep -q '1 sparse: fail' $tmp/out.txt && ! ours_running
 check "a run that never verifies fails after its limit and cleans up"
+
+build_staging
+verified_fixture sparse 1
+LAB_STUB_REF_DIES=1 zsh $shared/run-lab.sh sparse > $tmp/out.txt 2>&1
+grep -q '1 sparse: aborted' $tmp/out.txt && grep -q 'a reference helper is gone' $tmp/out.txt
+check "a scenario whose reference helper has died is aborted, not judged as Ice's failure"
 
 build_staging
 print -r -- 'not json' > $LAB_STUB_FIXTURES/sparse.jsonl

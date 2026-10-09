@@ -220,3 +220,16 @@ by the owner's mouse; without retries one unreadable fold costs an observation.
 | after | -- | confirmation: the P1 resolved; 1 P2: the event carries the burst's age, not its two endpoints | P2 left: the age and the wait say whether a session stayed inside its budget; the plan's wording corrected to what is emitted |
 
 P0/P1 per round: 1, 1, 1, 0. The stated cap of three rounds, then one confirmation.
+
+## S4, before the sitting (thecure with Codex, 2026-10-09, one call, converged)
+
+- The runner waited 300 s for a first rest; a first calibration under the bursts takes
+  about 270 s for T0's band and about 350 s at the calibrator's bound of 24. Now
+  `STATUS_LIMIT` 600, `RUN_LIMIT` 28800 (`run-lab.sh`); the fixed naps follow scenario
+  actions and are not affected (Codex).
+- A reference helper lives 10800 s at most and one round may come near it (a round is
+  estimated at 2-2.5 hours, not measured): each scenario now begins by checking the
+  references are alive and is `aborted` otherwise, so a dead reference cannot read as
+  Ice failing its checks (Codex's worry; `test-lab.sh` has the case).
+- The sitting is in two parts: `run-lab.sh sparse` first (minutes), its `observation`
+  events read here; then `k2`; the whole matrix only if those verify.

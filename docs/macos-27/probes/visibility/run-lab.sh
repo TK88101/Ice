@@ -48,14 +48,16 @@ esac
 # --- lab.env, read as words ------------------------------------------------------------
 
 # Defaults of what tests may change; the staging writes none of them.
-STATUS_LIMIT=300
+# A first calibration under the capture bursts (plan 2026-10-09-lab-first-run-followup,
+# S3): up to 24 observations, two to a burst of about 26.5 s, about 350 s.
+STATUS_LIMIT=600
 START_LIMIT=20
 TIME_SCALE=1
 CAPTURE=1
 ROUNDS=3
 KEY_BUDGET=1500
 HELPER_LIFETIME=10800
-RUN_LIMIT=18000
+RUN_LIMIT=28800
 required=(EXPECT_USER OWNER_USER GIT_REV ICE_SHA TARGET_SHA PROTECTED_SHA MENUS_SHA ICEWATCH_SHA TOOL_SHA)
 optional=(STATUS_LIMIT START_LIMIT TIME_SCALE CAPTURE ROUNDS KEY_BUDGET HELPER_LIFETIME RUN_LIMIT)
 seen=()
@@ -461,6 +463,12 @@ member_ids() { # <round> <scenario> <count>: this run's identifiers
 begin() { # <round> <scenario> <members> [always-hidden true|false] [hold]
     local round=$1 name=$2 count=$3 always=${4:-false} hold=${5:-} i
     mark chevronAtStart "\"listed\":$(chevron)"
+    # A reference lives one round at most (vzhelper's lifetime cap): one that is
+    # gone would read as Ice failing its checks.
+    local pid
+    for pid in $ref_pids; do
+        kill -0 $pid 2>/dev/null || { abort_run "a reference helper is gone"; return 1; }
+    done
     ice_id=com.icespike4.lab.r$run_id.$round${name//[^a-z0-9]/}
     ice_name=IceLab${run_id//[^0-9]/}$round${${name//[^a-z0-9]/}[1,8]}
     ice_app=$(stage_ice $ice_id $ice_name) || { abort_run "staging the copy failed"; return 1; }
