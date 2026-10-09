@@ -80,6 +80,12 @@ final class IceBarHidingCoordinator {
         for command in commands {
             execute(command)
         }
+        // Work nobody waits for must not capture later, in the owner's
+        // interaction: a session can wait some twenty seconds for a clear bar.
+        if !machine.awaitsAnswer {
+            work?.cancel()
+            work = nil
+        }
         // At standard length the items are back on the bar: an open IceBar would list them twice.
         if !isLengthApplied, let appState, appState.navigationState.isIceBarPresented {
             appState.menuBarManager.iceBarPanel.close()
@@ -193,9 +199,16 @@ final class IceBarHidingCoordinator {
                     """
                     IceBar trial: length \(length, privacy: .public) hidden \(summary.hidden, privacy: .public) \
                     drawn \(summary.stillDrawn, privacy: .public) of \(reading.checks.count, privacy: .public) \
-                    chevron \(chevron, privacy: .public)
+                    chevron \(chevron, privacy: .public) waited \(reading.waited, privacy: .public) \
+                    stable \(reading.diagnostics.map { String($0.captureStable) } ?? "unread", privacy: .public)
                     """
                 )
+                LabReport.record(.observation(
+                    length: length,
+                    diagnostics: reading.diagnostics,
+                    waited: reading.waited,
+                    burstAge: reading.burstAge
+                ))
             }
             send(.observed(token: token, checks: reading.checks, chevronListed: reading.chevronListed))
         }

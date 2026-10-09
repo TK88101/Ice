@@ -121,3 +121,102 @@ so the first observation after a baseline either ends within about 10 s of the
 baseline's first capture or waits until about 21 s after it; a later observation alone
 (1.5 s) summons nothing. Not measured: where between 1.5 s and 4.2 s the system starts
 to react, and whether Ice's other captures (the item image cache) count towards it.
+
+## S3 design: capture in bursts the block cannot reach, and say what a refusal was
+
+Goal: (a) Ice's lab report says, for every observation, what the matcher read of each
+reference, so "the block refused the trials" stops being an inference; (b) no baseline
+or observation is read on a bar the block has moved. Non-goals: the detector and
+`MenuBarCapture` (frozen); a baseline at a rest (T3b); fewer observations in a walk
+(D1's calibrator is not touched); Ice's other captures (the IceBar's cell images, the
+search panel, the settings pane: each happens while the owner interacts, when the
+machine has already left the cycle -- a stated limit, not handled).
+
+What it rests on (FINDINGS "The capture indicator, timed", both runs; the 13 sessions
+that summoned the block: shapes A, B, D three times each, E and G twice each):
+
+| # | Fact | Grade |
+|---|---|---|
+| M1 | The block never arrived sooner than 10.2 s after the first capture of a session begun 30 s after the last (13 of 13) | MEASURED |
+| M2 | 20.5 s after the last capture the block and the clock's shift were both gone (13 of 13) | MEASURED |
+| M3 | A baseline's captures take 4.2 s, an observation's 1.5 s (shapes B, C: the probe's sessions, without `prepare`'s discovery and preflight) | MEASURED |
+| M4 | A session that starts while the clock's shift is still there may meet the block sooner | INFERRED; so no burst starts then |
+
+**D1 The rule (`CaptureBurstRule`, IceCore, pure, tested).** Policy, conservative on
+M1-M2, its constants named parameters and not measurements: a *burst* begins with the
+first capture after `clearAfter` (22 s) without any. An observation may start within
+it while its need (2.5 s) still fits before `budget` (8 s) after that first capture. A
+baseline starts only on a clear bar and closes its burst when it is done, so nothing
+else is read in it: what a baseline does before its first capture (a discovery, a
+preflight) has no bound to fit a burst by (code review, round 1). Asked with a session
+and the time the rule answers `go` or `wait(until:)` the moment the bar is clear
+again. Its state: the burst's first capture, the last capture, whether the burst is
+closed; fed by every capture actually taken.
+
+**D2 Where it sits (`MenuBarDetectorFeed`, not frozen).** A capturer wrapper
+(`BurstRecordingCapturer`) tells a shared `CaptureBurstClock` the time of each capture
+it takes -- the preflight's included; nothing guesses when a session's captures began.
+`HiddenLengthObserver.takeBaseline` and `observe` (after its settle) ask the clock,
+sleep through a `wait` with the injected, cancellable sleep, and leave as today when
+cancelled. The observer's `HidingVerification` is built with `retries: 1`: one attempt
+a session, since the retries were there to get past the block's flicker and a session
+that retried could outlast its burst (shape G: 7.1 s). `HidingVerifier` (the hiding
+check) is unchanged. The coordinator cancels the work under way when it executes
+`.setLength(nil)`: a session whose answer the machine no longer waits for must not
+capture 22 s later, in the owner's interaction (`IceBarHidingCoordinator.swift:77-87`).
+
+What the owner sees, said: after a baseline the first observation waits about 22 s
+with the trial length already set; a walk gets two observations to a burst, so a
+first calibration's fifteen take about three and a half minutes instead of one, and
+its bound of 24 about five and a half (waiting before every one would pass the
+baseline's ten minutes, `BaselineReuse.maxAge`); a rest reached from a remembered
+length takes about half a minute. The violet block still appears for about ten
+seconds after each burst: capturing summons it, this only keeps it out of the readings.
+
+**D3 What a refusal was (`ObservationDiagnostics`).** `verify` keeps its signature;
+beside it `verifyReporting` returns the checks and, when an observation was read, per
+reference its key, the match's kind, its mismatch and its distance from the template's
+origin (from `reading.sightings` and `baseline.templates`), `captureStable` and the
+fold. `HiddenLengthReading` carries it with the seconds waited and the burst's age at the
+session's last capture (first to last capture: whether the session stayed inside the
+budget); the coordinator records it as a lab event `observation`
+(identifiers and numbers, no titles; the judge ignores events it does not know,
+`lab-tool.py:107-124`) and logs counts only.
+
+Tests first: `CaptureBurstRuleTests` (a first burst, a second observation that fits,
+one that does not, the wait, clearing, the baseline's envelope; 100 % of the rule);
+`HiddenLengthObserverTests` (a baseline then an observation sleeps the wait; two
+observations share a burst; a cancelled wait captures nothing);
+`HidingVerificationTests` (the diagnostics of a moved reference say `unique` with its
+distance); `LabReportTests` (the event's JSON). Then `xcodebuild`, `check-a3a4.sh`,
+the three packages' suites, `test-lab.sh`; `/simcodex`. The probes' full run (over an
+hour) only if a probe's Swift changes.
+
+Touched: `Packages/IceCore` (the rule, the diagnostics value, the lab event);
+`Packages/MenuBarDiscovery/Sources/MenuBarDetectorFeed` (`HidingVerification`,
+`HiddenLengthObserver`, the live wiring, the clock and wrapper);
+`Ice/MenuBar/IceBar27/IceBarHidingCoordinator.swift`, `Ice/Main/LabReport.swift`;
+STATUS. Rollback: revert the commit.
+
+Risks: the numbers are one Mac's, one OS build's, two runs' -- the diagnostics will
+show a burst the block reached all the same; M4 is why bursts do not overlap, and it
+is not measured; a walk three times slower is three times likelier to be interrupted
+by the owner's mouse; without retries one unreadable fold costs an observation.
+
+### S3 design review (Codex `gpt-5.6-terra`, reasoning medium, 2026-10-09; two rounds, converged)
+
+| Round | Raised | Outcome |
+|---|---|---|
+| 1 | 15 items: "15 of 15" miscounted (13); 22 s and 8 s are policy, not measurements; the needs leave out `prepare`'s discovery and preflight, and the preflight's capture would go unrecorded; a retry deadline cannot stop a bracket that is already capturing; **a session waiting 22 s is not cancelled when the machine leaves its phase, and would capture later**; the text had a baseline and an observation both fit one burst and wait 22 s; the diagnostics hide earlier attempts; simpler: wait 22 s before every session, one attempt each | **taken**: the count; policy wording; the capturer wrapper; one attempt a session in place of a deadline; the coordinator's cancel; the envelope and its test; burst times in the diagnostics. **Disputed**, to round 2: waiting before every observation, an Accessibility check that the bar is clear, re-baselining a stale rest, the throttle's meaning |
+| 2 | Answers to the four | **Mine upheld, all four withdrawn by Codex**: two observations to a burst stay (24 waits of 23.5 s pass the baseline's 600 s; shape E has the second observation 5 s clear of the block); no Accessibility check (which agent frame is the clock, and where it rests, is a new way to be wrong); a stale rest is the owner's ruling (T3b); the throttle is untouched (tokens, and now the cancel). Codex adds: pin the baseline's envelope by a test |
+
+### S3 code review (/simcodex, 2026-10-09)
+
+| Round | Simplify (own review: the diff is small, no agents dispatched) | Codex review | Outcome |
+|---|---|---|---|
+| 1 | the burst's age computed in the observer by nested maps: moved into the rule | 1 P1: a baseline admitted into a running burst reserves 5 s, but `prepare`'s discovery and preflight come before its first capture and are not bounded | both taken: a baseline needs a clear bar and closes its burst (`baselineNeed` removed; the envelope test replaced by the two that pin this) |
+| 2 | none | 1 P1: the hiding check (`AppState+HidingCheck`) captures through a capturer of its own that the clock never hears of | taken: one clock for the process (`CaptureBurstClock.shared`), every live capturer reports to it; this also keeps the history when the coordinator builds an observer for another display. Ice's window captures (`ScreenCapture`: cell images, search, settings) still do not report: the stated limit |
+| 3 | none | 1 P1: with a shared clock a capture elsewhere during the wait moves the moment the bar is clear, and the observer slept to the old one | taken: the wait asks again after every sleep and adds up (test first, red, then green) |
+| after | -- | confirmation: the P1 resolved; 1 P2: the event carries the burst's age, not its two endpoints | P2 left: the age and the wait say whether a session stayed inside its budget; the plan's wording corrected to what is emitted |
+
+P0/P1 per round: 1, 1, 1, 0. The stated cap of three rounds, then one confirmation.

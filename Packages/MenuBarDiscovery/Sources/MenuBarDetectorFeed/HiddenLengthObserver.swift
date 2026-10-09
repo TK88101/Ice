@@ -46,10 +46,25 @@ public struct HiddenLengthReading: Equatable, Sendable {
     public let checks: [ItemKey: SectionItemCheck]
     /// `nil` when the agent could not be read.
     public let chevronListed: Bool?
+    /// What the matcher read of each reference; `nil` when no observation was read.
+    public let diagnostics: ObservationDiagnostics?
+    /// How long the session waited for a bar clear of the capture indicator.
+    public let waited: Double
+    /// From the burst's first capture to this session's last; `nil` without a burst clock.
+    public let burstAge: Double?
 
-    public init(checks: [ItemKey: SectionItemCheck], chevronListed: Bool?) {
+    public init(
+        checks: [ItemKey: SectionItemCheck],
+        chevronListed: Bool?,
+        diagnostics: ObservationDiagnostics? = nil,
+        waited: Double = 0,
+        burstAge: Double? = nil
+    ) {
         self.checks = checks
         self.chevronListed = chevronListed
+        self.diagnostics = diagnostics
+        self.waited = waited
+        self.burstAge = burstAge
     }
 
     public static let nothing = HiddenLengthReading(checks: [:], chevronListed: nil)
@@ -64,6 +79,11 @@ public actor HiddenLengthObserver {
     private let chevron: ChevronReader
     private let settle: Double
     private let sleep: @Sendable (Double) async -> Void
+    /// When the capturer behind `verification` captured, and so when a
+    /// session may start out of the capture indicator's reach; `nil` leaves
+    /// every session to start at once.
+    private let burst: CaptureBurstClock?
+    private let now: @Sendable () -> Double
     private var prepared: PreparedVerification?
     /// Which `takeBaseline` call may still set `prepared`: the actor is
     /// reentrant across `prepare`, so an older call can resume after a newer
@@ -74,12 +94,31 @@ public actor HiddenLengthObserver {
         verification: HidingVerification,
         chevron: ChevronReader,
         settle: Double = 1.0,
-        sleep: @escaping @Sendable (Double) async -> Void = { try? await Task.sleep(for: .seconds($0)) }
+        sleep: @escaping @Sendable (Double) async -> Void = { try? await Task.sleep(for: .seconds($0)) },
+        burst: CaptureBurstClock? = nil,
+        now: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.verification = verification
         self.chevron = chevron
         self.settle = settle
         self.sleep = sleep
+        self.burst = burst
+        self.now = now
+    }
+
+    /// Sleeps until `session` may start in a burst the capture indicator
+    /// cannot reach; the seconds slept. The caller checks for cancellation.
+    private func waitForBurst(_ session: CaptureSession) async -> Double {
+        var waited = 0.0
+        // Asked again after every sleep: a capture taken elsewhere meanwhile
+        // (the hiding check shares the clock) moves the moment the bar is clear.
+        while !Task.isCancelled {
+            let start = now()
+            guard case .wait(let until)? = burst?.decision(for: session, now: start) else { break }
+            await sleep(until - start)
+            waited += until - start
+        }
+        return waited
     }
 
     /// Takes the baseline with the section shown, and says whether it covers
@@ -89,12 +128,20 @@ public actor HiddenLengthObserver {
     public func takeBaseline(sectionMap: [TagKey: ItemSection]) async -> BaselineCoverage {
         generation += 1
         let mine = generation
+        _ = await waitForBurst(.baseline)
+        guard mine == generation else { return .cancelled }
+        guard !Task.isCancelled else {
+            prepared = nil
+            return .cancelled
+        }
         let fresh = await verification.prepare(
             sections: [.hidden],
             sectionMap: sectionMap,
             explicitCandidates: nil,
             reusing: nil
         )
+        // Whatever the baseline captured, nothing else is read in its burst.
+        burst?.closeBurst()
         guard mine == generation else { return .cancelled }
         guard !Task.isCancelled else {
             prepared = nil
@@ -118,10 +165,18 @@ public actor HiddenLengthObserver {
         guard let prepared else { return .nothing }
         await sleep(settle)
         guard !Task.isCancelled else { return .nothing }
-        let results = await verification.verify(prepared)
+        let waited = await waitForBurst(.observation)
+        guard !Task.isCancelled else { return .nothing }
+        let report = await verification.verifyReporting(prepared)
         guard !Task.isCancelled else { return .nothing }
         let listed = await chevron.chevronListed()
-        return HiddenLengthReading(checks: results, chevronListed: listed)
+        return HiddenLengthReading(
+            checks: report.checks,
+            chevronListed: listed,
+            diagnostics: report.diagnostics,
+            waited: waited,
+            burstAge: burst?.snapshot.burstAge
+        )
     }
 
     /// A baseline is complete when it is ready, names at least one member,

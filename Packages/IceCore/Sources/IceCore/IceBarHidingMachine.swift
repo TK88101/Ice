@@ -182,6 +182,18 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         rest != nil
     }
 
+    /// A baseline or an observation the machine asked for is still wanted.
+    /// When not, whatever work is under way answers nobody and must not go
+    /// on capturing (plan 2026-10-09-lab-first-run-followup, S3 design D2).
+    public var awaitsAnswer: Bool {
+        switch phase {
+        case .baselining, .settling: true
+        case .calibrating(_, let pending, _): pending != nil
+        case .resting(let rest): rest.pending?.recheck != nil
+        case .off, .blocked, .quiet: false
+        }
+    }
+
     /// The `«` reading of the rest's last observation; recorded, never acted on.
     public var chevronListed: Bool? {
         rest?.chevronListed

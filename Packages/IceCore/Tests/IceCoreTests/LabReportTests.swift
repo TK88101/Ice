@@ -67,6 +67,14 @@ struct LabReportTests {
         #expect(line(.length(LabReportLength(applied: 736, held: false), decided: 736)) == #"{"applied":736,"decided":736,"event":"length","held":false,"seq":1,"t":2}"#)
         #expect(line(.length(LabReportLength(applied: nil, held: true), decided: 736)) == #"{"applied":null,"decided":736,"event":"length","held":true,"seq":1,"t":2}"#)
         #expect(line(.length(LabReportLength(applied: nil, held: false), decided: nil)) == #"{"applied":null,"decided":null,"event":"length","held":false,"seq":1,"t":2}"#)
+        let reference = ItemKey(namespace: "com.icespike4.protected", identifier: "ref1", pid: 11, childIndex: nil)
+        let diagnostics = ObservationDiagnostics(
+            references: [ReferenceReading(key: reference, match: "unique", mismatch: 0.01, offset: -48)],
+            captureStable: false,
+            fold: "absent"
+        )
+        #expect(line(.observation(length: 736, diagnostics: diagnostics, waited: 21.5, burstAge: 1.5)) == #"{"burstAge":1.5,"captureStable":false,"event":"observation","fold":"absent","length":736,"references":[{"identifier":"ref1","match":"unique","mismatch":0.01,"namespace":"com.icespike4.protected","offset":-48}],"seq":1,"t":2,"waited":21.5}"#)
+        #expect(line(.observation(length: 736, diagnostics: nil, waited: 0, burstAge: nil)) == #"{"burstAge":null,"captureStable":null,"event":"observation","fold":null,"length":736,"references":[],"seq":1,"t":2,"waited":0}"#)
         #expect(line(.roster([LabReportItem(namespace: "n", identifier: "a")])) == #"{"event":"roster","members":[{"identifier":"a","namespace":"n"}],"seq":1,"t":2}"#)
         #expect(line(.press(namespace: "n", identifier: "a", answer: "sent")) == #"{"answer":"sent","event":"press","identifier":"a","namespace":"n","seq":1,"t":2}"#)
         #expect(line(.bar(action: "open", answer: "refused:notOffered")) == #"{"action":"open","answer":"refused:notOffered","event":"bar","seq":1,"t":2}"#)

@@ -20,12 +20,26 @@ extension HidingVerification {
     /// - Parameter warmUpCount: the captures that settle the strip before a
     ///   session reads it; the hiding check keeps the default, IceBar's
     ///   hidden-length observer passes fewer (plan 2026-10-03-icebar-build, 9.3).
-    public static func live(screen: NSScreen, ownIdentifiers: OwnIdentifiers, warmUpCount: Int = 24) -> HidingVerification {
+    /// - Parameter retries: attempts a session; the hidden-length observer
+    ///   passes one, so no session outlasts its burst.
+    /// - Parameter burst: told of every capture taken (plan
+    ///   2026-10-09-lab-first-run-followup, S3 design D2); the process's
+    ///   shared clock, so the hiding check's captures count too.
+    public static func live(
+        screen: NSScreen,
+        ownIdentifiers: OwnIdentifiers,
+        warmUpCount: Int = 24,
+        retries: Int = 5,
+        burst: CaptureBurstClock = .shared
+    ) -> HidingVerification {
         // `NSScreen` is not `Sendable`; every seam below only ever reads its
         // frame/scale/notch geometry, which does not change across a run, so
         // boxing it `@unchecked` is safe here.
         let screenBox = UncheckedBox(screen)
-        let capturer = CGWindowListStripCapturer(screenProvider: { screenBox.value })
+        let capturer = BurstRecordingCapturer(
+            wrapping: CGWindowListStripCapturer(screenProvider: { screenBox.value }),
+            burst: burst
+        )
         // Frames only: the check never needs an item's labels.
         let extras = LiveExtrasReader(readsLabels: false)
         let discoverer = MenuBarDiscoverer(
@@ -54,7 +68,8 @@ extension HidingVerification {
                 let reader = DiscoveredFrameReader(extras: extras, apps: LiveRunningApps(), origin: liveOrigin)
                 return Preflight.run(capturer: capturer, axReader: reader, geometry: geometry)
             },
-            warmUpCount: warmUpCount
+            warmUpCount: warmUpCount,
+            retries: retries
         )
     }
 }
@@ -79,11 +94,21 @@ extension HiddenLengthObserver {
     /// takes about fifteen observations. INFERRED, judged in T7 (plan 9.3, R6).
     public static let liveWarmUpCount = 4
 
+    /// One attempt a session: the retries were there to get past the capture
+    /// indicator's flicker, and a session that retried could outlast its
+    /// burst (7.1 s with all five, FINDINGS "The capture indicator, timed").
+    public static let liveRetries = 1
+
     /// The live observer for `screen`; `nil` without a bar geometry.
     public static func live(screen: NSScreen, ownIdentifiers: OwnIdentifiers) -> HiddenLengthObserver? {
         guard let chevron = ChevronReader.live(screen: screen) else { return nil }
-        let verification = HidingVerification.live(screen: screen, ownIdentifiers: ownIdentifiers, warmUpCount: liveWarmUpCount)
-        return HiddenLengthObserver(verification: verification, chevron: chevron)
+        let verification = HidingVerification.live(
+            screen: screen,
+            ownIdentifiers: ownIdentifiers,
+            warmUpCount: liveWarmUpCount,
+            retries: liveRetries
+        )
+        return HiddenLengthObserver(verification: verification, chevron: chevron, burst: .shared)
     }
 }
 

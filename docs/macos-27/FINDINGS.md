@@ -828,3 +828,21 @@ Ice uses; that the lab's refusals were this is still INFERRED from outside Ice.
 Consequence for Ice: a baseline (4.2 s) always fits before the block, and always
 summons it; whatever is read between 10.3 s and about 20.5 s after a baseline began is
 read on a bar 48 pt off its templates.
+
+**MEASURED, the same day, run `20261009-112536-indicator`** (288 captures, 1045 reads,
+none failed; shapes E and G, twice each):
+
+| shape | captures for | the block arrives, after the first capture | the block leaves |
+|---|---|---|---|
+| E fifteen observations, one every 3.5 s (a calibration walk) | 50.5 s | 10.4, 10.3 s, and stays for the whole walk | 10.2, 10.3 s after the last capture |
+| G one observation with all five attempts | 7.1 s | 10.3, 10.3 s | 13.2, 13.1 s after the last capture |
+
+So a single 1.5 s observation summons nothing, and the same observation repeated every
+3.5 s does. Over both runs (15 sessions that summoned it): the block never came sooner
+than 10.2 s after a session's first capture; it left 10.2-13.2 s after the last capture,
+and the clock's 3 pt shift left with it or 10 s later, at most 20.5 s after the last
+capture. **INFERRED**: the system looks about every 10.1 s, counted from the first
+capture (every arrival and departure lies within 0.3 s of a multiple of 10.12 s from
+it), shows the block when it saw capturing in the period before, and removes it after
+a period without. Not measured: what a new session meets when it starts while the
+clock's shift is still there.

@@ -191,3 +191,12 @@ was posted. T2b did not complete its three-run protocol.
 | `«` when a scenario began | never (0 of 19) | MEASURED |
 | Cleanup | every domain deleted and verified empty; MenuBarAgent held 0 lab keys before | MEASURED |
 
+## Capturing out of the indicator's reach (S3 of plan 2026-10-09-lab-first-run-followup, 2026-10-09)
+
+| what | status | tag |
+|---|---|---|
+| When Ice captures | a baseline starts only 22 s after the last capture and has its burst to itself; an observation starts within 8 s of its burst's first capture if 2.5 s still fit, else waits for a clear bar; one attempt a session; every live capturer reports to one clock; work the machine no longer waits for is cancelled | MEASURED (unit tests: `CaptureBurstRuleTests`, `CaptureBurstObserverTests`, `IceBarHidingMachineTests`); builds (Debug); **not run** against a bar |
+| What it costs | after a baseline the first observation waits about 22 s with the trial length set; a first calibration of fifteen observations about three and a half minutes instead of one; the violet block still shows for about ten seconds after each burst | INFERRED from the rule's numbers; not timed |
+| What an observation says | the lab report's `observation` event: per reference its match, mismatch and distance from its template's origin, `captureStable`, the fold, the seconds waited, the burst's age | MEASURED (unit tests); not yet read from a real run |
+| Not handled | Ice's window captures (the IceBar's cell images, search, settings) do not report to the clock; the numbers are one Mac's, one build's, two runs' | stated limit |
+| Whether the lab's checks now verify | unknown until the next `icetest` sitting (S4) | TBD |

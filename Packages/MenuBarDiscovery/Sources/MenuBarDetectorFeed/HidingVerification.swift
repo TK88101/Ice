@@ -235,9 +235,16 @@ public final class HidingVerification: @unchecked Sendable {
     // MARK: - verify
 
     public func verify(_ prepared: PreparedVerification) async -> [ItemKey: SectionItemCheck] {
+        await verifyReporting(prepared).checks
+    }
+
+    /// `verify`, with what the observation's matcher read of each reference
+    /// (`nil` when no observation was read): plan
+    /// 2026-10-09-lab-first-run-followup, S3 design D3.
+    public func verifyReporting(_ prepared: PreparedVerification) async -> VerificationReport {
         let flag = CancellationFlag()
         return await withTaskCancellationHandler {
-            await withCheckedContinuation { (continuation: CheckedContinuation<[ItemKey: SectionItemCheck], Never>) in
+            await withCheckedContinuation { (continuation: CheckedContinuation<VerificationReport, Never>) in
                 self.queue.async {
                     let result = self.runVerifyBody(prepared, flag: flag)
                     continuation.resume(returning: result)
@@ -248,9 +255,12 @@ public final class HidingVerification: @unchecked Sendable {
         }
     }
 
-    private func runVerifyBody(_ prepared: PreparedVerification, flag: CancellationFlag) -> [ItemKey: SectionItemCheck] {
-        func allSkipped(_ reason: CheckSkipReason) -> [ItemKey: SectionItemCheck] {
-            Dictionary(uniqueKeysWithValues: prepared.targets.map { ($0, .skipped(reason)) })
+    private func runVerifyBody(_ prepared: PreparedVerification, flag: CancellationFlag) -> VerificationReport {
+        func allSkipped(_ reason: CheckSkipReason) -> VerificationReport {
+            VerificationReport(
+                checks: Dictionary(uniqueKeysWithValues: prepared.targets.map { ($0, .skipped(reason)) }),
+                diagnostics: nil
+            )
         }
 
         let ready: PreparedVerification.Ready
@@ -302,7 +312,17 @@ public final class HidingVerification: @unchecked Sendable {
                 results[key] = .checked(decision.hiding(of: key.encoded, in: reading))
             }
         }
-        return results
+        let diagnostics = ObservationDiagnostics.make(
+            reading: reading,
+            references: referenceKeys.map { ($0, ready.baseline.templates[$0.encoded]?.originXPt) }
+        )
+        return VerificationReport(checks: results, diagnostics: diagnostics)
+    }
+
+    /// What `verifyReporting` returns.
+    public struct VerificationReport: Equatable, Sendable {
+        public let checks: [ItemKey: SectionItemCheck]
+        public let diagnostics: ObservationDiagnostics?
     }
 
     // MARK: - Helpers

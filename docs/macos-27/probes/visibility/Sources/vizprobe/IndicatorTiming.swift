@@ -8,6 +8,9 @@
 //   B  a baseline's shape (4 warm-up captures, then samples for 3 s)
 //   C  an observation's shape (4 warm-up captures, 2 samples)
 //   D  a baseline, 2 s, then five observations 1 s apart
+//   E  fifteen observations, one every 3.5 s (a calibration walk's cadence)
+//   G  one observation with every retry (2 samples five times, 1 s apart)
+// `--shapes A,B,...` runs only those (E and G twice each).
 // Meanwhile the helpers' and MenuBarAgent's Accessibility frames are read four
 // times a second. Read-only towards everything but our own helpers: nothing is
 // moved, clicked or resized. Side effects: two status items for about nine
@@ -130,12 +133,27 @@ enum IndicatorTimingCommand {
                     Pump.run(1)
                 }
             }),
+            ("E", {
+                for _ in 0..<15 {
+                    let start = ProcessInfo.processInfo.systemUptime
+                    observation()
+                    Pump.run(max(0, 3.5 - (ProcessInfo.processInfo.systemUptime - start)))
+                }
+            }),
+            ("G", {
+                warmUp()
+                for attempt in 0..<5 {
+                    samples(count: SessionShape.observationSamples)
+                    if attempt < 4 { Pump.run(1) }
+                }
+            }),
         ]
+        let chosen = option("--shapes", in: arguments)?.split(separator: ",").map(String.init) ?? ["A", "B", "C", "D"]
 
         log.phase("settle", "begin")
         Pump.run(quiet)
-        for (name, shape) in shapes {
-            for round in 1...3 {
+        for (name, shape) in shapes where chosen.contains(name) {
+            for round in 1...(["E", "G"].contains(name) ? 2 : 3) {
                 let phase = "\(name)\(round)"
                 capturer.phase = phase
                 log.phase(phase, "begin")

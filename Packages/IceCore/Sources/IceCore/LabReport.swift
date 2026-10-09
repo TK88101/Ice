@@ -294,6 +294,10 @@ public enum LabReportEvent: Equatable, Sendable {
     case length(LabReportLength, decided: Double?)
     /// Each roster the item manager publishes: the members.
     case roster([LabReportItem])
+    /// Each observation Ice read: what the matcher saw of the references,
+    /// how long the session waited for a clear bar, and how old its burst
+    /// was at its last capture (plan 2026-10-09-lab-first-run-followup, D3).
+    case observation(length: Double, diagnostics: ObservationDiagnostics?, waited: Double, burstAge: Double?)
     case press(namespace: String, identifier: String, answer: String)
     case bar(action: String, answer: String)
     /// A line of standard input that is no command.
@@ -306,6 +310,7 @@ public enum LabReportEvent: Equatable, Sendable {
         case .status: "status"
         case .length: "length"
         case .roster: "roster"
+        case .observation: "observation"
         case .press: "press"
         case .bar: "bar"
         case .unknownCommand: "unknownCommand"
@@ -327,6 +332,18 @@ public enum LabReportEvent: Equatable, Sendable {
             return ["decided": .optional(decided), "applied": .optional(length.applied), "held": .bool(length.held)]
         case .roster(let members):
             return ["members": .array(members.map(\.json))]
+        case .observation(let length, let diagnostics, let waited, let burstAge):
+            let references = diagnostics?.references.map { reading -> LabJSON in
+                .object([
+                    "namespace": .string(reading.key.namespace), "identifier": .string(reading.key.identifier),
+                    "match": .string(reading.match), "mismatch": .optional(reading.mismatch), "offset": .optional(reading.offset),
+                ])
+            }
+            return [
+                "length": .number(length), "captureStable": .optional(diagnostics?.captureStable),
+                "fold": .optional(diagnostics?.fold), "references": .array(references ?? []),
+                "waited": .number(waited), "burstAge": .optional(burstAge),
+            ]
         case .press(let namespace, let identifier, let answer):
             return ["namespace": .string(namespace), "identifier": .string(identifier), "answer": .string(answer)]
         case .bar(let action, let answer):

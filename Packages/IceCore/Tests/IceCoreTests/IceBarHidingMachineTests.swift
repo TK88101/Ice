@@ -189,6 +189,43 @@ struct IceBarHidingMachineTests {
 
     // MARK: - Reaching a rest
 
+    @Test("the machine awaits an answer exactly while a baseline or an observation it asked for is still wanted")
+    func awaitsAnswer() {
+        var machine = IceBarHidingMachine()
+        #expect(!machine.awaitsAnswer)
+        (machine, _) = machine.step(.mode(isIceBar: true), now: 0)
+        (machine, _) = machine.step(.sample(Self.sample()), now: 0)
+        #expect(!machine.awaitsAnswer)
+        let (baselining, commands) = machine.step(.sample(Self.sample()), now: 3)
+        guard case .takeBaseline(let token, _, _)? = commands.first else {
+            Issue.record("no baseline was asked for")
+            return
+        }
+        #expect(baselining.awaitsAnswer)
+        // The pointer enters the bar: the baseline is no longer wanted.
+        #expect(!baselining.step(.sample(Self.sample(interacting: true)), now: 4).machine.awaitsAnswer)
+        let (betweenTrials, _) = baselining.step(.baseline(token: token, ok: true), now: 8)
+        #expect(!betweenTrials.awaitsAnswer)
+        let (trial, _) = betweenTrials.step(.sample(Self.sample()), now: 9)
+        #expect(trial.awaitsAnswer)
+        #expect(!trial.step(.sample(Self.sample(interacting: true)), now: 10).machine.awaitsAnswer)
+    }
+
+    @Test("at a rest the machine awaits an answer only while a re-check is under way")
+    func awaitsAnswerAtRest() {
+        var driver = Driver()
+        driver.settle()
+        #expect(driver.restLength != nil)
+        #expect(!driver.machine.awaitsAnswer)
+        driver.answers = false
+        driver.run(Self.sample(Self.signature(frontmostPID: 11)), ticks: 4)
+        guard case .observe? = driver.log.last else {
+            Issue.record("no re-check asked")
+            return
+        }
+        #expect(driver.machine.awaitsAnswer)
+    }
+
     @Test("a quiet bar is baselined after the quiet period, never before")
     func quietPeriod() {
         var driver = Driver()
