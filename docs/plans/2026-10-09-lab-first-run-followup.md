@@ -237,4 +237,6 @@ P0/P1 per round: 1, 1, 1, 0. The stated cap of three rounds, then one confirmati
   "before" strip, taken 6 s ahead of Ice's baseline, brought the block into it. The
   runner takes no strip before Ice's cycle any more and waits out 22 s after any capture
   of its own (the preflight's, a scenario's end strip) before it starts Ice
-  (`cool_down`; `test-lab.sh` has the case, red first).
+  (`cool_down`; `test-lab.sh` has the case, red first).- The second try (run `20261010-225047`, `sparse`): **pass**, verified at 728 pt in 292 s,
+  19 of 19 observations stable. Under the old 300 s limit it would have had 8 s to spare.
+  Next: `k2`, then the matrix.

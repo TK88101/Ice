@@ -856,3 +856,8 @@ process's capture -- :21 plus 10.3 s is :31.3 -- so a capture Ice does not know 
 brings the block into a burst Ice counted as clean. The first run's runner took the
 same strip at each scenario's start (about 6 s in, the shift seen between 17 and 22 s):
 its `captureUnstable` readings may owe as much to the runner as to Ice. Not separated.
+**MEASURED, run `20261010-225047`** (`icetest`, `sparse` alone, build `fb50d98`): with the
+runner's captures kept 22 s away and Ice capturing in bursts, 19 of 19 observations were
+`captureStable` with both references at distance 0 from their templates, and the member
+read `hidden` at the rest (728 pt, `verified`, 292 s after Ice started). The walk's two
+edges: the fold came up at 592 pt, and 864 pt ended the walk upward.
