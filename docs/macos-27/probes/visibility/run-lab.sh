@@ -51,6 +51,9 @@ esac
 # A first calibration under the capture bursts (plan 2026-10-09-lab-first-run-followup,
 # S3): up to 24 observations, two to a burst of about 26.5 s, about 350 s.
 STATUS_LIMIT=600
+# `drawn` walks every length down to the floor, about 330 s, and a blocker on
+# the way starts the walk again (run 20261011-122641): two walks.
+DRAWN_LIMIT=900
 START_LIMIT=20
 TIME_SCALE=1
 CAPTURE=1
@@ -59,7 +62,7 @@ KEY_BUDGET=1500
 HELPER_LIFETIME=10800
 RUN_LIMIT=28800
 required=(EXPECT_USER OWNER_USER GIT_REV ICE_SHA TARGET_SHA PROTECTED_SHA MENUS_SHA ICEWATCH_SHA TOOL_SHA)
-optional=(STATUS_LIMIT START_LIMIT TIME_SCALE CAPTURE ROUNDS KEY_BUDGET HELPER_LIFETIME RUN_LIMIT)
+optional=(STATUS_LIMIT DRAWN_LIMIT START_LIMIT TIME_SCALE CAPTURE ROUNDS KEY_BUDGET HELPER_LIFETIME RUN_LIMIT)
 seen=()
 while IFS='=' read -r key value; do
     if (( ! ${${required}[(Ie)$key]} && ! ${${optional}[(Ie)$key]} )) || [[ ! $value =~ '^[A-Za-z0-9._,/-]+$' ]]; then
@@ -72,7 +75,7 @@ done < $shared/lab.env
 for key in $required; do
     (( ${seen[(Ie)$key]} )) || { print -u2 -- "run-lab: lab.env lacks $key; stopped."; exit 2; }
 done
-[[ $STATUS_LIMIT == <1-> && $START_LIMIT == <1-> && $CAPTURE == [01] && $ROUNDS == <1-3> && $KEY_BUDGET == <1->
+[[ $STATUS_LIMIT == <1-> && $DRAWN_LIMIT == <1-> && $START_LIMIT == <1-> && $CAPTURE == [01] && $ROUNDS == <1-3> && $KEY_BUDGET == <1->
     && $HELPER_LIFETIME == <1-10800> && $RUN_LIMIT == <1-> && $TIME_SCALE =~ '^[0-9]+(\.[0-9]+)?$' ]] \
     || { print -u2 -- "run-lab: a value in lab.env is out of range; stopped."; exit 2; }
 
@@ -132,10 +135,15 @@ menu_frame=$($icewatch menu-frame 2>/dev/null)
 # The scenarios that verify need the front app's menu to end left of the notch
 # (2026-09-29: past it the check cannot read the bar): Terminal, in front.
 [[ $menu_frame == *'"verdict":"fits"'* ]] || guard 1 "the app in front must have a short menu (Terminal, in front); icewatch menu-frame: ${menu_frame:-nothing}"
+# The app in front now is the one `front-*` and `crowded` bring back. Asked
+# of the system, not parsed from lsappinfo: its `"pid"=N` reads `pid = N` on
+# macOS 27, and two runs went without a pid (20261011-004911, -122641).
+terminal_pid=${${$($icewatch front 2>/dev/null)#\{\"pid\":}%\}}
+[[ $terminal_pid == <1-> ]] && kill -0 $terminal_pid 2>/dev/null || guard 1 "no app in front that can be brought back (icewatch front: ${terminal_pid:-nothing})"
 (( guard_failed )) && exit 2
 
 if (( dry_run )); then
-    print -- "run-lab dry run: the guards pass ($GIT_REV; preflight $preflight)."
+    print -- "run-lab dry run: the guards pass ($GIT_REV; preflight $preflight); the app in front is pid $terminal_pid."
     print -- "  It would run ${only:-the matrix: ${scenarios[*]}} (${only:+once}${only:-up to $ROUNDS rounds, stopping after an unclean round 1})."
     print -- "  Each scenario: a fresh copy of $shared/Ice.app with its own bundle id and executable, started with -IceLabReport YES;"
     print -- "  sacrificial helpers under com.icespike4.target / .protected; evidence in $shared/evidence/<run id>/."
@@ -165,7 +173,6 @@ menus_fd=
 # Every helper this run started, from the moment it starts: the cleanup quits
 # them all, also one that was starting when a signal came.
 spawned_pids=()
-terminal_pid=
 watchdog_pid=
 caffeinate_pid=
 cleaned=0
@@ -276,8 +283,6 @@ perl -e 'sleep $ARGV[0]; kill "TERM", $ARGV[1] if getppid() == $ARGV[1]' $RUN_LI
 watchdog_pid=$!
 caffeinate -dis -w $$ &
 caffeinate_pid=$!
-# The app in front now is the one `front-*` and `crowded` bring back.
-terminal_pid=$(lsappinfo info -only pid "$(lsappinfo front)" 2>/dev/null | sed -n 's/.*"pid"=\([0-9]*\).*/\1/p')
 note "run $run_id rev $GIT_REV front $terminal_pid preflight $preflight"
 
 # --- MenuBarAgent's store (D2, D5): recorded, never a stop ---------------------------------------
@@ -681,7 +686,7 @@ s_positional() {
 # `inverted-moved` it waits for the owner's Command-drag (S5).
 s_inverted() { expected inverted ""; }
 
-s_drawn() { begin $1 drawn 1 false hold && await $STATUS_LIMIT status 0 'failed(drawn:'; nap 3; }
+s_drawn() { begin $1 drawn 1 false hold && await $DRAWN_LIMIT status 0 'failed(drawn:'; nap 3; }
 
 s_incomplete() {
     begin $1 incomplete 1 && await $STATUS_LIMIT rest || return

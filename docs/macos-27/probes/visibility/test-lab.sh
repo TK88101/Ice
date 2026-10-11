@@ -72,7 +72,9 @@ print -u2 "2026-10-08 10:00:00.100000+0900 Ice[1:1] [Permissions] Passed all per
 trap "exit 0" TERM
 seq=0
 emit() { seq=$((seq + 1)); print -r -- "${1%\}},\"seq\":$seq,\"t\":$seq}"; }
-emit "{\"event\":\"start\",\"marker\":\"IceLabReport-start-v1\",\"pid\":$$,\"bundleID\":\"$id\",\"holdLength\":false}"
+hold=false
+[[ " $* " == *" -IceLabHoldLength YES "* ]] && hold=true
+emit "{\"event\":\"start\",\"marker\":\"IceLabReport-start-v1\",\"pid\":$$,\"bundleID\":\"$id\",\"holdLength\":$hold}"
 if [[ -f $LAB_STUB_FIXTURES/$scenario.jsonl ]]; then
     while IFS= read -r line; do
         if [[ $line == "{\"waitMembers\":"* ]]; then
@@ -110,6 +112,8 @@ case $1 in
     preflight) print "{\"axTrusted\":${LAB_STUB_AX:-true},\"pid\":1,\"screenCapture\":true}" ;;
     menu-frame) print "{\"barHeight\":33,\"displayWidth\":1728,\"menuMaxX\":300,\"notchMinX\":700,\"verdict\":\"fits\"}" ;;
     chevron) print "{\"listed\":false}"; exit 1 ;;
+    # The app in front: the runner itself here, a pid that is alive.
+    front) [[ -n ${LAB_STUB_NO_FRONT:-} ]] && { print "{\"pid\":null}"; exit 1; }; print "{\"pid\":$PPID}" ;;
     activate)
         # LAB_STUB_ACTIVATE_FAILS: how many activations fail before one succeeds.
         print x >> $LAB_STUB_MARKS/activations
@@ -169,6 +173,14 @@ ours_running() { pgrep -f "$tmp/" >/dev/null; }
 build_staging
 zsh $shared/run-lab.sh --dry-run > $tmp/out.txt 2>&1 && grep -q 'nothing was started' $tmp/out.txt && [[ -z $(ls $shared/evidence) && ! -f $marks/ice ]]
 check "the dry run passes its guards and starts and writes nothing"
+grep -q 'the app in front is pid [0-9][0-9]*' $tmp/out.txt
+check "the dry run names the app in front it would bring back"
+LAB_STUB_NO_FRONT=1 zsh $shared/run-lab.sh --dry-run > $tmp/out.txt 2>&1; code=$?
+(( code == 2 )) && grep -q 'no app in front' $tmp/out.txt
+check "a dry run that cannot tell the app in front is refused (runs 20261011-004911 and -122641: two rounds without it)"
+LAB_STUB_NO_FRONT=1 zsh $shared/run-lab.sh sparse > $tmp/out.txt 2>&1; code=$?
+(( code == 2 )) && [[ -z $(ls $shared/evidence) && ! -f $marks/ice ]]
+check "and so is a run, before anything is created"
 
 build_staging "EXPECT_USER=nobodyhere"
 zsh $shared/run-lab.sh sparse > $tmp/out.txt 2>&1; code=$?
@@ -266,6 +278,16 @@ steps=$run/1-front-short/steps.jsonl
 grep -q '"step":"activate".*"try":1,"answer":{"frontmost":false' $steps && grep -q '"step":"activate".*"try":2,"answer":{"frontmost":true' $steps \
     && grep -q '"step":"front","seq":[0-9]*,"t":[0-9.]*,"ok":true' $steps
 check "an activation that fails once is tried again, each answer of icewatch's kept in the steps"
+grep -q '"step":"back","seq":[0-9]*,"t":[0-9.]*,"ok":true' $steps && (( $(grep -c '"step":"activate"' $steps) == 3 ))
+check "and the app that was in front is asked back, by its pid"
+
+# Run 20261011-122641: a blocker ended drawn's walk at 464 and the new one ran
+# out of the common limit one step short of the end.
+build_staging "DRAWN_LIMIT=400"
+print -l -- '{"waitMembers":1}' '{"sleep":1}' '{"event":"status","status":"failed(drawn:1)"}' > $LAB_STUB_FIXTURES/drawn.jsonl
+zsh $shared/run-lab.sh drawn > $tmp/out.txt 2>&1
+grep -q '1 drawn: pass' $tmp/out.txt
+check "drawn waits by its own limit, two walks long, not the common one"
 
 build_staging "STATUS_LIMIT=100"
 verified_fixture frontshort 1

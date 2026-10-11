@@ -120,6 +120,19 @@ enum Chevron {
     }
 }
 
+enum Front {
+    /// The pid of the app in front, the one `activate` is later asked to
+    /// bring back. Exit 0 only with one.
+    static func run() -> Int32 {
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else {
+            print(#"{"pid":null}"#)
+            return 1
+        }
+        print(#"{"pid":\#(pid)}"#)
+        return 0
+    }
+}
+
 enum Activate {
     static let waitSeconds = 2.0
     static let pollSeconds = 0.1
