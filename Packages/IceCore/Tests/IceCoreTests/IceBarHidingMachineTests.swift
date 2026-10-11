@@ -323,13 +323,73 @@ struct IceBarHidingMachineTests {
         var driver = Driver()
         driver.baselineOK = false
         driver.world = { _ in .skipped(.noReference) }
-        driver.settle()
+        driver.settle(ticks: 25)
         #expect(driver.restLength == IceBarHidingParameters.standard.calibration.defaultStart)
         #expect(driver.observed.count == 1, "no walk without a baseline")
         guard case .requestedNotVerified(let reasons)? = driver.state else { Issue.record("not 'not verified'"); return }
         #expect(reasons.contains(.noReference))
         #expect(!reasons.contains(.lengthNotApplied))
         #expect(driver.state?.countsAsLabSuccess == false)
+    }
+
+    // Run 20261011-122641, relaunch: a baseline taken 20 s after the last
+    // capture of the Ice before it found no reference, and Ice stayed
+    // unverified for the ten minutes it was watched.
+
+    @Test("a baseline that did not cover the members is taken again, and a length is then found and verified")
+    func uncoveredBaselineIsTakenAgain() {
+        var driver = Driver()
+        driver.baselineOK = false
+        driver.world = { _ in .skipped(.noReference) }
+        driver.settle(ticks: 25)
+        driver.baselineOK = true
+        driver.world = Self.band()
+        driver.run(ticks: 60)
+        #expect(driver.baselines == 2)
+        #expect(driver.restLength == 736)
+        #expect(driver.state == .verifiedHidden)
+    }
+
+    @Test("the baseline is not taken again before the least time between two starts, and the best-effort length stays until then")
+    func uncoveredBaselineRespectsTheInterval() {
+        var driver = Driver()
+        driver.baselineOK = false
+        driver.world = { _ in .skipped(.noReference) }
+        driver.settle(ticks: 5)
+        let mark = driver.log.count
+        driver.run(ticks: 20)
+        #expect(driver.baselines == 1)
+        #expect(!driver.since(mark).contains(.setLength(nil)))
+    }
+
+    @Test("with no baseline ever covering the members, Ice stops asking after the limit and rests best effort, not verified")
+    func uncoveredBaselineIsBounded() {
+        var driver = Driver()
+        driver.baselineOK = false
+        driver.world = { _ in .skipped(.noReference) }
+        driver.settle(ticks: 600)
+        #expect(driver.baselines == 1 + driver.machine.parameters.maxFailures)
+        #expect(driver.restLength == IceBarHidingParameters.standard.calibration.defaultStart)
+        #expect(driver.state?.countsAsLabSuccess == false)
+    }
+
+    @Test("a baseline that covers the members gives the next uncovered one its retries back")
+    func coveredBaselineResetsTheRetries() {
+        var driver = Driver()
+        driver.baselineOK = false
+        driver.world = { _ in .skipped(.noReference) }
+        driver.settle(ticks: 80)
+        driver.baselineOK = true
+        driver.world = Self.band()
+        driver.run(ticks: 80)
+        #expect(driver.state == .verifiedHidden)
+        let before = driver.baselines
+        driver.baselineOK = false
+        driver.world = { _ in .skipped(.noReference) }
+        driver.now += 100
+        driver.tick(Self.sample(dragging: true))
+        driver.run(ticks: 600)
+        #expect(driver.baselines == before + 1 + driver.machine.parameters.maxFailures)
     }
 
     @Test("a walk that finds no absent length hides best effort and says what it saw")

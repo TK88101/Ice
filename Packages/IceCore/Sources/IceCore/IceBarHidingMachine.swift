@@ -14,7 +14,8 @@ public struct IceBarHidingParameters: Equatable, Sendable {
     /// The least time between two calibration starts.
     public let minInterval: Double
     /// Cycles a member seen drawn at rest may start before Ice stops trying,
-    /// for one roster and display.
+    /// for one roster and display; and, counted apart, the baselines Ice
+    /// takes again after one that did not cover the members.
     public let maxFailures: Int
     /// How long the bar stays at standard length between two trials.
     public let restDwell: Double
@@ -110,6 +111,8 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         case lastGood
         /// Rest whatever was seen.
         case final
+        /// As `final`, with no baseline to check against: one is owed.
+        case unbaselined
     }
 
     /// A soft layout change the rest has not been re-checked after (D-e).
@@ -126,6 +129,9 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         public var checks: [ItemKey: SectionItemCheck]
         public var chevronListed: Bool?
         public var pending: PendingChange?
+        /// The baseline did not cover the members: this is a best-effort
+        /// length (O1), and a new cycle is owed.
+        public var baselineOwed = false
     }
 
     public enum Phase: Equatable, Sendable {
@@ -157,6 +163,9 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     /// Cycles started because a member was seen drawn at rest, since the
     /// roster or display last changed or a length last verified.
     private var failures = 0
+    /// Cycles started because a baseline did not cover the members, since
+    /// the roster or display last changed or a baseline last covered them.
+    private var baselineRetries = 0
     private var lastStart: Double?
     private var lastToken = 0
     private var reported = IceBarHidingStatus.off
@@ -271,6 +280,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         if let previous, let change = PreferenceHidingLayoutChange.between(previous, sample.signature) {
             if change.isStructural {
                 failures = 0
+                baselineRetries = 0
                 return enterQuiet(now)
             }
             guard case .resting(var rest) = phase else { return enterQuiet(now) }
@@ -298,6 +308,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
             guard pending == nil, now - restedAt >= parameters.restDwell else { return [] }
             return propose(after: observations, now: now)
         case .resting(var rest):
+            if rest.baselineOwed, let retry = retryBaseline(now: now) { return retry }
             guard
                 let pending = rest.pending, pending.recheck == nil, !sample.isInteracting,
                 now - pending.since >= parameters.quietPeriod
@@ -325,7 +336,8 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         guard phase == .baselining(token: token) else { return [] }
         anchor = lastGood
         // Without a baseline nothing can be walked towards: hide best effort (O1).
-        guard ok else { return settle(at: bestEffortLength(after: []), kind: .final) }
+        guard ok else { return settle(at: bestEffortLength(after: []), kind: .unbaselined) }
+        baselineRetries = 0
         if let lastGood { return settle(at: lastGood, kind: .lastGood) }
         phase = .calibrating(observations: [], pending: nil, restedAt: now)
         return []
@@ -351,7 +363,10 @@ public struct IceBarHidingMachine: Equatable, Sendable {
                 lastGood = trial.length
                 failures = 0
             }
-            phase = .resting(Rest(length: trial.length, checks: checks, chevronListed: chevronListed, pending: nil))
+            phase = .resting(Rest(
+                length: trial.length, checks: checks, chevronListed: chevronListed, pending: nil,
+                baselineOwed: kind == .unbaselined
+            ))
             return []
         case .calibrating(let observations, let trial?, _) where trial.token == token:
             let observation = HiddenLengthObservation(length: trial.length, outcome: outcome(of: checks))
@@ -374,6 +389,17 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     private mutating func recycleIfDrawn(now: Double) -> [IceBarHidingCommand] {
         guard case .state(.visibleFailed) = status, failures < parameters.maxFailures, !throttled(now) else { return [] }
         failures += 1
+        return enterQuiet(now)
+    }
+
+    /// A baseline that covered nothing may have been cut on a bar another
+    /// process had just captured (run 20261011-122641: an Ice started 20 s
+    /// after the last capture of the one before it). The best-effort length
+    /// stays until a new cycle may start; a bounded number of times.
+    /// `nil` while no new cycle may start.
+    private mutating func retryBaseline(now: Double) -> [IceBarHidingCommand]? {
+        guard sample?.isInteracting == false, baselineRetries < parameters.maxFailures, !throttled(now) else { return nil }
+        baselineRetries += 1
         return enterQuiet(now)
     }
 
