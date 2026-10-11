@@ -877,6 +877,22 @@ references `absent`, the fold `unreadable`). What the round showed beside that:
   empty for ten minutes (`noMembers`, no length).
 - The pre-seeded preferred positions (icon 5000, hidden divider 1) do not invert: icon
   at x 1508, divider at 1280, as in run `20261008-234718`.
-- `NSRunningApplication.activate` on the Terminal, asked from `icewatch` with the menus
-  helper in front, did not bring it forward within 2 s, twice in this round; it had in
-  the first run. Cause TBD.
+- The Terminal did not come back forward, twice in this round. Corrected by run
+  `20261011-122641`: it was never asked. The runner had no pid for it.
+
+**MEASURED, run `20261011-122641` (build `6aa441c`, `icetest`, 2026-10-11), one round.**
+
+- `lsappinfo info -only pid <ASN>` prints `pid = N` on macOS 27.0.1, not `"pid"=N`. The
+  runner parsed the second form, so the Terminal's pid was empty in this run and in
+  `20261011-004911` (`timeline.txt`, line 1 of each). `NSRunningApplication.activate`
+  itself brought the menus helper forward on the first asking in both `front-*`.
+- `relaunch`: an Ice started 3 s after another stopped took its baseline 13 s after its
+  start, about 20 s after the other's last capture: `skip(noReference) targets=2`. One
+  trial at 736 read nothing (`stable unread`, no references), the status was
+  `notVerified(noReference,unchecked:2)`, and no baseline followed in 10 minutes. In run
+  `20261011-004911` that baseline came 1.5 s later and was covered. INFERRED: the first
+  process's capture indicator was still in the bar (gone within 20.5 s of the last
+  capture, above); the second process cannot know of captures it did not take.
+- `drawn`: discovery read `incomplete:1` for 13 s at t = 280 s (cause unknown); Ice
+  retired the length, said `blocked(discoveryIncomplete)`, and on recovery baselined and
+  walked again from 736. One walk to the floor is about 330 s.

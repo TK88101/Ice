@@ -212,6 +212,18 @@ was posted. T2b did not complete its three-run protocol.
 | `noref` excluded | with no reference helper up the matcher read two of Apple's own items as references (19 of 19 observations) and Ice verified: in this account there is always a reference. `noReference` is unit-tested, and was seen live once (run `20261009-234913`) | MEASURED; the judge says `notEstablished` with that reason |
 | `crowded` excluded | at 21 menus the system folded the helpers behind its own `«`; the cache then listed the members as visible (a section from frames, not a claim they are drawn), the roster was empty and Ice stayed at standard length with `noMembers`, no IceBar offered. Whether Ice should keep items the system folded is S5's question: the owner's goal is not the system's overflow | MEASURED limit; `notEstablished` with that reason |
 | `inverted` not run | the pre-seeded preferred positions did not invert in either run (icon x 1508, divider x 1280): `blocked(iconLeftOfDivider)` is unit-tested only, until the owner's Command-drag in S5, with `inverted-moved` | MEASURED; `notRun` |
-| `front-short`, `front-long` | not established: the Terminal did not come back forward (`icewatch activate`); cause unknown, the step worked in the first run. The runner now keeps each answer in `steps.jsonl` and asks up to three times | TBD |
+| `front-short`, `front-long` | not established: the runner never had the Terminal's pid, so it was never asked back (corrected by the next round's evidence, below) | MEASURED |
 | What "clean" means (the owner's ruling, 2026-10-11) | three clean rounds running, as before; a round is clean when every scenario passes but `noref` and `crowded` (`notEstablished` with exactly the reasons above) and `inverted`, `inverted-moved` (`notRun`). Any other `fail` or `notEstablished` is not clean; an exclusion is never a pass. One rule for the runner's stop and the report (`passed_or_excluded`) | unit tests |
-| Next | stage, then a sitting: one round (about 2.2 h), the other two only if it is clean | TBD |
+| Next | done: run `20261011-122641`, below | MEASURED |
+
+## The lab matrix, a second round in `icetest` (run `20261011-122641`, build `6aa441c`, 2026-10-11)
+
+| What | State | Level |
+|---|---|---|
+| The round | not clean: 12 pass; `noref`, `crowded` excluded and `inverted`, `inverted-moved` not run, as ruled; `front-short`, `front-long` not established; `relaunch`, `drawn` fail | MEASURED |
+| `front-short`, `front-long` | the runner's defect: it read the front app's pid from `lsappinfo` as `"pid"=N`, and macOS 27.0.1 prints `pid = N`; `timeline.txt` of both rounds has no pid, and `steps.jsonl` has `back` false with no `activate` before it. Bringing an app forward works: the menus helper came forward on the first asking, both times | MEASURED |
+| `relaunch` | Ice's gap. The second start's baseline, 13 s after its start and about 20 s after the first process's last capture, was `skip(noReference)`; Ice hid best effort, said `notVerified(noReference,unchecked:2)` and took no baseline again in the 10 minutes watched. In the round before, the same baseline came 1.5 s later and covered the members | MEASURED |
+| Why that baseline had no reference | the capture indicator the first process summoned was still in the bar: a new process's burst clock knows nothing of another's captures | INFERRED |
+| `drawn` | Ice as designed; the runner's limit was short. At 464 discovery was `incomplete:1` for 13 s, Ice said `blocked(discoveryIncomplete)`, then started its walk again from 736, and the 600 s ran out at 432, one length before the end. Why discovery was incomplete: unknown | MEASURED; the cause TBD |
+| Fixed since (not yet run live) | `icewatch front` asks the system for the app in front, and the runner refuses to start, a dry run too, without a live pid; `drawn` waits 900 s; a baseline that did not cover the members is taken again, at most 3 times, the best-effort length staying until the next cycle may start (`IceBarHidingMachine`, unit-tested) | MEASURED (tests) |
+| Next | stage; `run-lab.sh --dry-run` in `icetest` must name the app in front; then one round, the other two only if it is clean | TBD |

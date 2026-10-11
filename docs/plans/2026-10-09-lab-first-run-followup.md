@@ -298,3 +298,26 @@ length; `crowded`: both members in the roster before the witness). Simplify: the
 exclusion is one function (`is_exclusion`), the `notRun` reasons sit in `SCENARIOS`.
 Left: a not-run scenario still passes through the runner's start and finish (seconds a
 round); `bring_forward` asks three times of a pid that has died.
+
+## After the matrix's second round (run `20261011-122641`, 2026-10-11)
+
+Not clean: `front-short`, `front-long`, `relaunch`, `drawn` (STATUS, FINDINGS). The
+owner approved, the same day:
+
+1. Runner: the app in front is asked of the system (`icewatch front`), and a run or a
+   dry run without a live pid is refused.
+2. Runner: `drawn` has its own limit, 900 s (two walks); the common limit stays.
+3. IceCore: a baseline that did not cover the members still hides best effort and is
+   observed once (O1); when the next cycle may start (`minInterval`) the machine goes
+   quiet and baselines again, at most `maxFailures` times, counted apart from the
+   drawn-at-rest cycles and reset by a baseline that covers or a structural change.
+4. Stage; a dry run in `icetest` that names the app in front; one round.
+
+| Codex (thecure, one call) | Outcome |
+|---|---|
+| 1, 2, 4 right; the guard must sit before the dry run's exit and check the process is alive; the limit must be `drawn`'s alone; a dry run in `icetest` before the sitting | taken |
+| 3: do not reuse `failures`, whose meaning is a member drawn at rest | taken: `baselineRetries` |
+| "the capture indicator caused `noReference`" is not proven | agreed: INFERRED; the fix is the recovery, whatever the cause |
+| Worry: a retry too soon after the failed baseline's captures meets the block again | `takeBaseline` waits for a bar clear of this process's captures before it starts (`HiddenLengthObserver`); the live `relaunch` has to show it |
+
+Open: why discovery was incomplete for 13 s in `drawn`.
