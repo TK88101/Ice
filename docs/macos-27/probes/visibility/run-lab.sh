@@ -138,8 +138,9 @@ menu_frame=$($icewatch menu-frame 2>/dev/null)
 # The app in front now is the one `front-*` and `crowded` bring back. Asked
 # of the system, not parsed from lsappinfo: its `"pid"=N` reads `pid = N` on
 # macOS 27, and two runs went without a pid (20261011-004911, -122641).
-terminal_pid=${${$($icewatch front 2>/dev/null)#\{\"pid\":}%\}}
-[[ $terminal_pid == <1-> ]] && kill -0 $terminal_pid 2>/dev/null || guard 1 "no app in front that can be brought back (icewatch front: ${terminal_pid:-nothing})"
+front=$($icewatch front 2>/dev/null)
+terminal_pid=${${front#*\"pid\":}%%[,\}]*}
+[[ $terminal_pid == <1-> ]] && kill -0 $terminal_pid 2>/dev/null || guard 1 "no app in front that can be brought back (icewatch front: ${front:-nothing})"
 (( guard_failed )) && exit 2
 
 if (( dry_run )); then

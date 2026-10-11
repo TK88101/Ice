@@ -321,3 +321,12 @@ owner approved, the same day:
 | Worry: a retry too soon after the failed baseline's captures meets the block again | `takeBaseline` waits for a bar clear of this process's captures before it starts (`HiddenLengthObserver`); the live `relaunch` has to show it |
 
 Open: why discovery was incomplete for 13 s in `drawn`.
+
+### Code review (/simcodex, 2026-10-11, one round)
+
+No P0 or P1. Codex (`codex review --base 6aa441c`): no correctness regression found; it
+could not run the tests. Two simplify reviews: nine P2. Taken: the runner reads the pid
+by its key, as it reads `menu-frame`'s fields. Left: `retryBaseline` beside
+`recycleIfDrawn`, and `.unbaselined` with `Rest.baselineOwed` (a few lines each);
+`kill -0` on the pid stays (asked for in the plan review); no quiet gap between two Ice
+starts in the runner (it would hide the gap the retry closes).
