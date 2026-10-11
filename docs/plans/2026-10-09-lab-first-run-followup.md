@@ -240,3 +240,61 @@ P0/P1 per round: 1, 1, 1, 0. The stated cap of three rounds, then one confirmati
   (`cool_down`; `test-lab.sh` has the case, red first).- The second try (run `20261010-225047`, `sparse`): **pass**, verified at 728 pt in 292 s,
   19 of 19 observations stable. Under the old 300 s limit it would have had 8 s to spare.
   Next: `k2`, then the matrix.
+- `k2` alone (run `20261011-004152`): **pass**.
+- The matrix, one round (run `20261011-004911`, build `fb50d98`, 00:49-03:01, 2 h 12 min).
+  MEASURED: 14 pass (`sparse k2 k4 k8 press addremove fresh-off fresh-on placed-off
+  placed-on relaunch positional drawn incomplete`), against 1 in the first run. Every
+  scenario expected `verified` that was established verified. Not clean, so S4's DoD
+  is not met; the five that remain, none of them a capture-stability failure:
+  - `noref`: **fail**, `verified` at 728 pt. MEASURED: with no reference helper up, both
+    references the matcher read were Apple's own items (`com.apple.TextInputMenuAgent`,
+    `com.apple.campo`), `unique`, offset 0, in all 19 observations. The scenario's
+    premise (no reference without the helpers) does not hold in this account.
+  - `crowded`: **fail**, "no length was applied", as in the first run. MEASURED: Ice
+    stayed `quiet` while the menus grew (baselining only at 44.5 s); at 21 menus the
+    system folded the helpers behind its own `«` (`bar-end.png`), the cache then listed
+    both members as visible and the roster was empty (`noMembers`) for the remaining
+    ten minutes. INFERRED: with the members already folded by the system Ice has
+    nothing to hide, so the length the judge asks for never comes.
+  - `front-short`, `front-long`: **notEstablished**, the runner could not bring the
+    Terminal back forward (`icewatch activate` did not see it frontmost). Cause TBD;
+    in the first run the same step worked. Up to that step Ice calibrated as elsewhere.
+  - `inverted`: **notEstablished**, as in the first run. MEASURED: with the pre-seeded
+    preferred positions the icon was at x 1508 and the divider at 1280, not inverted.
+    D4's inference about the seeding is wrong.
+  - `press` printed `quit_members:2: failed to close file descriptor 16`: the runner
+    closing a descriptor already closed; the scenario passed.
+
+## After the matrix's first round (2026-10-11)
+
+None of the five is an Ice defect (Codex, two rounds; its citations checked): the
+reference rule, the cache's sections and `noMembers` do what they are written to do.
+The owner approved, 2026-10-11:
+
+1. Runner, descriptors: a member closed mid-scenario (`addremove`) leaves `helper_fds`
+   and `helper_pids` then, so the cleanup closes only what is still its own.
+2. Runner, `bring_forward`: each answer of `icewatch activate` goes to `steps.jsonl`
+   (`activate`: pid, try, answer), up to three tries a second apart, nothing else tried.
+3. Judge: `noref` and `crowded` are `notEstablished` with one measured reason each
+   (`EXCLUSIONS`), only from a verdict nothing else was held against; `inverted` is
+   `notRun` and no longer seeded; `passed_or_excluded` is the one rule behind the stop
+   and the report.
+4. DoD: three clean rounds, unchanged; "clean" as STATUS says.
+
+| Review | Point | Outcome |
+|---|---|---|
+| Codex 1 | are A-D Ice defects hidden by the judge? | no, with the code cited; `notEstablished` is honest for `noref`, `crowded` |
+| Codex 1 | a bundle-id fallback for the Terminal | Codex's: dropped, it cannot say the instance asked for is in front |
+| Codex 1 | silencing the second close | Codex's: the number can be another file's by then; untrack it instead |
+| Codex 1 | one further round as the DoD | Codex's: moving the goalposts; three rounds stay |
+| Codex 2 | the stop rule and the report judged "clean" apart | taken: one predicate, tested with near misses |
+
+Codex's worry, kept: the next round's likeliest failure is still the Terminal coming
+back forward; this change makes it readable, not fixed.
+
+Code review (simcodex, one round; P0/P1 none): Codex P2, both taken, red first -- an
+exclusion is granted only with the scenario's setup held (`noref`: the roster and a
+length; `crowded`: both members in the roster before the witness). Simplify: the
+exclusion is one function (`is_exclusion`), the `notRun` reasons sit in `SCENARIOS`.
+Left: a not-run scenario still passes through the runner's start and finish (seconds a
+round); `bring_forward` asks three times of a pid that has died.

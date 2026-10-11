@@ -861,3 +861,22 @@ runner's captures kept 22 s away and Ice capturing in bursts, 19 of 19 observati
 `captureStable` with both references at distance 0 from their templates, and the member
 read `hidden` at the rest (728 pt, `verified`, 292 s after Ice started). The walk's two
 edges: the fold came up at 592 pt, and 864 pt ended the walk upward.
+
+**MEASURED, run `20261011-004911`** (`icetest`, the matrix's one round, build `fb50d98`,
+2 h 12 min): 14 of 20 scenarios pass, every one expected `verified` whose setup was
+reached among them. Of 387 observations 386 were `captureStable` with every reference
+`unique` at distance 0; the other is `front-long`'s with 24 menus in front (both
+references `absent`, the fold `unreadable`). What the round showed beside that:
+
+- A bar without the lab's reference helpers still has references: the matcher read
+  `com.apple.TextInputMenuAgent` and `com.apple.campo`, `unique`, 19 of 19 (`noref`).
+  `CheckPlan` takes any qualifying item between the divider and Ice's icon.
+- A menu bar the system has folded leaves Ice without members: at 21 menus the helpers
+  went behind the system's `«` (`1-crowded/bar-end.png`), the cache listed both members
+  as visible, the divider read at x 1252, 1324, 1300 in turn, and the roster stayed
+  empty for ten minutes (`noMembers`, no length).
+- The pre-seeded preferred positions (icon 5000, hidden divider 1) do not invert: icon
+  at x 1508, divider at 1280, as in run `20261008-234718`.
+- `NSRunningApplication.activate` on the Terminal, asked from `icewatch` with the menus
+  helper in front, did not bring it forward within 2 s, twice in this round; it had in
+  the first run. Cause TBD.
