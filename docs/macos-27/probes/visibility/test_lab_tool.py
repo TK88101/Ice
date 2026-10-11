@@ -328,6 +328,20 @@ class LabToolTests(unittest.TestCase):
         report.standard(["a"])
         self.assertEqual(self.result("noref", [report], members=["a"]), "fail")
 
+    def test_noref_with_the_systems_own_references_is_not_established(self):
+        # Run 20261011-004911: Apple's items were references, so Ice verified.
+        report = Report()
+        report.add("observation", {"length": 736, "references": [{"namespace": "com.apple.x", "identifier": "", "match": "unique"}]})
+        report.standard(["a"])
+        verdict = self.judge("noref", [report], members=["a"])
+        self.assertEqual((verdict["result"], verdict["reasons"]), ("notEstablished", ["setup: " + lab.EXCLUSIONS["noref"]]))
+        # Not with a setup that did not hold: the exclusion must not cover a broken run (Codex review).
+        self.assertNotEqual(self.judge("noref", [report], members=["a", "b"])["reasons"], verdict["reasons"])
+        report = Report()
+        report.add("observation", {"length": 736, "references": [{"namespace": "com.apple.x", "identifier": "", "match": "absent"}]})
+        report.standard(["a"])
+        self.assertEqual(self.result("noref", [report], members=["a"]), "fail")
+
     # --- crowded -------------------------------------------------------------------------
 
     def crowded(self, witness_ok=True, listed_later=True, stacked_status=True, length_at_witness=False):
@@ -360,6 +374,24 @@ class LabToolTests(unittest.TestCase):
         report, steps = self.crowded(length_at_witness=True)
         verdict = self.judge("crowded", [report], steps=steps, **expected)
         self.assertEqual((verdict["result"], verdict["reasons"][0]), ("notEstablished", "setup: a length came before the bracketed witness"))
+
+    def test_crowded_with_the_members_folded_by_the_system_is_not_established(self):
+        # Run 20261011-004911: at 21 menus the system folded both members; no roster, no length.
+        report = Report()
+        report.snap(roster=[member("a"), member("b")])
+        witness = report.add("noop")
+        report.snap(roster=[])
+        steps = [{"step": "witness", "ok": True, "seq": witness}]
+        verdict = self.judge("crowded", [report], steps=steps, members=["a", "b"])
+        self.assertEqual((verdict["result"], verdict["reasons"]), ("notEstablished", ["setup: " + lab.EXCLUSIONS["crowded"]]))
+        report.snap(roster=[member("a"), member("b")])
+        self.assertEqual(self.result("crowded", [report], steps=steps, members=["a", "b"]), "fail")
+        report.snap(roster=[])
+        # Both members were Ice's before the fold, or it is not the measured case (Codex review).
+        self.assertEqual(self.result("crowded", [report], steps=steps, members=["a", "b", "c"]), "fail")
+        steps = [{"step": "witness", "ok": False, "seq": witness, "why": "the ladder ended"}]
+        verdict = self.judge("crowded", [report], steps=steps, members=["a", "b"])
+        self.assertNotEqual(verdict["reasons"], ["setup: " + lab.EXCLUSIONS["crowded"]])
 
     # --- fresh, placed, t2d ------------------------------------------------------------------
 
@@ -450,14 +482,11 @@ class LabToolTests(unittest.TestCase):
         self.assertEqual(self.result("positional", [self.positional()], steps=moved, **expected), "fail")
         self.assertEqual(self.result("positional", [self.positional()], steps=steps, members=[], blockers=["p"]), "notEstablished")
 
-    def test_inverted(self):
-        report = Report()
-        report.snap(iconPlacement="iconLeftOfDivider", status="blocked(iconLeftOfDivider)", phase="blocked")
-        report.status("blocked(iconLeftOfDivider)")
-        self.assertEqual(self.result("inverted", [report], members=["a"]), "pass")
-        report = Report()
-        report.standard(["a"])
-        self.assertEqual(self.result("inverted", [report], members=["a"]), "notEstablished")
+    def test_inverted_is_not_run(self):
+        # The seeding did not invert in two runs; the owner's Command-drag is S5's.
+        verdict = self.judge("inverted", [Report()])
+        self.assertEqual(verdict["result"], "notRun")
+        self.assertIn("seeding", verdict["reasons"][0])
 
     def test_drawn(self):
         report = Report(hold=True)
@@ -539,7 +568,26 @@ class LabToolTests(unittest.TestCase):
 
     def full_round(self, number):
         for name in lab.ORDER:
-            self.write_verdict(number, name, "notRun" if name == "inverted-moved" else "pass")
+            self.write_verdict(number, name, "notRun" if lab.SCENARIOS[name]["kind"] == "notRun" else "pass")
+
+    def test_a_named_exclusion_with_its_measured_reason_keeps_a_round_clean(self):
+        for number in (1, 2, 3):
+            self.full_round(number)
+            for name, reason in lab.EXCLUSIONS.items():
+                self.write_verdict(number, name, "notEstablished", {}, ["setup: " + reason])
+        self.assertTrue(lab.round_is_clean(lab.matrix(self.root)[1]))
+        self.assertEqual(lab.report(self.root), 0)
+        # Near misses: another reason beside it, another scenario with it, another result.
+        self.write_verdict(1, "noref", "notEstablished", {}, ["setup: " + lab.EXCLUSIONS["noref"], "no length was applied"])
+        self.assertFalse(lab.round_is_clean(lab.matrix(self.root)[1]))
+        self.assertEqual(lab.report(self.root), 1)
+        self.write_verdict(1, "noref", "notEstablished", {}, ["setup: " + lab.EXCLUSIONS["noref"]])
+        self.write_verdict(1, "sparse", "notEstablished", {}, ["setup: " + lab.EXCLUSIONS["noref"]])
+        self.assertFalse(lab.round_is_clean(lab.matrix(self.root)[1]))
+        self.write_verdict(1, "sparse", "pass")
+        self.write_verdict(1, "crowded", "fail", {}, ["setup: " + lab.EXCLUSIONS["crowded"]])
+        self.assertFalse(lab.round_is_clean(lab.matrix(self.root)[1]))
+        self.assertEqual(lab.report(self.root), 1)
 
     def test_round_clean_ignores_only_known_open_clauses(self):
         self.full_round(1)

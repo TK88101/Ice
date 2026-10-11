@@ -353,8 +353,23 @@ start_menus() { # <dir> <count>
     print -u $menus_fd -- "menus $2"
 }
 
+# Run 20261011-004911: the Terminal did not come back forward, and what
+# icewatch answered was thrown away. Each answer is kept now, and the asking
+# is repeated; nothing else is tried (another way forward could bring another
+# instance, and would not say the one asked for is in front).
+ACTIVATE_TRIES=3
 bring_forward() { # [pid]: fails when there is none or it did not come forward
-    [[ -n ${1:-} ]] && $icewatch activate --pid $1 >/dev/null 2>&1
+    [[ -n ${1:-} ]] || return 1
+    local try answer code
+    for (( try = 1; try <= ACTIVATE_TRIES; try++ )); do
+        answer=$($icewatch activate --pid $1 2>/dev/null)
+        code=$?
+        [[ $answer == \{*\} && $answer != *$'\n'* ]] || answer=null
+        mark activate "\"pid\":$1,\"try\":$try,\"answer\":$answer"
+        (( code == 0 )) && return 0
+        (( try < ACTIVATE_TRIES )) && nap 1
+    done
+    return 1
 }
 
 # --- one Ice copy ----------------------------------------------------------------------------
@@ -552,6 +567,9 @@ s_addremove() {
     local fd=$helper_fds[2]
     exec {fd}>&-
     quit_pids $helper_pids[2]
+    # No longer the cleanup's: its number may be another file's by then.
+    helper_fds[2]=()
+    helper_pids[2]=()
     await $STATUS_LIMIT length-null $since && hide $since
 }
 
@@ -658,18 +676,10 @@ s_positional() {
     mark frames "\"when\":\"after\",\"frames\":$frames"
 }
 
-s_inverted() {
-    local round=$1 id=com.icespike4.lab.r$run_id.${1}inverted
-    # Pre-seeded before the copy starts: icon far left, divider rightmost (D4, INFERRED).
-    remember_domain $id
-    defaults write $id "NSStatusItem Preferred Position Ice.ControlItem.Visible" -float 5000
-    defaults write $id "NSStatusItem Preferred Position Ice.ControlItem.Hidden" -float 1
-    report=$dir/report-1.jsonl
-    begin $round inverted 1 || return
-    nap 40
-    send_ice bar open
-    nap 2
-}
+# Not run: the pre-seeded positions (icon 5000, hidden divider 1) left the icon
+# right of the divider in runs 20261008-234718 and 20261011-004911. With
+# `inverted-moved` it waits for the owner's Command-drag (S5).
+s_inverted() { expected inverted ""; }
 
 s_drawn() { begin $1 drawn 1 false hold && await $STATUS_LIMIT status 0 'failed(drawn:'; nap 3; }
 

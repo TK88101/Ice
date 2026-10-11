@@ -38,7 +38,8 @@ SNAPSHOT_KEYS = [
 ]
 
 # The matrix, in the order a round runs it (D2: `noref` before the references
-# start). kind: what the run must end as. `inverted-moved` is not run (D4).
+# start). kind: what the run must end as. `inverted` and `inverted-moved` are
+# not run (D4; `why` says why).
 SCENARIOS = {
     "noref": {"kind": "unverified"},
     "sparse": {"kind": "verified"},
@@ -56,23 +57,37 @@ SCENARIOS = {
     "front-long": {"kind": "bestEffort"},
     "relaunch": {"kind": "verified"},
     "positional": {"kind": "blocked"},
-    "inverted": {"kind": "blocked"},
+    "inverted": {"kind": "notRun", "why": "the seeding does not invert (measured in runs 20261008-234718 and 20261011-004911); needs the owner's Command-drag, S5"},
     "drawn": {"kind": "failed"},
     "incomplete": {"kind": "blocked"},
-    "inverted-moved": {"kind": "notRun"},
+    "inverted-moved": {"kind": "notRun", "why": "needs a Command-drag of Ice's icon: moved to S5 by the owner, 2026-10-09 (S4 design D4)"},
 }
 ORDER = list(SCENARIOS)
 # Judged and reported every round, never a reason by itself to stop the rounds (D4).
 KNOWN_OPEN = {"t2d"}
+# Scenarios whose premise this account does not allow, each with the one
+# measured reason (run 20261011-004911; the owner's ruling, 2026-10-11): a
+# `notEstablished` with exactly that reason leaves a round clean, anything
+# else of theirs does not. Never a pass.
+EXCLUSIONS = {
+    "noref": "references present without the helpers",
+    "crowded": "the system folded the members out of the roster",
+}
+
+
+def is_exclusion(name, result, reasons):
+    return result == "notEstablished" and name in EXCLUSIONS and reasons == [f"setup: {EXCLUSIONS[name]}"]
+
+
 ROUNDS = 3
 # Whose last status is not their kind (Codex, T4 code review round 1):
 # `incomplete` must leave `blocked` once the stall ends; `drawn` re-cycles up
 # to three times, so a run may end in the middle of a cycle.
 ENDS_ELSEWHERE = {"incomplete", "drawn"}
 # Exempt from the `«`-at-start setup clause (S4 design, corrected while
-# building): `crowded` sets up the `«` itself; the two blocked ones are judged
+# building): `crowded` sets up the `«` itself; `positional` is judged
 # on no check.
-NO_CHECK_AT_START = {"crowded", "positional", "inverted"}
+NO_CHECK_AT_START = {"crowded", "positional"}
 
 
 class Damaged(Exception):
@@ -305,6 +320,15 @@ class Verdict:
             self.result = "notEstablished"
         self.reasons.insert(0, f"setup: {reason}")
 
+    def exclude(self):
+        """The scenario's measured exclusion, and nothing more to judge; only
+        from a verdict nothing has been held against."""
+        if self.result != "pass":
+            return False
+        self.result = "notEstablished"
+        self.reasons = [f"setup: {EXCLUSIONS[self.scenario]}"]
+        return True
+
     def clause(self, name, holds, reason):
         self.clauses[name] = "pass" if holds else "fail"
         if not holds:
@@ -441,7 +465,13 @@ def judge_addremove(verdict, run):
 
 def judge_noref(verdict, run):
     events = run.report(1)
+    # The matcher takes any item between the divider and Ice's icon, the
+    # system's own too: then there was a reference, and nothing to judge.
+    # Only with the setup held: the exclusion is not for a broken run.
     standard_setup(verdict, events, run.expected)
+    read = any(ref.get("match") == "unique" for event in of(events, "observation") for ref in event.get("references", []))
+    if read and verdict.exclude():
+        return
     if first_status(events, "verified"):
         verdict.fail("verified without a reference")
     status = next((e for e in statuses(events) if e["status"].startswith("notVerified(") and "noReference" in e["status"]), None)
@@ -462,6 +492,14 @@ def judge_crowded(verdict, run):
     elif length_seq is not None and witness["seq"] >= length_seq:
         verdict.not_established("a length came before the bracketed witness")
     if length_seq is None:
+        # Folded by the system, the members are not Ice's to hide: no roster, no length.
+        # Only when both were Ice's members before it.
+        last = latest_snapshot(events)
+        held = witness and any(
+            ids(snap["roster"]) == sorted(run.expected["members"]) for snap in snapshots(events) if snap["seq"] <= witness["seq"]
+        )
+        if held and not last["roster"] and verdict.exclude():
+            return
         verdict.fail("no length was applied")
         return
     setup_roster(verdict, events, run.expected, length_seq)
@@ -572,13 +610,6 @@ def judge_positional(verdict, run):
         verdict.fail("an item moved")
 
 
-def judge_inverted(verdict, run):
-    events = run.report(1)
-    if not any(snap["iconPlacement"] == "iconLeftOfDivider" for snap in snapshots(events)):
-        verdict.not_established("Ice's icon was never read left of its divider")
-    blocked_common(verdict, events, "iconLeftOfDivider")
-
-
 def judge_drawn(verdict, run):
     events = run.report(1)
     if not events[0].get("holdLength"):
@@ -616,7 +647,7 @@ JUDGES = {
     "fresh-off": judge_fresh, "fresh-on": judge_fresh, "placed-off": judge_placed, "placed-on": judge_placed,
     "front-short": lambda verdict, run: judge_front(verdict, run, long_menus=False),
     "front-long": lambda verdict, run: judge_front(verdict, run, long_menus=True),
-    "relaunch": judge_relaunch, "positional": judge_positional, "inverted": judge_inverted,
+    "relaunch": judge_relaunch, "positional": judge_positional,
     "drawn": judge_drawn, "incomplete": judge_incomplete,
 }
 
@@ -705,7 +736,7 @@ def judge(directory):
     verdict = Verdict(run.scenario)
     if SCENARIOS[run.scenario]["kind"] == "notRun":
         verdict.result = "notRun"
-        verdict.reasons.append("needs a Command-drag of Ice's icon: moved to S5 by the owner, 2026-10-09 (S4 design D4)")
+        verdict.reasons.append(SCENARIOS[run.scenario]["why"])
         return verdict
     try:
         events = run.report(1)
@@ -719,7 +750,7 @@ def judge(directory):
             verdict.kind = kind_of(last)
         wanted = SCENARIOS[run.scenario]["kind"]
         accepted = {"bestEffort": {"verified", "unverified"}}.get(wanted, {wanted})
-        if run.scenario not in ENDS_ELSEWHERE and verdict.kind not in accepted:
+        if not is_exclusion(run.scenario, verdict.result, verdict.reasons) and run.scenario not in ENDS_ELSEWHERE and verdict.kind not in accepted:
             verdict.fail(f"ended {verdict.kind}, expected {wanted}")
     except Damaged as error:
         verdict.result = "aborted"
@@ -744,13 +775,18 @@ def known_open_only(verdict):
     )
 
 
+def passed_or_excluded(name, verdict):
+    """A pass, or the scenario's exclusion with exactly its measured reason."""
+    return verdict["result"] == "pass" or is_exclusion(name, verdict["result"], verdict["reasons"])
+
+
 def round_is_clean(verdicts):
-    """Every scenario passed, known-open clauses aside (D5's stop rule)."""
+    """Every scenario passed, the exclusions and known-open clauses aside (D5's stop rule)."""
     for name in ORDER:
         if SCENARIOS[name]["kind"] == "notRun":
             continue
         verdict = verdicts.get(name)
-        if verdict is None or not (verdict["result"] == "pass" or known_open_only(verdict)):
+        if verdict is None or not (passed_or_excluded(name, verdict) or known_open_only(verdict)):
             return False
     return True
 
@@ -786,11 +822,14 @@ def report(evidence):
             verdict = verdicts.get(name)
             if verdict and verdict["result"] not in ("pass", "notRun"):
                 lines.append(f"   {name}: {verdict['result']}: " + "; ".join(verdict["reasons"][:4]))
-            if SCENARIOS[name]["kind"] != "notRun" and (verdict is None or verdict["result"] != "pass"):
+            if SCENARIOS[name]["kind"] != "notRun" and (verdict is None or not passed_or_excluded(name, verdict)):
                 met = False
     t2d_open = any(v.get("clauses", {}).get("t2d") == "fail" for r in rounds.values() for v in r.values())
     if met:
-        lines.append("S4 DoD: met (every scenario passed in three rounds); scenario 14's second half is S5's (the owner's decision, 2026-10-09)")
+        lines.append(
+            "S4 DoD: met (three rounds, every scenario passed but the exclusions: "
+            + ", ".join(sorted(EXCLUSIONS)) + " not established, " + ", ".join(name for name in ORDER if SCENARIOS[name]["kind"] == "notRun") + " not run, S5's)"
+        )
     else:
         lines.append("S4 DoD: not met" + (" (T2d open)" if t2d_open else ""))
     print("\n".join(lines))

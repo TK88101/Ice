@@ -110,7 +110,13 @@ case $1 in
     preflight) print "{\"axTrusted\":${LAB_STUB_AX:-true},\"pid\":1,\"screenCapture\":true}" ;;
     menu-frame) print "{\"barHeight\":33,\"displayWidth\":1728,\"menuMaxX\":300,\"notchMinX\":700,\"verdict\":\"fits\"}" ;;
     chevron) print "{\"listed\":false}"; exit 1 ;;
-    activate) print "{\"frontmost\":true}" ;;
+    activate)
+        # LAB_STUB_ACTIVATE_FAILS: how many activations fail before one succeeds.
+        print x >> $LAB_STUB_MARKS/activations
+        if (( $(wc -l < $LAB_STUB_MARKS/activations) <= ${LAB_STUB_ACTIVATE_FAILS:-0} )); then
+            print "{\"frontmost\":false,\"asked\":true}"; exit 1
+        fi
+        print "{\"frontmost\":true,\"asked\":true}" ;;
 esac'
 
 build_staging() { # [key=value lines for lab.env]
@@ -241,6 +247,34 @@ run=$(print $shared/evidence/*(N/[1]))
 (( code == 130 )) && grep -q "S4 DoD" $run/report.txt && grep -q 'cleanup: domains verified' $run/timeline.txt && ! ours_running
 check "an interrupted run stops Ice and the helpers, deletes its domains and writes its report (exit 130)"
 
+# --- the runner's own steps ---------------------------------------------------------------
+
+build_staging "STATUS_LIMIT=100"
+verified_fixture addremove 2
+print -l -- '{"waitMembers":3}' '{"sleep":0.5}' '{"event":"length","applied":null,"decided":null,"held":false}' '{"event":"status","status":"verified"}' \
+    '{"sleep":1.5}' '{"event":"length","applied":null,"decided":null,"held":false}' '{"event":"status","status":"verified"}' >> $LAB_STUB_FIXTURES/addremove.jsonl
+zsh $shared/run-lab.sh addremove > $tmp/out.txt 2>&1
+run=$(print $shared/evidence/*(N/[1]))
+grep -q '"step":"removed"' $run/1-addremove/steps.jsonl && ! grep -q 'file descriptor' $tmp/out.txt && ! ours_running
+check "a member closed mid-scenario is not closed again at the cleanup (run 20261011-004911's stderr line)"
+
+build_staging "STATUS_LIMIT=100"
+verified_fixture frontshort 1
+LAB_STUB_ACTIVATE_FAILS=1 zsh $shared/run-lab.sh front-short > $tmp/out.txt 2>&1
+run=$(print $shared/evidence/*(N/[1]))
+steps=$run/1-front-short/steps.jsonl
+grep -q '"step":"activate".*"try":1,"answer":{"frontmost":false' $steps && grep -q '"step":"activate".*"try":2,"answer":{"frontmost":true' $steps \
+    && grep -q '"step":"front","seq":[0-9]*,"t":[0-9.]*,"ok":true' $steps
+check "an activation that fails once is tried again, each answer of icewatch's kept in the steps"
+
+build_staging "STATUS_LIMIT=100"
+verified_fixture frontshort 1
+LAB_STUB_ACTIVATE_FAILS=99 zsh $shared/run-lab.sh front-short > $tmp/out.txt 2>&1
+run=$(print $shared/evidence/*(N/[1]))
+steps=$run/1-front-short/steps.jsonl
+(( $(grep -c '"step":"activate"' $steps) == 3 )) && grep -q '"step":"front".*"ok":false' $steps && grep -q '1 front-short: notEstablished' $tmp/out.txt
+check "three failed activations leave the scenario notEstablished, with the three answers"
+
 # --- the matrix's stop rule --------------------------------------------------------------
 
 build_staging "ROUNDS=3"
@@ -251,8 +285,9 @@ grep -q 'round 1 is not clean' $tmp/out.txt && [[ -z $(print $run/2-*(N)) ]] && 
 check "an unclean round 1 ends the matrix there, with the report saying the DoD is not met"
 [[ -z $(print $run/*/judge.err(N.L+0)) ]]
 check "no judge failed on any scenario of the round"
-grep -q '1 inverted-moved: notRun' $tmp/out.txt && grep -q '1 noref: ' $tmp/out.txt
-check "every scenario of round 1 ran, noref first, scenario 14's second half as notRun"
+grep -q '1 inverted-moved: notRun' $tmp/out.txt && grep -q '1 inverted: notRun' $tmp/out.txt && grep -q '1 noref: ' $tmp/out.txt \
+    && ! grep -q 'inverted' $marks/ice
+check "every scenario of round 1 ran, noref first, both halves of scenario 14 as notRun with no Ice started for them"
 
 echo
 (( failures == 0 )) && echo "test-lab: all passed" || echo "test-lab: $failures FAILED"
