@@ -367,6 +367,42 @@ struct PreferenceHidingMembershipTests {
         #expect(result.members.map(\.tag) == [justLeft.tagKey])
     }
 
+    // The system piles an item of its own on the divider when the bar is crowded
+    // (run 20261012-165816: frame 1336..1382 on the divider's 1364..1382).
+
+    @Test("D-a, set: a new stacked item overlapping the divider is on it, not left of it: not a member")
+    func setNewStackedItemOnDividerIsNotAdmitted() {
+        // frame 480..504, midX 492 < divider minX 500
+        let piled = placed("piled", pid: 1, minX: 480, position: .stacked)
+        let result = resolve(set: [piled], divider: usableDivider)
+        #expect(result.members.isEmpty)
+        #expect(result.blockers.isEmpty)
+    }
+
+    @Test("D-a, set: a known member that reads stacked on the divider stays a member")
+    func setKnownStackedItemOnDividerStays() {
+        let piled = placed("piled", pid: 1, minX: 480, position: .stacked)
+        let result = resolve(set: [piled], divider: usableDivider, previous: [piled.tagKey])
+        #expect(result.members.map(\.tag) == [piled.tagKey])
+        #expect(result.members.first?.condition == .stacked)
+    }
+
+    @Test("D-a, set: a new stacked item wholly left of the divider is a member")
+    func setNewStackedItemLeftOfDividerIsAdmitted() {
+        // frame 476..500 ends where the divider begins
+        let left = placed("left", pid: 1, minX: 476, position: .stacked)
+        let result = resolve(set: [left], divider: usableDivider)
+        #expect(result.members.map(\.tag) == [left.tagKey])
+    }
+
+    @Test("D-a, set: a new item overlapping the divider that is not stacked is a member by its mid-x")
+    func setNewUnstackedItemOverlappingDividerIsAdmitted() {
+        // frame 480..504, midX 492 < divider minX 500
+        let onBar = placed("onBar", pid: 1, minX: 480)
+        let result = resolve(set: [onBar], divider: usableDivider)
+        #expect(result.members.map(\.tag) == [onBar.tagKey])
+    }
+
     @Test("D-a, set: a previous member now right of the divider is released: dropped, not stale")
     func setReleasesMovedMember() {
         let moved = placed("moved", pid: 1, minX: 600)

@@ -330,3 +330,53 @@ by its key, as it reads `menu-frame`'s fields. Left: `retryBaseline` beside
 `recycleIfDrawn`, and `.unbaselined` with `Rest.baselineOwed` (a few lines each);
 `kill -0` on the pid stays (asked for in the plan review); no quiet gap between two Ice
 starts in the runner (it would hide the gap the retry closes).
+
+## After the matrix's third round (run `20261012-165816`, build `f02937b`, 2026-10-12)
+
+Not clean, for `crowded` alone; `front-short`, `front-long`, `relaunch`, `drawn` pass
+(STATUS). In `crowded`, 62 s in, the system piled its own input menu on Ice's divider:
+frame `[1288, 46]` on the divider's `[1316, 18]`, the same right edge, `stacked`, its
+mid-x 5 pt left of the divider's `minX`. D-a read that as left of the divider. In runs
+`20261011-004911` and `20261011-122641` it was off again 5 s later; in this one it stayed
+(`[1336, 46]` on `[1364, 18]`), and Ice set 736, said `notVerified(noReference,stacked:1)`
+and offered an IceBar listing an item nobody chose. The owner approved, 2026-10-12:
+
+1. IceCore, D-a amended (`PreferenceHidingMembership.resolve(set:...)`): an item that was
+   not a member, reads `.stacked` and reaches onto the hidden divider (`maxX` past its `minX`) is
+   not admitted. A member already known keeps every rule it had; a new item wholly left of
+   the divider is admitted, stacked or not; a new item overlapping the divider and not
+   stacked is admitted as before (mid-x). The cache, the check plan and the signature
+   keep the mid-x boundary.
+2. The judge, the runner and the DoD stay: this round is not clean; three new rounds.
+3. STATUS says what this round measured, the retry of a baseline not seen live among it.
+
+DoD: the four cases of 1 as unit tests, red first; IceCore's tests green; the app builds;
+`/simcodex`; staged; then the owner's round.
+
+Not in it: a dwell after the witness in the runner; a way to summon another process's
+capture indicator for `relaunch`.
+
+| Codex (thecure, two rounds, converged) | Outcome |
+|---|---|
+| a second reason that leaves `crowded` clean | Codex's: the goalposts again; dropped |
+| "as designed, S5's input" | Codex's: against "the owner chooses the members"; S4 cannot end on it |
+| the cause is an overlap with the divider, never a place left of it | mine, from the frames of three runs; Codex re-read them |
+| "any item intersecting the divider is not admitted" | Codex's: too wide (a wide item the owner did place); `.stacked`, overlapping and new |
+| a defect fix that needs no ruling | Codex's: it amends D-a; the owner's decision, given |
+
+Codex's worry, kept: `crowded` may stay unstable. In run `20261008-234718` our own two
+members went in and out of the roster every 25 s, wholly left of the divider; this rule
+does not reach that, and the judge would say `fail` there. Not seen in the three runs
+since.
+
+### Code review (/simcodex, 2026-10-12, one round)
+
+No P0. Codex (`codex review --uncommitted`): nothing found; the change keeps a known
+member and the mid-x rule as they were, and the tests cover the cases. Two simplify
+reviews: one P1, taken -- with the mid-x left of the divider, "its `minX` left of the
+divider's `maxX`" is always true, so the rule is `.stacked` and `maxX` past the divider's
+`minX`. P2 taken: the comments, one test's item name. Left: tests of two paths this change
+does not touch (a stacked item right of the divider; a known stacked member released).
+The rule stays in `resolve(set:)`: `PositionRule` leaves Ice's divider out of what an item
+can be stacked on, and the cache, the check plan and the signature keep the mid-x.
+The probes' own tests were not run again: nothing in `probes/` names this rule.

@@ -100,9 +100,12 @@ public struct PreferenceHidingMembership: Equatable, Sendable {
     /// `set.hiddenDivider`:
     /// - left of the divider: an item with a frame whose `midX` is less than the
     ///   divider frame's `minX` (the section boundary of `CheckPlan` and
-    ///   `DiscoveredCachePlan`); also an item with no frame whose base tag is a
-    ///   previous member, so it becomes `stale(.noFrame)` rather than missing. A
-    ///   frameless item that was not a member is ignored;
+    ///   `DiscoveredCachePlan`), except an item that was not a member, is
+    ///   `.stacked` and reaches onto the divider (`maxX` past its `minX`): a
+    ///   crowded bar piled it there, nobody placed it. Also an item with no
+    ///   frame whose base tag is a previous member, so it becomes
+    ///   `stale(.noFrame)` rather than missing. A frameless item that was not
+    ///   a member is ignored;
     /// - released: the base tags of previous members whose item in the set is on
     ///   the bar (not parked) with `midX` at or right of the divider's `minX`
     ///   (the owner moved them out); a parked member is never released, it
@@ -147,7 +150,10 @@ public struct PreferenceHidingMembership: Equatable, Sendable {
                 continue
             }
             if frame.midX < boundary {
-                left.append(item)
+                // Piled on the divider by a crowded bar, not chosen: not a
+                // new member.
+                let piledOnDivider = item.position == .stacked && frame.maxX > boundary
+                if known || !piledOnDivider { left.append(item) }
             } else if known, frame.midX.isFinite {
                 released.insert(baseTag(of: item))
             }

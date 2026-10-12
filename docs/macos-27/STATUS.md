@@ -226,4 +226,21 @@ was posted. T2b did not complete its three-run protocol.
 | Why that baseline had no reference | the capture indicator the first process summoned was still in the bar: a new process's burst clock knows nothing of another's captures | INFERRED |
 | `drawn` | Ice as designed; the runner's limit was short. At 464 discovery was `incomplete:1` for 13 s, Ice said `blocked(discoveryIncomplete)`, then started its walk again from 736, and the 600 s ran out at 432, one length before the end. Why discovery was incomplete: unknown | MEASURED; the cause TBD |
 | Fixed since (not yet run live) | `icewatch front` asks the system for the app in front, and the runner refuses to start, a dry run too, without a live pid; `drawn` waits 900 s; a baseline that did not cover the members is taken again, at most 3 times, the best-effort length staying until the next cycle may start (`IceBarHidingMachine`, unit-tested) | MEASURED (tests) |
-| Next | stage; `run-lab.sh --dry-run` in `icetest` must name the app in front; then one round, the other two only if it is clean | TBD |
+| Next | done: run `20261012-165816`, below | MEASURED |
+
+## The lab matrix, a third round in `icetest` (run `20261012-165816`, build `f02937b`, 2026-10-12)
+
+| What | State | Level |
+|---|---|---|
+| The round | 1 h 57 min; not clean, for `crowded` alone: 16 pass; `noref` excluded and `inverted`, `inverted-moved` not run, as ruled | MEASURED |
+| `front-short`, `front-long` | pass. The dry run and the run named the app in front (pid 693); the menus helper and the Terminal each came forward on the first asking (`steps.jsonl`: `activate`, `front`, `back`). Back in front, `front-short` verified again; with 24 menus in front `front-long` said `notVerified(unchecked:1)`, both references `absent`, as before | MEASURED |
+| `relaunch` | pass. The second start's baseline, 13 s after its start, covered the members, and it verified | MEASURED |
+| A baseline taken again | not seen live: no baseline of this round but `crowded`'s failed to cover. Unit-tested only; the plan's "the live `relaunch` has to show it" is not met | MEASURED (tests) |
+| `drawn` | pass in 5 min 16 s: the walk went from 736 down to 416, came back to 736 and said `failed(drawn:1)`; discovery stayed complete | MEASURED |
+| `discoveryIncomplete`, elsewhere | once in `placed-off`: `blocked(discoveryIncomplete)` at 17:57:19, a baseline again 25 s later, the scenario verified and passed. The cause: unknown | MEASURED; the cause TBD |
+| Capture stability | 371 of 373 `observation` events `captureStable` with every reference `unique`; the other two are `front-long`'s with 24 menus in front and `crowded`'s, which had no reference | MEASURED |
+| `crowded` | not established, and not the ruled exclusion. 57 s in the system folded both members and the roster emptied, as before. At 62 s the system's input menu read `stacked` on Ice's divider, frame `[1288, 46]` on `[1316, 18]`, the same right edge, mid-x 5 pt left of the divider's `minX`, and was a member by D-a. At 67 s it was still there (`[1336, 46]` on `[1364, 18]`); Ice set 736 at 80 s, its baseline was `skip(noReference)`, it said `notVerified(noReference,stacked:1)`, offered the IceBar, and gave the length back at 106 s. The judge refused: a roster member not ours | MEASURED |
+| The same item, the rounds before | in the roster at 62 s with the same overlap in runs `20261011-004911` and `20261011-122641`, and out of it 5 s later (the divider at 1300 and 1320): which round it stays in is the system's | MEASURED |
+| Fixed since (not yet run live) | D-a amended, the owner's ruling 2026-10-12: an item that was not a member, reads `stacked` and reaches onto the hidden divider (`maxX` past its `minX`) is not admitted (`PreferenceHidingMembership`, unit-tested). The judge, the runner and "clean" are unchanged; this round stays not clean | MEASURED (tests) |
+| Still open in `crowded` | in run `20261008-234718` the two members themselves went in and out of the roster every 25 s, wholly left of the divider; the amended rule does not reach that. Not seen in the three rounds since | MEASURED |
+| Next | stage; one round, the other two only if it is clean | TBD |
