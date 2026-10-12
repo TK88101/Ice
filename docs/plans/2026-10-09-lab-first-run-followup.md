@@ -380,3 +380,42 @@ does not touch (a stacked item right of the divider; a known stacked member rele
 The rule stays in `resolve(set:)`: `PositionRule` leaves Ice's divider out of what an item
 can be stacked on, and the cache, the check plan and the signature keep the mid-x.
 The probes' own tests were not run again: nothing in `probes/` names this rule.
+
+## After the matrix's fourth round (run `20261013-000729`, build `aefa7eb`, 2026-10-13)
+
+Not clean, for `crowded` alone; every other scenario as expected, and Ice as the goal
+asks: the system folded both members out of the roster at 57 s, Ice set no length and
+offered no IceBar (STATUS). The judge said "no bracketed witness": in all four rounds
+the only `stacked` roster item was the system's input menu, which D-a now keeps out;
+our members never read `stacked`. The owner approved, 2026-10-13:
+
+1. `lab-tool.py fold_evidence`: the fold read from the members -- a snapshot with
+   exactly both members `ready`, then `FOLD_SETTLE` (2) empty snapshots in a row, the
+   first after the ladder began, and no applied length anywhere. `lab-tool.py fold`
+   gives it to the runner.
+2. `run-lab.sh s_crowded`: each ladder step asks for the fold after the length check
+   and marks `witness` `ok`, `folded`, `since`, `menus` and the snapshots; the
+   "ladder ended" mark moves after the loop (its last step's `continue` skipped it).
+3. `judge_crowded`: with a `folded` witness it reads the fold again from the report up
+   to the witness; the exclusion's reason, `EXCLUSIONS`, the stacked witness and
+   clauses 12 and 6 are unchanged.
+
+DoD: the fold's cases as unit tests, red first; `test-lab.sh` green; the four rounds'
+`crowded` evidence replayed on copies: excluded in `20261011-004911`,
+`20261011-122641`, `20261013-000729`, not in `20261012-165816`; staged; the owner's
+round. Met to staging (the replay's `since` was the first snapshot with both members).
+
+| Codex (thecure, one round, converged) | Outcome |
+|---|---|
+| this round's not clean is not Ice's defect; the witness rested on the foreign item | mine, from the four rounds' rosters; Codex agreed, within what was observed |
+| goalposts? | Codex's: not, while the reason and the exclusion stay the same; the owner's approval and a replay of the old rounds go with it |
+| one empty reading counts | Codex's: no; two in a row, ready both before, no length |
+
+Codex's worry, kept: an empty roster read as the system's fold could hide a real
+disappearance; hence the settle, the baseline and the snapshots in the witness. A
+round alone does not show that Ice's own work did not set the fold off.
+
+### Code review (2026-10-13)
+
+Codex (`codex review --uncommitted`): nothing found; the fold, the runner's witness and the
+judge's second reading agree. `test-lab.sh` green (37 unit tests and the runner's stubs).

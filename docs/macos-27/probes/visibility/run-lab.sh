@@ -580,7 +580,7 @@ s_addremove() {
 }
 
 s_crowded() {
-    local round=$1 n step_back=0 since key1 key2 listed
+    local round=$1 n step_back=0 since key1 key2 listed fold witnessed=0
     start_menus $dir 0 || { abort_run "the menus helper did not start"; return 1; }
     bring_forward $menus_pid || { abort_run "the menus helper could not be brought forward"; return 1; }
     begin $round crowded 2 || return
@@ -590,10 +590,19 @@ s_crowded() {
         nap 2.5
         if lab await $report any-length $since >/dev/null; then
             mark witness '"ok":false,"why":"a length came before the bracketed witness"'
+            witnessed=1
+            break
+        fi
+        # The system folds the members out of the roster before they read
+        # `stacked` (runs 20261011-004911 to 20261013-000729); the judge reads
+        # the fold again from the report.
+        if fold=$(lab fold $report $since ${(j:,:)members}); then
+            mark witness "\"ok\":true,\"folded\":true,\"since\":$since,\"menus\":$n,\"fold\":$fold"
+            witnessed=1
             break
         fi
         if lab await $report divider-unusable >/dev/null; then
-            (( step_back )) && { mark witness '"ok":false,"why":"the divider stayed unusable one step back"'; break; }
+            (( step_back )) && { mark witness '"ok":false,"why":"the divider stayed unusable one step back"'; witnessed=1; break; }
             step_back=1
             print -u $menus_fd -- "menus $(( n - 1 ))"
             nap 2.5
@@ -604,10 +613,12 @@ s_crowded() {
         key2=$(lab bracket $report)
         if [[ $listed == true && -n $key1 && $key1 == $key2 ]]; then
             mark witness "\"ok\":true,\"menus\":$n"
+            witnessed=1
             break
         fi
-        (( n == 40 )) && mark witness '"ok":false,"why":"the ladder ended without both witnesses"'
     done
+    # After the loop: its last step may `continue` past any mark (run 20261013-000729).
+    (( witnessed )) || mark witness '"ok":false,"why":"the ladder ended without both witnesses"'
     await $STATUS_LIMIT rest && { nap 15; mark chevronAtRest "\"listed\":$(chevron)"; }
     bring_forward $terminal_pid
 }

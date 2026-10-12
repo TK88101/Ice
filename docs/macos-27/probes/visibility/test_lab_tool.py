@@ -393,6 +393,46 @@ class LabToolTests(unittest.TestCase):
         verdict = self.judge("crowded", [report], steps=steps, members=["a", "b"])
         self.assertNotEqual(verdict["reasons"], ["setup: " + lab.EXCLUSIONS["crowded"]])
 
+    def folded(self, conditions=("ready", "ready"), empties=2, length=False):
+        """Run 20261013-000729: both members ready, the ladder starts, then the roster empties."""
+        report = Report()
+        report.snap(roster=[member("a"), member("b")])
+        since = report.add("noop")
+        report.snap(roster=[member("a", conditions[0]), member("b", conditions[1])])
+        if length:
+            report.length(736)
+        for _ in range(empties):
+            report.snap(roster=[])
+        return report, since
+
+    def fold(self, report, since, members=("a", "b")):
+        events = lab.parse_lines(report.text().encode().split(b"\n")[:-1], first_seq=1)
+        return lab.fold_evidence(events, list(members), since)
+
+    def test_fold_evidence_needs_both_members_ready_then_a_settled_empty_roster(self):
+        report, since = self.folded()
+        self.assertEqual(self.fold(report, since), {"baseline": 4, "empty": [5, 6]})
+        report, since = self.folded(empties=1)
+        self.assertIsNone(self.fold(report, since))  # one empty reading may be a missed one (thecure, 2026-10-13)
+        report, since = self.folded(conditions=("ready", "stacked"))
+        self.assertIsNone(self.fold(report, since))
+        report, since = self.folded(length=True)
+        self.assertIsNone(self.fold(report, since))
+        report, since = self.folded()
+        self.assertIsNone(self.fold(report, since, members=("a", "b", "c")))
+        self.assertIsNone(self.fold(report, 5))  # an empty roster from before the ladder is not its fold
+
+    def test_crowded_with_a_fold_witness_is_the_measured_exclusion(self):
+        report, since = self.folded()
+        steps = [{"step": "witness", "ok": True, "folded": True, "since": since, "seq": len(report.lines)}]
+        verdict = self.judge("crowded", [report], steps=steps, members=["a", "b"])
+        self.assertEqual((verdict["result"], verdict["reasons"]), ("notEstablished", ["setup: " + lab.EXCLUSIONS["crowded"]]))
+        # The judge reads the fold itself; the runner's word is not enough.
+        report, since = self.folded(empties=1)
+        steps = [{"step": "witness", "ok": True, "folded": True, "since": since, "seq": len(report.lines)}]
+        verdict = self.judge("crowded", [report], steps=steps, members=["a", "b"])
+        self.assertNotEqual(verdict["reasons"], ["setup: " + lab.EXCLUSIONS["crowded"]])
+
     # --- fresh, placed, t2d ------------------------------------------------------------------
 
     def fresh(self, always_left=True, cache_matches=True):

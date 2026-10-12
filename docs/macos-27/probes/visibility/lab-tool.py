@@ -15,6 +15,7 @@ A scenario run's directory holds:
   lab-tool.py wait <report> <seconds> <pid> <predicate> [args]
                                                    waits in this one process: exit 0 held, 1 timed out, 3 damaged, 4 the pid ended
   lab-tool.py bracket <report>                     the latest snapshot's member frames and conditions
+  lab-tool.py fold <report> <since> <a,b>          exit 0 with the fold's snapshots as JSON once the system folded both members
   lab-tool.py selfread-frames <line> <identifier>  a helper's items' frames, as JSON
   lab-tool.py judge <run directory>                the verdict, as JSON; exit 0 pass, 1 otherwise
   lab-tool.py clean <evidence directory> <round>   exit 0 when that round is clean (D5's stop rule)
@@ -210,6 +211,32 @@ def applied_lengths(events, since=0):
 
 def first_retire(events, since):
     return next((event for event in lengths(events, since) if event.get("applied") is None), None)
+
+
+# Empty readings in a row before an empty roster counts as the system's fold,
+# not a reading that missed the members (thecure, 2026-10-13).
+FOLD_SETTLE = 2
+
+
+def fold_evidence(events, members, since):
+    """`crowded`'s fold, read from the members themselves: a snapshot with
+    exactly both members `ready`, then FOLD_SETTLE snapshots in a row with an
+    empty roster, the first after the ladder began (`since`), and no length
+    anywhere. Measured in runs 20261011-004911 to 20261013-000729: the members
+    go from `ready` to gone, never `stacked`."""
+    if applied_lengths(events):
+        return None
+    shots = snapshots(events)
+    for index in range(1, len(shots) - FOLD_SETTLE + 1):
+        before, empty = shots[index - 1], shots[index:index + FOLD_SETTLE]
+        if (
+            empty[0]["seq"] > since
+            and ids(before["roster"]) == sorted(members)
+            and all(entry["condition"] == "ready" for entry in before["roster"])
+            and not any(shot["roster"] for shot in empty)
+        ):
+            return {"baseline": before["seq"], "empty": [shot["seq"] for shot in empty]}
+    return None
 
 
 def snapshot_before(events, seq):
@@ -495,9 +522,14 @@ def judge_crowded(verdict, run):
         # Folded by the system, the members are not Ice's to hide: no roster, no length.
         # Only when both were Ice's members before it.
         last = latest_snapshot(events)
-        held = witness and any(
-            ids(snap["roster"]) == sorted(run.expected["members"]) for snap in snapshots(events) if snap["seq"] <= witness["seq"]
-        )
+        if witness and witness.get("folded"):
+            # The judge reads the fold itself, from the report up to the witness.
+            seen = [event for event in events if event["seq"] <= witness["seq"]]
+            held = fold_evidence(seen, run.expected["members"], witness.get("since", 0)) is not None
+        else:
+            held = witness and any(
+                ids(snap["roster"]) == sorted(run.expected["members"]) for snap in snapshots(events) if snap["seq"] <= witness["seq"]
+            )
         if held and not last["roster"] and verdict.exclude():
             return
         verdict.fail("no length was applied")
@@ -863,6 +895,15 @@ def main(argv):
             print(bracket_key(load_report(rest[0], final=False)))
         except Damaged:
             print("")
+        return 0
+    if command == "fold":  # <report> <since> <members, comma-separated>
+        try:
+            found = fold_evidence(load_report(rest[0], final=False), rest[2].split(","), int(rest[1]))
+        except Damaged:
+            found = None
+        if found is None:
+            return 1
+        print(json.dumps(found, sort_keys=True))
         return 0
     if command == "selfread-frames":
         print(json.dumps(selfread_frames(rest[0], rest[1])))

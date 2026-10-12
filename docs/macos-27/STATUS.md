@@ -1,8 +1,11 @@
 # Ice on macOS 27 -- what this fork does and does not do
 
-**In one line: on macOS 27 this fork can *see* the menu bar but cannot *hide*
-anything.** It lists your items and sorts them into sections. Hiding a section
-has no effect, and the fork detects and reports that.
+**In one line: on macOS 27 this fork can *see* the menu bar, and hides the items
+you choose behind the IceBar in the lab, not yet on your own bar.** It lists your
+items and sorts them into sections. The lab (`icetest`, sacrificial helpers)
+measured `IceBar hiding: verified` round after round since 2026-10-11; the owner's
+own bar is S5's (plan 2026-10-07-icebar-preference-hiding). The rows below the lab
+sections are older and say what each measured then.
 
 Every row is tagged. **MEASURED** means it was observed on the build and date
 given, on one machine: macOS 27.0 (26A428), Apple Silicon, one 1728 x 1117
@@ -243,4 +246,14 @@ was posted. T2b did not complete its three-run protocol.
 | The same item, the rounds before | in the roster at 62 s with the same overlap in runs `20261011-004911` and `20261011-122641`, and out of it 5 s later (the divider at 1300 and 1320): which round it stays in is the system's | MEASURED |
 | Fixed since (not yet run live) | D-a amended, the owner's ruling 2026-10-12: an item that was not a member, reads `stacked` and reaches onto the hidden divider (`maxX` past its `minX`) is not admitted (`PreferenceHidingMembership`, unit-tested). The judge, the runner and "clean" are unchanged; this round stays not clean | MEASURED (tests) |
 | Still open in `crowded` | in run `20261008-234718` the two members themselves went in and out of the roster every 25 s, wholly left of the divider; the amended rule does not reach that. Not seen in the three rounds since | MEASURED |
+| Next | done: run `20261013-000729`, below | MEASURED |
+
+## The lab matrix, a fourth round in `icetest` (run `20261013-000729`, build `aefa7eb`, 2026-10-13)
+
+| What | State | Level |
+|---|---|---|
+| The round | not clean, for `crowded` alone: 17 pass; `noref` excluded and `inverted`, `inverted-moved` not run, as ruled. The first round with no defect in Ice | MEASURED |
+| `crowded`, Ice | as the goal asks: both members `ready` until 52 s, the roster empty from 57 s, `noMembers`; no length, no IceBar. The system's input menu was not admitted | MEASURED |
+| `crowded`, the judge | `notEstablished`: "no bracketed witness". In all four rounds the only roster item that ever read `stacked` was the system's input menu, the one D-a now keeps out; our members go from `ready` to gone. The witness was resting on that item, and the runner's last ladder step skipped the "ladder ended" mark | MEASURED |
+| Fixed since (not yet run live) | the owner's ruling 2026-10-13: the witness is the fold itself, read from our members (both `ready`, then two empty snapshots in a row after the ladder began, no length anywhere), and the judge reads it again from the report; the exclusion's reason is unchanged. The runner marks the ladder's end after the loop. Replayed on the four rounds' evidence: excluded in `20261011-004911`, `20261011-122641`, `20261013-000729`; still not in `20261012-165816`, where Ice did hide the system's item | MEASURED (tests, replay) |
 | Next | stage; one round, the other two only if it is clean | TBD |
