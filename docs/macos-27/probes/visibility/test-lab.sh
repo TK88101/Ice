@@ -111,7 +111,8 @@ icewatch_body='
 case $1 in
     preflight) print "{\"axTrusted\":${LAB_STUB_AX:-true},\"pid\":1,\"screenCapture\":true}" ;;
     menu-frame) print "{\"barHeight\":33,\"displayWidth\":1728,\"menuMaxX\":300,\"notchMinX\":700,\"verdict\":\"fits\"}" ;;
-    chevron) print "{\"listed\":false}"; exit 1 ;;
+    # LAB_STUB_CHEVRON: « is listed.
+    chevron) [[ -n ${LAB_STUB_CHEVRON:-} ]] && { print "{\"listed\":true}"; exit 0; }; print "{\"listed\":false}"; exit 1 ;;
     # The app in front: the runner itself here, a pid that is alive.
     front) [[ -n ${LAB_STUB_NO_FRONT:-} ]] && { print "{\"pid\":null}"; exit 1; }; print "{\"pid\":$PPID}" ;;
     activate)
@@ -296,6 +297,38 @@ run=$(print $shared/evidence/*(N/[1]))
 steps=$run/1-front-short/steps.jsonl
 (( $(grep -c '"step":"activate"' $steps) == 3 )) && grep -q '"step":"front".*"ok":false' $steps && grep -q '1 front-short: notEstablished' $tmp/out.txt
 check "three failed activations leave the scenario notEstablished, with the three answers"
+
+# Run 20261014-003331: the capture indicator pushed the divider 48 pt left for
+# 10 s and piled both members with « listed; the ladder took that for its
+# witness. Here the push lasts 0.3 s (the scaled limit is 0.4 s), then the
+# members are back and the system folds them.
+crowded_snapshot() { # <condition, or none for an empty roster> <the divider's x>
+    local roster= i sep=
+    if [[ $1 != none ]]; then
+        for i in 1 2; do
+            roster+="$sep{\"namespace\":\"com.icespike4.target\",\"identifier\":\"@M$i@\",\"pid\":41,\"condition\":\"$1\",\"pressable\":true,\"frame\":[900,4,14,22]}"
+            sep=,
+        done
+    fi
+    print -r -- "{\"event\":\"snapshot\",\"phase\":\"quiet\",\"status\":\"notVerified(lengthNotApplied)\",\"lengthSet\":false,\"lengthApplied\":false,\"calibratedHiddenLength\":null,\"isIceBarOffered\":false,\"isIceBarPresented\":false,\"isInteracting\":false,\"roster\":[$roster],\"blockers\":[],\"cells\":[],\"cacheVisible\":[],\"cacheHidden\":[],\"cacheAlwaysHidden\":[],\"checks\":[],\"iconPlacement\":null,\"hiddenBoundaryUsable\":true,\"icon\":{\"frame\":[1500,0,28,30],\"usable\":true},\"hiddenDivider\":{\"frame\":[$2,0,18,30],\"usable\":true},\"alwaysHiddenDivider\":null,\"completeness\":\"complete\",\"pass\":3,\"chevronListed\":null}"
+}
+build_staging
+{
+    print '{"waitMembers":2}'
+    crowded_snapshot ready 880
+    print '{"sleep":1.5}'
+    crowded_snapshot stacked 832
+    print '{"sleep":0.3}'
+    crowded_snapshot ready 880
+    print '{"sleep":0.3}'
+    crowded_snapshot none 880
+    crowded_snapshot none 880
+} > $LAB_STUB_FIXTURES/crowded.jsonl
+LAB_STUB_CHEVRON=1 zsh $shared/run-lab.sh crowded > $tmp/out.txt 2>&1
+run=$(print $shared/evidence/*(N/[1]))
+(( $(grep -c '"step":"witness"' $run/1-crowded/steps.jsonl) == 1 )) && grep -q '"step":"witness".*"ok":true,"folded":true' $run/1-crowded/steps.jsonl \
+    && grep -q 'the system folded the members out of the roster' $run/1-crowded/verdict.json && ! ours_running
+check "crowded takes no witness under the indicator's push: it waits it out and reads the system's fold (run 20261014-003331)"
 
 # --- the matrix's stop rule --------------------------------------------------------------
 

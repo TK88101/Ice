@@ -213,9 +213,12 @@ class LabToolTests(unittest.TestCase):
         one, two = Report(), Report()
         one.snap(roster=[member("a", "stacked")])
         two.snap(roster=[member("a", "stacked", frame=(901, 4, 14, 22))])
-        key = lambda report: lab.bracket_key(lab.load_report(self.write(report.text()), final=False))
+        key = lambda report: lab.bracket_key(lab.load_report(self.write(report.text()), final=False), ["a"])
         self.assertNotEqual(key(one), key(two))
         self.assertEqual(key(one), key(one))
+        # Only a snapshot that is itself the witness has a key.
+        one.snap(roster=[member("a")])
+        self.assertEqual(key(one), "")
 
     # --- sparse and k ------------------------------------------------------------
 
@@ -432,6 +435,69 @@ class LabToolTests(unittest.TestCase):
         steps = [{"step": "witness", "ok": True, "folded": True, "since": since, "seq": len(report.lines)}]
         verdict = self.judge("crowded", [report], steps=steps, members=["a", "b"])
         self.assertNotEqual(verdict["reasons"], ["setup: " + lab.EXCLUSIONS["crowded"]])
+
+    # --- crowded: the capture indicator's push (run 20261014-003331) -----------------------------
+
+    def divider(self, x):
+        return {"frame": [x, 0, 18, 30], "usable": True}
+
+    def pushed(self, x=832, condition="stacked"):
+        """Both members ready at the divider's place, then a reading with the divider at `x`."""
+        report = Report()
+        report.snap(roster=[member("a"), member("b")])
+        report.snap(roster=[member("a", condition), member("b", condition)], hiddenDivider=self.divider(x))
+        return report
+
+    def is_pushed(self, report, members="a,b"):
+        return not lab.predicate_holds(lab.load_report(self.write(report.text()), final=False), "unpushed", [members])
+
+    def test_pushed_is_the_divider_left_of_where_it_stood_with_both_members_ready(self):
+        self.assertTrue(self.is_pushed(self.pushed()))
+        self.assertFalse(self.is_pushed(self.pushed(x=880)))
+        self.assertFalse(self.is_pushed(self.pushed(x=924)))  # the system's fold moves it right
+        self.assertFalse(self.is_pushed(self.pushed(), members="a,b,c"))  # never both ready: no place to compare with
+        report = self.pushed()
+        report.snap(roster=[member("a"), member("b")])
+        self.assertFalse(self.is_pushed(report))  # the latest reading counts
+        report = self.pushed()
+        report.snap(roster=[], hiddenDivider=None)
+        self.assertFalse(self.is_pushed(report))
+        report = self.pushed()
+        report.snap(roster=[member("a"), member("b")], hiddenDivider=self.divider(832), lengthSet=True)
+        self.assertFalse(self.is_pushed(report))  # a divider with a length is Ice's own move
+
+    def test_no_witness_is_read_under_the_push(self):
+        key = lambda report: lab.bracket_key(lab.load_report(self.write(report.text()), final=False), ["a", "b"])
+        self.assertEqual(key(self.pushed()), "")
+        self.assertNotEqual(key(self.pushed(x=880)), "")
+        report, since = self.folded()
+        self.assertIsNotNone(self.fold(report, since))
+        report.snap(roster=[], hiddenDivider=self.divider(832))
+        self.assertIsNone(self.fold(report, since))
+
+    def test_crowded_with_a_witness_read_under_the_push_is_not_established(self):
+        # Run 20261014-003331: at 19 menus the indicator piled both members for 10 s; the witness
+        # was read then, the members came back, Ice applied a length and « was not listed.
+        report = self.pushed()
+        witness = report.add("noop")
+        report.snap(roster=[member("a"), member("b")])
+        report.length(736)
+        report.status("notVerified(noReference,unchecked:2)")
+        report.rest(["a", "b"], status="notVerified(noReference,unchecked:2)", chevronListed=False)
+        later = report.add("noop")
+        steps = [{"step": "witness", "ok": True, "seq": witness}, {"step": "chevronAtRest", "listed": False, "seq": later}]
+        verdict = self.judge("crowded", [report], steps=steps, members=["a", "b"])
+        self.assertEqual((verdict["result"], verdict["reasons"][0]), ("notEstablished", "setup: " + lab.PUSHED_WITNESS))
+        # The same run with the witness read after the push left is judged on its clauses.
+        steps[0]["seq"] = witness + 1
+        self.assertEqual(self.result("crowded", [report], steps=steps, members=["a", "b"]), "fail")
+
+    def test_crowded_with_a_fold_witness_read_under_the_push_is_not_the_exclusion(self):
+        report, since = self.folded()
+        report.snap(roster=[], hiddenDivider=self.divider(832))
+        steps = [{"step": "witness", "ok": True, "folded": True, "since": since, "seq": len(report.lines)}]
+        verdict = self.judge("crowded", [report], steps=steps, members=["a", "b"])
+        self.assertEqual((verdict["result"], verdict["reasons"][0]), ("notEstablished", "setup: " + lab.PUSHED_WITNESS))
 
     # --- fresh, placed, t2d ------------------------------------------------------------------
 

@@ -14,7 +14,7 @@ A scenario run's directory holds:
   lab-tool.py await <report> <predicate> [args]    exit 0 holds now, 1 not yet, 3 damaged
   lab-tool.py wait <report> <seconds> <pid> <predicate> [args]
                                                    waits in this one process: exit 0 held, 1 timed out, 3 damaged, 4 the pid ended
-  lab-tool.py bracket <report>                     the latest snapshot's member frames and conditions
+  lab-tool.py bracket <report> <a,b>               the latest snapshot's member frames and conditions; empty unless it is stacked and not pushed
   lab-tool.py fold <report> <since> <a,b>          exit 0 with the fold's snapshots as JSON once the system folded both members
   lab-tool.py selfread-frames <line> <identifier>  a helper's items' frames, as JSON
   lab-tool.py judge <run directory>                the verdict, as JSON; exit 0 pass, 1 otherwise
@@ -218,25 +218,55 @@ def first_retire(events, since):
 FOLD_SETTLE = 2
 
 
+def all_ready(shot, members):
+    """Exactly the members, each `ready`."""
+    return ids(shot["roster"]) == sorted(members) and all(entry["condition"] == "ready" for entry in shot["roster"])
+
+
 def fold_evidence(events, members, since):
     """`crowded`'s fold, read from the members themselves: a snapshot with
     exactly both members `ready`, then FOLD_SETTLE snapshots in a row with an
     empty roster, the first after the ladder began (`since`), and no length
     anywhere. Measured in runs 20261011-004911 to 20261013-000729: the members
     go from `ready` to gone, never `stacked`."""
-    if applied_lengths(events):
-        return None
     shots = snapshots(events)
+    # Not from a pushed reading: the members may be back when the push is gone.
+    if applied_lengths(events) or (shots and pushed(events, members, shots[-1])):
+        return None
     for index in range(1, len(shots) - FOLD_SETTLE + 1):
         before, empty = shots[index - 1], shots[index:index + FOLD_SETTLE]
         if (
             empty[0]["seq"] > since
-            and ids(before["roster"]) == sorted(members)
-            and all(entry["condition"] == "ready" for entry in before["roster"])
+            and all_ready(before, members)
             and not any(shot["roster"] for shot in empty)
         ):
             return {"baseline": before["seq"], "empty": [shot["seq"] for shot in empty]}
     return None
+
+
+# A witness of `crowded` read while something stood between Ice's divider and
+# its icon is not one. Run 20261014-003331: the capture indicator, there 10 s
+# from 57 s in (as in every run since 20261008-234718), moved the divider 48 pt
+# left and piled both members at 19 menus; they were back when it left.
+PUSHED_WITNESS = "the witness was read with the divider pushed left of its place"
+
+
+def divider_x(snap):
+    divider = snap.get("hiddenDivider")
+    return divider["frame"][0] if divider and divider.get("frame") else None
+
+
+def pushed(events, members, snap):
+    """Whether `snap` has the divider, at standard length, left of where it
+    stood in the first snapshot with exactly the members, all `ready`. The
+    system's own fold moves it right or leaves it (runs 20261011-004911 to
+    20261013-000729); only an item pushed in on its right moves it left."""
+    if snap is None or snap["lengthSet"]:
+        return False
+    places = (divider_x(shot) for shot in snapshots(events) if not shot["lengthSet"] and all_ready(shot, members))
+    place = next((x for x in places if x is not None), None)
+    x = divider_x(snap)
+    return place is not None and x is not None and x < place
 
 
 def snapshot_before(events, seq):
@@ -300,6 +330,8 @@ def predicate_holds(events, name, args):
             and not latest["status"].startswith("blocked(")
             and any(member["condition"] == "stacked" for member in latest["roster"])
         )
+    if name == "unpushed":  # <members, comma-separated>
+        return not pushed(events, args[0].split(","), latest)
     if name == "divider-unusable":
         return bool(latest and "dividerUnusable" in latest["status"])
     raise SystemExit(f"lab-tool: unknown predicate {name}")
@@ -318,11 +350,14 @@ def selfread_frames(line, identifier):
     return [child["frame"] for child in children if isinstance(child, dict) and child.get("identifier") == identifier and isinstance(child.get("frame"), list)]
 
 
-def bracket_key(events):
+def bracket_key(events, members):
     """The latest snapshot's members, frames and conditions, for `crowded`'s
-    bracketed reading (D4): two equal keys around the `«` read."""
+    bracketed reading (D4): two equal keys around the `«` read. Empty unless
+    that snapshot is itself the witness, `stacked` and not pushed: a reading
+    of another snapshot does not vouch for it (the stub run of test-lab.sh
+    took a witness from a push that came between two readings)."""
     latest = latest_snapshot(events)
-    if latest is None:
+    if latest is None or not predicate_holds(events, "stacked", []) or pushed(events, members, latest):
         return ""
     return json.dumps([[m["identifier"], m["condition"], m["frame"]] for m in latest["roster"]], sort_keys=True)
 
@@ -518,6 +553,8 @@ def judge_crowded(verdict, run):
         verdict.not_established((witness or {}).get("why", "no bracketed witness"))
     elif length_seq is not None and witness["seq"] >= length_seq:
         verdict.not_established("a length came before the bracketed witness")
+    elif pushed(events, run.expected["members"], snapshot_at_or_before(events, witness["seq"])):
+        verdict.not_established(PUSHED_WITNESS)
     if length_seq is None:
         # Folded by the system, the members are not Ice's to hide: no roster, no length.
         # Only when both were Ice's members before it.
@@ -890,9 +927,9 @@ def main(argv):
             print(error)
             return 3
         return 0 if predicate_holds(events, rest[1], rest[2:]) else 1
-    if command == "bracket":
+    if command == "bracket":  # <report> <members, comma-separated>
         try:
-            print(bracket_key(load_report(rest[0], final=False)))
+            print(bracket_key(load_report(rest[0], final=False), rest[1].split(",")))
         except Damaged:
             print("")
         return 0

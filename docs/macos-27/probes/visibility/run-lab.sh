@@ -579,15 +579,30 @@ s_addremove() {
     await $STATUS_LIMIT length-null $since && hide $since
 }
 
+# The indicator stays about 10 s (STATUS.md, run 20261009-234913); twice that.
+PUSH_LIMIT=20
 s_crowded() {
-    local round=$1 n step_back=0 since key1 key2 listed fold witnessed=0
+    local round=$1 n step_back=0 since key1 key2 listed fold witnessed=0 code ours
     start_menus $dir 0 || { abort_run "the menus helper did not start"; return 1; }
     bring_forward $menus_pid || { abort_run "the menus helper could not be brought forward"; return 1; }
     begin $round crowded 2 || return
     since=$(seq_now)
+    ours=${(j:,:)members}
     for n in {0..40}; do
         print -u $menus_fd -- "menus $n"
         nap 2.5
+        # Nothing read under the capture indicator's push is a witness: it
+        # piled both members at 19 menus and « was listed, 10 s long (run
+        # 20261014-003331). The ladder waits it out on the same step. Ice
+        # summons it with a calibration start and starts none for 30 s after
+        # (`minInterval`), so no length comes meanwhile.
+        await $PUSH_LIMIT unpushed $ours
+        code=$?
+        (( code == 3 )) && { bring_forward $terminal_pid; return 3; }
+        if (( code )); then
+            note "crowded: the divider is still pushed at $n menus"
+            continue
+        fi
         if lab await $report any-length $since >/dev/null; then
             mark witness '"ok":false,"why":"a length came before the bracketed witness"'
             witnessed=1
@@ -596,7 +611,7 @@ s_crowded() {
         # The system folds the members out of the roster before they read
         # `stacked` (runs 20261011-004911 to 20261013-000729); the judge reads
         # the fold again from the report.
-        if fold=$(lab fold $report $since ${(j:,:)members}); then
+        if fold=$(lab fold $report $since $ours); then
             mark witness "\"ok\":true,\"folded\":true,\"since\":$since,\"menus\":$n,\"fold\":$fold"
             witnessed=1
             break
@@ -608,9 +623,9 @@ s_crowded() {
             nap 2.5
         fi
         lab await $report stacked >/dev/null || continue
-        key1=$(lab bracket $report)
+        key1=$(lab bracket $report $ours)
         listed=$(chevron)
-        key2=$(lab bracket $report)
+        key2=$(lab bracket $report $ours)
         if [[ $listed == true && -n $key1 && $key1 == $key2 ]]; then
             mark witness "\"ok\":true,\"menus\":$n"
             witnessed=1
