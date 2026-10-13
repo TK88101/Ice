@@ -257,3 +257,21 @@ was posted. T2b did not complete its three-run protocol.
 | `crowded`, the judge | `notEstablished`: "no bracketed witness". In all four rounds the only roster item that ever read `stacked` was the system's input menu, the one D-a now keeps out; our members go from `ready` to gone. The witness was resting on that item, and the runner's last ladder step skipped the "ladder ended" mark | MEASURED |
 | Fixed since (not yet run live) | the owner's ruling 2026-10-13: the witness is the fold itself, read from our members (both `ready`, then two empty snapshots in a row after the ladder began, no length anywhere), and the judge reads it again from the report; the exclusion's reason is unchanged. The runner marks the ladder's end after the loop. Replayed on the four rounds' evidence: excluded in `20261011-004911`, `20261011-122641`, `20261013-000729`; still not in `20261012-165816`, where Ice did hide the system's item | MEASURED (tests, replay) |
 | Next | stage; one round, the other two only if it is clean | TBD |
+
+## The lab matrix, a fifth round in `icetest` (run `20261014-003331`, build `935aac1`, 2026-10-14)
+
+| What | State | Level |
+|---|---|---|
+| The round | 2 h 3 min; not clean, for `crowded` alone: 16 pass; `noref` excluded and `inverted`, `inverted-moved` not run, as ruled | MEASURED |
+| `crowded`, Ice | never said more than it knew: `notVerified(lengthNotApplied,stacked:2)` from 57 s, `notVerified(lengthNotApplied)` from 67 s, a length of 736 at 81 s, `notVerified(noReference,unchecked:2)` at the rest, the length retired 4 s later | MEASURED |
+| `crowded`, the bar | at 19 menus, 57 s in, the hidden divider stood 48 pt left of its place (1232 for 1280) and both members read `stacked` on one frame; 10 s later all three were back, with the 19 menus still up. `«` was listed at the witness and not 15 s into the rest | MEASURED |
+| What pushed it | the capture indicator: 48 pt and 10 s are its measured figures (run `20261009-234913`, above) | INFERRED |
+| The same in every round | the bar changes 57 s into `crowded` in all six runs since `20261008-234718`, and the witness was read then or 5 s later, at 19 to 22 menus, in the five that have one: the ladder reaches the bar's end as the indicator arrives | MEASURED (the six reports) |
+| Why 57 s | Ice starts a calibration no sooner than 30 s after the last (`minInterval`); the one near 46 s captures for 4 s or more and the indicator follows 10.3 s later | INFERRED: the report has no line for a calibration start |
+| The judge | `fail`, clauses 12 and 6: it took a witness read under the push for the scenario's premise | MEASURED |
+| Fixed since (not yet run live) | a reading with the divider, at standard length, left of where it stood with both members `ready` is no witness: the runner waits the push out on the same ladder step (20 s at most), `bracket` and `fold` answer nothing under it, and the judge says `notEstablished` ("the witness was read with the divider pushed left of its place") when the witness's snapshot has it. `bracket` also answers only for a snapshot that is itself `stacked`. Replayed on the six runs' evidence: `20261011-004911` and `-122641` excluded as before, `20261012-165816` and `20261013-000729` not established as before, `20261008-234718` and `20261014-003331` now not established for the push | MEASURED (unit tests, `test-lab.sh` with a stub Ice, the replay) |
+| Found while testing | a push that came between the runner's check and its bracketed reading still gave a witness (the stub run); the check is now part of the reading | MEASURED (`test-lab.sh`) |
+| Not known | whether a length comes while the ladder waits out a push. The argument that it does not: the push is within 20.3 s of the calibration start that summoned it, and no start follows for 30 s | INFERRED |
+| Not known | what `crowded` ends as once no witness is read under the push: the fold (the ruled exclusion), or both members `stacked` at a rest. Never seen without the push | TBD: the next round |
+| The staging, 2026-10-13 | CleanMyMac removed 30 `.lproj` folders of Sparkle from the staged `Ice.app`; the dry run refused it ("the staged files do not match lab.env's sha256"). Restored from the build product, whose tree hash was the recorded one; the round ran on that | MEASURED |
+| Next | stage; one round, the other two only if it is clean | TBD |
