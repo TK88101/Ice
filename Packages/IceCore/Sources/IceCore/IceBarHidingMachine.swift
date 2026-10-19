@@ -147,7 +147,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     public struct Confirmation: Equatable, Sendable {
         public let trial: Trial
         public let kind: SettleKind
-        public let state: ConfirmState
+        public let confirm: ConfirmState
     }
 
     /// A length Ice keeps applied, and what it last saw there.
@@ -217,7 +217,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     /// is offered exactly then (not during a trial or a settle: a presented
     /// IceBar would end that observation).
     public var lengthApplied: Bool {
-        rest != nil
+        length == .applied
     }
 
     /// A baseline or an observation the machine asked for is still wanted.
@@ -237,6 +237,16 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         rest?.chevronListed
     }
 
+    /// What the rule is told of the length: one Ice rests at, one being
+    /// confirmed, or none.
+    private var length: PreferenceHidingLength {
+        switch phase {
+        case .resting: .applied
+        case .confirming: .confirming
+        default: .notApplied
+        }
+    }
+
     private var rest: Rest? {
         if case .resting(let rest) = phase { rest } else { nil }
     }
@@ -244,13 +254,10 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     public var status: IceBarHidingStatus {
         if phase == .off { return .off }
         guard let sample else { return .state(.requestedNotVerified(reasons: [.lengthNotApplied])) }
-        var confirming = false
-        if case .confirming = phase { confirming = true }
         return .state(PreferenceHidingStateRule.evaluate(
             preconditions: sample.preconditions,
             membership: sample.membership,
-            lengthApplied: lengthApplied,
-            confirming: confirming,
+            length: length,
             checks: rest?.checks ?? [:],
             pendingLayoutChange: rest?.pending?.change
         ))
@@ -384,17 +391,19 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     ) -> [IceBarHidingCommand] {
         switch phase {
         case .settling(let trial, let kind) where trial.token == token:
-            let candidate = Confirmation(trial: trial, kind: kind, state: ConfirmState())
-            return settled(candidate, checks: checks, chevronListed: chevronListed, burst: burst, now: now)
+            return settled(trial, kind, confirm: ConfirmState(), checks: checks, chevronListed: chevronListed, burst: burst, now: now)
         case .confirming(let confirmation) where confirmation.trial.token == token:
-            return settled(confirmation, checks: checks, chevronListed: chevronListed, burst: burst, now: now)
+            return settled(
+                confirmation.trial, confirmation.kind, confirm: confirmation.confirm,
+                checks: checks, chevronListed: chevronListed, burst: burst, now: now
+            )
         case .calibrating(let observations, let trial?, _) where trial.token == token:
             let observation = HiddenLengthObservation(length: trial.length, outcome: outcome(of: checks))
             phase = .calibrating(observations: observations + [observation], pending: nil, restedAt: now)
             // Back to rest, so the next trial is again a jump from rest (T0).
             return [.setLength(nil)]
         case .resting(var rest) where rest.pending?.recheck == token:
-            if let pending = rest.pending, unproven(checks, burst: burst, state: pending.confirm) {
+            if var pending = rest.pending, unproven(outcome(of: checks), burst: burst, besides: pending.confirm.candidateBurst) {
                 guard let next = nextConfirmation(after: pending.confirm, burst: burst) else {
                     rest.checks = [:]
                     rest.chevronListed = chevronListed
@@ -402,11 +411,12 @@ public struct IceBarHidingMachine: Equatable, Sendable {
                     phase = .resting(rest)
                     return []
                 }
-                let token = takeToken()
-                rest.pending?.recheck = token
-                rest.pending?.confirm = next
+                let recheck = takeToken()
+                pending.recheck = recheck
+                pending.confirm = next
+                rest.pending = pending
                 phase = .resting(rest)
-                return [.observe(token: token, length: rest.length, closesBurst: true)]
+                return [.observe(token: recheck, length: rest.length, closesBurst: true)]
             }
             rest.checks = checks
             rest.chevronListed = chevronListed
@@ -423,26 +433,27 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     /// length stays and is confirmed in a burst of its own, a bounded number
     /// of times, after which it rests unchecked (D2).
     private mutating func settled(
-        _ candidate: Confirmation,
+        _ trial: Trial,
+        _ kind: SettleKind,
+        confirm: ConfirmState,
         checks: [ItemKey: SectionItemCheck],
         chevronListed: Bool?,
         burst: ObservationBurst?,
         now: Double
     ) -> [IceBarHidingCommand] {
-        let (trial, kind) = (candidate.trial, candidate.kind)
-        if unproven(checks, burst: burst, state: candidate.state) {
-            guard let next = nextConfirmation(after: candidate.state, burst: burst) else {
+        let outcome = outcome(of: checks)
+        if unproven(outcome, burst: burst, besides: confirm.candidateBurst) {
+            guard let next = nextConfirmation(after: confirm, burst: burst) else {
                 phase = .resting(Rest(
                     length: trial.length, checks: [:], chevronListed: chevronListed, pending: nil,
                     baselineOwed: kind == .unbaselined
                 ))
                 return []
             }
-            let confirmation = Confirmation(trial: Trial(token: takeToken(), length: trial.length), kind: kind, state: next)
+            let confirmation = Confirmation(trial: Trial(token: takeToken(), length: trial.length), kind: kind, confirm: next)
             phase = .confirming(confirmation)
             return [.observe(token: confirmation.trial.token, length: trial.length, closesBurst: true)]
         }
-        let outcome = outcome(of: checks)
         if kind == .lastGood, outcome != .hiddenClean {
             // No longer verified; the refused length is the walk's first observation.
             lastGood = nil
@@ -463,8 +474,8 @@ public struct IceBarHidingMachine: Equatable, Sendable {
 
     /// Every ready member seen absent by a reading that does not prove it
     /// (D1): the length is to be confirmed, not rested on.
-    private func unproven(_ checks: [ItemKey: SectionItemCheck], burst: ObservationBurst?, state: ConfirmState) -> Bool {
-        outcome(of: checks) == .hiddenClean && !proves(burst, besides: state.candidateBurst)
+    private func unproven(_ outcome: HiddenLengthOutcome, burst: ObservationBurst?, besides candidate: Int?) -> Bool {
+        outcome == .hiddenClean && !proves(burst, besides: candidate)
     }
 
     /// One more confirmation after `state`, or `nil` once `maxFailures`

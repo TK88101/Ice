@@ -39,6 +39,17 @@ public enum PreferenceHidingLayoutChange: Equatable, Sendable {
     }
 }
 
+/// What the state rule is told of the hidden section's length.
+public enum PreferenceHidingLength: Equatable, Sendable {
+    /// Standard length: nothing was checked at a length.
+    case notApplied
+    /// A length is set and seen to hide every member, and is being checked
+    /// once more (plan 2026-10-19-verify-in-a-clean-burst, D2).
+    case confirming
+    /// Ice rests at a length; its checks speak of it.
+    case applied
+}
+
 /// Why Ice applied (or may apply) a length and could not verify it.
 public enum PreferenceHidingNotVerifiedReason: Equatable, Sendable {
     /// No length has been applied yet; nothing was checked.

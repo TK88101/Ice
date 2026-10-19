@@ -24,12 +24,12 @@ struct PreferenceHidingStateTests {
     func evaluate(
         _ members: PreferenceHidingMembership,
         preconditions: PreferenceHidingPreconditionResult = .ok,
-        lengthApplied: Bool = true,
+        length: PreferenceHidingLength = .applied,
         checks: [ItemKey: SectionItemCheck] = [:],
         pending: PreferenceHidingLayoutChange? = nil
     ) -> PreferenceHidingState {
         PreferenceHidingStateRule.evaluate(
-            preconditions: preconditions, membership: members, lengthApplied: lengthApplied,
+            preconditions: preconditions, membership: members, length: length,
             checks: checks, pendingLayoutChange: pending
         )
     }
@@ -41,7 +41,7 @@ struct PreferenceHidingStateTests {
         let a = item("a", pid: 1)
         let reasons: [PreferenceHidingBlockReason] = [.iceIconNotRightOfDivider(.iconLeftOfDivider), .ownReadNotOk(.failed)]
         let result = evaluate(
-            membership([a]), preconditions: .blocked(reasons), lengthApplied: true,
+            membership([a]), preconditions: .blocked(reasons), length: .applied,
             checks: [a.key: hiddenClean]
         )
         #expect(result == .blocked(reasons: reasons))
@@ -114,7 +114,7 @@ struct PreferenceHidingStateTests {
     @Test("D-c: no length applied yet is requested-not-verified, and any old check is not consulted")
     func noLengthApplied() {
         let a = item("a", pid: 1)
-        let result = evaluate(membership([a]), lengthApplied: false, checks: [a.key: .checked(.stillDrawn)])
+        let result = evaluate(membership([a]), length: .notApplied, checks: [a.key: .checked(.stillDrawn)])
         #expect(result == .requestedNotVerified(reasons: [.lengthNotApplied]))
     }
 
@@ -168,7 +168,7 @@ struct PreferenceHidingStateTests {
         let s = item("s", pid: 2, position: .stacked)
         let gone = TagKey(namespace: "com.example.gone", title: "g/p9")
         let result = evaluate(
-            membership([s], previous: [gone]), lengthApplied: false, checks: [:], pending: .itemsChanged
+            membership([s], previous: [gone]), length: .notApplied, checks: [:], pending: .itemsChanged
         )
         #expect(result == .requestedNotVerified(reasons: [
             .lengthNotApplied, .staleMembers([gone]), .stackedMembers([s.tagKey]), .layoutChangePending(.itemsChanged),
@@ -233,8 +233,8 @@ struct PreferenceHidingStateTests {
     @Test("D-d: the state carries no length, only whether one was applied")
     func noLengthIsCarried() {
         let a = item("a", pid: 1)
-        let applied = evaluate(membership([a]), lengthApplied: true, checks: [a.key: hiddenClean])
-        let notApplied = evaluate(membership([a]), lengthApplied: false, checks: [a.key: hiddenClean])
+        let applied = evaluate(membership([a]), length: .applied, checks: [a.key: hiddenClean])
+        let notApplied = evaluate(membership([a]), length: .notApplied, checks: [a.key: hiddenClean])
         #expect(applied == .verifiedHidden)
         #expect(notApplied != .verifiedHidden)
     }
@@ -260,7 +260,7 @@ struct PreferenceHidingStateTests {
             childIdentifiersByPID: [1: ["a"], 2: ["b"]]
         )
         let state = PreferenceHidingStateRule.evaluate(
-            preconditions: .ok, membership: membership, lengthApplied: true,
+            preconditions: .ok, membership: membership, length: .applied,
             checks: [a.key: .skipped(.baselineStale), b.key: .refusedAtBaseline(.noInk)],
             pendingLayoutChange: nil
         )

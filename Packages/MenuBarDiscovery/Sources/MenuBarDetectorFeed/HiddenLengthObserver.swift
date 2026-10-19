@@ -54,11 +54,6 @@ public struct HiddenLengthReading: Equatable, Sendable {
     /// `nil` without a burst clock, or once another burst had begun.
     public let burst: ObservationBurst?
 
-    /// From the burst's first capture to this session's last; `nil` without a burst.
-    public var burstAge: Double? {
-        burst?.age
-    }
-
     public init(
         checks: [ItemKey: SectionItemCheck],
         chevronListed: Bool?,
@@ -146,6 +141,7 @@ public actor HiddenLengthObserver {
     public func takeBaseline(sectionMap: [TagKey: ItemSection]) async -> BaselineCoverage {
         generation += 1
         let mine = generation
+        // A baseline's burst is its own: the rule closes it as it starts.
         _ = await reserve(.baseline, for: mine)
         guard mine == generation else { return .cancelled }
         guard !Task.isCancelled else {
@@ -158,8 +154,6 @@ public actor HiddenLengthObserver {
             explicitCandidates: nil,
             reusing: nil
         )
-        // Whatever the baseline captured, nothing else is read in its burst.
-        burst?.closeBurst()
         guard mine == generation else { return .cancelled }
         guard !Task.isCancelled else {
             prepared = nil

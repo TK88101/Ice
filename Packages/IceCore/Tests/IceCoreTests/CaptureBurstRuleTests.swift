@@ -53,8 +53,7 @@ struct CaptureBurstRuleTests {
         var rule = rule(captures: [100, 104.2])
         rule.noteCapture(at: 126.2)
         #expect(rule.burstStart == 126.2)
-        #expect(rule.burstAge == 0)
-        #expect(CaptureBurstRule().burstAge == nil)
+        #expect(rule.lastCapture == 126.2)
         #expect(rule.decision(for: .observation, now: 129) == .go)
     }
 
@@ -66,10 +65,11 @@ struct CaptureBurstRuleTests {
         #expect(rule.decision(for: .baseline, now: 100.4) == .wait(until: 122.3))
     }
 
-    @Test("a baseline has its burst to itself: once closed, nothing joins it however early")
+    @Test("a baseline has its burst to itself: closed as it starts, nothing joins it however early")
     func closedBurst() {
-        var rule = rule(captures: [100, 100.5])
-        rule.closeBurst()
+        var rule = CaptureBurstRule()
+        _ = rule.begin(.baseline, now: 100)
+        rule.noteCapture(at: 100.5)
         #expect(rule.decision(for: .observation, now: 101) == .wait(until: 122.5))
         // The next burst is open again.
         rule.noteCapture(at: 122.5)
@@ -116,7 +116,6 @@ struct CaptureBurstRuleTests {
         var rule = CaptureBurstRule()
         #expect(session(rule.begin(.baseline, now: 100))?.ordinal == 1)
         rule.noteCapture(at: 104.2)
-        rule.closeBurst()
         #expect(rule.begin(.observation, now: 105) == .wait(until: 126.2))
         #expect(session(rule.begin(.observation, now: 126.2)) == BurstSession(burstID: 2, ordinal: 1))
     }

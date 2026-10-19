@@ -309,6 +309,8 @@ public enum ItemCatalog {
             return PositionRule.position(of: frame, in: bounds, obstacles: []) != .parked
         }
 
+        // `DiscoveredItemSet.obstacles(excluding:)` states the same set for
+        // the items this builds: keep the two in step.
         func obstacles(excluding index: Int?) -> [BarRect] {
             var result = systemElements
             for i in frames.indices where i != index && eligibleAsObstacle[i] {

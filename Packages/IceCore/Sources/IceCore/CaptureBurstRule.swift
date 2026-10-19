@@ -37,6 +37,23 @@ public enum CaptureSession: Equatable, Sendable {
     /// burst, closed as it is let start (plan
     /// 2026-10-19-verify-in-a-clean-burst, D4).
     case verdict
+
+    /// May start in a burst already open, while it fits the budget. A
+    /// baseline may not: what it does before its first capture has no bound.
+    public var joinsOpenBurst: Bool {
+        switch self {
+        case .baseline: false
+        case .observation, .verdict: true
+        }
+    }
+
+    /// Has its burst to itself from here on: closed as it is let start.
+    public var closesBurst: Bool {
+        switch self {
+        case .observation: false
+        case .baseline, .verdict: true
+        }
+    }
 }
 
 public enum CaptureBurstDecision: Equatable, Sendable {
@@ -101,12 +118,6 @@ public struct CaptureBurstRule: Equatable, Sendable {
         self.parameters = parameters
     }
 
-    /// From the burst's first capture to the last capture taken.
-    public var burstAge: Double? {
-        guard let burstStart, let lastCapture else { return nil }
-        return lastCapture - burstStart
-    }
-
     /// Every capture actually taken, whoever asked for it.
     public mutating func noteCapture(at now: Double) {
         if isClear(at: now) {
@@ -128,7 +139,7 @@ public struct CaptureBurstRule: Equatable, Sendable {
         } else {
             sessions += 1
         }
-        if session == .verdict {
+        if session.closesBurst {
             isClosed = true
         }
         return .go(BurstSession(burstID: burstID, ordinal: sessions))
@@ -155,18 +166,13 @@ public struct CaptureBurstRule: Equatable, Sendable {
         sessions = 1
     }
 
-    /// A baseline has its burst to itself: called once its session is over.
-    public mutating func closeBurst() {
-        isClosed = true
-    }
-
     /// A baseline starts only on a clear bar: what it does before its first
     /// capture (a discovery, a preflight) has no bound to fit a burst by.
     public func decision(for session: CaptureSession, now: Double) -> CaptureBurstDecision {
         guard let burstStart, let lastCapture else { return .go }
         let clearAt = lastCapture + parameters.clearAfter
         if now >= clearAt { return .go }
-        let fits = session != .baseline && !isClosed && now + parameters.observationNeed <= burstStart + parameters.budget
+        let fits = session.joinsOpenBurst && !isClosed && now + parameters.observationNeed <= burstStart + parameters.budget
         return fits ? .go : .wait(until: clearAt)
     }
 }

@@ -106,11 +106,11 @@ struct CaptureBurstObserverTests {
         let rig = Self.rig()
         rig.burst.noteCapture(at: 100)
         rig.now.set(100.5)
-        #expect(rig.burst.decision(for: .observation, now: 100.5) == .go)
+        #expect(rig.burst.snapshot.decision(for: .observation, now: 100.5) == .go)
         _ = await rig.observer.takeBaseline(sectionMap: Base.sectionMap)
         // The baseline waited for a clear bar until 122 and took its place
         // there: the bar is clear 22 s after that.
-        #expect(rig.burst.decision(for: .observation, now: 122.5) == .wait(until: 144))
+        #expect(rig.burst.snapshot.decision(for: .observation, now: 122.5) == .wait(until: 144))
     }
 
     @Test("a second observation that fits the burst does not wait")
@@ -123,7 +123,7 @@ struct CaptureBurstObserverTests {
         let reading = await rig.observer.observe()
         #expect(rig.sleeps.get() == [1])
         #expect(reading.waited == 0)
-        #expect(reading.burstAge == 1.5)
+        #expect(reading.burst?.age == 1.5)
     }
 
     @Test("a baseline asked for while the bar is not clear waits too")
@@ -164,7 +164,6 @@ struct CaptureBurstObserverTests {
         #expect(reading.burst?.ordinal == 1)
         #expect(reading.burst?.burstStartedAt == 201)
         #expect(reading.burst?.burstID == rig.burst.snapshot.burstID)
-        #expect(reading.burstAge == reading.burst?.age)
     }
 
     @Test("an observation that joins a burst reads as its second session")

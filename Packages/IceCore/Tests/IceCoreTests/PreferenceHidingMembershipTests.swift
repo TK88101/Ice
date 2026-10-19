@@ -37,7 +37,7 @@ struct PreferenceHidingMembershipTests {
             uniquingKeysWith: { first, _ in first }
         )
         let state = PreferenceHidingStateRule.evaluate(
-            preconditions: .ok, membership: membership, lengthApplied: true, checks: checks, pendingLayoutChange: nil
+            preconditions: .ok, membership: membership, length: .applied, checks: checks, pendingLayoutChange: nil
         )
         guard case .requestedNotVerified(let reasons) = state else { return false }
         return reasons.contains {

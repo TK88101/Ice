@@ -243,6 +243,7 @@ extension LabReport {
                 roster: membership.members.map { member in
                     let item = LabReportItem(member: member, lastKey: rules.lastKeys[member.tag])
                     let frame = member.key.flatMap { frames[$0] ?? nil }
+                    let obstacles = set?.obstacles(excluding: member.key) ?? []
                     return LabReportMember(
                         namespace: item.namespace,
                         identifier: item.identifier,
@@ -250,9 +251,7 @@ extension LabReport {
                         condition: LabReportNames.condition(member.condition),
                         pressable: member.isPressable,
                         frame: frame,
-                        overlaps: frame.flatMap { frame in
-                            set.map { PositionRule.overlaps(of: frame, obstacles: $0.obstacles(excluding: member.key)) }
-                        } ?? []
+                        overlaps: frame.map { PositionRule.overlaps(of: $0, obstacles: obstacles) } ?? []
                     )
                 },
                 blockers: membership.blockers.map { LabReportItem($0.key) },

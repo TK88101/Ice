@@ -29,7 +29,7 @@ struct PreferenceHidingLayoutChangeTests {
         pending: PreferenceHidingLayoutChange? = nil
     ) -> PreferenceHidingState {
         PreferenceHidingStateRule.evaluate(
-            preconditions: preconditions, membership: members, lengthApplied: true,
+            preconditions: preconditions, membership: members, length: .applied,
             checks: checks, pendingLayoutChange: pending
         )
     }
