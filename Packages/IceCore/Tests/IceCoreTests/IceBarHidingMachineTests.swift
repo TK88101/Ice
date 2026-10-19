@@ -68,6 +68,11 @@ struct IceBarHidingMachineTests {
         }
     }
 
+    /// A burst read as its `ordinal`th session, `age` seconds from its start to its last capture.
+    static func burst(_ id: Int, ordinal: Int = 1, age: Double = 1.5, at start: Double = 0) -> ObservationBurst {
+        ObservationBurst(burstID: id, ordinal: ordinal, burstStartedAt: start, capturedAt: start + age)
+    }
+
     /// Feeds the machine and plays the bar: it keeps the length the commands
     /// set, and answers baselines and observations from a world.
     struct Driver {
@@ -85,6 +90,17 @@ struct IceBarHidingMachineTests {
         /// When false, baselines and observations are left unanswered.
         var answers = true
         var members = IceBarHidingMachineTests.roster()
+        /// The bursts the next observations that close theirs are read in;
+        /// once spent, every observation is a new burst's first session.
+        var burstScript = [ObservationBurst?]()
+        var bursts = 0
+
+        /// The burst the next observation is read in.
+        mutating func burst(closes: Bool) -> ObservationBurst? {
+            if closes, !burstScript.isEmpty { return burstScript.removeFirst() }
+            bursts += 1
+            return IceBarHidingMachineTests.burst(bursts, at: now)
+        }
 
         @discardableResult
         mutating func send(_ event: IceBarHidingEvent) -> [IceBarHidingCommand] {
@@ -98,9 +114,9 @@ struct IceBarHidingMachineTests {
                 case .takeBaseline(let token, _, _):
                     baselines += 1
                     if answers { send(.baseline(token: token, ok: baselineOK)) }
-                case .observe(let token, let asked):
+                case .observe(let token, let asked, let closes):
                     observed.append((asked, length))
-                    if answers { send(.observed(token: token, checks: checks(at: asked), chevronListed: chevron)) }
+                    if answers { send(.observed(token: token, checks: checks(at: asked), chevronListed: chevron, burst: burst(closes: closes))) }
                 case .report:
                     break
                 }
@@ -513,9 +529,9 @@ struct IceBarHidingMachineTests {
         driver.settle()
         driver.answers = false
         driver.run(Self.sample(Self.signature(frontmostPID: 11)), ticks: 4)
-        guard case .observe(let token, _)? = driver.log.last else { Issue.record("no re-check asked"); return }
+        guard case .observe(let token, _, _)? = driver.log.last else { Issue.record("no re-check asked"); return }
         driver.tick(Self.sample(Self.signature(frontmostPID: 12)))
-        driver.send(.observed(token: token, checks: driver.checks(at: 736), chevronListed: false))
+        driver.send(.observed(token: token, checks: driver.checks(at: 736), chevronListed: false, burst: Self.burst(99)))
         #expect(driver.state == .requestedNotVerified(reasons: [.layoutChangePending(.frontmostAppChanged)]))
     }
 
@@ -593,7 +609,7 @@ struct IceBarHidingMachineTests {
             }
             driver.tick()
             if driver.machine.lengthSet { break }
-            if case .observe(let token, let asked)? = driver.log.last { driver.send(.observed(token: token, checks: driver.checks(at: asked), chevronListed: false)) }
+            if case .observe(let token, let asked, _)? = driver.log.last { driver.send(.observed(token: token, checks: driver.checks(at: asked), chevronListed: false, burst: Self.burst(99))) }
         }
         let hadLength = driver.machine.lengthSet
         let commands = driver.tick(Self.sample(preconditions: Self.blocks[0]))
@@ -719,7 +735,7 @@ struct IceBarHidingMachineTests {
         var driver = Driver()
         driver.settle()
         let phase = driver.machine.phase
-        #expect(driver.send(.observed(token: 1, checks: [:], chevronListed: true)).isEmpty)
+        #expect(driver.send(.observed(token: 1, checks: [:], chevronListed: true, burst: nil)).isEmpty)
         #expect(driver.send(.baseline(token: 1, ok: false)).isEmpty)
         #expect(driver.machine.phase == phase)
     }

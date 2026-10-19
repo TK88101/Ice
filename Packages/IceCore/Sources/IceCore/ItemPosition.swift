@@ -46,14 +46,16 @@ public enum PositionRule {
             return .parked
         }
 
-        for obstacle in obstacles {
-            let overlap = min(frame.maxX, obstacle.maxX) - max(frame.minX, obstacle.minX)
-            guard overlap > 0 else { continue }
-            let narrower = min(frame.width, obstacle.width)
-            guard narrower > 0, overlap > stackedFraction * narrower else { continue }
-            return .stacked
-        }
+        return overlaps(of: frame, obstacles: obstacles).isEmpty ? .onBar : .stacked
+    }
 
-        return .onBar
+    /// The obstacles `frame` overlaps by more than `stackedFraction` of the
+    /// narrower of the two: what makes an on-bar item `stacked`.
+    public static func overlaps(of frame: BarRect, obstacles: [BarRect]) -> [BarRect] {
+        obstacles.filter { obstacle in
+            let overlap = min(frame.maxX, obstacle.maxX) - max(frame.minX, obstacle.minX)
+            let narrower = min(frame.width, obstacle.width)
+            return overlap > 0 && narrower > 0 && overlap > stackedFraction * narrower
+        }
     }
 }

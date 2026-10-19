@@ -43,6 +43,10 @@ public enum PreferenceHidingLayoutChange: Equatable, Sendable {
 public enum PreferenceHidingNotVerifiedReason: Equatable, Sendable {
     /// No length has been applied yet; nothing was checked.
     case lengthNotApplied
+    /// A length is set and was seen to hide every member, in a burst Ice's
+    /// own capture indicator may answer: it is checked once more first
+    /// (plan 2026-10-19-verify-in-a-clean-burst, D2).
+    case confirming
     /// The member set is empty. Nothing can be observed absent, so this is
     /// never `verifiedHidden`.
     case noMembers

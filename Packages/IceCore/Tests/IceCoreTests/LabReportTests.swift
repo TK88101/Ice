@@ -19,7 +19,10 @@ struct LabReportTests {
             isIceBarOffered: true,
             isIceBarPresented: false,
             isInteracting: false,
-            roster: [LabReportMember(namespace: "com.icespike4.target", identifier: "vz-lab-1", pid: 41, condition: "ready", pressable: true, frame: BarRect(minX: 900, minY: 4, width: 14, height: 22))],
+            roster: [LabReportMember(
+                namespace: "com.icespike4.target", identifier: "vz-lab-1", pid: 41, condition: "stacked", pressable: true,
+                frame: BarRect(minX: 900, minY: 4, width: 14, height: 22), overlaps: [BarRect(minX: 896, minY: 4, width: 20, height: 22)]
+            )],
             blockers: [],
             cells: [LabReportCell(namespace: "com.icespike4.target", identifier: "vz-lab-1", disabled: false)],
             cacheVisible: [LabReportItem(namespace: "com.icespike4.protected", identifier: "vz-lab-ref1")],
@@ -33,7 +36,8 @@ struct LabReportTests {
             completeness: "complete",
             pass: 12,
             checks: [LabReportCheck(namespace: "com.icespike4.target", identifier: "vz-lab-1", outcome: "hidden")],
-            chevronListed: false
+            chevronListed: false,
+            systemElements: [BarRect(minX: 896, minY: 4, width: 20, height: 22)]
         )
     }
 
@@ -45,8 +49,23 @@ struct LabReportTests {
             "phase", "status", "lengthSet", "lengthApplied", "calibratedHiddenLength", "isIceBarOffered",
             "isIceBarPresented", "isInteracting", "roster", "blockers", "cells", "cacheVisible", "cacheHidden",
             "cacheAlwaysHidden", "iconPlacement", "hiddenBoundaryUsable", "icon", "hiddenDivider",
-            "alwaysHiddenDivider", "completeness", "pass", "checks", "chevronListed",
+            "alwaysHiddenDivider", "completeness", "pass", "checks", "chevronListed", "systemElements",
         ])
+    }
+
+    @Test("a member names the frames it overlaps, and the snapshot MenuBarAgent's elements (plan 2026-10-19-verify-in-a-clean-burst, D6)")
+    func obstacles() {
+        let fields = LabReportEvent.snapshot(snapshot()).fields
+        #expect(fields["systemElements"]?.text == "[[896,4,20,22]]")
+        #expect(fields["roster"]?.text.contains(#""overlaps":[[896,4,20,22]]"#) == true)
+    }
+
+    @Test("the frames an item overlaps by the stacked rule's measure, and only those")
+    func overlapsByTheStackedRule() {
+        let item = BarRect(minX: 100, minY: 0, width: 20, height: 24)
+        let neighbour = BarRect(minX: 118, minY: 0, width: 20, height: 24)
+        let indicator = BarRect(minX: 104, minY: 0, width: 40, height: 24)
+        #expect(PositionRule.overlaps(of: item, obstacles: [neighbour, indicator]) == [indicator])
     }
 
     @Test("lines are numbered from 1, in order, each with its event's name and time, keys sorted")
@@ -73,8 +92,9 @@ struct LabReportTests {
             captureStable: false,
             fold: "absent"
         )
-        #expect(line(.observation(length: 736, diagnostics: diagnostics, waited: 21.5, burstAge: 1.5)) == #"{"burstAge":1.5,"captureStable":false,"event":"observation","fold":"absent","length":736,"references":[{"identifier":"ref1","match":"unique","mismatch":0.01,"namespace":"com.icespike4.protected","offset":-48}],"seq":1,"t":2,"waited":21.5}"#)
-        #expect(line(.observation(length: 736, diagnostics: nil, waited: 0, burstAge: nil)) == #"{"burstAge":null,"captureStable":null,"event":"observation","fold":null,"length":736,"references":[],"seq":1,"t":2,"waited":0}"#)
+        let burst = ObservationBurst(burstID: 4, ordinal: 2, burstStartedAt: 100, capturedAt: 101.5)
+        #expect(line(.observation(length: 736, diagnostics: diagnostics, waited: 21.5, burst: burst, sinceCapture: 0.25)) == #"{"burstAge":1.5,"burstID":4,"captureStable":false,"event":"observation","fold":"absent","length":736,"ordinal":2,"references":[{"identifier":"ref1","match":"unique","mismatch":0.01,"namespace":"com.icespike4.protected","offset":-48}],"seq":1,"sinceCapture":0.25,"t":2,"waited":21.5}"#)
+        #expect(line(.observation(length: 736, diagnostics: nil, waited: 0, burst: nil, sinceCapture: nil)) == #"{"burstAge":null,"burstID":null,"captureStable":null,"event":"observation","fold":null,"length":736,"ordinal":null,"references":[],"seq":1,"sinceCapture":null,"t":2,"waited":0}"#)
         #expect(line(.roster([LabReportItem(namespace: "n", identifier: "a")])) == #"{"event":"roster","members":[{"identifier":"a","namespace":"n"}],"seq":1,"t":2}"#)
         #expect(line(.press(namespace: "n", identifier: "a", answer: "sent")) == #"{"answer":"sent","event":"press","identifier":"a","namespace":"n","seq":1,"t":2}"#)
         #expect(line(.bar(action: "open", answer: "refused:notOffered")) == #"{"action":"open","answer":"refused:notOffered","event":"bar","seq":1,"t":2}"#)
@@ -86,14 +106,14 @@ struct LabReportTests {
         var writer = LabReportWriter()
         let line = writer.line(.snapshot(snapshot()), at: 3.25)
         #expect(line.hasPrefix(#"{"alwaysHiddenDivider":null,"blockers":[],"cacheAlwaysHidden":[],"#))
-        #expect(line.contains(#""roster":[{"condition":"ready","frame":[900,4,14,22],"identifier":"vz-lab-1","namespace":"com.icespike4.target","pid":41,"pressable":true}]"#))
+        #expect(line.contains(#""roster":[{"condition":"stacked","frame":[900,4,14,22],"identifier":"vz-lab-1","namespace":"com.icespike4.target","overlaps":[[896,4,20,22]],"pid":41,"pressable":true}]"#))
         #expect(line.contains(#""cells":[{"disabled":false,"identifier":"vz-lab-1","namespace":"com.icespike4.target"}]"#))
         #expect(line.contains(#""hiddenDivider":{"frame":[880,0,18,30],"usable":true}"#))
         #expect(line.contains(#""checks":[{"identifier":"vz-lab-1","namespace":"com.icespike4.target","outcome":"hidden"}]"#))
         #expect(line.contains(#""iconPlacement":null"#))
         #expect(line.contains(#""calibratedHiddenLength":736"#))
         #expect(line.contains(#""event":"snapshot","#))
-        #expect(line.hasSuffix(#""seq":1,"status":"verified","t":3.25}"#))
+        #expect(line.hasSuffix(#""seq":1,"status":"verified","systemElements":[[896,4,20,22]],"t":3.25}"#))
     }
 
     @Test("text another app chose cannot break a line: quotes, backslashes, control characters and newlines are escaped")

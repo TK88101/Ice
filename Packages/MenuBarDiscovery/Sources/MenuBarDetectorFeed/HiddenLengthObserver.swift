@@ -50,21 +50,27 @@ public struct HiddenLengthReading: Equatable, Sendable {
     public let diagnostics: ObservationDiagnostics?
     /// How long the session waited for a bar clear of the capture indicator.
     public let waited: Double
-    /// From the burst's first capture to this session's last; `nil` without a burst clock.
-    public let burstAge: Double?
+    /// The burst this session was read in, fixed when its captures ended;
+    /// `nil` without a burst clock, or once another burst had begun.
+    public let burst: ObservationBurst?
+
+    /// From the burst's first capture to this session's last; `nil` without a burst.
+    public var burstAge: Double? {
+        burst?.age
+    }
 
     public init(
         checks: [ItemKey: SectionItemCheck],
         chevronListed: Bool?,
         diagnostics: ObservationDiagnostics? = nil,
         waited: Double = 0,
-        burstAge: Double? = nil
+        burst: ObservationBurst? = nil
     ) {
         self.checks = checks
         self.chevronListed = chevronListed
         self.diagnostics = diagnostics
         self.waited = waited
-        self.burstAge = burstAge
+        self.burst = burst
     }
 
     public static let nothing = HiddenLengthReading(checks: [:], chevronListed: nil)
@@ -85,9 +91,10 @@ public actor HiddenLengthObserver {
     private let burst: CaptureBurstClock?
     private let now: @Sendable () -> Double
     private var prepared: PreparedVerification?
-    /// Which `takeBaseline` call may still set `prepared`: the actor is
-    /// reentrant across `prepare`, so an older call can resume after a newer
-    /// one (Codex review, T3b round 3).
+    /// Which `takeBaseline` or `observe` call is still wanted: the actor is
+    /// reentrant across every await, so an older call can resume after a
+    /// newer one (Codex review, T3b round 3; plan
+    /// 2026-10-19-verify-in-a-clean-burst, D5).
     private var generation = 0
 
     public init(
@@ -107,18 +114,28 @@ public actor HiddenLengthObserver {
     }
 
     /// Sleeps until `session` may start in a burst the capture indicator
-    /// cannot reach; the seconds slept. The caller checks for cancellation.
-    private func waitForBurst(_ session: CaptureSession) async -> Double {
+    /// cannot reach, and reserves its place there; the seconds slept. No
+    /// place without a burst clock, or when cancelled first. The caller
+    /// checks for cancellation.
+    private func reserve(_ session: CaptureSession) async -> (place: BurstSession?, waited: Double) {
         var waited = 0.0
         // Asked again after every sleep: a capture taken elsewhere meanwhile
         // (the hiding check shares the clock) moves the moment the bar is clear.
-        while !Task.isCancelled {
+        while !Task.isCancelled, let burst {
             let start = now()
-            guard case .wait(let until)? = burst?.decision(for: session, now: start) else { break }
-            await sleep(until - start)
-            waited += until - start
+            switch burst.begin(session, now: start) {
+            case .go(let place):
+                return (place, waited)
+            case .wait(let until):
+                await sleep(until - start)
+                waited += until - start
+            }
         }
-        return waited
+        return (nil, waited)
+    }
+
+    private func isWanted(_ call: Int) -> Bool {
+        call == generation && !Task.isCancelled
     }
 
     /// Takes the baseline with the section shown, and says whether it covers
@@ -128,7 +145,7 @@ public actor HiddenLengthObserver {
     public func takeBaseline(sectionMap: [TagKey: ItemSection]) async -> BaselineCoverage {
         generation += 1
         let mine = generation
-        _ = await waitForBurst(.baseline)
+        _ = await reserve(.baseline)
         guard mine == generation else { return .cancelled }
         guard !Task.isCancelled else {
             prepared = nil
@@ -160,22 +177,33 @@ public actor HiddenLengthObserver {
     }
 
     /// Each member's check at the length the bar is at now, after the
-    /// settle, and the `«` reading. Nothing without a baseline.
-    public func observe() async -> HiddenLengthReading {
+    /// settle, the `«` reading, and the burst it was read in. Nothing
+    /// without a baseline, when cancelled, or once a newer call began.
+    /// `closesBurst`: once the session has its place, no later one joins its
+    /// burst, whichever way this call ends (D4).
+    public func observe(closesBurst: Bool = false) async -> HiddenLengthReading {
+        generation += 1
+        let mine = generation
         guard let prepared else { return .nothing }
         await sleep(settle)
-        guard !Task.isCancelled else { return .nothing }
-        let waited = await waitForBurst(.observation)
-        guard !Task.isCancelled else { return .nothing }
+        guard isWanted(mine) else { return .nothing }
+        let (place, waited) = await reserve(.observation)
+        defer {
+            if closesBurst, place != nil { burst?.closeBurst() }
+        }
+        guard isWanted(mine) else { return .nothing }
         let report = await verification.verifyReporting(prepared)
-        guard !Task.isCancelled else { return .nothing }
+        // Read as soon as the captures end, before anything else can capture.
+        let read = place.flatMap { burst?.finish($0) }
+        guard isWanted(mine) else { return .nothing }
         let listed = await chevron.chevronListed()
+        guard isWanted(mine) else { return .nothing }
         return HiddenLengthReading(
             checks: report.checks,
             chevronListed: listed,
             diagnostics: report.diagnostics,
             waited: waited,
-            burstAge: burst?.snapshot.burstAge
+            burst: read
         )
     }
 

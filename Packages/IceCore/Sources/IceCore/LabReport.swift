@@ -100,21 +100,28 @@ public struct LabReportMember: Equatable, Sendable {
     public let condition: String
     public let pressable: Bool
     public let frame: BarRect?
+    /// The frames this member overlaps by the `stacked` rule's measure:
+    /// what it was stacked on (plan 2026-10-19-verify-in-a-clean-burst, D6).
+    public let overlaps: [BarRect]
 
-    public init(namespace: String, identifier: String, pid: Int32?, condition: String, pressable: Bool, frame: BarRect?) {
+    public init(
+        namespace: String, identifier: String, pid: Int32?, condition: String, pressable: Bool, frame: BarRect?,
+        overlaps: [BarRect] = []
+    ) {
         self.namespace = namespace
         self.identifier = identifier
         self.pid = pid
         self.condition = condition
         self.pressable = pressable
         self.frame = frame
+        self.overlaps = overlaps
     }
 
     var json: LabJSON {
         .object([
             "namespace": .string(namespace), "identifier": .string(identifier),
             "pid": .optional(pid.map(Double.init)), "condition": .string(condition),
-            "pressable": .bool(pressable), "frame": .frame(frame),
+            "pressable": .bool(pressable), "frame": .frame(frame), "overlaps": .array(overlaps.map(LabJSON.frame)),
         ])
     }
 }
@@ -225,6 +232,8 @@ public struct LabReportSnapshot: Equatable, Sendable {
     public let pass: Int
     public let checks: [LabReportCheck]
     public let chevronListed: Bool?
+    /// `MenuBarAgent`'s children, the capture indicator among them.
+    public let systemElements: [BarRect]
 
     public init(
         phase: String, status: String, lengthSet: Bool, lengthApplied: Bool, calibratedHiddenLength: Double?,
@@ -232,7 +241,7 @@ public struct LabReportSnapshot: Equatable, Sendable {
         blockers: [LabReportItem], cells: [LabReportCell], cacheVisible: [LabReportItem], cacheHidden: [LabReportItem],
         cacheAlwaysHidden: [LabReportItem], iconPlacement: String?, hiddenBoundaryUsable: Bool,
         icon: LabReportControlItem?, hiddenDivider: LabReportControlItem?, alwaysHiddenDivider: LabReportControlItem?,
-        completeness: String?, pass: Int, checks: [LabReportCheck], chevronListed: Bool?
+        completeness: String?, pass: Int, checks: [LabReportCheck], chevronListed: Bool?, systemElements: [BarRect] = []
     ) {
         self.phase = phase
         self.status = status
@@ -257,6 +266,7 @@ public struct LabReportSnapshot: Equatable, Sendable {
         self.pass = pass
         self.checks = checks
         self.chevronListed = chevronListed
+        self.systemElements = systemElements
     }
 
     /// The snapshot's keys, in the order of the properties above: the
@@ -265,7 +275,7 @@ public struct LabReportSnapshot: Equatable, Sendable {
         "phase", "status", "lengthSet", "lengthApplied", "calibratedHiddenLength", "isIceBarOffered",
         "isIceBarPresented", "isInteracting", "roster", "blockers", "cells", "cacheVisible", "cacheHidden",
         "cacheAlwaysHidden", "iconPlacement", "hiddenBoundaryUsable", "icon", "hiddenDivider",
-        "alwaysHiddenDivider", "completeness", "pass", "checks", "chevronListed",
+        "alwaysHiddenDivider", "completeness", "pass", "checks", "chevronListed", "systemElements",
     ]
 
     var fields: [String: LabJSON] {
@@ -281,6 +291,7 @@ public struct LabReportSnapshot: Equatable, Sendable {
             "hiddenDivider": hiddenDivider?.json ?? .null, "alwaysHiddenDivider": alwaysHiddenDivider?.json ?? .null,
             "completeness": .optional(completeness), "pass": .number(Double(pass)),
             "checks": .array(checks.map(\.json)), "chevronListed": .optional(chevronListed),
+            "systemElements": .array(systemElements.map(LabJSON.frame)),
         ]
     }
 }
@@ -295,9 +306,11 @@ public enum LabReportEvent: Equatable, Sendable {
     /// Each roster the item manager publishes: the members.
     case roster([LabReportItem])
     /// Each observation Ice read: what the matcher saw of the references,
-    /// how long the session waited for a clear bar, and how old its burst
-    /// was at its last capture (plan 2026-10-09-lab-first-run-followup, D3).
-    case observation(length: Double, diagnostics: ObservationDiagnostics?, waited: Double, burstAge: Double?)
+    /// how long the session waited for a clear bar, the burst it was read in
+    /// (plan 2026-10-09-lab-first-run-followup, D3), and how long ago that
+    /// burst's last capture was when the line was written: the runner
+    /// counts the bar clear from it (plan 2026-10-19-verify-in-a-clean-burst, D6).
+    case observation(length: Double, diagnostics: ObservationDiagnostics?, waited: Double, burst: ObservationBurst?, sinceCapture: Double?)
     case press(namespace: String, identifier: String, answer: String)
     case bar(action: String, answer: String)
     /// A line of standard input that is no command.
@@ -332,7 +345,7 @@ public enum LabReportEvent: Equatable, Sendable {
             return ["decided": .optional(decided), "applied": .optional(length.applied), "held": .bool(length.held)]
         case .roster(let members):
             return ["members": .array(members.map(\.json))]
-        case .observation(let length, let diagnostics, let waited, let burstAge):
+        case .observation(let length, let diagnostics, let waited, let burst, let sinceCapture):
             let references = diagnostics?.references.map { reading -> LabJSON in
                 .object([
                     "namespace": .string(reading.key.namespace), "identifier": .string(reading.key.identifier),
@@ -342,7 +355,9 @@ public enum LabReportEvent: Equatable, Sendable {
             return [
                 "length": .number(length), "captureStable": .optional(diagnostics?.captureStable),
                 "fold": .optional(diagnostics?.fold), "references": .array(references ?? []),
-                "waited": .number(waited), "burstAge": .optional(burstAge),
+                "waited": .number(waited), "burstAge": .optional(burst?.age),
+                "burstID": .optional(burst.map { Double($0.burstID) }), "ordinal": .optional(burst.map { Double($0.ordinal) }),
+                "sinceCapture": .optional(sinceCapture),
             ]
         case .press(let namespace, let identifier, let answer):
             return ["namespace": .string(namespace), "identifier": .string(identifier), "answer": .string(answer)]
@@ -384,6 +399,7 @@ public enum LabReportNames {
         case .baselining: "baselining"
         case .calibrating: "calibrating"
         case .settling: "settling"
+        case .confirming: "confirming"
         case .resting: "resting"
         }
     }

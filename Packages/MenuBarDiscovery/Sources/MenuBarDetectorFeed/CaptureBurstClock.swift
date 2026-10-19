@@ -30,6 +30,16 @@ public final class CaptureBurstClock: @unchecked Sendable {
         lock.withLock { rule.decision(for: session, now: now) }
     }
 
+    /// Decides and reserves in one step under the lock: no other session can
+    /// take the same place in between (plan 2026-10-19-verify-in-a-clean-burst, D5).
+    public func begin(_ session: CaptureSession, now: Double) -> CaptureBurstReservation {
+        lock.withLock { rule.begin(session, now: now) }
+    }
+
+    public func finish(_ session: BurstSession) -> ObservationBurst? {
+        lock.withLock { rule.finish(session) }
+    }
+
     public var snapshot: CaptureBurstRule {
         lock.withLock { rule }
     }

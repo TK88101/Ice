@@ -242,13 +242,17 @@ extension LabReport {
                 isInteracting: coordinator?.isInteracting ?? false,
                 roster: membership.members.map { member in
                     let item = LabReportItem(member: member, lastKey: rules.lastKeys[member.tag])
+                    let frame = member.key.flatMap { frames[$0] ?? nil }
+                    // What `PositionRule` stacks an item on: the other extras and `MenuBarAgent`'s elements.
+                    let obstacles = (set?.items ?? []).filter { $0.key != member.key }.compactMap(\.frame) + (set?.systemElements ?? [])
                     return LabReportMember(
                         namespace: item.namespace,
                         identifier: item.identifier,
                         pid: member.key?.pid,
                         condition: LabReportNames.condition(member.condition),
                         pressable: member.isPressable,
-                        frame: member.key.flatMap { frames[$0] ?? nil }
+                        frame: frame,
+                        overlaps: frame.map { PositionRule.overlaps(of: $0, obstacles: obstacles) } ?? []
                     )
                 },
                 blockers: membership.blockers.map { LabReportItem($0.key) },
@@ -266,7 +270,8 @@ extension LabReport {
                 checks: facts.checks
                     .map { LabReportCheck(namespace: $0.key.namespace, identifier: $0.key.identifier, outcome: VerificationSummary.name(of: $0.value)) }
                     .sorted { ($0.namespace, $0.identifier) < ($1.namespace, $1.identifier) },
-                chevronListed: facts.chevronListed
+                chevronListed: facts.chevronListed,
+                systemElements: set?.systemElements ?? []
             )
         }
     }

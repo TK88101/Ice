@@ -38,6 +38,7 @@ def snapshot(**fields):
         "iconPlacement": None, "hiddenBoundaryUsable": True,
         "icon": {"frame": [1500, 0, 28, 30], "usable": True}, "hiddenDivider": {"frame": [880, 0, 18, 30], "usable": True},
         "alwaysHiddenDivider": None, "completeness": "complete", "pass": 1, "checks": [], "chevronListed": None,
+        "systemElements": [],
     }
     base.update(fields)
     return base
@@ -171,6 +172,35 @@ class LabToolTests(unittest.TestCase):
         self.assertTrue(lab.predicate_holds(events, "verified", ["0"]))
         self.assertFalse(lab.predicate_holds(events, "verified", [str(len(report.lines))]))
         self.assertTrue(lab.predicate_holds(events, "any-length", ["0"]))
+
+    def test_clear_after_counts_from_the_verifying_observations_last_capture(self):
+        # Plan 2026-10-19-verify-in-a-clean-burst, D6: the runner waits out
+        # the capture indicator of the burst a verified status was read in.
+        report = Report()
+        report.add("observation", {"length": 736, "waited": 18.5, "burstAge": 1.5, "burstID": 3, "ordinal": 1, "sinceCapture": 0.25})
+        events = lab.load_report(self.write(report.text()), final=False)
+        self.assertIsNone(lab.clear_after(events, 0))
+        verified = report.status("verified")
+        report.snap()
+        events = lab.load_report(self.write(report.text()), final=False)
+        # The observation at t 1.0 had its last capture 0.25 s before: clear at 22.75; the report is at 2.0.
+        self.assertEqual(lab.clear_after(events, 0), 20.75)
+        self.assertIsNone(lab.clear_after(events, verified))
+
+    def test_clear_after_without_a_dated_capture_counts_from_the_status(self):
+        report = Report()
+        report.add("observation", {"length": 736, "waited": 0, "burstAge": None, "burstID": None, "ordinal": None, "sinceCapture": None})
+        report.status("verified")
+        events = lab.load_report(self.write(report.text()), final=False)
+        self.assertEqual(lab.clear_after(events, 0), 22.0)
+
+    def test_clear_after_is_never_negative(self):
+        report = Report()
+        report.status("verified")
+        for _ in range(50):
+            report.snap()
+        events = lab.load_report(self.write(report.text()), final=False)
+        self.assertEqual(lab.clear_after(events, 0), 0.0)
 
     def test_selfread_frames(self):
         line = 'selfread {"children":[{"identifier":"p","frame":[900,4,14,22]},{"identifier":"q","frame":[1,2,3,4]},{"identifier":"p","frame":[930,4,14,22]}]}'

@@ -35,8 +35,12 @@ SNAPSHOT_KEYS = [
     "phase", "status", "lengthSet", "lengthApplied", "calibratedHiddenLength", "isIceBarOffered",
     "isIceBarPresented", "isInteracting", "roster", "blockers", "cells", "cacheVisible", "cacheHidden",
     "cacheAlwaysHidden", "iconPlacement", "hiddenBoundaryUsable", "icon", "hiddenDivider",
-    "alwaysHiddenDivider", "completeness", "pass", "checks", "chevronListed",
+    "alwaysHiddenDivider", "completeness", "pass", "checks", "chevronListed", "systemElements",
 ]
+
+# CaptureBurstParameters.standard.clearAfter (IceCore), as run-lab.sh keeps it:
+# a burst's capture indicator is gone this long after its last capture.
+CLEAR_AFTER = 22
 
 # The matrix, in the order a round runs it (D2: `noref` before the references
 # start). kind: what the run must end as. `inverted` and `inverted-moved` are
@@ -335,6 +339,23 @@ def predicate_holds(events, name, args):
     if name == "divider-unusable":
         return bool(latest and "dividerUnusable" in latest["status"])
     raise SystemExit(f"lab-tool: unknown predicate {name}")
+
+
+def clear_after(events, since):
+    """Seconds, by the report's clock, until the bar is clear of the burst
+    that the first `verified` after `since` was read in: its observation's
+    last capture plus CLEAR_AFTER, a status the capture indicator takes back
+    coming before then (plan 2026-10-19-verify-in-a-clean-burst, D6). The
+    status's own time stands for a capture the observation does not date.
+    `None` before a `verified`."""
+    status = first_status(events, "verified", since)
+    if status is None:
+        return None
+    read = [event for event in of(events, "observation") if event["seq"] < status["seq"]]
+    last_capture = status["t"]
+    if read and read[-1].get("sinceCapture") is not None:
+        last_capture = read[-1]["t"] - read[-1]["sinceCapture"]
+    return max(0.0, last_capture + CLEAR_AFTER - events[-1]["t"])
 
 
 def selfread_frames(line, identifier):
@@ -927,6 +948,15 @@ def main(argv):
             print(error)
             return 3
         return 0 if predicate_holds(events, rest[1], rest[2:]) else 1
+    if command == "clear-after":  # <report> <since>
+        try:
+            left = clear_after(load_report(rest[0], final=False), int(rest[1]))
+        except Damaged:
+            return 3
+        if left is None:
+            return 1
+        print(f"{left:.2f}")
+        return 0
     if command == "bracket":  # <report> <members, comma-separated>
         try:
             print(bracket_key(load_report(rest[0], final=False), rest[1].split(",")))

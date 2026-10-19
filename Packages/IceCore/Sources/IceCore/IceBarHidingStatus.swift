@@ -69,6 +69,7 @@ public enum IceBarHidingStatus: Equatable, Sendable {
     private static func why(_ reason: PreferenceHidingNotVerifiedReason) -> String {
         switch reason {
         case .lengthNotApplied, .noMembers: "nothing to check"
+        case .confirming: "checking once more"
         case .noReference: "no item to compare with"
         case .captureRefused: "the menu bar could not be captured"
         case .baselineStale: "the last check is more than ten minutes old"
@@ -93,6 +94,7 @@ public enum IceBarHidingStatus: Equatable, Sendable {
     private static func name(_ reason: PreferenceHidingNotVerifiedReason) -> String {
         switch reason {
         case .lengthNotApplied: "lengthNotApplied"
+        case .confirming: "confirming"
         case .noMembers: "noMembers"
         case .noReference: "noReference"
         case .captureRefused: "captureRefused"

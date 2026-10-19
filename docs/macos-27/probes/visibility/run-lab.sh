@@ -524,9 +524,12 @@ finish() {
     quit_menus
 }
 
-hide() { # <since>: the first verified, or the status limit
+hide() { # <since>: the first verified and the bar clear of the burst it was read in, or the status limit
     await $STATUS_LIMIT verified ${1:-0}
-    local code=$?
+    local code=$? left
+    # A status Ice's own capture indicator takes back comes in this window
+    # (plan 2026-10-19-verify-in-a-clean-burst, D6).
+    (( code == 0 )) && left=$(lab clear-after $report ${1:-0}) && nap $left
     nap 3
     return $code
 }

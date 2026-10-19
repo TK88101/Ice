@@ -41,6 +41,47 @@ public enum CaptureBurstDecision: Equatable, Sendable {
     case wait(until: Double)
 }
 
+/// A session's place in its burst, fixed when it was let start (plan
+/// 2026-10-19-verify-in-a-clean-burst, D5).
+public struct BurstSession: Equatable, Sendable {
+    public let burstID: Int
+    /// 1 for the burst's first session.
+    public let ordinal: Int
+    public let burstStartedAt: Double
+
+    public init(burstID: Int, ordinal: Int, burstStartedAt: Double) {
+        self.burstID = burstID
+        self.ordinal = ordinal
+        self.burstStartedAt = burstStartedAt
+    }
+}
+
+/// The burst an observation was read in, fixed when its session ended: what
+/// a verified rest stands on (D1).
+public struct ObservationBurst: Equatable, Sendable {
+    public let burstID: Int
+    public let ordinal: Int
+    public let burstStartedAt: Double
+    /// The burst's last capture when the session ended.
+    public let capturedAt: Double
+
+    public init(burstID: Int, ordinal: Int, burstStartedAt: Double, capturedAt: Double) {
+        self.burstID = burstID
+        self.ordinal = ordinal
+        self.burstStartedAt = burstStartedAt
+        self.capturedAt = capturedAt
+    }
+
+    public var age: Double {
+        capturedAt - burstStartedAt
+    }
+}
+
+public enum CaptureBurstReservation: Equatable, Sendable {
+    case go(BurstSession)
+    case wait(until: Double)
+}
+
 public struct CaptureBurstRule: Equatable, Sendable {
     public let parameters: CaptureBurstParameters
     /// The first capture of the burst the last capture belongs to.
@@ -48,6 +89,11 @@ public struct CaptureBurstRule: Equatable, Sendable {
     public private(set) var lastCapture: Double?
     /// The burst takes no further session: a baseline was taken in it.
     public private(set) var isClosed = false
+    /// Counts the bursts begun; the current one's number.
+    public private(set) var burstID = 0
+    /// The sessions the current burst has had, one opened by a capture
+    /// outside any session included.
+    public private(set) var sessions = 0
 
     public init(parameters: CaptureBurstParameters = .standard) {
         self.parameters = parameters
@@ -61,11 +107,47 @@ public struct CaptureBurstRule: Equatable, Sendable {
 
     /// Every capture actually taken, whoever asked for it.
     public mutating func noteCapture(at now: Double) {
-        if lastCapture.map({ now - $0 >= parameters.clearAfter }) ?? true {
-            burstStart = now
-            isClosed = false
+        if isClear(at: now) {
+            openBurst(at: now)
         }
         lastCapture = now
+    }
+
+    /// Lets `session` start if `decision` would, and reserves its place in
+    /// the burst in the same step: on a clear bar it opens a burst at once,
+    /// so its own first capture does not count as another session.
+    public mutating func begin(_ session: CaptureSession, now: Double) -> CaptureBurstReservation {
+        if case .wait(let until) = decision(for: session, now: now) {
+            return .wait(until: until)
+        }
+        if isClear(at: now) {
+            openBurst(at: now)
+            lastCapture = now
+        } else {
+            sessions += 1
+        }
+        return .go(BurstSession(burstID: burstID, ordinal: sessions, burstStartedAt: burstStart ?? now))
+    }
+
+    /// The burst `session` was read in, as of now; `nil` once another burst
+    /// has begun since.
+    public func finish(_ session: BurstSession) -> ObservationBurst? {
+        guard session.burstID == burstID, let lastCapture else { return nil }
+        return ObservationBurst(
+            burstID: session.burstID, ordinal: session.ordinal,
+            burstStartedAt: session.burstStartedAt, capturedAt: lastCapture
+        )
+    }
+
+    private func isClear(at now: Double) -> Bool {
+        lastCapture.map { now - $0 >= parameters.clearAfter } ?? true
+    }
+
+    private mutating func openBurst(at now: Double) {
+        burstStart = now
+        isClosed = false
+        burstID += 1
+        sessions = 1
     }
 
     /// A baseline has its burst to itself: called once its session is over.

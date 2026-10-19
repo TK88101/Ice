@@ -20,19 +20,26 @@ public struct IceBarHidingParameters: Equatable, Sendable {
     /// How long the bar stays at standard length between two trials.
     public let restDwell: Double
     public let calibration: HiddenLengthParameters
+    /// The longest a burst's first session may run, from the burst's start to
+    /// its last capture, and still prove a rest: the capture indicator
+    /// answers sessions of 4.2 s, not of 1.5 s (plan
+    /// 2026-10-19-verify-in-a-clean-burst, D1).
+    public let cleanBurstAge: Double
 
     public init(
         quietPeriod: Double,
         minInterval: Double,
         maxFailures: Int,
         restDwell: Double,
-        calibration: HiddenLengthParameters
+        calibration: HiddenLengthParameters,
+        cleanBurstAge: Double = CaptureBurstParameters.standard.observationNeed
     ) {
         self.quietPeriod = quietPeriod
         self.minInterval = minInterval
         self.maxFailures = maxFailures
         self.restDwell = restDwell
         self.calibration = calibration
+        self.cleanBurstAge = cleanBurstAge
     }
 
     public static let standard = IceBarHidingParameters(
@@ -82,9 +89,10 @@ public enum IceBarHidingEvent: Equatable, Sendable {
     /// The answer to `takeBaseline(token:)`: whether every ready member has a
     /// shown baseline it can be checked against.
     case baseline(token: Int, ok: Bool)
-    /// The answer to `observe(token:length:)`: each member's check at that
-    /// length, and whether `MenuBarAgent` listed a `«` (recorded only, D-b).
-    case observed(token: Int, checks: [ItemKey: SectionItemCheck], chevronListed: Bool?)
+    /// The answer to `observe(token:length:closesBurst:)`: each member's check
+    /// at that length, whether `MenuBarAgent` listed a `«` (recorded only,
+    /// D-b), and the burst it was read in (`nil`: not known).
+    case observed(token: Int, checks: [ItemKey: SectionItemCheck], chevronListed: Bool?, burst: ObservationBurst?)
 }
 
 public enum IceBarHidingCommand: Equatable, Sendable {
@@ -93,8 +101,10 @@ public enum IceBarHidingCommand: Equatable, Sendable {
     /// Take a baseline of the roster with the section shown: the members'
     /// tags, and the ready members' keys it must cover.
     case takeBaseline(token: Int, members: [TagKey], ready: [ItemKey])
-    /// Check the members at the length the bar is now at.
-    case observe(token: Int, length: Double)
+    /// Check the members at the length the bar is now at. `closesBurst`: no
+    /// later session may join the burst this one is read in (a settle, a
+    /// confirmation, a re-check; plan 2026-10-19-verify-in-a-clean-burst, D4).
+    case observe(token: Int, length: Double, closesBurst: Bool)
     case report(IceBarHidingStatus)
 }
 
@@ -121,6 +131,21 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         public let since: Double
         /// The token of the re-check under way.
         public var recheck: Int?
+        /// The burst a re-check that saw every member absent without
+        /// proving it was read in, and how many have so far.
+        public var candidateBurst: Int?
+        public var confirmations = 0
+    }
+
+    /// A settle's length whose observation saw every ready member absent
+    /// without proving it (plan 2026-10-19-verify-in-a-clean-burst, D2).
+    public struct Confirmation: Equatable, Sendable {
+        public let trial: Trial
+        public let kind: SettleKind
+        /// The burst the candidate was read in: a confirmation in it proves nothing.
+        public let candidateBurst: Int?
+        /// Confirmations asked before this one.
+        public let tries: Int
     }
 
     /// A length Ice keeps applied, and what it last saw there.
@@ -148,6 +173,8 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         case calibrating(observations: [HiddenLengthObservation], pending: Trial?, restedAt: Double)
         /// The one observation at a length Ice means to rest at.
         case settling(Trial, SettleKind)
+        /// The length stays; one more observation, in a burst of its own.
+        case confirming(Confirmation)
         case resting(Rest)
     }
 
@@ -179,7 +206,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     var lengthSet: Bool {
         switch phase {
         case .calibrating(_, let pending, _): pending != nil
-        case .settling, .resting: true
+        case .settling, .confirming, .resting: true
         case .off, .blocked, .quiet, .baselining: false
         }
     }
@@ -196,7 +223,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     /// on capturing (plan 2026-10-09-lab-first-run-followup, S3 design D2).
     public var awaitsAnswer: Bool {
         switch phase {
-        case .baselining, .settling: true
+        case .baselining, .settling, .confirming: true
         case .calibrating(_, let pending, _): pending != nil
         case .resting(let rest): rest.pending?.recheck != nil
         case .off, .blocked, .quiet: false
@@ -215,13 +242,18 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     public var status: IceBarHidingStatus {
         if phase == .off { return .off }
         guard let sample else { return .state(.requestedNotVerified(reasons: [.lengthNotApplied])) }
-        return .state(PreferenceHidingStateRule.evaluate(
+        let state = PreferenceHidingStateRule.evaluate(
             preconditions: sample.preconditions,
             membership: sample.membership,
             lengthApplied: lengthApplied,
             checks: rest?.checks ?? [:],
             pendingLayoutChange: rest?.pending?.change
-        ))
+        )
+        // A length is set and being confirmed, not missing.
+        if case .confirming = phase, case .requestedNotVerified(let reasons) = state {
+            return .state(.requestedNotVerified(reasons: reasons.map { $0 == .lengthNotApplied ? .confirming : $0 }))
+        }
+        return .state(state)
     }
 
     /// The machine after `event`, and what Ice must do, in order. A changed
@@ -248,8 +280,8 @@ public struct IceBarHidingMachine: Equatable, Sendable {
             return phase == .off ? [] : handle(sample, now: now)
         case .baseline(let token, let ok):
             return baselineTaken(token: token, ok: ok, now: now)
-        case .observed(let token, let checks, let chevronListed):
-            return observed(token: token, checks: checks, chevronListed: chevronListed, now: now)
+        case .observed(let token, let checks, let chevronListed, let burst):
+            return observed(token: token, checks: checks, chevronListed: chevronListed, burst: burst, now: now)
         }
     }
 
@@ -301,7 +333,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         case .quiet(let since):
             guard now - since >= parameters.quietPeriod else { return [] }
             return start(sample, now: now)
-        case .baselining, .settling:
+        case .baselining, .settling, .confirming:
             return sample.isInteracting ? enterQuiet(now) : []
         case .calibrating(let observations, let pending, let restedAt):
             if sample.isInteracting { return enterQuiet(now) }
@@ -318,7 +350,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
             let token = takeToken()
             rest.pending?.recheck = token
             phase = .resting(rest)
-            return [.observe(token: token, length: rest.length)]
+            return [.observe(token: token, length: rest.length, closesBurst: true)]
         }
     }
 
@@ -347,33 +379,28 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         token: Int,
         checks: [ItemKey: SectionItemCheck],
         chevronListed: Bool?,
+        burst: ObservationBurst?,
         now: Double
     ) -> [IceBarHidingCommand] {
         switch phase {
         case .settling(let trial, let kind) where trial.token == token:
-            let outcome = outcome(of: checks)
-            if kind == .lastGood, outcome != .hiddenClean {
-                // No longer verified; the refused length is the walk's first observation.
-                lastGood = nil
-                let observation = HiddenLengthObservation(length: trial.length, outcome: outcome)
-                phase = .calibrating(observations: [observation], pending: nil, restedAt: now)
-                return [.setLength(nil)]
-            }
-            if outcome == .hiddenClean {
-                lastGood = trial.length
-                failures = 0
-            }
-            phase = .resting(Rest(
-                length: trial.length, checks: checks, chevronListed: chevronListed, pending: nil,
-                baselineOwed: kind == .unbaselined
-            ))
-            return []
+            let candidate = Confirmation(trial: trial, kind: kind, candidateBurst: nil, tries: 0)
+            return settled(candidate, checks: checks, chevronListed: chevronListed, burst: burst, now: now)
+        case .confirming(let confirmation) where confirmation.trial.token == token:
+            let next = Confirmation(
+                trial: confirmation.trial, kind: confirmation.kind,
+                candidateBurst: confirmation.candidateBurst, tries: confirmation.tries + 1
+            )
+            return settled(next, checks: checks, chevronListed: chevronListed, burst: burst, now: now)
         case .calibrating(let observations, let trial?, _) where trial.token == token:
             let observation = HiddenLengthObservation(length: trial.length, outcome: outcome(of: checks))
             phase = .calibrating(observations: observations + [observation], pending: nil, restedAt: now)
             // Back to rest, so the next trial is again a jump from rest (T0).
             return [.setLength(nil)]
         case .resting(var rest) where rest.pending?.recheck == token:
+            if outcome(of: checks) == .hiddenClean, let pending = rest.pending, !proves(burst, besides: pending.candidateBurst) {
+                return confirmRecheck(rest, pending: pending, burst: burst, chevronListed: chevronListed)
+            }
             rest.checks = checks
             rest.chevronListed = chevronListed
             rest.pending = nil
@@ -382,6 +409,84 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         default:
             return []
         }
+    }
+
+    /// A settle's (or a confirmation's) observation. Every ready member
+    /// absent rests only on a reading that proves it (D1); otherwise the
+    /// length stays and is confirmed in a burst of its own, a bounded number
+    /// of times, after which it rests unchecked (D2).
+    private mutating func settled(
+        _ candidate: Confirmation,
+        checks: [ItemKey: SectionItemCheck],
+        chevronListed: Bool?,
+        burst: ObservationBurst?,
+        now: Double
+    ) -> [IceBarHidingCommand] {
+        let (trial, kind) = (candidate.trial, candidate.kind)
+        let outcome = outcome(of: checks)
+        if outcome == .hiddenClean, !proves(burst, besides: candidate.candidateBurst) {
+            guard candidate.tries < parameters.maxFailures else {
+                phase = .resting(Rest(
+                    length: trial.length, checks: [:], chevronListed: chevronListed, pending: nil,
+                    baselineOwed: kind == .unbaselined
+                ))
+                return []
+            }
+            let confirmation = Confirmation(
+                trial: Trial(token: takeToken(), length: trial.length), kind: kind,
+                candidateBurst: burst?.burstID, tries: candidate.tries
+            )
+            phase = .confirming(confirmation)
+            return [.observe(token: confirmation.trial.token, length: trial.length, closesBurst: true)]
+        }
+        if kind == .lastGood, outcome != .hiddenClean {
+            // No longer verified; the refused length is the walk's first observation.
+            lastGood = nil
+            let observation = HiddenLengthObservation(length: trial.length, outcome: outcome)
+            phase = .calibrating(observations: [observation], pending: nil, restedAt: now)
+            return [.setLength(nil)]
+        }
+        if outcome == .hiddenClean {
+            lastGood = trial.length
+            failures = 0
+        }
+        phase = .resting(Rest(
+            length: trial.length, checks: checks, chevronListed: chevronListed, pending: nil,
+            baselineOwed: kind == .unbaselined
+        ))
+        return []
+    }
+
+    /// A re-check that saw every member absent without proving it: asked
+    /// again in a burst of its own, a bounded number of times, after which
+    /// the rest stands unchecked (D2).
+    private mutating func confirmRecheck(
+        _ rest: Rest,
+        pending: PendingChange,
+        burst: ObservationBurst?,
+        chevronListed: Bool?
+    ) -> [IceBarHidingCommand] {
+        var rest = rest
+        guard pending.confirmations < parameters.maxFailures else {
+            rest.checks = [:]
+            rest.chevronListed = chevronListed
+            rest.pending = nil
+            phase = .resting(rest)
+            return []
+        }
+        let token = takeToken()
+        rest.pending?.recheck = token
+        rest.pending?.candidateBurst = burst?.burstID
+        rest.pending?.confirmations += 1
+        phase = .resting(rest)
+        return [.observe(token: token, length: rest.length, closesBurst: true)]
+    }
+
+    /// Whether a reading proves what it saw: read as the first session of a
+    /// burst other than `candidate`, within `cleanBurstAge` of its start (D1).
+    private func proves(_ burst: ObservationBurst?, besides candidate: Int?) -> Bool {
+        guard let burst, burst.ordinal == 1, burst.age <= parameters.cleanBurstAge else { return false }
+        return burst.burstID != candidate
     }
 
     /// A member seen drawn at rest starts one new cycle, a bounded number of
@@ -413,7 +518,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         case .tryLength(let length):
             let trial = Trial(token: takeToken(), length: length)
             phase = .calibrating(observations: observations, pending: trial, restedAt: now)
-            return [.setLength(length), .observe(token: trial.token, length: length)]
+            return [.setLength(length), .observe(token: trial.token, length: length, closesBurst: false)]
         case .rest(let length):
             return settle(at: length, kind: .final)
         case .giveUp:
@@ -435,7 +540,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     private mutating func settle(at length: Double, kind: SettleKind) -> [IceBarHidingCommand] {
         let trial = Trial(token: takeToken(), length: length)
         phase = .settling(trial, kind)
-        return [.setLength(length), .observe(token: trial.token, length: length)]
+        return [.setLength(length), .observe(token: trial.token, length: length, closesBurst: true)]
     }
 
     /// The walk's outcome over the ready members: stale and stacked ones

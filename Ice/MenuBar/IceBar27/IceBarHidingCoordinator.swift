@@ -161,8 +161,8 @@ final class IceBarHidingCoordinator {
             appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = LabReport.applied(length).map { CGFloat($0) }
         case .takeBaseline(let token, let members, let ready):
             takeBaseline(token: token, members: members, ready: ready)
-        case .observe(let token, let length):
-            observe(token: token, length: length)
+        case .observe(let token, let length, let closesBurst):
+            observe(token: token, length: length, closesBurst: closesBurst)
         case .report(let status):
             logger.info("IceBar hiding: \(status.logSummary, privacy: .public)")
             LabReport.record(.status(status.logSummary))
@@ -187,11 +187,11 @@ final class IceBarHidingCoordinator {
         }
     }
 
-    private func observe(token: Int, length: Double) {
+    private func observe(token: Int, length: Double, closesBurst: Bool) {
         let observer = currentObserver()
         work?.cancel()
         work = Task {
-            let reading = await observer?.observe() ?? .nothing
+            let reading = await observer?.observe(closesBurst: closesBurst) ?? .nothing
             if !Task.isCancelled {
                 let summary = VerificationSummary.make(reading.checks)
                 let chevron = reading.chevronListed.map(String.init) ?? "unread"
@@ -207,10 +207,12 @@ final class IceBarHidingCoordinator {
                     length: length,
                     diagnostics: reading.diagnostics,
                     waited: reading.waited,
-                    burstAge: reading.burstAge
+                    burst: reading.burst,
+                    // The burst's times are the observer's clock, the system uptime.
+                    sinceCapture: reading.burst.map { ProcessInfo.processInfo.systemUptime - $0.capturedAt }
                 ))
             }
-            send(.observed(token: token, checks: reading.checks, chevronListed: reading.chevronListed))
+            send(.observed(token: token, checks: reading.checks, chevronListed: reading.chevronListed, burst: reading.burst))
         }
     }
 

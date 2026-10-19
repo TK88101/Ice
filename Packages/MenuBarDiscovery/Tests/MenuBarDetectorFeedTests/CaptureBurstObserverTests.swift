@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import IceCore
 import MenuBarCapture
@@ -24,12 +25,15 @@ struct CaptureBurstObserverTests {
     /// `onSleep` runs inside every sleep, before that.
     static func rig(
         observeImage: StripImage = Base.hiddenImage,
-        onSleep: (@Sendable (Double) -> Void)? = nil
+        onSleep: (@Sendable (Double) -> Void)? = nil,
+        chevronReader: (any MenuBarAXReading)? = nil,
+        holdFirstSettle: Box<Bool>? = nil,
+        observations: Int = 1
     ) -> Rig {
         let captures = Scenario.repeated(HidingVerificationTests.drawnImage(), count: Scenario.baselineCaptureCount())
-            + Scenario.repeated(observeImage, count: Scenario.observeCaptureCount())
+            + Scenario.repeated(observeImage, count: Scenario.observeCaptureCount() * observations)
         let reads = Scenario.repeated(Base.drawnSnapshot, count: Scenario.baselineReadCount())
-            + Scenario.repeated(Base.hiddenSnapshot, count: Scenario.observeReadCount())
+            + Scenario.repeated(Base.hiddenSnapshot, count: Scenario.observeReadCount() * observations)
         let (verification, _, capturer, _, _) = Scenario.makeVerification(
             discoveryResults: [Scenario.discovery([Base.items.t1, Base.items.t2, Base.items.ref])],
             capturerResults: captures,
@@ -39,13 +43,22 @@ struct CaptureBurstObserverTests {
         let burst = CaptureBurstClock()
         let sleeps = Box([Double]())
         let now = Box(0.0)
+        let held = Box(false)
         let observer = HiddenLengthObserver(
             verification: verification,
-            chevron: ChevronReader(reader: FakeMenuBarAXReader(results: [Base.agents(chevron: false)]), barHeight: Double(TestBar.heightPt)),
+            chevron: ChevronReader(
+                reader: chevronReader ?? FakeMenuBarAXReader(results: Array(repeating: Base.agents(chevron: false), count: observations)),
+                barHeight: Double(TestBar.heightPt)
+            ),
             settle: 1,
             sleep: {
                 sleeps.set(sleeps.get() + [$0])
                 onSleep?($0)
+                // The first settle waits until the test lets it go: a session superseded meanwhile.
+                if let holdFirstSettle, $0 == 1, !held.get() {
+                    held.set(true)
+                    while !holdFirstSettle.get() { await Task.yield() }
+                }
                 now.set(now.get() + $0)
             },
             burst: burst,
@@ -95,7 +108,9 @@ struct CaptureBurstObserverTests {
         rig.now.set(100.5)
         #expect(rig.burst.decision(for: .observation, now: 100.5) == .go)
         _ = await rig.observer.takeBaseline(sectionMap: Base.sectionMap)
-        #expect(rig.burst.decision(for: .observation, now: 100.5) == .wait(until: 122))
+        // The baseline waited for a clear bar until 122 and took its place
+        // there: the bar is clear 22 s after that.
+        #expect(rig.burst.decision(for: .observation, now: 122.5) == .wait(until: 144))
     }
 
     @Test("a second observation that fits the burst does not wait")
@@ -136,6 +151,76 @@ struct CaptureBurstObserverTests {
         let reading = await Task { await observer.observe() }.value
         #expect(reading == .nothing)
         #expect(rig.capturer.callCount == baselineCaptures)
+    }
+
+    // MARK: - Sessions (plan 2026-10-19-verify-in-a-clean-burst, D4 and D5)
+
+    @Test("an observation on a clear bar is the first session of a burst of its own, read when it ends")
+    func firstSessionOfItsOwn() async {
+        let rig = Self.rig()
+        _ = await rig.observer.takeBaseline(sectionMap: Base.sectionMap)
+        rig.now.set(200)
+        let reading = await rig.observer.observe()
+        #expect(reading.burst?.ordinal == 1)
+        #expect(reading.burst?.burstStartedAt == 201)
+        #expect(reading.burst?.burstID == rig.burst.snapshot.burstID)
+        #expect(reading.burstAge == reading.burst?.age)
+    }
+
+    @Test("an observation that joins a burst reads as its second session")
+    func joiningIsSecond() async {
+        let rig = Self.rig()
+        _ = await rig.observer.takeBaseline(sectionMap: Base.sectionMap)
+        rig.burst.noteCapture(at: 100)
+        rig.burst.noteCapture(at: 101.5)
+        rig.now.set(103)
+        let reading = await rig.observer.observe()
+        #expect(reading.burst == ObservationBurst(burstID: rig.burst.snapshot.burstID, ordinal: 2, burstStartedAt: 100, capturedAt: 101.5))
+    }
+
+    @Test("an observation that closes its burst leaves nothing to join it; one that does not, leaves it open")
+    func closesItsBurst() async {
+        for closes in [true, false] {
+            let rig = Self.rig()
+            _ = await rig.observer.takeBaseline(sectionMap: Base.sectionMap)
+            rig.now.set(200)
+            _ = await rig.observer.observe(closesBurst: closes)
+            #expect(rig.burst.snapshot.isClosed == closes)
+        }
+    }
+
+    @Test("an observation that closes its burst closes it when cancelled after it began, and the next reading is a new burst's first")
+    func closesWhenCancelled() async {
+        let handle = Box<Task<HiddenLengthReading, Never>?>(nil)
+        let rig = Self.rig(chevronReader: CancellingAXReader(handle: handle))
+        _ = await rig.observer.takeBaseline(sectionMap: Base.sectionMap)
+        rig.now.set(200)
+        let observer = rig.observer
+        let task = Task { await observer.observe(closesBurst: true) }
+        handle.set(task)
+        let cancelled = await task.value
+        #expect(cancelled == .nothing)
+        #expect(rig.burst.snapshot.isClosed)
+        let first = rig.burst.snapshot.burstID
+        let next = await observer.observe()
+        #expect(next.burst?.ordinal == 1)
+        #expect(next.burst.map { $0.burstID > first } == true)
+    }
+
+    @Test("a session superseded by a newer one reads nothing, and closes the burst it began in only if it began")
+    func supersededReadsNothing() async {
+        let release = Box(false)
+        let rig = Self.rig(holdFirstSettle: release)
+        _ = await rig.observer.takeBaseline(sectionMap: Base.sectionMap)
+        rig.now.set(200)
+        let observer = rig.observer
+        let older = Task { await observer.observe(closesBurst: true) }
+        // Let the older session reach its settle before the newer one starts.
+        while rig.sleeps.get().count < 1 { await Task.yield() }
+        let newer = await observer.observe()
+        release.set(true)
+        #expect(await older.value == .nothing)
+        #expect(newer.burst?.ordinal == 1)
     }
 
     @Test("the recording capturer tells the clock of every capture it takes, a failed one too")
@@ -182,5 +267,26 @@ struct CaptureBurstObserverTests {
         #expect(diagnostics?.captureStable == true)
         #expect(diagnostics?.references.first?.offset == 0)
         #expect(diagnostics?.fold == "absent")
+    }
+}
+
+/// A `MenuBarAgent` read that cancels the observation reading it, once: a
+/// session cancelled after its captures, while it reads the `«`. The read
+/// runs on a queue of its own, so the task is named, not current.
+final class CancellingAXReader: MenuBarAXReading, @unchecked Sendable {
+    private let handle: Box<Task<HiddenLengthReading, Never>?>
+    private let done = Box(false)
+
+    init(handle: Box<Task<HiddenLengthReading, Never>?>) {
+        self.handle = handle
+    }
+
+    func read(items: [String: pid_t]) -> MenuBarAXSnapshot? {
+        if !done.get() {
+            while handle.get() == nil { usleep(1000) }
+            handle.get()?.cancel()
+            done.set(true)
+        }
+        return HiddenLengthObserverTests.agents(chevron: false)
     }
 }

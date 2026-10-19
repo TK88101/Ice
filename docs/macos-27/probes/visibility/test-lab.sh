@@ -158,7 +158,7 @@ verified_fixture() { # <scenario> <member count>
         hidden+="$sep{\"namespace\":\"com.icespike4.target\",\"identifier\":\"@M$i@\"}"
         sep=,
     done
-    local common='"isIceBarPresented":false,"isInteracting":false,"blockers":[],"cacheVisible":[],"cacheAlwaysHidden":[],"iconPlacement":null,"hiddenBoundaryUsable":true,"icon":{"frame":[1500,0,28,30],"usable":true},"hiddenDivider":{"frame":[880,0,18,30],"usable":true},"alwaysHiddenDivider":null,"completeness":"complete","pass":3,"chevronListed":false'
+    local common='"isIceBarPresented":false,"isInteracting":false,"blockers":[],"cacheVisible":[],"cacheAlwaysHidden":[],"iconPlacement":null,"hiddenBoundaryUsable":true,"icon":{"frame":[1500,0,28,30],"usable":true},"hiddenDivider":{"frame":[880,0,18,30],"usable":true},"alwaysHiddenDivider":null,"completeness":"complete","pass":3,"chevronListed":false,"systemElements":[]'
     print -l -- "{\"waitMembers\":$2}" \
         "{\"event\":\"snapshot\",\"phase\":\"quiet\",\"status\":\"notVerified(lengthNotApplied)\",\"lengthSet\":false,\"lengthApplied\":false,\"calibratedHiddenLength\":null,\"isIceBarOffered\":false,\"roster\":[$roster],\"cells\":[],\"cacheHidden\":[$hidden],\"checks\":[],$common}" \
         '{"event":"length","applied":736,"decided":736,"held":false}' \
@@ -310,7 +310,7 @@ crowded_snapshot() { # <condition, or none for an empty roster> <the divider's x
             sep=,
         done
     fi
-    print -r -- "{\"event\":\"snapshot\",\"phase\":\"quiet\",\"status\":\"notVerified(lengthNotApplied)\",\"lengthSet\":false,\"lengthApplied\":false,\"calibratedHiddenLength\":null,\"isIceBarOffered\":false,\"isIceBarPresented\":false,\"isInteracting\":false,\"roster\":[$roster],\"blockers\":[],\"cells\":[],\"cacheVisible\":[],\"cacheHidden\":[],\"cacheAlwaysHidden\":[],\"checks\":[],\"iconPlacement\":null,\"hiddenBoundaryUsable\":true,\"icon\":{\"frame\":[1500,0,28,30],\"usable\":true},\"hiddenDivider\":{\"frame\":[$2,0,18,30],\"usable\":true},\"alwaysHiddenDivider\":null,\"completeness\":\"complete\",\"pass\":3,\"chevronListed\":null}"
+    print -r -- "{\"event\":\"snapshot\",\"phase\":\"quiet\",\"status\":\"notVerified(lengthNotApplied)\",\"lengthSet\":false,\"lengthApplied\":false,\"calibratedHiddenLength\":null,\"isIceBarOffered\":false,\"isIceBarPresented\":false,\"isInteracting\":false,\"roster\":[$roster],\"blockers\":[],\"cells\":[],\"cacheVisible\":[],\"cacheHidden\":[],\"cacheAlwaysHidden\":[],\"checks\":[],\"iconPlacement\":null,\"hiddenBoundaryUsable\":true,\"icon\":{\"frame\":[1500,0,28,30],\"usable\":true},\"hiddenDivider\":{\"frame\":[$2,0,18,30],\"usable\":true},\"alwaysHiddenDivider\":null,\"completeness\":\"complete\",\"pass\":3,\"chevronListed\":null,\"systemElements\":[]}"
 }
 build_staging
 {
