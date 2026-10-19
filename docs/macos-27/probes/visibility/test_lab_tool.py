@@ -179,20 +179,20 @@ class LabToolTests(unittest.TestCase):
         report = Report()
         report.add("observation", {"length": 736, "waited": 18.5, "burstAge": 1.5, "burstID": 3, "ordinal": 1, "sinceCapture": 0.25})
         events = lab.load_report(self.write(report.text()), final=False)
-        self.assertIsNone(lab.clear_after(events, 0))
+        self.assertIsNone(lab.clear_after(events, 0, 22))
         verified = report.status("verified")
         report.snap()
         events = lab.load_report(self.write(report.text()), final=False)
         # The observation at t 1.0 had its last capture 0.25 s before: clear at 22.75; the report is at 2.0.
-        self.assertEqual(lab.clear_after(events, 0), 20.75)
-        self.assertIsNone(lab.clear_after(events, verified))
+        self.assertEqual(lab.clear_after(events, 0, 22), 20.75)
+        self.assertIsNone(lab.clear_after(events, verified, 22))
 
     def test_clear_after_without_a_dated_capture_counts_from_the_status(self):
         report = Report()
         report.add("observation", {"length": 736, "waited": 0, "burstAge": None, "burstID": None, "ordinal": None, "sinceCapture": None})
         report.status("verified")
         events = lab.load_report(self.write(report.text()), final=False)
-        self.assertEqual(lab.clear_after(events, 0), 22.0)
+        self.assertEqual(lab.clear_after(events, 0, 22), 22.0)
 
     def test_clear_after_is_never_negative(self):
         report = Report()
@@ -200,7 +200,7 @@ class LabToolTests(unittest.TestCase):
         for _ in range(50):
             report.snap()
         events = lab.load_report(self.write(report.text()), final=False)
-        self.assertEqual(lab.clear_after(events, 0), 0.0)
+        self.assertEqual(lab.clear_after(events, 0, 22), 0.0)
 
     def test_selfread_frames(self):
         line = 'selfread {"children":[{"identifier":"p","frame":[900,4,14,22]},{"identifier":"q","frame":[1,2,3,4]},{"identifier":"p","frame":[930,4,14,22]}]}'

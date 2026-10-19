@@ -29,6 +29,12 @@ public struct DiscoveredItemSet: Equatable, Sendable {
     public let staleProcesses: [Int32: ProcessInfoRecord]
     public let completeness: Completeness
 
+    /// What `PositionRule` stacks an item on: `MenuBarAgent`'s elements and
+    /// the other third-party items on the bar, as `positionsFor` built it.
+    public func obstacles(excluding key: ItemKey?) -> [BarRect] {
+        systemElements + items.filter { $0.key != key && $0.position != .parked }.compactMap(\.frame)
+    }
+
     /// The third-party items, then Ice's own icon when this set has it --
     /// parked ones included, so not a filter for what a view may list.
     public var listedItems: [DiscoveredItem] {

@@ -86,7 +86,7 @@ struct CaptureBurstRuleTests {
     func sessionOpensBurst() {
         var rule = CaptureBurstRule()
         let first = session(rule.begin(.observation, now: 100))
-        #expect(first == BurstSession(burstID: 1, ordinal: 1, burstStartedAt: 100))
+        #expect(first == BurstSession(burstID: 1, ordinal: 1))
         #expect(rule.burstStart == 100)
         // Its own captures do not open another.
         rule.noteCapture(at: 100.2)
@@ -99,10 +99,10 @@ struct CaptureBurstRuleTests {
         var rule = CaptureBurstRule()
         _ = rule.begin(.observation, now: 100)
         rule.noteCapture(at: 101.5)
-        #expect(session(rule.begin(.observation, now: 104)) == BurstSession(burstID: 1, ordinal: 2, burstStartedAt: 100))
+        #expect(session(rule.begin(.observation, now: 104)) == BurstSession(burstID: 1, ordinal: 2))
         rule.noteCapture(at: 105.5)
         #expect(rule.begin(.observation, now: 106) == .wait(until: 127.5))
-        #expect(session(rule.begin(.observation, now: 127.5)) == BurstSession(burstID: 2, ordinal: 1, burstStartedAt: 127.5))
+        #expect(session(rule.begin(.observation, now: 127.5)) == BurstSession(burstID: 2, ordinal: 1))
     }
 
     @Test("a burst opened by a capture outside any session counts it as its first: a session joining it is the second")
@@ -118,7 +118,20 @@ struct CaptureBurstRuleTests {
         rule.noteCapture(at: 104.2)
         rule.closeBurst()
         #expect(rule.begin(.observation, now: 105) == .wait(until: 126.2))
-        #expect(session(rule.begin(.observation, now: 126.2)) == BurstSession(burstID: 2, ordinal: 1, burstStartedAt: 126.2))
+        #expect(session(rule.begin(.observation, now: 126.2)) == BurstSession(burstID: 2, ordinal: 1))
+    }
+
+    @Test("a verdict session closes its burst as it is let start: nothing joins it, however soon")
+    func verdictClosesAtOnce() {
+        var rule = CaptureBurstRule()
+        #expect(session(rule.begin(.verdict, now: 100)) == BurstSession(burstID: 1, ordinal: 1))
+        #expect(rule.isClosed)
+        #expect(rule.begin(.observation, now: 100.5) == .wait(until: 122))
+        // It joins an open burst as an observation would, and closes that one.
+        var open = CaptureBurstRule()
+        _ = open.begin(.observation, now: 100)
+        #expect(session(open.begin(.verdict, now: 101))?.ordinal == 2)
+        #expect(open.isClosed)
     }
 
     @Test("a session whose burst is no longer the current one has no burst to report")

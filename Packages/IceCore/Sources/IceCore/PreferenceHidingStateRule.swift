@@ -41,6 +41,7 @@ public enum PreferenceHidingStateRule {
         preconditions: PreferenceHidingPreconditionResult,
         membership: PreferenceHidingMembership,
         lengthApplied: Bool,
+        confirming: Bool = false,
         checks: [ItemKey: SectionItemCheck],
         pendingLayoutChange: PreferenceHidingLayoutChange?
     ) -> PreferenceHidingState {
@@ -53,7 +54,7 @@ public enum PreferenceHidingStateRule {
             return .visibleFailed(drawn: drawn)
         }
         let reasons = notVerifiedReasons(
-            membership: membership, lengthApplied: lengthApplied,
+            membership: membership, lengthApplied: lengthApplied, confirming: confirming,
             memberChecks: memberChecks, pendingLayoutChange: pendingLayoutChange
         )
         return reasons.isEmpty ? .verifiedHidden : .requestedNotVerified(reasons: reasons)
@@ -62,11 +63,13 @@ public enum PreferenceHidingStateRule {
     private static func notVerifiedReasons(
         membership: PreferenceHidingMembership,
         lengthApplied: Bool,
+        confirming: Bool,
         memberChecks: [(member: PreferenceHidingMember, check: SectionItemCheck?)],
         pendingLayoutChange: PreferenceHidingLayoutChange?
     ) -> [PreferenceHidingNotVerifiedReason] {
         var reasons = [PreferenceHidingNotVerifiedReason]()
-        if !lengthApplied { reasons.append(.lengthNotApplied) }
+        // A length set and being confirmed is not a length missing.
+        if !lengthApplied { reasons.append(confirming ? .confirming : .lengthNotApplied) }
         if membership.members.isEmpty { reasons.append(.noMembers) }
         if lengthApplied {
             reasons += checkReasons(memberChecks)

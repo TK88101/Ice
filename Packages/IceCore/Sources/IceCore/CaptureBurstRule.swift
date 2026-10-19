@@ -33,6 +33,10 @@ public struct CaptureBurstParameters: Equatable, Sendable {
 public enum CaptureSession: Equatable, Sendable {
     case baseline
     case observation
+    /// An observation a verdict may rest on: no later session joins its
+    /// burst, closed as it is let start (plan
+    /// 2026-10-19-verify-in-a-clean-burst, D4).
+    case verdict
 }
 
 public enum CaptureBurstDecision: Equatable, Sendable {
@@ -47,12 +51,10 @@ public struct BurstSession: Equatable, Sendable {
     public let burstID: Int
     /// 1 for the burst's first session.
     public let ordinal: Int
-    public let burstStartedAt: Double
 
-    public init(burstID: Int, ordinal: Int, burstStartedAt: Double) {
+    public init(burstID: Int, ordinal: Int) {
         self.burstID = burstID
         self.ordinal = ordinal
-        self.burstStartedAt = burstStartedAt
     }
 }
 
@@ -126,16 +128,19 @@ public struct CaptureBurstRule: Equatable, Sendable {
         } else {
             sessions += 1
         }
-        return .go(BurstSession(burstID: burstID, ordinal: sessions, burstStartedAt: burstStart ?? now))
+        if session == .verdict {
+            isClosed = true
+        }
+        return .go(BurstSession(burstID: burstID, ordinal: sessions))
     }
 
     /// The burst `session` was read in, as of now; `nil` once another burst
     /// has begun since.
     public func finish(_ session: BurstSession) -> ObservationBurst? {
-        guard session.burstID == burstID, let lastCapture else { return nil }
+        guard session.burstID == burstID, let burstStart, let lastCapture else { return nil }
         return ObservationBurst(
             burstID: session.burstID, ordinal: session.ordinal,
-            burstStartedAt: session.burstStartedAt, capturedAt: lastCapture
+            burstStartedAt: burstStart, capturedAt: lastCapture
         )
     }
 
@@ -161,7 +166,7 @@ public struct CaptureBurstRule: Equatable, Sendable {
         guard let burstStart, let lastCapture else { return .go }
         let clearAt = lastCapture + parameters.clearAfter
         if now >= clearAt { return .go }
-        let fits = session == .observation && !isClosed && now + parameters.observationNeed <= burstStart + parameters.budget
+        let fits = session != .baseline && !isClosed && now + parameters.observationNeed <= burstStart + parameters.budget
         return fits ? .go : .wait(until: clearAt)
     }
 }

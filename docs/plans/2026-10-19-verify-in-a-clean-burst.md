@@ -51,10 +51,12 @@ length and go quiet (a new baseline, a new walk). A new baseline cannot happen w
 confirming.
 
 D4 **Sessions that close their burst.** A settle, a re-check and a confirmation are
-asked with `closesBurst`: the observer closes the burst on every path out of the
-session once it has begun -- returned, cancelled, refused, superseded -- so nothing
-joins the burst a verified rest was read in, and the next session starts a burst of
-its own. The calibration's trials do not close theirs.
+asked with `closesBurst`: the observer reserves them as `verdict` sessions, and the
+rule closes the burst in the same step that lets the session start -- so it is
+closed however the session then ends (returned, cancelled, refused, superseded),
+nothing joins the burst a verified rest was read in, and the next session starts a
+burst of its own. A call already superseded or cancelled reserves nothing. The
+calibration's trials do not close theirs.
 
 D5 **Reservation and ownership.** `CaptureBurstRule` numbers bursts and the sessions
 in each, and reserves a session atomically with deciding it may start (`begin`). A

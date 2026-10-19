@@ -115,13 +115,14 @@ public actor HiddenLengthObserver {
 
     /// Sleeps until `session` may start in a burst the capture indicator
     /// cannot reach, and reserves its place there; the seconds slept. No
-    /// place without a burst clock, or when cancelled first. The caller
-    /// checks for cancellation.
-    private func reserve(_ session: CaptureSession) async -> (place: BurstSession?, waited: Double) {
+    /// place without a burst clock, or when cancelled or superseded first:
+    /// an unwanted call never touches the shared clock (Codex review,
+    /// 2026-10-19). The caller checks the same before going on.
+    private func reserve(_ session: CaptureSession, for call: Int) async -> (place: BurstSession?, waited: Double) {
         var waited = 0.0
         // Asked again after every sleep: a capture taken elsewhere meanwhile
         // (the hiding check shares the clock) moves the moment the bar is clear.
-        while !Task.isCancelled, let burst {
+        while isWanted(call), let burst {
             let start = now()
             switch burst.begin(session, now: start) {
             case .go(let place):
@@ -145,7 +146,7 @@ public actor HiddenLengthObserver {
     public func takeBaseline(sectionMap: [TagKey: ItemSection]) async -> BaselineCoverage {
         generation += 1
         let mine = generation
-        _ = await reserve(.baseline)
+        _ = await reserve(.baseline, for: mine)
         guard mine == generation else { return .cancelled }
         guard !Task.isCancelled else {
             prepared = nil
@@ -179,18 +180,15 @@ public actor HiddenLengthObserver {
     /// Each member's check at the length the bar is at now, after the
     /// settle, the `«` reading, and the burst it was read in. Nothing
     /// without a baseline, when cancelled, or once a newer call began.
-    /// `closesBurst`: once the session has its place, no later one joins its
-    /// burst, whichever way this call ends (D4).
+    /// `closesBurst`: no later session joins this one's burst, closed as
+    /// the session is let start, whichever way this call ends (D4).
     public func observe(closesBurst: Bool = false) async -> HiddenLengthReading {
         generation += 1
         let mine = generation
         guard let prepared else { return .nothing }
         await sleep(settle)
         guard isWanted(mine) else { return .nothing }
-        let (place, waited) = await reserve(.observation)
-        defer {
-            if closesBurst, place != nil { burst?.closeBurst() }
-        }
+        let (place, waited) = await reserve(closesBurst ? .verdict : .observation, for: mine)
         guard isWanted(mine) else { return .nothing }
         let report = await verification.verifyReporting(prepared)
         // Read as soon as the captures end, before anything else can capture.

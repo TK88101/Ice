@@ -529,7 +529,7 @@ hide() { # <since>: the first verified and the bar clear of the burst it was rea
     local code=$? left
     # A status Ice's own capture indicator takes back comes in this window
     # (plan 2026-10-19-verify-in-a-clean-burst, D6).
-    (( code == 0 )) && left=$(lab clear-after $report ${1:-0}) && nap $left
+    (( code == 0 )) && left=$(lab clear-after $report ${1:-0} $CLEAR_AFTER) && nap $left
     nap 3
     return $code
 }

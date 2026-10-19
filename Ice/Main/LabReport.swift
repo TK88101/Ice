@@ -243,8 +243,6 @@ extension LabReport {
                 roster: membership.members.map { member in
                     let item = LabReportItem(member: member, lastKey: rules.lastKeys[member.tag])
                     let frame = member.key.flatMap { frames[$0] ?? nil }
-                    // What `PositionRule` stacks an item on: the other extras and `MenuBarAgent`'s elements.
-                    let obstacles = (set?.items ?? []).filter { $0.key != member.key }.compactMap(\.frame) + (set?.systemElements ?? [])
                     return LabReportMember(
                         namespace: item.namespace,
                         identifier: item.identifier,
@@ -252,7 +250,9 @@ extension LabReport {
                         condition: LabReportNames.condition(member.condition),
                         pressable: member.isPressable,
                         frame: frame,
-                        overlaps: frame.map { PositionRule.overlaps(of: $0, obstacles: obstacles) } ?? []
+                        overlaps: frame.flatMap { frame in
+                            set.map { PositionRule.overlaps(of: frame, obstacles: $0.obstacles(excluding: member.key)) }
+                        } ?? []
                     )
                 },
                 blockers: membership.blockers.map { LabReportItem($0.key) },

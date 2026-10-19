@@ -60,6 +60,20 @@ struct LabReportTests {
         #expect(fields["roster"]?.text.contains(#""overlaps":[[896,4,20,22]]"#) == true)
     }
 
+    @Test("a set's obstacles for an item are the catalog's: MenuBarAgent's elements and the other items on the bar, never a parked one")
+    func obstaclesAreTheCatalogs() {
+        let member = fixtureItem(identifier: "m", pid: 1, frame: barFrame(minX: 100, width: 20))
+        let neighbour = fixtureItem(identifier: "n", pid: 2, frame: barFrame(minX: 130, width: 20))
+        let parked = fixtureItem(identifier: "p", pid: 3, frame: barFrame(minX: 100, width: 20), position: .parked)
+        let frameless = fixtureItem(identifier: "f", pid: 4, frame: nil, position: .noFrame)
+        let indicator = barFrame(minX: 104, width: 40)
+        let set = DiscoveredItemSet(
+            items: [member, neighbour, parked, frameless], visibleControlItem: nil, hiddenDivider: nil, alwaysHiddenDivider: nil,
+            ownRead: .ok, systemElements: [indicator], dropped: [], completeness: .complete
+        )
+        #expect(set.obstacles(excluding: member.key) == [indicator, neighbour.frame!])
+    }
+
     @Test("the frames an item overlaps by the stacked rule's measure, and only those")
     func overlapsByTheStackedRule() {
         let item = BarRect(minX: 100, minY: 0, width: 20, height: 24)
