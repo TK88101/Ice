@@ -275,3 +275,15 @@ was posted. T2b did not complete its three-run protocol.
 | Not known | what `crowded` ends as once no witness is read under the push: the fold (the ruled exclusion), or both members `stacked` at a rest. Never seen without the push | TBD: the next round |
 | The staging, 2026-10-13 | CleanMyMac removed 30 `.lproj` folders of Sparkle from the staged `Ice.app`; the dry run refused it ("the staged files do not match lab.env's sha256"). Restored from the build product, whose tree hash was the recorded one; the round ran on that | MEASURED |
 | Next | stage; one round, the other two only if it is clean | TBD |
+
+## The lab matrix, a sixth round in `icetest` (run `20261019-004100`, build `0fbae72`, 2026-10-19)
+
+| What | State | Level |
+|---|---|---|
+| The rounds | three run; rounds 1 and 2 clean, round 3 not clean, for `press` alone ("ended unverified, expected verified"); S4 DoD not met | MEASURED |
+| `crowded` | `notEstablished` in all three rounds: "the system folded the members out of the roster", the ruled exclusion. Answers the fifth round's TBD: with no witness read under the push, it ends as the fold | MEASURED (`*-crowded/verdict.json`, `steps.jsonl`) |
+| `3-press`, Ice | length 728 at 293.8 s; the settle's observation at 297.3 s was its burst's second session (`waited` 0, `burstAge` 6.9); `verified` at 297.3 s; `notVerified(stacked:1)` at 300.7 s, 10.2 s after the burst began, member 1 `stacked` at an unchanged frame, to the scenario's end | MEASURED (`3-press/report-1.jsonl`) |
+| Over the run | a `stacked` beginning 8-16 s after a burst's start: 0 of 137 one-session bursts, 305 of 402 two-session bursts. Every other verified scenario verified on a one-session burst or ended inside the indicator's 10 s: it passed by timing | MEASURED (the run's reports) |
+| What `3-press` was stacked on | the capture indicator, a `MenuBarAgent` child and so an obstacle | INFERRED (timing, the tally, FINDINGS "The capture indicator, timed"): the report had no obstacle frames |
+| Fixed since (not yet run live) | plan `2026-10-19-verify-in-a-clean-burst`: Ice verifies only on a burst's first session read within 2.5 s of its start, else confirms the length in a burst of its own (`notVerified(confirming)`); settles, confirmations and re-checks close their burst as they start. The report now dates each observation's burst (`burstID`, `ordinal`, `sinceCapture`) and names what each member overlaps; `hide` waits out the verifying burst's indicator before the scenario goes on (about 22 s a scenario) | MEASURED (unit tests: IceCore 700, MenuBarDiscovery 87 with a Feed/machine contract test, lab-tool 44; `test-lab.sh` with a stub Ice; app build; Codex review rounds 2-3 no findings) |
+| Next | stage `6f0a5c1`; the seventh round | TBD |
