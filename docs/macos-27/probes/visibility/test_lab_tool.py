@@ -135,6 +135,9 @@ class LabToolTests(unittest.TestCase):
             handle.write(text)
         return path
 
+    def load(self, report):
+        return lab.load_report(self.write(report.text()))
+
     # --- the report itself -------------------------------------------------------
 
     def test_damaged_reports_are_aborted_never_a_pass(self):
@@ -755,11 +758,10 @@ class LabToolTests(unittest.TestCase):
         report.failed((90, "com.example.x", False))
         closed = report.snap()
         again = report.failed((91, None, False))
-        episodes = lab.discovery_episodes(lab.load_report(self.write(report.text())))
+        episodes = lab.discovery_episodes(self.load(report))
         self.assertEqual(len(episodes), 2)
         self.assertEqual(episodes[0], {
-            "startSeq": first, "endSeq": closed, "startT": first * 0.5, "endT": closed * 0.5,
-            "lengthApplied": True, "length": 608,
+            "startSeq": first, "endSeq": closed, "startT": first * 0.5, "endT": closed * 0.5, "length": 608,
             "processes": [{"pid": 90, "bundleID": "com.example.x", "class": "other"}],
         })
         self.assertEqual((episodes[1]["startSeq"], episodes[1]["endSeq"], episodes[1]["endT"]), (again, None, None))
@@ -771,7 +773,7 @@ class LabToolTests(unittest.TestCase):
         report.failed((92, R, False), (41, T, False))
         report.failed((7, "com.icespike4.lab.r1", True), (90, "com.example.x", False))
         report.snap()
-        [episode] = lab.discovery_episodes(lab.load_report(self.write(report.text())))
+        [episode] = lab.discovery_episodes(self.load(report))
         self.assertEqual([(p["pid"], p["class"]) for p in episode["processes"]],
                          [(7, "self"), (41, "member"), (92, "reference"), (90, "other")])
 
@@ -784,17 +786,20 @@ class LabToolTests(unittest.TestCase):
         self.assertEqual([e["processes"][0]["class"] for e in verdict["discoveryIncomplete"]], ["other"])
 
     def test_an_episode_of_a_member_is_not_established_and_of_ice_a_failure(self):
-        for read, wanted, reason in (
-            ((41, T, False), "notEstablished", "setup: a member's discovery read failed"),
-            ((7, "com.icespike4.lab.r1", True), "fail", "Ice's own discovery read failed"),
-        ):
-            with self.subTest(wanted):
+        member_read, ice_read = (41, T, False), (7, "com.icespike4.lab.r1", True)
+        for reads, wanted in (([member_read], "notEstablished"), ([ice_read], "fail"), ([member_read, ice_read], "fail")):
+            with self.subTest(wanted=wanted, reads=len(reads)):
                 report = Report()
-                report.failed(read, (90, "com.example.x", False))
+                for read in reads:  # each its own episode
+                    report.failed(read, (90, "com.example.x", False))
+                    report.snap()
                 report.standard(["a"])
                 verdict = self.judge("sparse", [report], members=["a"])
                 self.assertEqual(verdict["result"], wanted)
-                self.assertIn(reason, verdict["reasons"])
+                if member_read in reads:
+                    self.assertIn("setup: a member's discovery read failed", verdict["reasons"])
+                if ice_read in reads:
+                    self.assertIn("Ice's own discovery read failed", verdict["reasons"])
 
     def test_a_members_episode_takes_the_exclusion_away(self):
         report = Report()
@@ -802,13 +807,15 @@ class LabToolTests(unittest.TestCase):
         report.snap()
         verdict = lab.Verdict("crowded")
         verdict.exclude()
-        lab.judge_discovery(verdict, "crowded", [lab.load_report(self.write(report.text()))], [])
+        lab.judge_discovery(verdict, [self.load(report)], [])
         self.assertFalse(lab.is_exclusion("crowded", verdict.result, verdict.reasons))
 
     def test_the_stall_of_incomplete_is_its_own_and_not_counted(self):
         report = Report()
         stall = report.standard(["a"])
         report.failed((92, R, False))
+        report.snap()
+        report.failed((41, T, False))
         report.length(None)
         resumed = report.status("blocked(discoveryIncomplete)")
         report.snap()
@@ -817,8 +824,21 @@ class LabToolTests(unittest.TestCase):
         report.snap()
         steps = [{"step": "stall", "seq": stall}, {"step": "resumed", "seq": resumed}, {"step": "settled", "seq": settled}]
         verdict = self.judge("incomplete", [report], steps=steps, members=["a"])
-        self.assertEqual(verdict["result"], "pass")
-        self.assertEqual([e["processes"][0]["pid"] for e in verdict["discoveryIncomplete"]], [93])
+        # The stalled reference's own episode is the scenario's; a member's inside the stall still counts.
+        self.assertEqual(verdict["result"], "notEstablished")
+        self.assertEqual([e["processes"][0]["pid"] for e in verdict["discoveryIncomplete"]], [41, 93])
+
+    def test_an_episode_already_under_way_when_the_stall_is_marked_counts(self):
+        report = Report()
+        report.standard(["a"])
+        stall = report.failed((92, R, False))  # the report's last line when the runner marked the stall
+        report.length(None)
+        resumed = report.status("blocked(discoveryIncomplete)")
+        report.snap()
+        settled = report.status("notVerified(lengthNotApplied)")
+        steps = [{"step": "stall", "seq": stall}, {"step": "resumed", "seq": resumed}, {"step": "settled", "seq": settled}]
+        verdict = self.judge("incomplete", [report], steps=steps, members=["a"])
+        self.assertEqual([e["startSeq"] for e in verdict["discoveryIncomplete"]], [stall])
 
     def test_every_report_of_a_run_is_read(self):
         first, second = Report(), Report()
@@ -826,9 +846,8 @@ class LabToolTests(unittest.TestCase):
         first.snap()
         second.failed((94, "com.example.z", False))
         second.snap()
-        verdict = lab.Verdict("relaunch")
-        lab.judge_discovery(verdict, "relaunch", [lab.load_report(self.write(first.text())), lab.load_report(self.write(second.text()))], [])
-        self.assertEqual([(e["report"], e["processes"][0]["pid"]) for e in verdict.discovery], [(1, 90), (2, 94)])
+        verdict = self.judge("relaunch", [first, second], members=["a"])
+        self.assertEqual([(e["report"], e["processes"][0]["pid"]) for e in verdict["discoveryIncomplete"]], [(1, 90), (2, 94)])
 
     def report_text(self):
         out = io.StringIO()
@@ -841,19 +860,20 @@ class LabToolTests(unittest.TestCase):
             self.full_round(number)
         code, lines = self.report_text()
         self.assertEqual(code, 0)
-        self.assertIn("discovery incomplete: none", lines)
-        self.assertTrue(lines[-1].startswith("S4 DoD: met (functional; "), lines[-1])
-        episode = {"report": 1, "startSeq": 5, "endSeq": 9, "startT": 10.0, "endT": 15.5, "lengthApplied": True, "length": 608,
+        self.assertTrue(lines[-1].startswith("S4 DoD: met (functional; no discovery incomplete; "), lines[-1])
+        episode = {"report": 1, "startSeq": 5, "endSeq": 9, "startT": 10.0, "endT": 15.5, "length": 608,
                    "processes": [{"pid": 90, "bundleID": "com.example.x", "class": "other"}]}
-        unclosed = dict(episode, endSeq=None, endT=None, lengthApplied=False, length=None,
+        unclosed = dict(episode, endSeq=None, endT=None, length=None,
                         processes=[{"pid": 91, "bundleID": None, "class": "other"}])
         self.write_verdict(2, "k8", "pass", discovery=[episode, unclosed])
         code, lines = self.report_text()
         self.assertEqual(code, 0)
         self.assertIn("   discovery incomplete: k8 report 1: com.example.x (other) at 608 for 5.5 s", lines)
         self.assertIn("   discovery incomplete: k8 report 1: pid 91 (other) at standard length, never complete again", lines)
-        self.assertIn("discovery incomplete: 2 episode(s) in 1 scenario run(s)", lines)
-        self.assertTrue(lines[-1].startswith("S4 DoD: met (functional; "), lines[-1])
+        self.assertTrue(lines[-1].startswith("S4 DoD: met (functional; discovery incomplete 2 episode(s) in 1 scenario run(s); "), lines[-1])
+        self.write_verdict(2, "sparse", "fail", {}, ["never verified"], discovery=[episode])
+        code, lines = self.report_text()
+        self.assertEqual(lines[-1], "S4 DoD: not met; discovery incomplete 3 episode(s) in 2 scenario run(s)")
 
     def test_dod_needs_three_clean_rounds(self):
         for number in (1, 2, 3):

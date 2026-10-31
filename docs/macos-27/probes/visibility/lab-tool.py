@@ -438,51 +438,49 @@ def process_class(read):
 
 def discovery_episodes(events):
     """Each run of incomplete snapshots up to the next complete one (D3): when
-    it began and ended, the length standing as it began, and every process
-    whose read failed in it, once, the most telling class first."""
-    episodes, current, seen = [], None, {}
+    it began and ended, the length standing as it began (`None` at standard
+    length), and every process whose read failed in it, once, the most
+    telling class first."""
+    episodes, current = [], None
     for snap in snapshots(events):
-        incomplete = (snap["completeness"] or "").startswith("incomplete:")
-        if current is None and incomplete:
-            current, seen = {
-                "startSeq": snap["seq"], "endSeq": None, "startT": snap["t"], "endT": None,
-                "lengthApplied": snap["lengthApplied"], "length": snap["calibratedHiddenLength"],
-            }, {}
-        if current is None:
-            continue
-        if incomplete:
+        if (snap["completeness"] or "").startswith("incomplete:"):
+            if current is None:
+                current = {
+                    "startSeq": snap["seq"], "endSeq": None, "startT": snap["t"], "endT": None,
+                    "length": snap["calibratedHiddenLength"] if snap["lengthApplied"] else None, "processes": {},
+                }
+                episodes.append(current)
             for read in snap["incomplete"]:
-                seen.setdefault(read["pid"], {"pid": read["pid"], "bundleID": read["bundleID"], "class": process_class(read)})
-            continue
-        if snap["completeness"] == "complete":
+                current["processes"].setdefault(read["pid"], {"pid": read["pid"], "bundleID": read["bundleID"], "class": process_class(read)})
+        elif current is not None and snap["completeness"] == "complete":
             current["endSeq"], current["endT"] = snap["seq"], snap["t"]
-            episodes.append(dict(current, processes=ordered_processes(seen)))
             current = None
-    if current is not None:
-        episodes.append(dict(current, processes=ordered_processes(seen)))
+    for episode in episodes:
+        episode["processes"] = sorted(episode["processes"].values(), key=lambda read: PROCESS_CLASSES.index(read["class"]))
     return episodes
 
 
-def ordered_processes(seen):
-    return sorted(seen.values(), key=lambda read: PROCESS_CLASSES.index(read["class"]))
-
-
-def judge_discovery(verdict, scenario, reports, steps):
-    """D4: every episode is carried; Ice's own read failing fails the run, a
-    member's leaves it not established. `incomplete`'s own stall, from the
-    `stall` step to the `settled` one, is not counted."""
+def judge_discovery(verdict, reports, steps):
+    """D4: every episode is carried; a member's read failing leaves the run not
+    established, Ice's own fails it, whatever else did. `incomplete`'s stall
+    is its own: an episode of references alone that begins after the `stall`
+    step (a step's seq is the report's last line then) and by `settled`."""
     stall, settled = step(steps, "stall"), step(steps, "settled")
-    window = (stall["seq"], settled["seq"]) if scenario == "incomplete" and stall and settled else None
+
+    def stalls_own(episode):
+        return (
+            stall is not None and settled is not None and stall["seq"] < episode["startSeq"] <= settled["seq"]
+            and all(read["class"] == "reference" for read in episode["processes"])
+        )
+
     for number, events in enumerate(reports, start=1):
-        for episode in discovery_episodes(events):
-            if number == 1 and window and window[0] <= episode["startSeq"] <= window[1]:
-                continue
-            verdict.discovery.append(dict(episode, report=number))
+        verdict.discovery.extend(dict(episode, report=number) for episode in discovery_episodes(events) if not (number == 1 and stalls_own(episode)))
     classes = {read["class"] for episode in verdict.discovery for read in episode["processes"]}
     if "member" in classes:
         verdict.not_established("a member's discovery read failed")
     if "self" in classes:
         verdict.fail("Ice's own discovery read failed")
+        verdict.result = "fail"  # above a setup not established: the read was Ice's
 
 
 def setup_roster(verdict, events, expected, before_seq):
@@ -878,6 +876,10 @@ class Run:
             self._reports[number] = load_report(self.path(f"report-{number}.jsonl"))
         return self._reports[number]
 
+    def reports(self):
+        """Every start's report: the first, and the second when there was one."""
+        return [self.report(1)] + ([self.report(2)] if os.path.exists(self.path("report-2.jsonl")) else [])
+
 
 def judge(directory):
     try:
@@ -900,14 +902,13 @@ def judge(directory):
             chevron_at_start(verdict, run.steps)
         JUDGES[run.scenario](verdict, run)
         if verdict.kind is None:
-            last = run.report(2) if os.path.exists(run.path("report-2.jsonl")) else events
+            last = run.reports()[-1]
             verdict.kind = kind_of(last)
         wanted = SCENARIOS[run.scenario]["kind"]
         accepted = {"bestEffort": {"verified", "unverified"}}.get(wanted, {wanted})
         if not is_exclusion(run.scenario, verdict.result, verdict.reasons) and run.scenario not in ENDS_ELSEWHERE and verdict.kind not in accepted:
             verdict.fail(f"ended {verdict.kind}, expected {wanted}")
-        reports = [events] + ([run.report(2)] if os.path.exists(run.path("report-2.jsonl")) else [])
-        judge_discovery(verdict, run.scenario, reports, run.steps)
+        judge_discovery(verdict, run.reports(), run.steps)
     except Damaged as error:
         verdict.result = "aborted"
         verdict.reasons.append(str(error))
@@ -965,14 +966,14 @@ def matrix(evidence):
 
 def episode_line(name, episode):
     processes = ", ".join(f"{read['bundleID'] or 'pid ' + str(read['pid'])} ({read['class']})" for read in episode["processes"])
-    where = f"at {episode['length']:g}" if episode["lengthApplied"] and episode["length"] is not None else "at standard length"
+    where = f"at {episode['length']:g}" if episode["length"] is not None else "at standard length"
     ended = f" for {episode['endT'] - episode['startT']:.1f} s" if episode["endT"] is not None else ", never complete again"
     return f"   discovery incomplete: {name} report {episode['report']}: {processes} {where}{ended}"
 
 
 def report(evidence):
     rounds = matrix(evidence)
-    episodes, runs = 0, 0
+    found = []  # each scenario run's episodes, for the runs that had any
     lines = []
     met = len(rounds) >= ROUNDS
     for number in sorted(rounds):
@@ -988,19 +989,22 @@ def report(evidence):
                 lines.append(f"   {name}: {verdict['result']}: " + "; ".join(verdict["reasons"][:4]))
             if SCENARIOS[name]["kind"] != "notRun" and (verdict is None or not passed_or_excluded(name, verdict)):
                 met = False
-        for name in ORDER:
-            found = (verdicts.get(name) or {}).get("discoveryIncomplete", [])
-            lines.extend(episode_line(name, episode) for episode in found)
-            episodes, runs = episodes + len(found), runs + bool(found)
+            episodes = (verdict or {}).get("discoveryIncomplete", [])
+            lines.extend(episode_line(name, episode) for episode in episodes)
+            if episodes:
+                found.append(episodes)
     t2d_open = any(v.get("clauses", {}).get("t2d") == "fail" for r in rounds.values() for v in r.values())
-    lines.append(f"discovery incomplete: {episodes} episode(s) in {runs} scenario run(s)" if episodes else "discovery incomplete: none")
+    if found:
+        seen = f"discovery incomplete {sum(map(len, found))} episode(s) in {len(found)} scenario run(s)"
+    else:
+        seen = "no discovery incomplete"
     if met:
         lines.append(
-            "S4 DoD: met (functional; three rounds, every scenario passed but the exclusions: "
+            f"S4 DoD: met (functional; {seen}; three rounds, every scenario passed but the exclusions: "
             + ", ".join(sorted(EXCLUSIONS)) + " not established, " + ", ".join(name for name in ORDER if SCENARIOS[name]["kind"] == "notRun") + " not run, S5's)"
         )
     else:
-        lines.append("S4 DoD: not met" + (" (T2d open)" if t2d_open else ""))
+        lines.append("S4 DoD: not met" + (" (T2d open)" if t2d_open else "") + f"; {seen}")
     print("\n".join(lines))
     return 0 if met else 1
 
