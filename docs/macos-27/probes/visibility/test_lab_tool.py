@@ -3,7 +3,9 @@ design): every scenario's oracle on synthetic reports -- a passing run, a
 failing one per clause that matters, a setup that is not established -- and the
 report's damage rules. Run by test-lab.sh: python3 -I test_lab_tool.py.
 Side effects: a temporary directory, removed."""
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -16,6 +18,7 @@ lab = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lab)
 
 T = "com.icespike4.target"
+R = "com.icespike4.protected"
 
 
 def member(identifier, condition="ready", frame=(900, 4, 14, 22)):
@@ -38,7 +41,7 @@ def snapshot(**fields):
         "iconPlacement": None, "hiddenBoundaryUsable": True,
         "icon": {"frame": [1500, 0, 28, 30], "usable": True}, "hiddenDivider": {"frame": [880, 0, 18, 30], "usable": True},
         "alwaysHiddenDivider": None, "completeness": "complete", "pass": 1, "checks": [], "chevronListed": None,
-        "systemElements": [],
+        "systemElements": [], "incomplete": [],
     }
     base.update(fields)
     return base
@@ -73,6 +76,11 @@ class Report:
                       isIceBarOffered=True, roster=[member(n) for n in names], cells=cells(names), checks=checks(names))
         values.update(fields)
         return self.snap(**values)
+
+    def failed(self, *reads, **fields):
+        """A snapshot of an incomplete set: each read (pid, bundle id, is Ice)."""
+        incomplete = [{"pid": pid, "bundleID": bundle, "isSelf": is_self} for pid, bundle, is_self in reads]
+        return self.snap(completeness=f"incomplete:{len(reads)}", incomplete=incomplete, **fields)
 
     def text(self):
         out = []
@@ -696,11 +704,14 @@ class LabToolTests(unittest.TestCase):
 
     # --- the matrix ----------------------------------------------------------------------------------
 
-    def write_verdict(self, number, scenario, result, clauses=None, reasons=None):
+    def write_verdict(self, number, scenario, result, clauses=None, reasons=None, discovery=None):
         directory = os.path.join(self.root, f"{number}-{scenario}")
         os.makedirs(directory, exist_ok=True)
         with open(os.path.join(directory, "verdict.json"), "w") as handle:
-            json.dump({"scenario": scenario, "result": result, "clauses": clauses or {}, "reasons": reasons or [], "kind": None}, handle)
+            body = {"scenario": scenario, "result": result, "clauses": clauses or {}, "reasons": reasons or [], "kind": None}
+            if discovery is not None:
+                body["discoveryIncomplete"] = discovery
+            json.dump(body, handle)
 
     def full_round(self, number):
         for name in lab.ORDER:
@@ -734,6 +745,115 @@ class LabToolTests(unittest.TestCase):
         self.write_verdict(1, "fresh-on", "pass")
         self.write_verdict(1, "sparse", "notEstablished", {}, ["setup: x"])
         self.assertFalse(lab.round_is_clean(lab.matrix(self.root)[1]))
+
+    # --- a discovery that goes incomplete (plan 2026-10-31-k8-hide-limit) ----------
+
+    def test_an_episode_runs_from_an_incomplete_snapshot_to_the_next_complete_one(self):
+        report = Report()
+        report.snap()
+        first = report.failed((90, "com.example.x", False), lengthApplied=True, calibratedHiddenLength=608)
+        report.failed((90, "com.example.x", False))
+        closed = report.snap()
+        again = report.failed((91, None, False))
+        episodes = lab.discovery_episodes(lab.load_report(self.write(report.text())))
+        self.assertEqual(len(episodes), 2)
+        self.assertEqual(episodes[0], {
+            "startSeq": first, "endSeq": closed, "startT": first * 0.5, "endT": closed * 0.5,
+            "lengthApplied": True, "length": 608,
+            "processes": [{"pid": 90, "bundleID": "com.example.x", "class": "other"}],
+        })
+        self.assertEqual((episodes[1]["startSeq"], episodes[1]["endSeq"], episodes[1]["endT"]), (again, None, None))
+        self.assertEqual(episodes[1]["processes"], [{"pid": 91, "bundleID": None, "class": "other"}])
+
+    def test_every_process_an_episode_saw_is_kept_once_ice_and_members_first(self):
+        report = Report()
+        report.failed((90, "com.example.x", False))
+        report.failed((92, R, False), (41, T, False))
+        report.failed((7, "com.icespike4.lab.r1", True), (90, "com.example.x", False))
+        report.snap()
+        [episode] = lab.discovery_episodes(lab.load_report(self.write(report.text())))
+        self.assertEqual([(p["pid"], p["class"]) for p in episode["processes"]],
+                         [(7, "self"), (41, "member"), (92, "reference"), (90, "other")])
+
+    def test_an_episode_of_another_process_leaves_the_verdict_and_is_carried(self):
+        report = Report()
+        report.failed((90, "com.example.x", False))
+        report.standard(["a"])
+        verdict = self.judge("sparse", [report], members=["a"])
+        self.assertEqual(verdict["result"], "pass")
+        self.assertEqual([e["processes"][0]["class"] for e in verdict["discoveryIncomplete"]], ["other"])
+
+    def test_an_episode_of_a_member_is_not_established_and_of_ice_a_failure(self):
+        for read, wanted, reason in (
+            ((41, T, False), "notEstablished", "setup: a member's discovery read failed"),
+            ((7, "com.icespike4.lab.r1", True), "fail", "Ice's own discovery read failed"),
+        ):
+            with self.subTest(wanted):
+                report = Report()
+                report.failed(read, (90, "com.example.x", False))
+                report.standard(["a"])
+                verdict = self.judge("sparse", [report], members=["a"])
+                self.assertEqual(verdict["result"], wanted)
+                self.assertIn(reason, verdict["reasons"])
+
+    def test_a_members_episode_takes_the_exclusion_away(self):
+        report = Report()
+        report.failed((41, T, False))
+        report.snap()
+        verdict = lab.Verdict("crowded")
+        verdict.exclude()
+        lab.judge_discovery(verdict, "crowded", [lab.load_report(self.write(report.text()))], [])
+        self.assertFalse(lab.is_exclusion("crowded", verdict.result, verdict.reasons))
+
+    def test_the_stall_of_incomplete_is_its_own_and_not_counted(self):
+        report = Report()
+        stall = report.standard(["a"])
+        report.failed((92, R, False))
+        report.length(None)
+        resumed = report.status("blocked(discoveryIncomplete)")
+        report.snap()
+        settled = report.status("notVerified(lengthNotApplied)")
+        report.failed((93, "com.example.y", False))
+        report.snap()
+        steps = [{"step": "stall", "seq": stall}, {"step": "resumed", "seq": resumed}, {"step": "settled", "seq": settled}]
+        verdict = self.judge("incomplete", [report], steps=steps, members=["a"])
+        self.assertEqual(verdict["result"], "pass")
+        self.assertEqual([e["processes"][0]["pid"] for e in verdict["discoveryIncomplete"]], [93])
+
+    def test_every_report_of_a_run_is_read(self):
+        first, second = Report(), Report()
+        first.failed((90, "com.example.x", False))
+        first.snap()
+        second.failed((94, "com.example.z", False))
+        second.snap()
+        verdict = lab.Verdict("relaunch")
+        lab.judge_discovery(verdict, "relaunch", [lab.load_report(self.write(first.text())), lab.load_report(self.write(second.text()))], [])
+        self.assertEqual([(e["report"], e["processes"][0]["pid"]) for e in verdict.discovery], [(1, 90), (2, 94)])
+
+    def report_text(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = lab.report(self.root)
+        return code, out.getvalue().splitlines()
+
+    def test_the_report_names_every_episode_and_never_says_a_bare_met(self):
+        for number in (1, 2, 3):
+            self.full_round(number)
+        code, lines = self.report_text()
+        self.assertEqual(code, 0)
+        self.assertIn("discovery incomplete: none", lines)
+        self.assertTrue(lines[-1].startswith("S4 DoD: met (functional; "), lines[-1])
+        episode = {"report": 1, "startSeq": 5, "endSeq": 9, "startT": 10.0, "endT": 15.5, "lengthApplied": True, "length": 608,
+                   "processes": [{"pid": 90, "bundleID": "com.example.x", "class": "other"}]}
+        unclosed = dict(episode, endSeq=None, endT=None, lengthApplied=False, length=None,
+                        processes=[{"pid": 91, "bundleID": None, "class": "other"}])
+        self.write_verdict(2, "k8", "pass", discovery=[episode, unclosed])
+        code, lines = self.report_text()
+        self.assertEqual(code, 0)
+        self.assertIn("   discovery incomplete: k8 report 1: com.example.x (other) at 608 for 5.5 s", lines)
+        self.assertIn("   discovery incomplete: k8 report 1: pid 91 (other) at standard length, never complete again", lines)
+        self.assertIn("discovery incomplete: 2 episode(s) in 1 scenario run(s)", lines)
+        self.assertTrue(lines[-1].startswith("S4 DoD: met (functional; "), lines[-1])
 
     def test_dod_needs_three_clean_rounds(self):
         for number in (1, 2, 3):

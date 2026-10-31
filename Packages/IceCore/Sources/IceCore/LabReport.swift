@@ -90,6 +90,36 @@ public struct LabReportItem: Equatable, Sendable {
     }
 }
 
+/// A process whose read made a discovery pass incomplete (plan
+/// 2026-10-31-k8-hide-limit, D2): the runner's tool tells Ice, a member, a
+/// reference and anything else apart by it.
+public struct LabReportFailedRead: Equatable, Sendable {
+    public let pid: Int32
+    /// `nil` for a pid the set holds no process record for.
+    public let bundleID: String?
+    public let isSelf: Bool
+
+    public init(pid: Int32, bundleID: String?, isSelf: Bool) {
+        self.pid = pid
+        self.bundleID = bundleID
+        self.isSelf = isSelf
+    }
+
+    /// The failed reads of a set, in its order: each pid by the record the
+    /// set kept of it, if any. None unless the set is incomplete.
+    public static func list(_ completeness: Completeness?, processes: [Int32: ProcessInfoRecord]) -> [LabReportFailedRead] {
+        guard case .incomplete(let failedPIDs) = completeness else { return [] }
+        return failedPIDs.map { pid in
+            let process = processes[pid]
+            return LabReportFailedRead(pid: pid, bundleID: process?.bundleID, isSelf: process?.isSelf ?? false)
+        }
+    }
+
+    var json: LabJSON {
+        .object(["pid": .number(Double(pid)), "bundleID": .optional(bundleID), "isSelf": .bool(isSelf)])
+    }
+}
+
 /// One roster entry.
 public struct LabReportMember: Equatable, Sendable {
     public let namespace: String
@@ -234,6 +264,8 @@ public struct LabReportSnapshot: Equatable, Sendable {
     public let chevronListed: Bool?
     /// `MenuBarAgent`'s children, the capture indicator among them.
     public let systemElements: [BarRect]
+    /// The reads that made the last discovery set incomplete; empty unless it is.
+    public let incomplete: [LabReportFailedRead]
 
     public init(
         phase: String, status: String, lengthSet: Bool, lengthApplied: Bool, calibratedHiddenLength: Double?,
@@ -241,7 +273,8 @@ public struct LabReportSnapshot: Equatable, Sendable {
         blockers: [LabReportItem], cells: [LabReportCell], cacheVisible: [LabReportItem], cacheHidden: [LabReportItem],
         cacheAlwaysHidden: [LabReportItem], iconPlacement: String?, hiddenBoundaryUsable: Bool,
         icon: LabReportControlItem?, hiddenDivider: LabReportControlItem?, alwaysHiddenDivider: LabReportControlItem?,
-        completeness: String?, pass: Int, checks: [LabReportCheck], chevronListed: Bool?, systemElements: [BarRect] = []
+        completeness: String?, pass: Int, checks: [LabReportCheck], chevronListed: Bool?, systemElements: [BarRect] = [],
+        incomplete: [LabReportFailedRead] = []
     ) {
         self.phase = phase
         self.status = status
@@ -267,6 +300,7 @@ public struct LabReportSnapshot: Equatable, Sendable {
         self.checks = checks
         self.chevronListed = chevronListed
         self.systemElements = systemElements
+        self.incomplete = incomplete
     }
 
     /// The snapshot's keys, in the order of the properties above: the
@@ -276,6 +310,7 @@ public struct LabReportSnapshot: Equatable, Sendable {
         "isIceBarPresented", "isInteracting", "roster", "blockers", "cells", "cacheVisible", "cacheHidden",
         "cacheAlwaysHidden", "iconPlacement", "hiddenBoundaryUsable", "icon", "hiddenDivider",
         "alwaysHiddenDivider", "completeness", "pass", "checks", "chevronListed", "systemElements",
+        "incomplete",
     ]
 
     var fields: [String: LabJSON] {
@@ -292,6 +327,7 @@ public struct LabReportSnapshot: Equatable, Sendable {
             "completeness": .optional(completeness), "pass": .number(Double(pass)),
             "checks": .array(checks.map(\.json)), "chevronListed": .optional(chevronListed),
             "systemElements": .array(systemElements.map(LabJSON.frame)),
+            "incomplete": .array(incomplete.map(\.json)),
         ]
     }
 }

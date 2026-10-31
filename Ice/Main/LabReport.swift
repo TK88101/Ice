@@ -270,7 +270,8 @@ extension LabReport {
                     .map { LabReportCheck(namespace: $0.key.namespace, identifier: $0.key.identifier, outcome: VerificationSummary.name(of: $0.value)) }
                     .sorted { ($0.namespace, $0.identifier) < ($1.namespace, $1.identifier) },
                 chevronListed: facts.chevronListed,
-                systemElements: set?.systemElements ?? []
+                systemElements: set?.systemElements ?? [],
+                incomplete: LabReportFailedRead.list(set?.completeness, processes: set?.staleProcesses ?? [:])
             )
         }
     }

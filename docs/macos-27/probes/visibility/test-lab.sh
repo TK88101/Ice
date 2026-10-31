@@ -143,7 +143,7 @@ build_staging() { # [key=value lines for lab.env]
         "PROTECTED_SHA=$(t7_sha $shared/apps/Protected.app/Contents/MacOS/vzhelper)" \
         "MENUS_SHA=$(t7_sha $shared/apps/Menus.app/Contents/MacOS/vzhelper)" \
         "ICEWATCH_SHA=$(t7_sha $shared/apps/icewatch)" "TOOL_SHA=$(t7_sha $shared/lab-tool.py)" \
-        "STATUS_LIMIT=4" "START_LIMIT=5" "TIME_SCALE=0.02" "CAPTURE=0" "ROUNDS=1" "$@" > $shared/lab.env
+        "STATUS_LIMIT=4" "HIDE_LIMIT=4" "START_LIMIT=5" "TIME_SCALE=0.02" "CAPTURE=0" "ROUNDS=1" "$@" > $shared/lab.env
     chmod -R a-w $shared/Ice.app $shared/apps $shared/run-lab.sh $shared/lab-tool.py $shared/lab.env
     chmod a-w $shared
 }
@@ -158,7 +158,7 @@ verified_fixture() { # <scenario> <member count>
         hidden+="$sep{\"namespace\":\"com.icespike4.target\",\"identifier\":\"@M$i@\"}"
         sep=,
     done
-    local common='"isIceBarPresented":false,"isInteracting":false,"blockers":[],"cacheVisible":[],"cacheAlwaysHidden":[],"iconPlacement":null,"hiddenBoundaryUsable":true,"icon":{"frame":[1500,0,28,30],"usable":true},"hiddenDivider":{"frame":[880,0,18,30],"usable":true},"alwaysHiddenDivider":null,"completeness":"complete","pass":3,"chevronListed":false,"systemElements":[]'
+    local common='"isIceBarPresented":false,"isInteracting":false,"blockers":[],"cacheVisible":[],"cacheAlwaysHidden":[],"iconPlacement":null,"hiddenBoundaryUsable":true,"icon":{"frame":[1500,0,28,30],"usable":true},"hiddenDivider":{"frame":[880,0,18,30],"usable":true},"alwaysHiddenDivider":null,"completeness":"complete","pass":3,"chevronListed":false,"systemElements":[],"incomplete":[]'
     print -l -- "{\"waitMembers\":$2}" \
         "{\"event\":\"snapshot\",\"phase\":\"quiet\",\"status\":\"notVerified(lengthNotApplied)\",\"lengthSet\":false,\"lengthApplied\":false,\"calibratedHiddenLength\":null,\"isIceBarOffered\":false,\"roster\":[$roster],\"cells\":[],\"cacheHidden\":[$hidden],\"checks\":[],$common}" \
         '{"event":"length","applied":736,"decided":736,"held":false}' \
@@ -198,6 +198,10 @@ build_staging
 chmod u+w $shared $shared/lab.env; print 'EVIL=1' >> $shared/lab.env; chmod a-w $shared/lab.env $shared
 zsh $shared/run-lab.sh sparse > $tmp/out.txt 2>&1; (( $? == 2 )) && grep -q 'does not know' $tmp/out.txt
 check "an unknown lab.env line is refused"
+
+build_staging "HIDE_LIMIT=0"
+zsh $shared/run-lab.sh sparse > $tmp/out.txt 2>&1; (( $? == 2 )) && grep -q 'out of range' $tmp/out.txt
+check "a hide limit below one second is refused"
 
 build_staging
 LAB_STUB_AX=false zsh $shared/run-lab.sh sparse > $tmp/out.txt 2>&1; (( $? == 2 )) && grep -q 'lacks Accessibility' $tmp/out.txt
@@ -290,6 +294,31 @@ zsh $shared/run-lab.sh drawn > $tmp/out.txt 2>&1
 grep -q '1 drawn: pass' $tmp/out.txt
 check "drawn waits by its own limit, two walks long, not the common one"
 
+# Run 20261031-015900: a discovery that went incomplete started k8's walk again,
+# and the new walk ran out of the common limit (plan 2026-10-31-k8-hide-limit, D1).
+slow_fixture() { # <scenario>: verified_fixture's lines, one second late
+    local file=$LAB_STUB_FIXTURES/$1.jsonl
+    verified_fixture $1 1
+    { head -n 1 $file; print -r -- '{"sleep":1}'; tail -n +2 $file } > $file.new && mv $file.new $file
+}
+build_staging "HIDE_LIMIT=400"
+slow_fixture sparse
+zsh $shared/run-lab.sh sparse > $tmp/out.txt 2>&1
+grep -q '1 sparse: pass' $tmp/out.txt
+check "a hide waits for verified by its own limit, two walks long, not the common one"
+
+build_staging "HIDE_LIMIT=400"
+slow_fixture incomplete
+zsh $shared/run-lab.sh incomplete > $tmp/out.txt 2>&1
+run=$(print $shared/evidence/*(N/[1]))
+missed=$(grep -c '"step":"stall"' $run/1-incomplete/steps.jsonl)
+build_staging "STATUS_LIMIT=400"
+slow_fixture incomplete
+zsh $shared/run-lab.sh incomplete > $tmp/out.txt 2>&1
+run=$(print $shared/evidence/*(N/[1]))
+(( missed == 0 )) && grep -q '"step":"stall"' $run/1-incomplete/steps.jsonl
+check "a rest is still waited for by the common limit, not the hide limit"
+
 build_staging "STATUS_LIMIT=100"
 verified_fixture frontshort 1
 LAB_STUB_ACTIVATE_FAILS=99 zsh $shared/run-lab.sh front-short > $tmp/out.txt 2>&1
@@ -310,7 +339,7 @@ crowded_snapshot() { # <condition, or none for an empty roster> <the divider's x
             sep=,
         done
     fi
-    print -r -- "{\"event\":\"snapshot\",\"phase\":\"quiet\",\"status\":\"notVerified(lengthNotApplied)\",\"lengthSet\":false,\"lengthApplied\":false,\"calibratedHiddenLength\":null,\"isIceBarOffered\":false,\"isIceBarPresented\":false,\"isInteracting\":false,\"roster\":[$roster],\"blockers\":[],\"cells\":[],\"cacheVisible\":[],\"cacheHidden\":[],\"cacheAlwaysHidden\":[],\"checks\":[],\"iconPlacement\":null,\"hiddenBoundaryUsable\":true,\"icon\":{\"frame\":[1500,0,28,30],\"usable\":true},\"hiddenDivider\":{\"frame\":[$2,0,18,30],\"usable\":true},\"alwaysHiddenDivider\":null,\"completeness\":\"complete\",\"pass\":3,\"chevronListed\":null,\"systemElements\":[]}"
+    print -r -- "{\"event\":\"snapshot\",\"phase\":\"quiet\",\"status\":\"notVerified(lengthNotApplied)\",\"lengthSet\":false,\"lengthApplied\":false,\"calibratedHiddenLength\":null,\"isIceBarOffered\":false,\"isIceBarPresented\":false,\"isInteracting\":false,\"roster\":[$roster],\"blockers\":[],\"cells\":[],\"cacheVisible\":[],\"cacheHidden\":[],\"cacheAlwaysHidden\":[],\"checks\":[],\"iconPlacement\":null,\"hiddenBoundaryUsable\":true,\"icon\":{\"frame\":[1500,0,28,30],\"usable\":true},\"hiddenDivider\":{\"frame\":[$2,0,18,30],\"usable\":true},\"alwaysHiddenDivider\":null,\"completeness\":\"complete\",\"pass\":3,\"chevronListed\":null,\"systemElements\":[],\"incomplete\":[]}"
 }
 build_staging
 {

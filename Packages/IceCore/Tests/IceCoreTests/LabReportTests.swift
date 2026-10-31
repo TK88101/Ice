@@ -37,7 +37,8 @@ struct LabReportTests {
             pass: 12,
             checks: [LabReportCheck(namespace: "com.icespike4.target", identifier: "vz-lab-1", outcome: "hidden")],
             chevronListed: false,
-            systemElements: [BarRect(minX: 896, minY: 4, width: 20, height: 22)]
+            systemElements: [BarRect(minX: 896, minY: 4, width: 20, height: 22)],
+            incomplete: [LabReportFailedRead(pid: 77, bundleID: "com.example.other", isSelf: false)]
         )
     }
 
@@ -50,6 +51,7 @@ struct LabReportTests {
             "isIceBarPresented", "isInteracting", "roster", "blockers", "cells", "cacheVisible", "cacheHidden",
             "cacheAlwaysHidden", "iconPlacement", "hiddenBoundaryUsable", "icon", "hiddenDivider",
             "alwaysHiddenDivider", "completeness", "pass", "checks", "chevronListed", "systemElements",
+            "incomplete",
         ])
     }
 
@@ -125,6 +127,7 @@ struct LabReportTests {
         #expect(line.contains(#""hiddenDivider":{"frame":[880,0,18,30],"usable":true}"#))
         #expect(line.contains(#""checks":[{"identifier":"vz-lab-1","namespace":"com.icespike4.target","outcome":"hidden"}]"#))
         #expect(line.contains(#""iconPlacement":null"#))
+        #expect(line.contains(#""incomplete":[{"bundleID":"com.example.other","isSelf":false,"pid":77}]"#))
         #expect(line.contains(#""calibratedHiddenLength":736"#))
         #expect(line.contains(#""event":"snapshot","#))
         #expect(line.hasSuffix(#""seq":1,"status":"verified","systemElements":[[896,4,20,22]],"t":3.25}"#))
@@ -181,6 +184,19 @@ struct LabReportTests {
         #expect(LabReportNames.completeness(.incomplete(failedPIDs: [1, 2])) == "incomplete:2")
         #expect(LabReportNames.completeness(.permissionDenied) == "permissionDenied")
         #expect(LabReportNames.completeness(nil) == nil)
+    }
+
+    @Test("the failed reads, by process: a pid the set knows by its bundle id and whether it is Ice, any other by its pid alone (plan 2026-10-31-k8-hide-limit, D2)")
+    func failedReads() {
+        let ice = ProcessInfoRecord(pid: 5, bundleID: "com.icespike4.lab.x", localizedName: nil, executableName: nil, launchTime: nil, isSelf: true)
+        #expect(LabReportFailedRead.list(.incomplete(failedPIDs: [5, 9]), processes: [5: ice]) == [
+            LabReportFailedRead(pid: 5, bundleID: "com.icespike4.lab.x", isSelf: true),
+            LabReportFailedRead(pid: 9, bundleID: nil, isSelf: false),
+        ])
+        #expect(LabReportFailedRead.list(.complete, processes: [5: ice]).isEmpty)
+        #expect(LabReportFailedRead.list(.permissionDenied, processes: [:]).isEmpty)
+        #expect(LabReportFailedRead.list(nil, processes: [:]).isEmpty)
+        #expect(LabReportFailedRead(pid: 9, bundleID: nil, isSelf: false).json.text == #"{"bundleID":null,"isSelf":false,"pid":9}"#)
     }
 
     @Test("what the machine tells the report: its phase by name, whether a length is set, and the rest's checks")

@@ -51,6 +51,12 @@ esac
 # A first calibration under the capture bursts (plan 2026-10-09-lab-first-run-followup,
 # S3): up to 24 observations, two to a burst of about 26.5 s, about 350 s.
 STATUS_LIMIT=600
+# A hide waits for `verified` through two walks: a discovery that goes incomplete
+# on the way retires the length and starts the walk again (run 20261031-015900:
+# k8's walk of about 465 s, again from 217 s). The worst, a reset just before the
+# verifying step, about 950 s; one recoverable reset, not a discovery that keeps
+# failing (plan 2026-10-31-k8-hide-limit, D1).
+HIDE_LIMIT=1100
 # `drawn` walks every length down to the floor, about 330 s, and a blocker on
 # the way starts the walk again (run 20261011-122641): two walks.
 DRAWN_LIMIT=900
@@ -62,7 +68,7 @@ KEY_BUDGET=1500
 HELPER_LIFETIME=10800
 RUN_LIMIT=28800
 required=(EXPECT_USER OWNER_USER GIT_REV ICE_SHA TARGET_SHA PROTECTED_SHA MENUS_SHA ICEWATCH_SHA TOOL_SHA)
-optional=(STATUS_LIMIT DRAWN_LIMIT START_LIMIT TIME_SCALE CAPTURE ROUNDS KEY_BUDGET HELPER_LIFETIME RUN_LIMIT)
+optional=(STATUS_LIMIT HIDE_LIMIT DRAWN_LIMIT START_LIMIT TIME_SCALE CAPTURE ROUNDS KEY_BUDGET HELPER_LIFETIME RUN_LIMIT)
 seen=()
 while IFS='=' read -r key value; do
     if (( ! ${${required}[(Ie)$key]} && ! ${${optional}[(Ie)$key]} )) || [[ ! $value =~ '^[A-Za-z0-9._,/-]+$' ]]; then
@@ -75,7 +81,7 @@ done < $shared/lab.env
 for key in $required; do
     (( ${seen[(Ie)$key]} )) || { print -u2 -- "run-lab: lab.env lacks $key; stopped."; exit 2; }
 done
-[[ $STATUS_LIMIT == <1-> && $DRAWN_LIMIT == <1-> && $START_LIMIT == <1-> && $CAPTURE == [01] && $ROUNDS == <1-3> && $KEY_BUDGET == <1->
+[[ $STATUS_LIMIT == <1-> && $HIDE_LIMIT == <1-> && $DRAWN_LIMIT == <1-> && $START_LIMIT == <1-> && $CAPTURE == [01] && $ROUNDS == <1-3> && $KEY_BUDGET == <1->
     && $HELPER_LIFETIME == <1-10800> && $RUN_LIMIT == <1-> && $TIME_SCALE =~ '^[0-9]+(\.[0-9]+)?$' ]] \
     || { print -u2 -- "run-lab: a value in lab.env is out of range; stopped."; exit 2; }
 
@@ -524,8 +530,8 @@ finish() {
     quit_menus
 }
 
-hide() { # <since>: the first verified and the bar clear of the burst it was read in, or the status limit
-    await $STATUS_LIMIT verified ${1:-0}
+hide() { # <since>: the first verified and the bar clear of the burst it was read in, or the hide limit
+    await $HIDE_LIMIT verified ${1:-0}
     local code=$? left
     # A status Ice's own capture indicator takes back comes in this window
     # (plan 2026-10-19-verify-in-a-clean-burst, D6).

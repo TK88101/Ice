@@ -29,6 +29,7 @@ import time
 
 MARKER = "IceLabReport-start-v1"
 TARGET = "com.icespike4.target"
+REFERENCE = "com.icespike4.protected"
 
 # LabReportSnapshot.keys, in order (IceCore). test-lab.sh compares the two lists.
 SNAPSHOT_KEYS = [
@@ -36,6 +37,7 @@ SNAPSHOT_KEYS = [
     "isIceBarPresented", "isInteracting", "roster", "blockers", "cells", "cacheVisible", "cacheHidden",
     "cacheAlwaysHidden", "iconPlacement", "hiddenBoundaryUsable", "icon", "hiddenDivider",
     "alwaysHiddenDivider", "completeness", "pass", "checks", "chevronListed", "systemElements",
+    "incomplete",
 ]
 
 
@@ -389,6 +391,7 @@ class Verdict:
         self.reasons = []
         self.clauses = {}
         self.kind = None
+        self.discovery = []
 
     def fail(self, reason):
         if self.result == "pass":
@@ -415,7 +418,71 @@ class Verdict:
             self.fail(f"{name}: {reason}")
 
     def json(self):
-        return {"scenario": self.scenario, "result": self.result, "kind": self.kind, "clauses": self.clauses, "reasons": self.reasons}
+        return {
+            "scenario": self.scenario, "result": self.result, "kind": self.kind, "clauses": self.clauses, "reasons": self.reasons,
+            "discoveryIncomplete": self.discovery,
+        }
+
+
+# --- a discovery that goes incomplete (plan 2026-10-31-k8-hide-limit) ------------
+
+# Who a failed read was, most telling first: Ice, a member, a reference, anything else.
+PROCESS_CLASSES = ("self", "member", "reference", "other")
+
+
+def process_class(read):
+    if read["isSelf"]:
+        return "self"
+    return {TARGET: "member", REFERENCE: "reference"}.get(read["bundleID"], "other")
+
+
+def discovery_episodes(events):
+    """Each run of incomplete snapshots up to the next complete one (D3): when
+    it began and ended, the length standing as it began, and every process
+    whose read failed in it, once, the most telling class first."""
+    episodes, current, seen = [], None, {}
+    for snap in snapshots(events):
+        incomplete = (snap["completeness"] or "").startswith("incomplete:")
+        if current is None and incomplete:
+            current, seen = {
+                "startSeq": snap["seq"], "endSeq": None, "startT": snap["t"], "endT": None,
+                "lengthApplied": snap["lengthApplied"], "length": snap["calibratedHiddenLength"],
+            }, {}
+        if current is None:
+            continue
+        if incomplete:
+            for read in snap["incomplete"]:
+                seen.setdefault(read["pid"], {"pid": read["pid"], "bundleID": read["bundleID"], "class": process_class(read)})
+            continue
+        if snap["completeness"] == "complete":
+            current["endSeq"], current["endT"] = snap["seq"], snap["t"]
+            episodes.append(dict(current, processes=ordered_processes(seen)))
+            current = None
+    if current is not None:
+        episodes.append(dict(current, processes=ordered_processes(seen)))
+    return episodes
+
+
+def ordered_processes(seen):
+    return sorted(seen.values(), key=lambda read: PROCESS_CLASSES.index(read["class"]))
+
+
+def judge_discovery(verdict, scenario, reports, steps):
+    """D4: every episode is carried; Ice's own read failing fails the run, a
+    member's leaves it not established. `incomplete`'s own stall, from the
+    `stall` step to the `settled` one, is not counted."""
+    stall, settled = step(steps, "stall"), step(steps, "settled")
+    window = (stall["seq"], settled["seq"]) if scenario == "incomplete" and stall and settled else None
+    for number, events in enumerate(reports, start=1):
+        for episode in discovery_episodes(events):
+            if number == 1 and window and window[0] <= episode["startSeq"] <= window[1]:
+                continue
+            verdict.discovery.append(dict(episode, report=number))
+    classes = {read["class"] for episode in verdict.discovery for read in episode["processes"]}
+    if "member" in classes:
+        verdict.not_established("a member's discovery read failed")
+    if "self" in classes:
+        verdict.fail("Ice's own discovery read failed")
 
 
 def setup_roster(verdict, events, expected, before_seq):
@@ -839,6 +906,8 @@ def judge(directory):
         accepted = {"bestEffort": {"verified", "unverified"}}.get(wanted, {wanted})
         if not is_exclusion(run.scenario, verdict.result, verdict.reasons) and run.scenario not in ENDS_ELSEWHERE and verdict.kind not in accepted:
             verdict.fail(f"ended {verdict.kind}, expected {wanted}")
+        reports = [events] + ([run.report(2)] if os.path.exists(run.path("report-2.jsonl")) else [])
+        judge_discovery(verdict, run.scenario, reports, run.steps)
     except Damaged as error:
         verdict.result = "aborted"
         verdict.reasons.append(str(error))
@@ -894,8 +963,16 @@ def matrix(evidence):
     return rounds
 
 
+def episode_line(name, episode):
+    processes = ", ".join(f"{read['bundleID'] or 'pid ' + str(read['pid'])} ({read['class']})" for read in episode["processes"])
+    where = f"at {episode['length']:g}" if episode["lengthApplied"] and episode["length"] is not None else "at standard length"
+    ended = f" for {episode['endT'] - episode['startT']:.1f} s" if episode["endT"] is not None else ", never complete again"
+    return f"   discovery incomplete: {name} report {episode['report']}: {processes} {where}{ended}"
+
+
 def report(evidence):
     rounds = matrix(evidence)
+    episodes, runs = 0, 0
     lines = []
     met = len(rounds) >= ROUNDS
     for number in sorted(rounds):
@@ -911,10 +988,15 @@ def report(evidence):
                 lines.append(f"   {name}: {verdict['result']}: " + "; ".join(verdict["reasons"][:4]))
             if SCENARIOS[name]["kind"] != "notRun" and (verdict is None or not passed_or_excluded(name, verdict)):
                 met = False
+        for name in ORDER:
+            found = (verdicts.get(name) or {}).get("discoveryIncomplete", [])
+            lines.extend(episode_line(name, episode) for episode in found)
+            episodes, runs = episodes + len(found), runs + bool(found)
     t2d_open = any(v.get("clauses", {}).get("t2d") == "fail" for r in rounds.values() for v in r.values())
+    lines.append(f"discovery incomplete: {episodes} episode(s) in {runs} scenario run(s)" if episodes else "discovery incomplete: none")
     if met:
         lines.append(
-            "S4 DoD: met (three rounds, every scenario passed but the exclusions: "
+            "S4 DoD: met (functional; three rounds, every scenario passed but the exclusions: "
             + ", ".join(sorted(EXCLUSIONS)) + " not established, " + ", ".join(name for name in ORDER if SCENARIOS[name]["kind"] == "notRun") + " not run, S5's)"
         )
     else:
