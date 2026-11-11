@@ -48,9 +48,11 @@ of a bar moved as one piece (Codex round 3: the trigger means "a credible common
 translation", not "a baseline might help").
 
 D2 **The plumbing.** `IceBarHidingEvent.observed` gains `displaced: Bool` (default
-false). The coordinator computes it from the reading's diagnostics with the detector's
-own `referenceTolerancePt` and `maxMismatch`. The machine keeps it on the `Rest`, false
-whenever the reading saw every ready member absent.
+false). `HidingVerification` computes it beside the diagnostics, with the
+`referenceTolerancePt` and `maxMismatch` that reading's own stability was judged with;
+`HiddenLengthReading` carries it and the coordinator only forwards it (review round 1:
+the coordinator had its own copy of the detector's parameters). The machine keeps it on
+the `Rest`, false whenever the reading saw every ready member absent.
 
 D3 **The recovery.** A rest with `displaced` and no pending re-check starts a new cycle
 (`enterQuiet`: the length retired, then the baseline at standard length, then the walk
@@ -87,7 +89,7 @@ Then S5.
 |---|---|---|---|
 | T1 | `ObservationDiagnostics.baselineDisplaced` | `ObservationDiagnosticsTests`: the two measured readings; zero, one, three references; absent, ambiguous, unobserved; no offset, no mismatch, high mismatch; disagreeing and opposite offsets; within tolerance | `swift test` green |
 | T2 | The machine: `displaced` on the event and the rest, `displacedRetries`, `retryDisplaced`, `rechecked` | `IceBarHidingMachineTests`, "A rest read on a bar that moved under its baseline": the measured sequence to verified; the interval; the bound and no capture after it; the counter reset by settle and by re-check; the re-check path (E5); covered references keep the length (E6); not while interacting; not during a walk | `swift test` green, changed files at least 80 % |
-| T3 | The coordinator passes `displaced` | build | `xcodebuild` green |
+| T3 | The feed computes `displaced`, the reading carries it, the coordinator forwards it | `CaptureBurstObserverTests`: two references moved the same way; one alone; a clean reading | `swift test`, `xcodebuild` green |
 | T4 | `/simcodex`; STATUS; the older plan's two sentences; restage for G3 | | |
 
 ## Appendix: the argument with Codex

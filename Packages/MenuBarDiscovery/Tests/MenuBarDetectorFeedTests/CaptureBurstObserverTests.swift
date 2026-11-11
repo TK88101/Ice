@@ -256,16 +256,32 @@ struct CaptureBurstObserverTests {
         #expect(reference?.key == Base.items.ref.key)
         #expect(reference?.match == "unique")
         #expect(reference?.offset == 10)
+        #expect(!reading.displaced, "one reference alone may have moved by itself")
+    }
+
+    @Test("an observation whose two references moved the same way says the bar is displaced under its baseline")
+    func displacedBar() async {
+        // t2 and the reference stay shown, baselined at x 70 and 150, and are read at 80 and 160.
+        let rig = Self.rig(observeImage: Scenario.image([(TestBar.shapeC, 80), (TestBar.shapeB, 160)]))
+        let sectionMap = Scenario.sectionMap([Base.items.t1])
+            .merging(Scenario.sectionMap([Base.items.t2, Base.items.ref], section: .visible)) { first, _ in first }
+        _ = await rig.observer.takeBaseline(sectionMap: sectionMap)
+        let reading = await rig.observer.observe()
+        #expect(reading.diagnostics?.captureStable == false)
+        #expect(reading.diagnostics?.references.map(\.offset) == [10, 10])
+        #expect(reading.displaced)
     }
 
     @Test("a clean observation's diagnostics say the reference stood still")
     func cleanDiagnostics() async {
         let rig = Self.rig()
         _ = await rig.observer.takeBaseline(sectionMap: Base.sectionMap)
-        let diagnostics = await rig.observer.observe().diagnostics
+        let reading = await rig.observer.observe()
+        let diagnostics = reading.diagnostics
         #expect(diagnostics?.captureStable == true)
         #expect(diagnostics?.references.first?.offset == 0)
         #expect(diagnostics?.fold == "absent")
+        #expect(!reading.displaced)
     }
 }
 

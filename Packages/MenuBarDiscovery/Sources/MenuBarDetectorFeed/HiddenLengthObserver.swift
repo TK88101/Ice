@@ -48,6 +48,9 @@ public struct HiddenLengthReading: Equatable, Sendable {
     public let chevronListed: Bool?
     /// What the matcher read of each reference; `nil` when no observation was read.
     public let diagnostics: ObservationDiagnostics?
+    /// The references say the bar lies as one piece away from its baseline:
+    /// a new baseline would read it again.
+    public let displaced: Bool
     /// How long the session waited for a bar clear of the capture indicator.
     public let waited: Double
     /// The burst this session was read in, fixed when its captures ended;
@@ -58,12 +61,14 @@ public struct HiddenLengthReading: Equatable, Sendable {
         checks: [ItemKey: SectionItemCheck],
         chevronListed: Bool?,
         diagnostics: ObservationDiagnostics? = nil,
+        displaced: Bool = false,
         waited: Double = 0,
         burst: ObservationBurst? = nil
     ) {
         self.checks = checks
         self.chevronListed = chevronListed
         self.diagnostics = diagnostics
+        self.displaced = displaced
         self.waited = waited
         self.burst = burst
     }
@@ -194,6 +199,7 @@ public actor HiddenLengthObserver {
             checks: report.checks,
             chevronListed: listed,
             diagnostics: report.diagnostics,
+            displaced: report.displaced,
             waited: waited,
             burst: read
         )

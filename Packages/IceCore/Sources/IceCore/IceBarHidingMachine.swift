@@ -531,9 +531,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     /// stays until a new cycle may start; a bounded number of times.
     /// `nil` while no new cycle may start.
     private mutating func retryBaseline(now: Double) -> [IceBarHidingCommand]? {
-        guard sample?.isInteracting == false, baselineRetries < parameters.maxFailures, !throttled(now) else { return nil }
-        baselineRetries += 1
-        return enterQuiet(now)
+        retry(\.baselineRetries, now: now)
     }
 
     /// A system item that changes its width moves every item under the
@@ -543,8 +541,14 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     /// length gives back, so a bar that keeps reading displaced is left
     /// alone. `nil` while no new cycle may start.
     private mutating func retryDisplaced(now: Double) -> [IceBarHidingCommand]? {
-        guard sample?.isInteracting == false, displacedRetries < parameters.maxFailures, !throttled(now) else { return nil }
-        displacedRetries += 1
+        retry(\.displacedRetries, now: now)
+    }
+
+    /// One more cycle counted against `budget`, or `nil`: the pointer is in
+    /// the bar, the budget is spent, or the last start is too recent.
+    private mutating func retry(_ budget: WritableKeyPath<IceBarHidingMachine, Int>, now: Double) -> [IceBarHidingCommand]? {
+        guard sample?.isInteracting == false, self[keyPath: budget] < parameters.maxFailures, !throttled(now) else { return nil }
+        self[keyPath: budget] += 1
         return enterQuiet(now)
     }
 

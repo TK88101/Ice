@@ -259,7 +259,8 @@ public final class HidingVerification: @unchecked Sendable {
         func allSkipped(_ reason: CheckSkipReason) -> VerificationReport {
             VerificationReport(
                 checks: Dictionary(uniqueKeysWithValues: prepared.targets.map { ($0, .skipped(reason)) }),
-                diagnostics: nil
+                diagnostics: nil,
+                displaced: false
             )
         }
 
@@ -316,13 +317,18 @@ public final class HidingVerification: @unchecked Sendable {
             reading: reading,
             references: referenceKeys.map { ($0, ready.baseline.templates[$0.encoded]?.originXPt) }
         )
-        return VerificationReport(checks: results, diagnostics: diagnostics)
+        // Judged with the bounds this reading's own stability was judged with.
+        let displaced = diagnostics.baselineDisplaced(tolerance: parameters.referenceTolerancePt, maxMismatch: parameters.maxMismatch)
+        return VerificationReport(checks: results, diagnostics: diagnostics, displaced: displaced)
     }
 
     /// What `verifyReporting` returns.
     public struct VerificationReport: Equatable, Sendable {
         public let checks: [ItemKey: SectionItemCheck]
         public let diagnostics: ObservationDiagnostics?
+        /// The references say the bar lies as one piece away from its
+        /// baseline (`ObservationDiagnostics.baselineDisplaced`).
+        public let displaced: Bool
     }
 
     // MARK: - Helpers

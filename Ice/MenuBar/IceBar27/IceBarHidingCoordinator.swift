@@ -212,13 +212,9 @@ final class IceBarHidingCoordinator {
                     sinceCapture: reading.burst.map { ProcessInfo.processInfo.systemUptime - $0.capturedAt }
                 ))
             }
-            // Where the references lie against the baseline: the detector's own bounds.
-            let detector = DetectorParameters.preRegistered
-            let displaced = reading.diagnostics?.baselineDisplaced(
-                tolerance: detector.referenceTolerancePt, maxMismatch: detector.maxMismatch
-            ) ?? false
             send(.observed(
-                token: token, checks: reading.checks, chevronListed: reading.chevronListed, burst: reading.burst, displaced: displaced
+                token: token, checks: reading.checks, chevronListed: reading.chevronListed, burst: reading.burst,
+                displaced: reading.displaced
             ))
         }
     }

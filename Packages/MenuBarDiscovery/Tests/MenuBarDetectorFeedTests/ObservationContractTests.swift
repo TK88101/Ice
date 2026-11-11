@@ -60,7 +60,10 @@ struct ObservationContractTests {
 
     static func answer(_ machine: IceBarHidingMachine, token: Int, with reading: HiddenLengthReading, now: Double)
         -> (machine: IceBarHidingMachine, commands: [IceBarHidingCommand]) {
-        machine.step(.observed(token: token, checks: reading.checks, chevronListed: reading.chevronListed, burst: reading.burst), now: now)
+        machine.step(
+            .observed(token: token, checks: reading.checks, chevronListed: reading.chevronListed, burst: reading.burst, displaced: reading.displaced),
+            now: now
+        )
     }
 
     @Test("a settle read on a clear bar, a new burst's first session, rests verified")
