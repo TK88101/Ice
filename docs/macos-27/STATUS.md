@@ -298,4 +298,44 @@ was posted. T2b did not complete its three-run protocol.
 | `k4`'s join | its second session starts about 5.4 s into a burst, against the 5.5 s it may | MEASURED |
 | Transient discovery incomplete (known limit) | outside the `incomplete` scenario, in 7 of about 76 scenario runs of rounds six and seven; always one process, never Ice itself; each one retires the length and starts the walk again. Which process: unknown until the next run | MEASURED (the two runs' reports); the cause TBD |
 | Fixed since (not yet run live) | plan `2026-10-31-k8-hide-limit`: a hide waits `HIDE_LIMIT` (1100 s, two walks; `STATUS_LIMIT` 600 and `DRAWN_LIMIT` 900 stay); the snapshot names each failed read (`incomplete`: pid, bundle id, Ice or not); the judge folds them into episodes, fails a run on Ice's own, leaves it not established on a member's, and the report lists every episode, its length and duration, with the count on the DoD line ("met (functional; ...)") | MEASURED (unit tests: IceCore 701, lab-tool 53; `test-lab.sh` with a stub Ice; app build; simcodex 2 rounds, Codex round 2 no findings) |
-| Next | stage the branch head; the eighth round; read every episode line it reports | TBD |
+| Next | done: run `20261111-233109`, below | MEASURED |
+
+## The lab matrix, a ninth sitting in `icetest` (run `20261111-233109`, build `9a6d7a6`, 2026-11-11), and the end of the matrix as a gate
+
+| What | State | Level |
+|---|---|---|
+| The round | 2 h 25 min; round 1 not clean, for `k8` alone ("never verified (last status: notVerified(unchecked:8))"); the run stopped there. Every other runnable scenario matched its kind. `noref`, `crowded` the ruled exclusions; `inverted`, `inverted-moved` not run | MEASURED |
+| `1-k8` | the walk 736 to 672 clean, about 24 s a step. At 23:59:40-0:00:00 the clock went from 124 to 116 pt and every item left of it moved 8 pt. The trial at 656 and the settle at 704 then read unstable, both references `unique` at offset 8; Ice rested `notVerified(unchecked:8)` and observed nothing more for 924 s. `HIDE_LIMIT` was not the cause: the walk ended at 183 s | MEASURED (`1-k8/report-1.jsonl` seq 68-270, `report-1.log`) |
+| Why it stayed | a rest observes again only when a baseline is owed or a layout change is pending, and the layout signature leaves frames and system items out. The same happens at a verified rest: the next app in front re-checks against the old baseline | INFERRED (code); both reproduced by unit tests |
+| Discovery incomplete | 3 episodes in 3 scenario runs, all another process at standard length: `com.apple.Safari` 1.5 s (`noref`), `com.microsoft.autoupdate.fba` 10.0 s (`crowded`) and 12.5 s (`relaunch`, which passed). None Ice's own, none a member's. Answers the seventh round's "which process": not one process | MEASURED (run report) |
+| The owner's decision, 2026-11-12 | no more full overnight matrix. "Three clean rounds running" was never met in nine sittings (best: two of three, 2026-10-19) and is given up. S4 closes on the gate of plan `2026-11-12-displaced-baseline`, section 3: **a lower acceptance confidence, chosen on purpose, not an equivalent** | the owner's ruling |
+| Fixed since | a rest whose reading finds the bar displaced as one piece (at least two references, each found well, all the same distance off) retires the length and baselines again, at most 3 times until a length verifies; a reading that is unstable for another reason (references covered by the frontmost app's menus, `front-long`) keeps the length as before | MEASURED (unit tests: IceCore 712, MenuBarDiscovery 87, lab-tool 53; app build; `check-a3a4.sh`) |
+| The rule over old runs | of 1893 observations in runs `20261019-004100`, `20261031-015900` and this one, 6 were unstable; the rule is true of `k8`'s two and of none of `front-long`'s four | MEASURED (the rule replayed over the reports) |
+| The recovery, live | not witnessed. One `run-lab.sh k8` timed across a clock digit change is the only live run planned (plan section 3, G3) | TBD |
+
+### The evidence S4 closes on
+
+Each scenario's latest live pass. The hiding machine changed after every one of them
+(this fix); the changed path is entered only by a displaced reading, which none of
+these runs had outside `k8` (the row above), and is covered by `IceBarHidingMachineTests`
+("A rest read on a bar that moved under its baseline") and `ObservationDiagnosticsTests`.
+
+| Scenario | Expected | Latest live pass | Level |
+|---|---|---|---|
+| `sparse` `k2` `k4` `press` `addremove` `fresh-off` `fresh-on` `placed-off` `placed-on` `front-short` `relaunch` | verified | run `20261111-233109`, `9a6d7a6` | MEASURED |
+| `k8` | verified | run `20261019-004100`, `0fbae72`, three rounds. Since: failed 2026-10-31 (the 600 s limit; `HIDE_LIMIT` since) and 2026-11-11 (the displaced bar; fixed above). No live pass on the current code | MEASURED; the fix unit-tested only |
+| `front-long` | best effort | run `20261111-233109`, `9a6d7a6` | MEASURED |
+| `positional` `incomplete` | blocked, unverified | run `20261111-233109`, `9a6d7a6` | MEASURED |
+| `drawn` | failed, as expected | run `20261111-233109`, `9a6d7a6` | MEASURED |
+| `noref` `crowded` | excluded (the ruling of 2026-10-11) | never a pass | MEASURED limit |
+| `inverted` `inverted-moved` | not run | the owner's Command-drag, S5 | TBD |
+
+### Limits S4 closes with
+
+| Limit | Level |
+|---|---|
+| Three clean rounds running were never achieved; no claim rests on them | MEASURED |
+| A transient (another process's failed read, a capture the indicator answers, a system item changing width) can leave Ice `notVerified` for a while or until the layout next changes. No run has shown a false `verified` | MEASURED for the runs above; INFERRED beyond them |
+| With one reference, or references that moved by different amounts, a displaced bar is not recovered: Ice stays `notVerified` until an item or display change | INFERRED (the rule) |
+| A bar that keeps reading displaced after 3 baselines is left alone, unverified | unit tests |
+| All of it on one Mac, one display, the `icetest` account and sacrificial helpers; the owner's own bar is S5's | MEASURED |

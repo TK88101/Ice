@@ -91,8 +91,12 @@ public enum IceBarHidingEvent: Equatable, Sendable {
     case baseline(token: Int, ok: Bool)
     /// The answer to `observe(token:length:closesBurst:)`: each member's check
     /// at that length, whether `MenuBarAgent` listed a `«` (recorded only,
-    /// D-b), and the burst it was read in (`nil`: not known).
-    case observed(token: Int, checks: [ItemKey: SectionItemCheck], chevronListed: Bool?, burst: ObservationBurst?)
+    /// D-b), the burst it was read in (`nil`: not known), and whether the
+    /// references say the bar lies as one piece away from its baseline
+    /// (`ObservationDiagnostics.baselineDisplaced`).
+    case observed(
+        token: Int, checks: [ItemKey: SectionItemCheck], chevronListed: Bool?, burst: ObservationBurst?, displaced: Bool = false
+    )
 }
 
 public enum IceBarHidingCommand: Equatable, Sendable {
@@ -159,6 +163,9 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         /// The baseline did not cover the members: this is a best-effort
         /// length (O1), and a new cycle is owed.
         public var baselineOwed = false
+        /// The reading the checks are from found the bar displaced under its
+        /// baseline: a new cycle is owed, a bounded number of times.
+        public var displaced = false
     }
 
     public enum Phase: Equatable, Sendable {
@@ -195,6 +202,11 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     /// Cycles started because a baseline did not cover the members, since
     /// the roster or display last changed or a baseline last covered them.
     private var baselineRetries = 0
+    /// Cycles started because a rest read the bar displaced under its
+    /// baseline, since the roster or display last changed or a length last
+    /// verified. A baseline that covers the members gives none back: one is
+    /// taken in every such cycle.
+    private var displacedRetries = 0
     private var lastStart: Double?
     private var lastToken = 0
     private var reported = IceBarHidingStatus.off
@@ -287,8 +299,9 @@ public struct IceBarHidingMachine: Equatable, Sendable {
             return phase == .off ? [] : handle(sample, now: now)
         case .baseline(let token, let ok):
             return baselineTaken(token: token, ok: ok, now: now)
-        case .observed(let token, let checks, let chevronListed, let burst):
-            return observed(token: token, checks: checks, chevronListed: chevronListed, burst: burst, now: now)
+        case .observed(let token, let checks, let chevronListed, let burst, let displaced):
+            let reading = Reading(checks: checks, chevronListed: chevronListed, burst: burst, displaced: displaced)
+            return observed(token: token, reading, now: now)
         }
     }
 
@@ -320,6 +333,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
             if change.isStructural {
                 failures = 0
                 baselineRetries = 0
+                displacedRetries = 0
                 return enterQuiet(now)
             }
             guard case .resting(var rest) = phase else { return enterQuiet(now) }
@@ -348,6 +362,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
             return propose(after: observations, now: now)
         case .resting(var rest):
             if rest.baselineOwed, let retry = retryBaseline(now: now) { return retry }
+            if rest.pending == nil, rest.displaced, let retry = retryDisplaced(now: now) { return retry }
             guard
                 let pending = rest.pending, pending.recheck == nil, !sample.isInteracting,
                 now - pending.since >= parameters.quietPeriod
@@ -382,50 +397,61 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         return []
     }
 
-    private mutating func observed(
-        token: Int,
-        checks: [ItemKey: SectionItemCheck],
-        chevronListed: Bool?,
-        burst: ObservationBurst?,
-        now: Double
-    ) -> [IceBarHidingCommand] {
+    /// What one observation answered.
+    private struct Reading {
+        let checks: [ItemKey: SectionItemCheck]
+        let chevronListed: Bool?
+        let burst: ObservationBurst?
+        let displaced: Bool
+    }
+
+    private mutating func observed(token: Int, _ reading: Reading, now: Double) -> [IceBarHidingCommand] {
         switch phase {
         case .settling(let trial, let kind) where trial.token == token:
-            return settled(trial, kind, confirm: ConfirmState(), checks: checks, chevronListed: chevronListed, burst: burst, now: now)
+            return settled(trial, kind, confirm: ConfirmState(), reading, now: now)
         case .confirming(let confirmation) where confirmation.trial.token == token:
-            return settled(
-                confirmation.trial, confirmation.kind, confirm: confirmation.confirm,
-                checks: checks, chevronListed: chevronListed, burst: burst, now: now
-            )
+            return settled(confirmation.trial, confirmation.kind, confirm: confirmation.confirm, reading, now: now)
         case .calibrating(let observations, let trial?, _) where trial.token == token:
-            let observation = HiddenLengthObservation(length: trial.length, outcome: outcome(of: checks))
+            let observation = HiddenLengthObservation(length: trial.length, outcome: outcome(of: reading.checks))
             phase = .calibrating(observations: observations + [observation], pending: nil, restedAt: now)
             // Back to rest, so the next trial is again a jump from rest (T0).
             return [.setLength(nil)]
-        case .resting(var rest) where rest.pending?.recheck == token:
-            if var pending = rest.pending, unproven(outcome(of: checks), burst: burst, besides: pending.confirm.candidateBurst) {
-                guard let next = nextConfirmation(after: pending.confirm, burst: burst) else {
-                    rest.checks = [:]
-                    rest.chevronListed = chevronListed
-                    rest.pending = nil
-                    phase = .resting(rest)
-                    return []
-                }
-                let recheck = takeToken()
-                pending.recheck = recheck
-                pending.confirm = next
-                rest.pending = pending
-                phase = .resting(rest)
-                return [.observe(token: recheck, length: rest.length, closesBurst: true)]
-            }
-            rest.checks = checks
-            rest.chevronListed = chevronListed
-            rest.pending = nil
-            phase = .resting(rest)
-            return recycleIfDrawn(now: now)
+        case .resting(let rest) where rest.pending?.recheck == token:
+            return rechecked(rest, reading, now: now)
         default:
             return []
         }
+    }
+
+    /// A re-check's observation at a rest: confirmed as a settle's is (D1,
+    /// D2); else the rest's checks are the reading's.
+    private mutating func rechecked(_ resting: Rest, _ reading: Reading, now: Double) -> [IceBarHidingCommand] {
+        var rest = resting
+        let outcome = outcome(of: reading.checks)
+        if var pending = rest.pending, unproven(outcome, burst: reading.burst, besides: pending.confirm.candidateBurst) {
+            guard let next = nextConfirmation(after: pending.confirm, burst: reading.burst) else {
+                rest.checks = [:]
+                rest.chevronListed = reading.chevronListed
+                rest.pending = nil
+                rest.displaced = false
+                phase = .resting(rest)
+                return []
+            }
+            let recheck = takeToken()
+            pending.recheck = recheck
+            pending.confirm = next
+            rest.pending = pending
+            phase = .resting(rest)
+            return [.observe(token: recheck, length: rest.length, closesBurst: true)]
+        }
+        // A length proven again is as good as one settled on.
+        if outcome == .hiddenClean { displacedRetries = 0 }
+        rest.checks = reading.checks
+        rest.chevronListed = reading.chevronListed
+        rest.pending = nil
+        rest.displaced = reading.displaced && outcome != .hiddenClean
+        phase = .resting(rest)
+        return recycleIfDrawn(now: now)
     }
 
     /// A settle's (or a confirmation's) observation. Every ready member
@@ -436,16 +462,14 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         _ trial: Trial,
         _ kind: SettleKind,
         confirm: ConfirmState,
-        checks: [ItemKey: SectionItemCheck],
-        chevronListed: Bool?,
-        burst: ObservationBurst?,
+        _ reading: Reading,
         now: Double
     ) -> [IceBarHidingCommand] {
-        let outcome = outcome(of: checks)
-        if unproven(outcome, burst: burst, besides: confirm.candidateBurst) {
-            guard let next = nextConfirmation(after: confirm, burst: burst) else {
+        let outcome = outcome(of: reading.checks)
+        if unproven(outcome, burst: reading.burst, besides: confirm.candidateBurst) {
+            guard let next = nextConfirmation(after: confirm, burst: reading.burst) else {
                 phase = .resting(Rest(
-                    length: trial.length, checks: [:], chevronListed: chevronListed, pending: nil,
+                    length: trial.length, checks: [:], chevronListed: reading.chevronListed, pending: nil,
                     baselineOwed: kind == .unbaselined
                 ))
                 return []
@@ -464,10 +488,11 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         if outcome == .hiddenClean {
             lastGood = trial.length
             failures = 0
+            displacedRetries = 0
         }
         phase = .resting(Rest(
-            length: trial.length, checks: checks, chevronListed: chevronListed, pending: nil,
-            baselineOwed: kind == .unbaselined
+            length: trial.length, checks: reading.checks, chevronListed: reading.chevronListed, pending: nil,
+            baselineOwed: kind == .unbaselined, displaced: reading.displaced && outcome != .hiddenClean
         ))
         return []
     }
@@ -508,6 +533,18 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     private mutating func retryBaseline(now: Double) -> [IceBarHidingCommand]? {
         guard sample?.isInteracting == false, baselineRetries < parameters.maxFailures, !throttled(now) else { return nil }
         baselineRetries += 1
+        return enterQuiet(now)
+    }
+
+    /// A system item that changes its width moves every item under the
+    /// baseline, and no later reading against it is stable (run
+    /// 20261111-233109, k8: the clock at midnight). The length stays until a
+    /// new cycle may start; a bounded number of times, which only a verified
+    /// length gives back, so a bar that keeps reading displaced is left
+    /// alone. `nil` while no new cycle may start.
+    private mutating func retryDisplaced(now: Double) -> [IceBarHidingCommand]? {
+        guard sample?.isInteracting == false, displacedRetries < parameters.maxFailures, !throttled(now) else { return nil }
+        displacedRetries += 1
         return enterQuiet(now)
     }
 

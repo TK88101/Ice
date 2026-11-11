@@ -94,6 +94,23 @@ struct IceBarHidingMachineTests {
         /// once spent, every observation is a new burst's first session.
         var burstScript = [ObservationBurst?]()
         var bursts = 0
+        /// The bar lies as one piece away from the last baseline: every
+        /// reading is unstable and says so, until a baseline is taken with
+        /// `rebaselineCures` set.
+        var displaced = false
+        var rebaselineCures = false
+
+        /// A system item changes its width: the bar moves under the baseline.
+        mutating func shift() {
+            displaced = true
+            world = { _ in IceBarHidingMachineTests.unstable }
+        }
+
+        /// The bar reads against its baseline again.
+        mutating func unshift() {
+            displaced = false
+            world = IceBarHidingMachineTests.band()
+        }
 
         /// The burst the next observation is read in.
         mutating func burst(closes: Bool) -> ObservationBurst? {
@@ -113,10 +130,15 @@ struct IceBarHidingMachineTests {
                     length = value
                 case .takeBaseline(let token, _, _):
                     baselines += 1
+                    if rebaselineCures { unshift() }
                     if answers { send(.baseline(token: token, ok: baselineOK)) }
                 case .observe(let token, let asked, let closes):
                     observed.append((asked, length))
-                    if answers { send(.observed(token: token, checks: checks(at: asked), chevronListed: chevron, burst: burst(closes: closes))) }
+                    if answers {
+                        send(.observed(
+                            token: token, checks: checks(at: asked), chevronListed: chevron, burst: burst(closes: closes), displaced: displaced
+                        ))
+                    }
                 case .report:
                     break
                 }
@@ -433,6 +455,154 @@ struct IceBarHidingMachineTests {
         driver.world = { length in length >= 720 && length <= 736 ? Self.clean : .checked(.unverifiable(.captureUnstable)) }
         driver.settle()
         #expect(driver.restLength == 728)
+    }
+
+    // MARK: - A rest read on a bar that moved under its baseline
+
+    // Run 20261111-233109, k8: the clock lost a digit at midnight, every item
+    // moved 8 pt, the trial at 656 and the settle at 704 read unstable with
+    // both references found 8 pt off, and Ice rested unverified for the 924 s
+    // it was watched. In the same run `front-long` read unstable too, its
+    // references covered by the frontmost app's menus: no baseline cures that,
+    // and taking one would show what the owner hid.
+
+    static let unstable = SectionItemCheck.checked(.unverifiable(.captureUnstable))
+
+    /// A walk that saw the first lengths absent, then a bar that reads
+    /// unstable, displaced under its baseline, to the rest.
+    static func restedDisplaced() -> Driver {
+        var driver = Driver()
+        driver.send(.mode(isIceBar: true))
+        while driver.observed.count < 5 { driver.tick() }
+        driver.shift()
+        while driver.restLength == nil { driver.tick() }
+        return driver
+    }
+
+    @Test("a rest read on a displaced bar is not the end: the length is retired, the baseline taken again, and a length verified")
+    func displacedRestIsBaselinedAgain() {
+        var driver = Self.restedDisplaced()
+        #expect(driver.restLength == 704, "the midpoint of what was seen absent, 672 to 736")
+        #expect(driver.state == .requestedNotVerified(reasons: [.membersUnchecked([Self.member(1).tag, Self.member(2).tag])]))
+        let mark = driver.log.count
+        driver.rebaselineCures = true
+        driver.run(ticks: 80)
+        #expect(driver.since(mark).first == .setLength(nil), "a baseline needs the section shown")
+        #expect(driver.baselines == 2)
+        #expect(driver.restLength == 736)
+        #expect(driver.state == .verifiedHidden)
+    }
+
+    @Test("the baseline after a displaced rest is not taken before the least time between two starts")
+    func displacedRestRespectsTheInterval() {
+        var driver = Driver()
+        driver.shift()
+        driver.settle(ticks: 12)
+        #expect(driver.restLength != nil)
+        let mark = driver.log.count
+        driver.run(ticks: 15)
+        #expect(driver.baselines == 1)
+        #expect(!driver.since(mark).contains(.setLength(nil)))
+    }
+
+    @Test("a bar that keeps reading displaced is baselined again a bounded number of times, then rests unverified and captures no more")
+    func displacedRestIsBounded() {
+        var driver = Driver()
+        driver.shift()
+        driver.settle(ticks: 600)
+        // Every one of these baselines covered the members: that gives nothing back.
+        #expect(driver.baselines == 1 + driver.machine.parameters.maxFailures)
+        #expect(driver.restLength == IceBarHidingParameters.standard.calibration.defaultStart)
+        #expect(driver.state?.countsAsLabSuccess == false)
+        let (observations, mark) = (driver.observed.count, driver.log.count)
+        driver.run(ticks: 600)
+        #expect(driver.observed.count == observations)
+        #expect(driver.since(mark).isEmpty)
+    }
+
+    @Test("a verified length gives the next displaced rest its baselines back", arguments: [false, true])
+    func verifiedLengthResetsTheRetries(byRecheck: Bool) {
+        var driver = Driver()
+        driver.shift()
+        driver.settle(ticks: 600)
+        #expect(driver.baselines == 1 + driver.machine.parameters.maxFailures)
+        // The bar reads again: by a re-check at the rest, or by a new cycle's settle.
+        driver.unshift()
+        let other = Self.sample(Self.signature(frontmostPID: 11))
+        if byRecheck {
+            driver.run(other, ticks: 6)
+        } else {
+            driver.tick(Self.sample(dragging: true))
+            driver.now += 100
+            driver.run(ticks: 60)
+        }
+        #expect(driver.state == .verifiedHidden)
+        let before = driver.baselines
+        driver.shift()
+        driver.run(Self.sample(Self.signature(frontmostPID: 12)), ticks: 600)
+        #expect(driver.baselines == before + driver.machine.parameters.maxFailures)
+    }
+
+    @Test("a re-check read on a displaced bar owes a baseline too: the clock changes at a verified rest, and the next app in front finds it")
+    func displacedRecheckIsBaselinedAgain() {
+        var driver = Driver()
+        driver.settle()
+        #expect(driver.state == .verifiedHidden)
+        driver.shift()
+        let changed = Self.sample(Self.signature(frontmostPID: 11))
+        driver.run(changed, ticks: 4)
+        #expect(driver.restLength == 736, "the re-check itself keeps the length")
+        let mark = driver.log.count
+        driver.rebaselineCures = true
+        driver.run(changed, ticks: 40)
+        #expect(driver.since(mark).first == .setLength(nil))
+        #expect(driver.baselines == 2)
+        #expect(driver.state == .verifiedHidden)
+    }
+
+    @Test("a re-check that cannot be read for another reason keeps the length and shows nothing: it verifies again when the layout changes back")
+    func coveredReferencesKeepTheLength() {
+        var driver = Driver()
+        driver.settle()
+        // The frontmost app's menus cover the references: unstable, not displaced.
+        driver.world = { _ in Self.unstable }
+        let long = Self.sample(Self.signature(frontmostPID: 11, menuMaxX: 1400))
+        driver.run(long, ticks: 5)
+        #expect(driver.state == .requestedNotVerified(reasons: [.membersUnchecked([Self.member(1).tag, Self.member(2).tag])]))
+        let mark = driver.log.count
+        driver.now += 100
+        driver.run(long, ticks: 200)
+        #expect(driver.since(mark).isEmpty)
+        #expect(driver.restLength == 736)
+        #expect(driver.length == 736)
+        #expect(driver.baselines == 1)
+        driver.world = Self.band()
+        driver.run(ticks: 6)
+        #expect(driver.state == .verifiedHidden)
+        #expect(driver.baselines == 1)
+    }
+
+    @Test("a displaced rest is not baselined again while the pointer is in the bar or the IceBar is up")
+    func displacedRestWaitsForInteraction() {
+        var driver = Self.restedDisplaced()
+        driver.now += 100
+        let mark = driver.log.count
+        driver.run(Self.sample(interacting: true), ticks: 10)
+        #expect(driver.since(mark).isEmpty)
+        #expect(driver.restLength == 704)
+    }
+
+    @Test("a displaced reading during a walk ends the walk as any unreadable one; only the rest owes the baseline")
+    func displacedTrialDoesNotAbortTheWalk() {
+        var driver = Driver()
+        driver.send(.mode(isIceBar: true))
+        while driver.observed.count < 5 { driver.tick() }
+        let baselines = driver.baselines
+        driver.shift()
+        while driver.restLength == nil {
+            driver.tick()
+            #expect(driver.baselines == baselines)
+        }
     }
 
     @Test("stale and stacked members cap the state, they do not stop the walk for the others")

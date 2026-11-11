@@ -702,6 +702,9 @@ the best-effort length on a bar unlike T0's.
   runs, and is listed apart.
 - DoD: every verifiable scenario verified three runs in a row; the report is generated,
   with the unverified ones listed apart.
+  **Amended 2026-11-12 (the owner's decision):** three runs in a row were never met and
+  are given up; S4 closes on the gate of plan `2026-11-12-displaced-baseline`, section 3,
+  a lower confidence chosen on purpose.
 
 #### S4 design (T4, added 2026-10-08 after T3b; review in the Appendix, "T4 design")
 
@@ -952,7 +955,8 @@ a clean matrix.
 
 ### S5 Owner acceptance (owner cost: one short sitting)
 
-Only after S4's DoD: one unattended command; then the owner looks at Ice on the bar
+Only after S4's DoD (since 2026-11-12: the gate of plan `2026-11-12-displaced-baseline`,
+section 3): one unattended command; then the owner looks at Ice on the bar
 once (does the IceBar hold what was chosen; does a click open the menu), and, with the
 items hidden, Command-drags Ice's icon left of its divider and back, reading the
 layout pane's line each time (scenario 14's second half, moved here from S4 by the

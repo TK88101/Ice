@@ -50,6 +50,27 @@ public struct ObservationDiagnostics: Equatable, Sendable {
         return ObservationDiagnostics(references: readings, captureStable: reading.captureStable, fold: name(of: reading.fold))
     }
 
+    /// Whether the bar lies as one piece away from where its baseline was
+    /// cut: at least two references, each found well (`unique`, within
+    /// `maxMismatch`), each farther than `tolerance` from its origin, all the
+    /// same distance. A system item that changes its width does that (run
+    /// 20261111-233109, k8: the clock at midnight, both references 8 pt off),
+    /// and a new baseline reads the bar again. Anything less is not evidence
+    /// of it: references the frontmost app's menus cover are `absent`, one
+    /// reference alone may have moved by itself.
+    public func baselineDisplaced(tolerance: Double, maxMismatch: Double) -> Bool {
+        let offsets = references.compactMap { reference -> Double? in
+            guard reference.match == "unique", let mismatch = reference.mismatch, mismatch <= maxMismatch,
+                  let offset = reference.offset, offset.isFinite, abs(offset) > tolerance
+            else { return nil }
+            return offset
+        }
+        guard offsets.count >= 2, offsets.count == references.count,
+              let nearest = offsets.min(), let farthest = offsets.max()
+        else { return false }
+        return farthest - nearest <= tolerance
+    }
+
     private static func name(of fold: Fold) -> String {
         switch fold {
         case .absent: "absent"

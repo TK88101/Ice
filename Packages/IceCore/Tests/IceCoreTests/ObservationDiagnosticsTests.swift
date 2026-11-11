@@ -44,6 +44,51 @@ struct ObservationDiagnosticsTests {
         #expect(diagnostics.fold == "unreadable")
     }
 
+    // MARK: - A bar displaced as one piece under its baseline
+
+    func diagnostics(_ readings: [(match: String, mismatch: Double?, offset: Double?)]) -> ObservationDiagnostics {
+        let keys = [first, second, ItemKey(namespace: "n", identifier: "ref3", pid: 13, childIndex: nil)]
+        return ObservationDiagnostics(
+            references: zip(keys, readings).map { ReferenceReading(key: $0, match: $1.match, mismatch: $1.mismatch, offset: $1.offset) },
+            captureStable: false,
+            fold: "unreadable"
+        )
+    }
+
+    func displaced(_ readings: [(match: String, mismatch: Double?, offset: Double?)]) -> Bool {
+        diagnostics(readings).baselineDisplaced(tolerance: 1, maxMismatch: 0.05)
+    }
+
+    @Test("two references found well, the same distance from their origins: the bar moved as one piece (run 20261111-233109, k8)")
+    func rigidShift() {
+        #expect(displaced([("unique", 0, 8), ("unique", 0, 8)]))
+        #expect(displaced([("unique", 0.05, -8), ("unique", 0.01, -8.5)]))
+    }
+
+    @Test("references the frontmost app's menus cover are not a displaced bar (run 20261111-233109, front-long)")
+    func coveredReferences() {
+        #expect(!displaced([("absent", 0.12, nil), ("absent", 0.12, nil)]))
+    }
+
+    @Test("anything short of two good references the same distance away is not a displaced bar", arguments: [
+        [],
+        [("unique", 0.0, 8.0)],
+        [("unique", 0.0, 8.0), ("absent", 0.4, nil)],
+        [("unique", 0.0, 8.0), ("ambiguous", nil, nil)],
+        [("unique", 0.0, 8.0), ("unobserved", nil, nil)],
+        [("unique", 0.0, 8.0), ("unique", 0.0, nil)],
+        [("unique", 0.0, 8.0), ("unique", 0.06, 8.0)],
+        [("unique", 0.0, 8.0), ("unique", nil, 8.0)],
+        [("unique", 0.0, 8.0), ("unique", 0.0, 6.0)],
+        [("unique", 0.0, 8.0), ("unique", 0.0, -8.0)],
+        [("unique", 0.0, 1.0), ("unique", 0.0, 1.0)],
+        [("unique", 0.0, 0.0), ("unique", 0.0, 0.0)],
+        [("unique", 0.0, 8.0), ("unique", 0.0, 8.0), ("unique", 0.0, 0.0)],
+    ] as [[(String, Double?, Double?)]])
+    func notDisplaced(readings: [(String, Double?, Double?)]) {
+        #expect(!displaced(readings.map { (match: $0.0, mismatch: $0.1, offset: $0.2) }))
+    }
+
     @Test("a unique match without a template origin has no distance")
     func noOrigin() {
         let diagnostics = ObservationDiagnostics.make(
