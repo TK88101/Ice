@@ -339,3 +339,11 @@ these runs had outside `k8` (the row above), and is covered by `IceBarHidingMach
 | With one reference, or references that moved by different amounts, a displaced bar is not recovered: Ice stays `notVerified` until an item or display change | INFERRED (the rule) |
 | A bar that keeps reading displaced after 3 baselines is left alone, unverified | unit tests |
 | All of it on one Mac, one display, the `icetest` account and sacrificial helpers; the owner's own bar is S5's | MEASURED |
+
+## S5, the owner's acceptance: built, not run (2026-11-12, plan 2026-11-12-s5-owner-acceptance)
+
+| what | status | tag |
+|---|---|---|
+| The sitting's runner and judge | `run-s5.sh` starts a lab-identity copy of Ice and one sacrificial helper in the owner's account, asks the owner to look, click and drag, and `s5-tool.py` judges clauses C1-C8 from Ice's report and the answers: `pass`, `partial`, `fail` or `notEstablished`. The release Ice's settings are read twice, never written; no input event is posted | MEASURED against stubs only (`test_s5_tool.py` 49, `test-s5.sh` 24, `test-lab.sh` unchanged and green; two review rounds, Codex in both) |
+| Staged | `52d841d` in `/Users/Shared/IceReverse-lab`; `run-s5.sh --dry-run` passes its guards in the owner's account from the assistant's session. From the owner's own Terminal (its Accessibility and Screen Recording): not yet run | MEASURED (the dry run) / TBD (Terminal) |
+| On the owner's bar | nothing has run: whether a fresh identity starts with no item of the owner's left of its divider, whether the helper becomes the member, how long a walk takes there, whether the panel draws and a click opens the menu | TBD: the sitting |
