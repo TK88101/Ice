@@ -14,8 +14,8 @@ The sitting's directory holds:
                  report's last line when the step was written
 
   s5-tool.py wait <report> <seconds> <pid> <predicate> [args]   exit 0 held, 1 timed out, 3 damaged, 4 the pid ended
-  s5-tool.py check-start <report>                    exit 0 when C1 holds, else 1 with the reasons
-  s5-tool.py check-helper <report> <cut> <helper>    exit 0 when C2 holds, else 1 with the reasons
+  s5-tool.py check-start <report> <seconds>          exit 0 when C1 holds, else 1 with the reasons
+  s5-tool.py check-helper <report> <cut> <helper> <seconds>   exit 0 when C2 holds, else 1 with the reasons
   s5-tool.py new-member <report> <cut> <helper>      the member that is not the helper, as JSON; exit 1 when none
   s5-tool.py store-diff <before> <after> <own...>    what changed outside the run's own keys, as JSON
   s5-tool.py verdict <directory>                     the verdict, as JSON; exit 0 pass, 1 otherwise
@@ -37,8 +37,10 @@ Event = dict[str, Any]
 Key = dict[str, str]
 
 # Seconds, by the report's clock: Ice's start to a settled snapshot (C1), the
-# helper's start to its membership (C2).
-START_LIMIT = 120
+# helper's start to its membership (C2). The runner's own wait for both
+# (run-s5.sh's START_WAIT), which it records on its steps: this is only what
+# stands when a step carries none.
+START_WAIT = 120
 CLAUSES = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]
 SECTIONS = ["cacheAlwaysHidden", "cacheHidden", "cacheVisible"]
 STORE_ENTRIES = "TrailingItemPreferredPositions"
@@ -82,11 +84,11 @@ def time_at(events: list[Event], cut: int) -> float:
     return events[min(cut, len(events)) - 1]["t"] if cut > 0 else 0.0
 
 
-def start_reasons(events: list[Event]) -> list[str]:
+def start_reasons(events: list[Event], limit: float = START_WAIT) -> list[str]:
     """Why C1 does not hold; empty when it does."""
     snap = start_snapshot(events)
-    if snap is None or snap["t"] > START_LIMIT:
-        return [f"no complete snapshot with a settled divider within {START_LIMIT} s of Ice's start"]
+    if snap is None or snap["t"] > limit:
+        return [f"no complete snapshot with a settled divider within {limit:g} s of Ice's start"]
     ice, reasons = ice_id(events), []
     if snap["iconPlacement"] is not None:
         reasons.append(f"Ice's icon placement is {snap['iconPlacement']}")
@@ -98,40 +100,35 @@ def start_reasons(events: list[Event]) -> list[str]:
     return reasons
 
 
-def helper_snapshot(events: list[Event], cut: int) -> Optional[Event]:
+def helper_snapshot(events: list[Event], cut: int, limit: float) -> Optional[Event]:
     """The first complete snapshot after the helper's start that has a member."""
-    limit = time_at(events, cut) + START_LIMIT
-    return next((s for s in lab.snapshots(events) if s["seq"] > cut and is_complete(s) and s["roster"] and s["t"] <= limit), None)
+    end = time_at(events, cut) + limit
+    return next((s for s in lab.snapshots(events) if s["seq"] > cut and is_complete(s) and s["roster"] and s["t"] <= end), None)
 
 
 def is_ready(entry: Event) -> bool:
     return entry["condition"] == "ready" and bool(entry["pressable"])
 
 
-def helper_reasons(events: list[Event], cut: int, helper: str) -> list[str]:
+def helper_reasons(events: list[Event], cut: int, helper: str, limit: float = START_WAIT) -> list[str]:
     """Why C2 does not hold; empty when it does."""
-    snap = helper_snapshot(events, cut)
+    snap = helper_snapshot(events, cut, limit)
     if snap is None:
-        return [f"the helper did not become a member within {START_LIMIT} s"]
+        return [f"the helper did not become a member within {limit:g} s"]
     roster = snap["roster"]
     if keys(roster) != [{"namespace": lab.TARGET, "identifier": helper}]:
         return [f"the roster has {len(roster)} member(s), not the helper alone"]
     return [] if is_ready(roster[0]) else [f"the helper is {roster[0]['condition']}, not ready and pressable"]
 
 
-def new_member_snapshot(events: list[Event], cut: int, helper: str) -> Optional[tuple[Key, Event]]:
-    """The member, after `cut`, that is not the helper, and the first
-    complete snapshot that has it."""
+def new_member(events: list[Event], cut: int, helper: str) -> Optional[Key]:
+    """The member, after `cut`, that is not the helper: what the runner
+    records as the owner's item (its `ownSeen` step)."""
     for snap in lab.snapshots(events):
         others = [entry for entry in snap["roster"] if key(entry) != {"namespace": lab.TARGET, "identifier": helper}]
         if snap["seq"] > cut and is_complete(snap) and others:
-            return key(others[0]), snap
+            return key(others[0])
     return None
-
-
-def new_member(events: list[Event], cut: int, helper: str) -> Optional[Key]:
-    found = new_member_snapshot(events, cut, helper)
-    return found[0] if found else None
 
 
 # Discovery passes after a cut before a snapshot's lists are taken as read
@@ -165,6 +162,8 @@ def rest_reasons(events: list[Event], members: list[Key], since: int, until: Opt
         reasons.append("a member is not ready and pressable")
     if snap["blockers"]:
         reasons.append(f"{len(snap['blockers'])} blocker(s)")
+    if keys(snap["cells"]) != members or any(cell["disabled"] for cell in snap["cells"]):
+        reasons.append("the IceBar's cells are not the members, each enabled")
     hidden = keys([check for check in snap["checks"] if check["outcome"] == "hidden"])
     if hidden != members:
         reasons.append("not every member's check is hidden")
@@ -186,32 +185,35 @@ def was_presented(events: list[Event], members: list[Key], since: int) -> bool:
 
 def predicate_holds(events: list[Event], name: str, args: list[str]) -> bool:
     since = int(args[0]) if args and args[0].isdigit() else 0
-    after = [snap for snap in lab.snapshots(events) if snap["seq"] > since and is_complete(snap)]
     if name == "settled":
         return start_snapshot(events) is not None
     if name == "members":  # <since> <count>: a complete snapshot with that many members
-        return any(len(snap["roster"]) == int(args[1]) for snap in after)
+        return any(snap["seq"] > since and is_complete(snap) and len(snap["roster"]) == int(args[1]) for snap in lab.snapshots(events))
     if name == "fresh":  # <since>: a complete snapshot of a discovery pass begun after it
         return bool(fresh_snapshots(events, since))
     return lab.predicate_holds(events, name, args)
 
 
-def wait(path: str, seconds: float, pid: int, holds: Callable[[list[Event]], bool], interval: float = 0.5) -> int:
-    """lab-tool.py's wait with this file's predicates: 0 held, 1 timed out,
-    3 a damaged report, 4 the pid ended first."""
+def wait(
+    path: str, seconds: float, pid: int, holds: Callable[[list[Event]], bool], interval: float = 0.5,
+    clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep,
+    alive: Callable[[int], bool] = lab.process_alive,
+) -> int:
+    """lab-tool.py's wait (which takes its own predicates by name only) with
+    this file's: 0 held, 1 timed out, 3 a damaged report, 4 the pid ended first."""
     reader = lab.ReportReader(path)
-    deadline = time.monotonic() + seconds
+    deadline = clock() + seconds
     while True:
         try:
             if holds(reader.read()):
                 return 0
         except lab.Damaged:
             return 3
-        if not lab.process_alive(pid):
+        if not alive(pid):
             return 4
-        if time.monotonic() >= deadline:
+        if clock() >= deadline:
             return 1
-        time.sleep(interval)
+        sleep(interval)
 
 
 # --- the store ------------------------------------------------------------------------------
@@ -272,16 +274,24 @@ def answer_reasons(steps: list[Event], questions: list[str]) -> list[str]:
             if entry is None or entry["a"] != "y"]
 
 
-def gate(verdict: Verdict, steps: list[Event], clause: str, question: str) -> Optional[int]:
-    """The cut after which a step the owner may skip is judged; `None` when it
-    was skipped or never reached."""
+def timed_out(events: list[Event], steps: list[Event], clause: str) -> list[str]:
+    """The runner's waits for that clause that ran out, each with the status
+    Ice had then: it stopped waiting, so what the report shows later does not
+    count."""
+    def last_status(cut: int) -> str:
+        found = [event for event in lab.statuses(events) if event["seq"] <= cut]
+        return found[-1]["status"] if found else "none"
+
+    return [f"the runner's wait for {entry.get('wait', 'Ice')} ran out (last status: {last_status(entry['seq'])})"
+            for entry in steps if entry["step"] == "timedOut" and entry.get("clause") == clause]
+
+
+def is_taken(verdict: Verdict, steps: list[Event], clause: str, question: str) -> bool:
+    """Whether the owner took a step that may be skipped; a skip is recorded."""
     entry = answer(steps, question)
-    if entry is None:
-        return None
-    if entry["a"] != "y":
+    if entry is not None and entry["a"] != "y":
         verdict.clauses[clause] = "skipped"
-        return None
-    return entry["seq"]
+    return entry is not None and entry["a"] == "y"
 
 
 def judge_cleanup(verdict: Verdict, steps: list[Event]) -> None:
@@ -290,7 +300,7 @@ def judge_cleanup(verdict: Verdict, steps: list[Event]) -> None:
         verdict.settle("C7", ["the runner left no cleanup record"])
         return
     reasons = [text for name, text in (
-        ("ice", "Ice did not stop"), ("domain", "the lab copy's defaults were not emptied"),
+        ("ice", "Ice or the helper did not stop"), ("domain", "the lab copy's defaults were not emptied"),
         ("prefsUnchanged", "the release Ice's settings changed"),
     ) if not done.get(name)]
     store = done.get("store")
@@ -306,20 +316,20 @@ def judge_cleanup(verdict: Verdict, steps: list[Event]) -> None:
 
 
 def judge_own_item(verdict: Verdict, events: list[Event], steps: list[Event], helper: Key) -> None:
-    cut = gate(verdict, steps, "C5", "doOwn")
-    if verdict.clauses["C5"] == "skipped":
-        verdict.notes.append("helper only: the owner's own item was skipped")
-    if cut is None:
+    if not is_taken(verdict, steps, "C5", "doOwn"):
+        if verdict.clauses["C5"] == "skipped":
+            verdict.notes.append("helper only: the owner's own item was skipped")
         return
-    found = new_member_snapshot(events, cut, helper["identifier"])
-    if found is None:
-        blocked = lab.first_status(events, "blocked(", cut)
+    seen = lab.step(steps, "ownSeen")
+    if seen is None or not seen.get("member"):
+        blocked = lab.first_status(events, "blocked(", answer(steps, "doOwn")["seq"])
         verdict.settle("C5", [f"no second member was seen{' (' + blocked['status'] + ')' if blocked else ''}"])
         return
-    chosen, cut = found[0], found[1]["seq"] - 1
+    # The runner's own cut: it waited for `verified` after this very line.
+    chosen, cut = seen["member"], seen["seq"]
     verdict.extra["member"] = chosen
     both = keys([helper, chosen])
-    reasons = rest_reasons(events, both, cut, answer(steps, "ownListed"))
+    reasons = timed_out(events, steps, "C5") or rest_reasons(events, both, cut, answer(steps, "ownListed"))
     blocked = lab.first_status(events, "blocked(positional", cut)
     if blocked:
         reasons.append(f"Ice said {blocked['status']}")
@@ -329,10 +339,10 @@ def judge_own_item(verdict: Verdict, events: list[Event], steps: list[Event], he
 
 
 def judge_icon_drag(verdict: Verdict, events: list[Event], steps: list[Event]) -> None:
-    cut = gate(verdict, steps, "C6", "doInvert")
-    if cut is None:
+    if not is_taken(verdict, steps, "C6", "doInvert"):
         return
-    reasons = []
+    cut = answer(steps, "doInvert")["seq"]
+    reasons = timed_out(events, steps, "C6")
     blocked = lab.first_status(events, "blocked(iconLeftOfDivider", cut)
     if blocked is None:
         reasons.append("Ice never said blocked(iconLeftOfDivider) after the drag")
@@ -356,16 +366,17 @@ def judge_order(verdict: Verdict, events: list[Event], steps: list[Event], start
     since = answers[-1]["seq"] if answers else 0
     ends = [snap for snap in fresh_snapshots(events, since) if snap["seq"] <= stopping["seq"]]
     back = answer(steps, "itemBack")
-    if back is not None and back["a"] != "y":
-        verdict.settle("C8", ["the owner said the item is not back in its place"], otherwise="changed")
-        return
-    if not ends:
+    reasons = ["the owner did not say the item is back in its place"] if back is not None and back["a"] != "y" else []
+    if ends:
+        ice = ice_id(events)
+        before, after = owner_order(start, ice), owner_order(ends[-1], ice)
+        if before != after:
+            reasons.append("the order of the owner's items changed")
+            verdict.extra.update(orderBefore=before, orderAfter=after)
+    if reasons or ends:
+        verdict.settle("C8", reasons, otherwise="changed")
+    else:
         verdict.settle("C8", ["no complete snapshot of a discovery pass begun after the last answer"], otherwise="notEstablished")
-        return
-    ice = ice_id(events)
-    before, after = owner_order(start, ice), owner_order(ends[-1], ice)
-    if not verdict.settle("C8", [] if before == after else ["the order of the owner's items changed"], otherwise="changed"):
-        verdict.extra.update(orderBefore=before, orderAfter=after)
 
 
 def judge(directory: str) -> Event:
@@ -385,18 +396,21 @@ def judge(directory: str) -> Event:
 
 
 def judge_report(verdict: Verdict, events: list[Event], steps: list[Event]) -> None:
-    if not verdict.settle("C1", start_reasons(events), otherwise="notEstablished"):
+    started = lab.step(steps, "iceStarted") or {}
+    if not verdict.settle("C1", start_reasons(events, started.get("limit", START_WAIT)), otherwise="notEstablished"):
         return
     helper_up = lab.step(steps, "helperUp")
     if helper_up is None:
         return
     helper = {"namespace": lab.TARGET, "identifier": helper_up["id"]}
     cut = helper_up["seq"]
-    if not verdict.settle("C2", helper_reasons(events, cut, helper["identifier"]), otherwise="notEstablished"):
+    waited = helper_up.get("limit", START_WAIT)
+    if not verdict.settle("C2", helper_reasons(events, cut, helper["identifier"], waited), otherwise="notEstablished"):
         return
-    if not verdict.settle("C3", rest_reasons(events, [helper], cut, answer(steps, "helperListed"))):
+    listed = answer(steps, "helperListed")
+    if not verdict.settle("C3", timed_out(events, steps, "C3") or rest_reasons(events, [helper], cut, listed)):
         return
-    if answer(steps, "helperListed") is not None:
+    if listed is not None:
         shown = [] if was_presented(events, [helper], cut) else ["the report never showed the IceBar with the helper's one cell enabled"]
         verdict.settle("C4", shown + answer_reasons(steps, ["helperListed", "helperMenu"]))
     judge_own_item(verdict, events, steps, helper)
@@ -455,9 +469,9 @@ def main(argv: list[str]) -> int:
     if command == "wait":
         return wait(rest[0], float(rest[1]), int(rest[2]), lambda events: predicate_holds(events, rest[3], rest[4:]))
     if command == "check-start":
-        return report_command(rest[0], start_reasons)
+        return report_command(rest[0], lambda events: start_reasons(events, float(rest[1])))
     if command == "check-helper":
-        return report_command(rest[0], lambda events: helper_reasons(events, int(rest[1]), rest[2]))
+        return report_command(rest[0], lambda events: helper_reasons(events, int(rest[1]), rest[2], float(rest[3])))
     if command == "new-member":
         try:
             found = new_member(lab.load_report(rest[0], final=False), int(rest[1]), rest[2])

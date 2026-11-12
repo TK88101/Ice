@@ -76,7 +76,7 @@ class Sitting:
         r.snap(hiddenBoundaryUsable=False, cacheVisible=BAR + [ICE_ITEM])
         r.snap(cacheVisible=bend.get("startVisible", BAR) + [ICE_ITEM], cacheHidden=bend.get("startHidden", []),
                iconPlacement=bend.get("startPlacement"), roster=bend.get("startRoster", []))
-        self.mark("helperUp", id=HELPER)
+        self.mark("helperUp", id=HELPER, **bend.get("helperUp", {}))
         held = bend.get("helperRoster", [helper])
         r.snap(roster=held, cacheHidden=entries(helper), cacheVisible=BAR + [ICE_ITEM])
         r.length(736)
@@ -90,7 +90,10 @@ class Sitting:
         if self.own:
             both = [helper, own_member(**bend.get("ownMember", {}))]
             r.snap(roster=both, blockers=bend.get("blockers", []), cacheHidden=entries(*both), cacheVisible=without_own + [ICE_ITEM])
-            self.mark("ownSeen", namespace=OWN["namespace"], identifier=OWN["identifier"])
+            if not bend.get("neverSeen"):
+                self.mark("ownSeen", member=dict(OWN))
+            for clause in bend.get("timedOut", []):
+                self.mark("timedOut", clause=clause, wait="verified")
             r.status(bend.get("ownStatus", "verified"))
             rest(r, both, without_own, status=bend.get("ownStatus", "verified"))
             rest(r, both, without_own, isIceBarPresented=True, cells=bend.get("ownCells", [dict(e, disabled=False) for e in entries(*both)]))
@@ -185,7 +188,25 @@ class S5ToolTests(unittest.TestCase):
     def test_a_helper_that_is_not_pressable_is_not_established(self):
         self.assert_clause(self.judge(helperRoster=[member(HELPER, "stacked")]), "C2", "notEstablished", "notEstablished")
 
+    def test_a_helper_that_became_the_member_after_the_runners_wait_is_not_established(self):
+        # 0.5 s a line: the roster comes 0.5 s after the helper's start
+        self.assert_clause(self.judge(helperUp={"limit": 0.25}), "C2", "notEstablished", "notEstablished")
+        self.assertEqual(self.judge(helperUp={"limit": 1})["clauses"]["C2"], "pass")
+
     # --- C3, C4: the helper hidden and reachable ----------------------------------------
+
+    def test_a_verified_after_the_runner_stopped_waiting_does_not_count(self):
+        sitting = Sitting(own=False, invert=False).build()
+        sitting.steps = [e for e in sitting.steps if e["step"] in ("helperUp", "stopping", "cleanup")]
+        sitting.steps.insert(1, dict(step="timedOut", seq=3, t=1.0, clause="C3", wait="verified"))
+        sitting.build = lambda: sitting
+        verdict = self.judge(sitting)
+        self.assert_clause(verdict, "C3", "fail", "fail")
+        self.assertIn("ran out (last status: none)", " ".join(verdict["reasons"]))
+
+    def test_cells_that_are_not_the_roster_fail_the_rest(self):
+        reasons = s5.rest_reasons(*self.rest_with(cells=[]))
+        self.assertEqual(reasons, ["the IceBar's cells are not the members, each enabled"])
 
     def test_an_unverified_rest_fails_and_names_the_status(self):
         verdict = self.judge(helperStatus="notVerified(noReference)")
@@ -198,7 +219,24 @@ class S5ToolTests(unittest.TestCase):
     def test_a_yes_without_the_bar_presented_in_the_report_fails(self):
         self.assert_clause(self.judge(neverPresented=True), "C4", "fail", "fail")
 
+    def rest_with(self, **fields):
+        report = Report()
+        report.status("verified")
+        rest(report, [member(HELPER)], BAR, **fields)
+        path = os.path.join(self.root, "rest.jsonl")
+        with open(path, "w") as handle:
+            handle.write(report.text())
+        return s5.lab.load_report(path), [{"namespace": T, "identifier": HELPER}], 0, None
+
     # --- C5: the owner's item -----------------------------------------------------------
+
+    def test_an_own_item_ice_never_saw_fails(self):
+        verdict = self.judge(neverSeen=True)
+        self.assert_clause(verdict, "C5", "fail", "fail")
+        self.assertIn("no second member was seen", " ".join(verdict["reasons"]))
+
+    def test_an_own_item_whose_wait_ran_out_fails_whatever_the_report_shows_later(self):
+        self.assert_clause(self.judge(timedOut=["C5"]), "C5", "fail", "fail")
 
     def test_a_positional_blocker_fails_and_is_named(self):
         verdict = self.judge(blockers=[{"namespace": "com.example.c", "identifier": "shared"}], ownStatus="blocked(positional:1)")
@@ -254,7 +292,10 @@ class S5ToolTests(unittest.TestCase):
         self.assertEqual(verdict["orderBefore"], BAR)
         self.assertEqual(verdict["orderAfter"], list(reversed(BAR)))
 
-    def test_an_item_not_put_back_is_changed(self):
+    def test_an_item_not_put_back_is_changed_and_the_measured_order_is_still_shown(self):
+        verdict = self.judge(itemBack="n", endVisible=list(reversed(BAR)))
+        self.assert_clause(verdict, "C8", "changed", "fail")
+        self.assertEqual(verdict["orderBefore"], BAR)
         self.assert_clause(self.judge(itemBack="n"), "C8", "changed", "fail")
 
     def test_an_end_snapshot_of_a_pass_begun_before_the_last_answer_is_not_established(self):
@@ -305,6 +346,18 @@ class S5ToolTests(unittest.TestCase):
         self.assertFalse(s5.predicate_holds(events, "fresh", [str(len(events))]))
         self.assertTrue(s5.predicate_holds(events, "verified", ["0"]))
         self.assertTrue(s5.predicate_holds(events, "status", ["0", "blocked(iconLeftOfDivider"]))
+
+    def test_wait_ends_as_held_timed_out_damaged_or_ice_gone(self):
+        events, _ = self.events()
+        path = os.path.join(self.root, "r.jsonl")
+        ticks = iter(range(100))
+        kwargs = dict(clock=lambda: next(ticks), sleep=lambda _: None)
+        self.assertEqual(s5.wait(path, 5, 1, lambda e: True, alive=lambda _: True, **kwargs), 0)
+        self.assertEqual(s5.wait(path, 5, 1, lambda e: False, alive=lambda _: True, **kwargs), 1)
+        self.assertEqual(s5.wait(path, 5, 1, lambda e: False, alive=lambda _: False, **kwargs), 4)
+        with open(path, "a") as handle:
+            handle.write("nope\n")
+        self.assertEqual(s5.wait(path, 5, 1, lambda e: True, alive=lambda _: True, **kwargs), 3)
 
     def test_the_new_member_is_the_one_that_is_not_the_helper(self):
         events, sitting = self.events()

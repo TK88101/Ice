@@ -69,8 +69,7 @@ while IFS= read -r line; do
     line=${line//@H@/$(head -1 $LAB_STUB_MARKS/members 2>/dev/null)}
     emit "${line//@ICE@/$id}"
 done < $LAB_STUB_FIXTURE
-sleep 1000 &
-wait'
+exec sleep 1000'
 
 helper_body='
 id=none
@@ -208,6 +207,16 @@ print '# changed' >> $shared/s5-tool.py
 zsh $shared/run-s5.sh > $tmp/out.txt 2>&1 < /dev/null; (( $? == 2 )) && grep -q 's5-tool is not the staged file' $tmp/out.txt
 check "a changed staged file is refused"
 
+build_staging
+chmod go+w $shared/s5.env
+zsh $shared/run-s5.sh > $tmp/out.txt 2>&1 < /dev/null; (( $? == 2 )) && grep -q 's5.env is a link, not .* or writable by others' $tmp/out.txt && [[ ! -e $evidence ]]
+check "a staged file others can write is refused"
+
+build_staging
+mkdir $tmp/elsewhere && mv $shared/apps $tmp/elsewhere/apps && ln -s $tmp/elsewhere/apps $shared/apps
+zsh $shared/run-s5.sh > $tmp/out.txt 2>&1 < /dev/null; (( $? == 2 )) && grep -q 'apps is a link' $tmp/out.txt
+check "a staging directory that is a link is refused"
+
 build_staging "EVIL=1"
 zsh $shared/run-s5.sh > $tmp/out.txt 2>&1 < /dev/null; (( $? == 2 )) && grep -q 'does not know' $tmp/out.txt
 check "an unknown s5.env line is refused"
@@ -276,7 +285,7 @@ build_staging
 fixture unverified
 answers ""
 sitting; code=$?
-(( code == 1 )) && grep -q 'S5 結果：沒通過' $tmp/out.txt && grep -q 'never verified (last status: notVerified(noReference))' $tmp/out.txt
+(( code == 1 )) && grep -q 'S5 結果：沒通過' $tmp/out.txt && grep -q 'wait for verified ran out (last status: notVerified(noReference))' $tmp/out.txt && ! grep -q '第 1 步' $tmp/out.txt
 check "a helper that stays unverified fails with its status, and the owner is asked nothing"
 
 build_staging

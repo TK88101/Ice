@@ -100,6 +100,15 @@ sha_tree() { # as run-lab.sh's
 }
 
 [[ $(id -un) == $OWNER_USER ]] || guard "this account is $(id -un), not $OWNER_USER: the sitting is the owner's"
+# The sha256 below live beside what they check: they catch a stale staging,
+# not another account's. What keeps another account out is that everything
+# here is the owner's, no link, and writable by the owner alone (run-lab.sh's
+# guard, for the account that owns the staging).
+for file in $shared $shared/lab.env $shared/s5.env $shared/run-s5.sh $lab_tool $tool $shared/Ice.app $apps \
+    $apps/Target.app/Contents/MacOS/vzhelper $icewatch; do
+    [[ ! -L $file && -O $file ]] && (( ! (8#$(stat -f %Lp $file 2>/dev/null || print 777) & 8#022) )) \
+        || guard "$file is a link, not $OWNER_USER's, or writable by others"
+done
 [[ -d $shared/Ice.app && $(sha_tree $shared/Ice.app) == $ICE_SHA ]] || guard "Ice.app is not the staged bundle"
 for name file want in helper $apps/Target.app/Contents/MacOS/vzhelper $TARGET_SHA icewatch $icewatch $ICEWATCH_SHA \
     lab-tool $lab_tool $TOOL_SHA s5-tool $tool $S5TOOL_SHA run-s5 $shared/run-s5.sh $S5_SHA; do
@@ -135,8 +144,10 @@ fi
 run_id=$(date +%Y%m%d-%H%M%S)
 run=$EVIDENCE_ROOT/$run_id-s5
 stage=$run/stage
-mkdir -p -m 700 $EVIDENCE_ROOT && mkdir -m 700 $run && mkdir -m 700 $stage \
-    || { print -u2 -- "run-s5: could not create $run"; exit 2; }
+# The evidence root may have been there: it must be the owner's own directory,
+# or what is deleted and judged below could be another account's to swap.
+mkdir -p -m 700 $EVIDENCE_ROOT && [[ ! -L $EVIDENCE_ROOT && -O $EVIDENCE_ROOT ]] && mkdir -m 700 $run && mkdir -m 700 $stage \
+    || { print -u2 -- "run-s5: could not create $run in a directory of $OWNER_USER's own"; exit 2; }
 report=$run/report.jsonl
 : > $run/domains.txt
 : > $run/timeline.txt
@@ -159,11 +170,16 @@ note() { print -r -- "$(date +%H:%M:%S) $*" >> $run/timeline.txt; }
 say() { print -r -- "$*"; }
 nap() { sleep $(( $1 * TIME_SCALE )); }
 still_runs() { [[ $(ps -p $1 -o command= 2>/dev/null) == *$2* ]]; }
-s5() { /usr/bin/python3 -I $tool "$@"; }
+# -B: s5-tool.py loads lab-tool.py as a module; no cache of it is written beside the hashed source.
+s5() { /usr/bin/python3 -I -B $tool "$@"; }
 seq_now() { [[ -f $report ]] && print $(( $(wc -l < $report) )) || print 0; }
-mark() { # <step> [raw JSON fields]
-    print -r -- "{\"step\":\"$1\",\"seq\":$(seq_now),\"t\":$EPOCHREALTIME${2:+,$2}}" >> $run/steps.jsonl
+# A step, with the cut of the report it belongs to: the lines the report held
+# then. A wait that follows a step counts from that step's own cut, and so
+# does the judge.
+mark_at() { # <cut> <step> [raw JSON fields]
+    print -r -- "{\"step\":\"$2\",\"seq\":$1,\"t\":$EPOCHREALTIME${3:+,$3}}" >> $run/steps.jsonl
 }
+mark() { mark_at $(seq_now) "$@"; } # <step> [raw JSON fields]
 
 remember_domain() { grep -qxF -- $1 $run/domains.txt || print -r -- $1 >> $run/domains.txt; }
 domain_is_empty() {
@@ -197,12 +213,16 @@ stop_ice() {
     ice_pid=
 }
 
-quit_helper() {
+quit_helper() { # fails when the helper is still there
     [[ -n $helper_fd ]] && { exec {helper_fd}>&-; helper_fd=; }
     [[ -n $helper_pid ]] || return 0
-    for _ in {1..15}; do still_runs $helper_pid /vzhelper || break; sleep 0.2; done
-    still_runs $helper_pid /vzhelper && kill -TERM $helper_pid 2>/dev/null
-    helper_pid=
+    local signal
+    for signal in "" TERM KILL; do
+        [[ -n $signal ]] && kill -$signal $helper_pid 2>/dev/null
+        for _ in {1..15}; do still_runs $helper_pid /vzhelper || { helper_pid=; return 0; }; sleep 0.2; done
+    done
+    note "helper $helper_pid is still running"
+    return 1
 }
 
 # The release Ice's settings, in a form two reads can be compared in.
@@ -233,11 +253,12 @@ cleanup() { # <why the sitting was cut short, or nothing>
     cleaned=1
     trap '' INT TERM HUP QUIT
     local why=$1 ice_ok=true domain_ok=true prefs_ok=true difference code
-    [[ -n $watchdog_pid ]] && kill $watchdog_pid 2>/dev/null
+    # Only while it is still the watchdog: once it has fired, its pid is anybody's.
+    [[ -n $watchdog_pid ]] && still_runs $watchdog_pid perl && kill $watchdog_pid 2>/dev/null
     [[ -n $why ]] && mark aborted "\"why\":\"$why\""
     mark stopping
     stop_ice || ice_ok=false
-    quit_helper
+    quit_helper || ice_ok=false
     delete_domains || domain_ok=false
     rm -rf -- $stage
     [[ -n $caffeinate_pid ]] && kill $caffeinate_pid 2>/dev/null
@@ -333,18 +354,22 @@ cool_down() {
 
 # --- the sitting ----------------------------------------------------------------------------------
 
-# Waits for a predicate on the report. 0 held; 1 not in time; 2 the sitting
-# cannot go on (`ended` says why).
-await() { # <seconds> <predicate> [args...]
-    local seconds=$(( $1 * TIME_SCALE )) code
-    shift
+# Waits for a predicate on the report; fails when it did not hold in time.
+# A wait a clause depends on names it: running out is then recorded, and the
+# judge fails the clause on that record, whatever the report shows later.
+# When the sitting cannot go on (the report damaged, Ice gone), `ended` says
+# why: every caller stops on a non-empty `ended`.
+await() { # <clause or -> <seconds> <predicate> [args...]
+    local clause=$1 seconds=$(( $2 * TIME_SCALE ))
+    shift 2
     s5 wait $report $seconds ${ice_pid:-0} "$@"
-    code=$?
-    case $code in
-        0|1) return $code ;;
-        3) ended="the report is damaged"; return 2 ;;
-        *) ended="Ice ended"; return 2 ;;
+    case $? in
+        0) return 0 ;;
+        1) [[ $clause == - ]] || mark timedOut "\"clause\":\"$clause\",\"wait\":\"$1\"" ;;
+        3) ended="the report is damaged" ;;
+        *) ended="Ice ended" ;;
     esac
+    return 1
 }
 
 # Asks until the answer is y, n or s; records it. 2 when there is no more input.
@@ -364,23 +389,24 @@ ask() { # <question id> <text>
     # The answer's cut of the report, taken once: what the sitting waits for
     # next is waited for after this very line, and judged after it.
     cut_at=$(seq_now)
-    print -r -- "{\"step\":\"answer\",\"seq\":$cut_at,\"t\":$EPOCHREALTIME,\"q\":\"$1\",\"a\":\"$reply\"}" >> $run/steps.jsonl
+    mark_at $cut_at answer "\"q\":\"$1\",\"a\":\"$reply\""
     REPLY=$reply
 }
 
 minutes() { print $(( ($1 + 59) / 60 )); }
 
-# 0 done; 1 Ice did not get there in time; 2 the sitting cannot go on.
+# The two steps the owner may skip. Each fails only when the sitting cannot
+# go on; a wait that ran out is said, recorded, and the sitting goes on.
 own_item() {
     local cut=$cut_at found name
     say "  按住 Command，把你選的「一個」圖標拖到 Ice 分隔線的左邊，然後放開。"
     say "  我在等 Ice 看到它（最多 $(minutes $OWNER_WAIT) 分鐘）……"
-    await $OWNER_WAIT members $cut 2 || { (( $? == 2 )) && return 2; say "  沒等到：Ice 沒有看到新的圖標。"; return 1; }
+    await C5 $OWNER_WAIT members $cut 2 || { [[ -z $ended ]] && say "  沒等到：Ice 沒有看到新的圖標。"; return; }
     found=$(s5 new-member $report $cut $helper)
     cut=$(seq_now)
-    mark ownSeen "\"member\":${found:-null}"
-    say "  Ice 看到了。現在等它藏好並驗證（最多 $(minutes $HIDE_LIMIT) 分鐘），這段時間請不要動……"
-    await $HIDE_LIMIT verified $cut || { (( $? == 2 )) && return 2; say "  沒等到 verified。"; return 1; }
+    mark_at $cut ownSeen "\"member\":${found:-null}"
+    say "  Ice 看到了一個新圖標（${${found#*\"namespace\": \"}%%\"*}）。現在等它藏好並驗證（最多 $(minutes $HIDE_LIMIT) 分鐘），這段時間請不要動……"
+    await C5 $HIDE_LIMIT verified $cut || { [[ -z $ended ]] && say "  沒等到 verified。"; return; }
     nap 3
     print -n -- "  這是哪個圖標？打個名字方便記錄（直接按 Return 也行）："
     read -r name || { print; ended="no name (the input ended)"; return 2; }
@@ -394,11 +420,11 @@ icon_drag() {
     say "  右鍵點 Ice 圖標，選「Ice Settings…」，打開「Menu Bar Layout」那一頁，視窗留著。"
     say "  然後按住 Command，把 Ice 圖標拖到它的分隔線左邊，放開。"
     say "  我在等 Ice 發現（最多 $(minutes $OWNER_WAIT) 分鐘）……"
-    await $OWNER_WAIT status $cut 'blocked(iconLeftOfDivider' || { (( $? == 2 )) && return 2; say "  沒等到：Ice 沒有說圖標放錯了。"; return 1; }
+    await C6 $OWNER_WAIT status $cut 'blocked(iconLeftOfDivider' || { [[ -z $ended ]] && say "  沒等到：Ice 沒有說圖標放錯了。"; return; }
     ask paneSays "  設定視窗裡有沒有出現一行提醒，說 Ice 圖標要在分隔線右邊？" || return 2
     cut=$cut_at
     say "  現在按住 Command，把 Ice 圖標拖回分隔線右邊。等它重新藏好（最多 $(minutes $HIDE_LIMIT) 分鐘）……"
-    await $HIDE_LIMIT verified $cut || { (( $? == 2 )) && return 2; say "  沒等到 verified。"; return 1; }
+    await C6 $HIDE_LIMIT verified $cut || { [[ -z $ended ]] && say "  沒等到 verified。"; return; }
     ask paneClear "  那行提醒消失了嗎？" || return 2
 }
 
@@ -414,10 +440,11 @@ sitting() {
     cool_down
     app=$(stage_ice) || { ended="staging the copy failed ($run/codesign.log)"; return 2; }
     start_ice $app || { ended="Ice did not start ($run/report.log)"; return 2; }
-    mark iceStarted
+    mark iceStarted "\"limit\":$START_WAIT"
     say "Ice 啟動了，等它讀完菜單欄……"
-    await $START_WAIT settled || (( $? == 1 )) || return 2
-    if ! s5 check-start $report > $run/start.txt; then
+    await - $START_WAIT settled
+    [[ -z $ended ]] || return 2
+    if ! s5 check-start $report $START_WAIT > $run/start.txt; then
         say "沒法開始，Ice 一啟動的狀態不對："
         cat $run/start.txt
         return 0
@@ -425,17 +452,18 @@ sitting() {
     nap 2
     cut=$(seq_now)
     start_helper || { ended="the helper did not start ($run/helper.log)"; return 2; }
-    # The cut from before the helper's start: what the wait below and the judge both count from.
-    print -r -- "{\"step\":\"helperUp\",\"seq\":$cut,\"t\":$EPOCHREALTIME,\"id\":\"$helper\"}" >> $run/steps.jsonl
-    await $START_WAIT members $cut 1 || (( $? == 1 )) || return 2
-    if ! s5 check-helper $report $cut $helper > $run/helper.txt; then
+    # The cut from before the helper's start, and how long its membership is waited for.
+    mark_at $cut helperUp "\"id\":\"$helper\",\"limit\":$START_WAIT"
+    await - $START_WAIT members $cut 1
+    [[ -z $ended ]] || return 2
+    if ! s5 check-helper $report $cut $helper $START_WAIT > $run/helper.txt; then
         mark chevron "\"listed\":$([[ $($icewatch chevron 2>/dev/null) == *'"listed":true'* ]] && print true || print false)"
         say "沒法開始，假圖標沒有成為 Ice 裡唯一的成員："
         cat $run/helper.txt
         return 0
     fi
     say "假圖標進了 Ice。等它藏好並驗證，通常 5 分鐘左右（最多 $(minutes $HIDE_LIMIT) 分鐘）。請不要動電腦……"
-    await $HIDE_LIMIT verified $cut || { (( $? == 2 )) && return 2; say "沒等到 verified，到此為止。"; return 0; }
+    await C3 $HIDE_LIMIT verified $cut || { [[ -z $ended ]] || return 2; say "沒等到 verified，到此為止。"; return 0; }
     nap 3
     say ""
     say "好了，假圖標已經藏進 Ice。接下來請照做並回答。"
@@ -447,21 +475,21 @@ sitting() {
     if [[ $REPLY == y ]]; then
         did_own=1
         own_item
-        (( $? == 2 )) && return 2
+        [[ -z $ended ]] || return 2
     fi
     say "第 3 步：把 Ice 圖標放到錯的位置，看它會不會提醒。"
     ask doInvert "  要做這一步嗎？" || return 2
     if [[ $REPLY == y ]]; then
         icon_drag
-        (( $? == 2 )) && return 2
+        [[ -z $ended ]] || return 2
     fi
     if (( did_own )); then
         say "第 4 步：按住 Command，把你剛才放進去的圖標拖回原來的位置。"
         ask itemBack "  它回到原位了嗎？" || return 2
     fi
     say "最後檢查一次你的圖標順序……"
-    await 60 fresh $cut_at || (( $? == 1 )) || return 2
-    return 0
+    await - 60 fresh $cut_at
+    [[ -z $ended ]] || return 2
 }
 
 sitting || true
