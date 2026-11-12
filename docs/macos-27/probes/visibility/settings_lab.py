@@ -32,6 +32,8 @@ LAB_PREFIX = "com.icespike4.lab."
 HELPER_DOMAINS = ("com.icespike4.target", "com.icespike4.protected")
 IDLE_WAIT_SECONDS = 600
 BAR_Y = 16
+# A point of the screen that is off the bar and off the IceBar.
+PARK = (700, 600)
 
 # Every key a case may set; all are deleted before a case writes its own.
 SETTING_KEYS = (
@@ -238,16 +240,11 @@ def finish(run):
 class Lab:
     """One launch of the lab copy with a case's settings."""
 
-    def __init__(self, run, name, settings=None, visible_helper=True, member=True, arguments=(), expect_hidden=True,
+    def __init__(self, run, name, settings=None, member=True, arguments=(), expect_hidden=True,
                  fresh_visible=False, keep_settings=False):
         self.state = load_state(run)
         self.dir = os.path.join(run, name)
         self.settings = merged_settings(settings)
-        # Always: a launch without it moves where the system remembers Ice's
-        # divider, and the next launch finds the helper left of it (sessions
-        # 20261112-201934-s6 and -202047-s6).
-        del visible_helper
-        self.visible_helper = True
         self.member = member
         self.arguments = list(arguments)
         self.expect_hidden = expect_hidden
@@ -273,8 +270,10 @@ class Lab:
             raise NotRun("an Ice is already running")
         self.write_settings()
         try:
-            if self.visible_helper:
-                self.start_helper("Protected.app", self.visible_id, "reference")
+            # In every launch: one without it moves where the system remembers
+            # Ice's divider, and the next launch finds this helper left of it
+            # (sessions 20261112-201934-s6 and -202047-s6).
+            self.start_helper("Protected.app", self.visible_id, "reference")
             self.start_ice()
             if self.member:
                 self.wait(lambda s: s.get("hiddenDivider") is not None, 20, "Ice's divider on the bar")
@@ -529,7 +528,7 @@ class Lab:
 
     def park(self):
         """Puts the pointer in the middle of the screen, off the bar and the panel."""
-        self.drive("move", 700, 600)
+        self.drive("move", *PARK)
 
     # the pass's own front app
 

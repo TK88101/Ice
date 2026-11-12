@@ -26,10 +26,27 @@ final class MenuBarItemManager: ObservableObject {
     private var lastDiscoveredSet: DiscoveredItemSet?
     private var completedPasses = 0
 
+    /// When the last pass whose reading was taken began (the system uptime):
+    /// what the IceBar's hiding waits for after the owner has arranged items
+    /// (`IceBarArrangingRule.holdsBarForOwner`). A pass that was superseded,
+    /// skipped or read nothing does not move it.
+    private(set) var lastPassBeganAt: Double?
+
+    /// Ice's icon and the system's items as the last complete pass read
+    /// them. An incomplete pass carries other apps' items forward
+    /// (`ItemCatalog.carryOver`) but not these, so `isOnMenuBarItem` falls
+    /// back on them (Codex review, 2026-11-12).
+    private var lastCompleteOwnFrames = [BarRect]()
+
     /// The last discovery set and how many passes have completed, for the
     /// lab report (plan 2026-10-07-icebar-preference-hiding, S4 design D1).
     var labDiscovery: (set: DiscoveredItemSet?, passes: Int) {
         (lastDiscoveredSet, completedPasses)
+    }
+
+    /// The frames of the system's items and of Ice's icon in a set.
+    private static func ownAndSystemFrames(of set: DiscoveredItemSet?) -> [BarRect] {
+        (set?.systemElements ?? []) + [set?.visibleControlItem?.frame].compactMap { $0 }
     }
 
     /// macOS 27: whether that point of the bar (top-left origin) is on a
@@ -41,9 +58,10 @@ final class MenuBarItemManager: ObservableObject {
         let set = lastDiscoveredSet
         let hidden = isIceBarOffered ? Set(iceBarRoster.rules.membership.members.compactMap(\.key)) : []
         let items = (set?.items ?? []).filter { $0.position == .onBar && !hidden.contains($0.key) }
-        let frames = items.compactMap(\.frame) + (set?.systemElements ?? []) + [set?.visibleControlItem?.frame].compactMap { $0 }
+        let ownFrames = set?.completeness == .complete ? Self.ownAndSystemFrames(of: set) : lastCompleteOwnFrames
+        let frames = items.compactMap(\.frame) + ownFrames
         return MenuBarPointRule.isOnItem(
-            x: Double(point.x), y: Double(point.y), itemFrames: frames,
+            x: Double(point.x), itemFrames: frames,
             hasReading: set.map { $0.completeness != .permissionDenied } ?? false
         )
     }
@@ -617,6 +635,10 @@ extension MenuBarItemManager {
         let plan = DiscoveredCachePlan.make(set: discovery.set, dividerStates: states, previous: discoveredSectionMap)
         lastDiscoveredSet = discovery.set
         completedPasses += 1
+        lastPassBeganAt = passStart
+        if discovery.set.completeness == .complete {
+            lastCompleteOwnFrames = Self.ownAndSystemFrames(of: discovery.set)
+        }
 
         switch plan {
         case .publish(let publication):

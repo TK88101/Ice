@@ -402,3 +402,34 @@ these runs had outside `k8` (the row above), and is covered by `IceBarHidingMach
 | Settings | on macOS 27 no "Menu Bar Layout" pane (its two status lines are in General); the updater never starts and nothing offers a check; the upstream links are gone from About (plan `2026-11-12-settings-cleanup`) | built (`8966aee`), running on the owner's bar as `20261112-190842-free`; not yet looked at |
 | The owner's own findings | changing the Ice icon works; "Use Ice Bar" works; a click anywhere on the bar shows the IceBar under the pointer (Show on click with the dynamic location) | the owner's report, 2026-11-12 |
 | Every other setting | not tried: General (launch at login, location, show on click/hover/scroll, rehide, spacing), Appearance, the five hotkeys, Advanced (divider style, hide app menus, secondary context menu, hover delay). The owner's ruling: the assistant tries each itself with automation, the owner tests nothing; what does not work is not shown | TBD, next session |
+
+## The settings pass (2026-11-12, plan 2026-11-12-settings-cleanup): every setting tried by automation; what failed is gone on macOS 27; version 1.0
+
+All of it on macOS 27.0.1 (26A434), the owner's account and bar, a lab-identity copy of Ice
+with two sacrificial helpers, input posted by `probes/settingsdrive.swift`. Runs
+`20261112-192750-s6` (as found), `-200049-s6` (first repair), `-203533-s6` (the cut, 20 cases
+of 20 passed), `-205315-s6` (after the code review, the 11 cases its fixes touch). Each case's
+finding is in the plan's appendix B.
+
+| what | status | tag |
+|---|---|---|
+| Kept, each seen to work | launch at login (the registration only); the Ice icon, a custom one, as template; IceBar location, all three; show on click, hover (and its delay), scroll; automatically rehide, all three strategies; the menu bar appearance: tint, gradient, shadow, border with colour and width, full shape with either caps, inset, dynamic, reset; the hotkeys for the hidden section and the application menus, and the recorder; the secondary context menu and its two entries; a click on an IceBar cell | MEASURED (run `-203533-s6`; the touched ones again in `-205315-s6`) |
+| Not offered on macOS 27, and without effect when stored | Show Ice icon (off: Ice is blocked, hides nothing); Use Ice Bar and its hotkey (off: nothing is hidden); item spacing (never run: its "Apply" quits every app with an item); the always-hidden section and its hotkey; the search panel's hotkey and menu entry (a click on a result opens nothing); divider style and "show all sections while dragging" (no difference the owner can see); hide app menus (only outside IceBar mode); the temporarily-shown delay; the split shape (drawn as the full one) | MEASURED for each "off"/"dead" above except item spacing and the two known from T2d; the removal itself: `T6-panes`, `T6-menus`, `T6-removed` |
+| A stored value of a removed setting | not read into effect, and left in the defaults as it was | MEASURED (`T6-removed`, run `-205315-s6`) |
+| Repaired: a click or a rest on another app's item showed the IceBar | on 27 Ice asked a window list that is empty; it now asks the last pass's frames (`MenuBarPointRule`) | MEASURED before and after (G3, G4) |
+| Repaired: the smart rehide | it took the system's full-screen windows (levels 20, 21) for the clicked one; they are passed over (`SmartRehideRule`). A click in the front app's window closes the IceBar, 3 of 3 | MEASURED. One display; a click that itself brings another app forward may come before that app is active (upstream's quarter second): not repaired |
+| Repaired: an item taken out stayed listed as hidden | after a drag or Command let go, Ice hid on a roster read during the drag. Nothing is hidden now until a pass that began afterwards was read | MEASURED: before, 3 of 4 take-outs; after, 10 of 10, and 10 of 10 quick drags in (retire 0.12 s after the drag's start, in the IceBar about 1.3 s after its end) |
+| Hold Command on the bar | the hidden items are back at once and answer at their places; let go, hidden again; dragged right of the divider, the item leaves the IceBar | MEASURED (D1). By who answers at the point, not by pixels: on this bar a notch app's overlay covers that stretch |
+| Version | 1.0 (About pane read over Accessibility) | MEASURED |
+| The Mac after the last run | no Ice, no helper, the lab domain empty, the release Ice's settings byte-identical, no spacing key, no lab login item (the toggle read off) | MEASURED (`finish.json`) |
+| Tests | IceCore 745, MenuBarDiscovery 88, `test_settings_lab.py` 23, `test-settings.sh`, `test-lab.sh`, `test-s5.sh`, `check-settings.sh`, `check-a3a4.sh`, the app build | MEASURED, all passing |
+
+### Limits
+
+| Limit | Level |
+|---|---|
+| Synthetic input, one Mac, one display, the owner's bar as it was that evening, two helpers. Nothing was pressed or dragged that is the owner's | MEASURED |
+| Launch at login: that a login starts Ice was not run. The custom icon's file chooser was not driven. macOS 14 to 26: not runnable here; everything removed is removed only on 27 | INFERRED / not run |
+| The hiding machine still hides on the first sample after leaving `blocked` or turning the mode on, whatever the roster's age; only the way out of arranging waits for a fresh pass | INFERRED (code review) |
+| `ScreenCapture.checkPermissions` reads a window list that is empty on 27 and falls back on a value macOS gives once: Screen Recording granted while Ice runs may not be seen until Ice is started again | INFERRED (code review), not this pass's |
+| About 1770 empty `com.icespike4.lab.*` preference files of earlier lab runs are in `~/Library/Preferences` | MEASURED (count); not deleted |

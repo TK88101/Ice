@@ -267,3 +267,65 @@ alone. The harness changes nothing persistent outside its evidence directory.
 | 9 | wall-clock drag timing is not evidence of the race | Codex maintained in round 2 (end states alone cannot tell immediate from delayed repair; and corrected my arithmetic: all ten missing a tick is 0.7^10). Adopted in substance without new instrumentation: the existing `length` events give the order (9.8) |
 | 10 | interactions and persistence untested | adopted smaller: one combination case, one persistence case; a pairwise matrix is out of proportion for a one-owner fork (9.9) |
 | 11 | version set before the evidence is stable | adopted (9.10) |
+
+## Appendix B: what each case found (2026-11-12, macOS 27.0.1 26A434, the owner's account and bar)
+
+Runs, all under `~/IceReverse-evidence/`: `20261112-192750-s6` (build `bd1ff18`, as found),
+`20261112-200049-s6` (`49cb57d`, the arranging repair), `20261112-203533-s6` (`c8fc317`, the
+cut, version 1.0: every kept case and the checks of what was removed), and the last run named
+in STATUS (the review's fixes). A lab-identity copy and two sacrificial helpers; input by
+`settingsdrive`. "Kept" cases passed again on the cut build.
+
+| Case | Setting | Found | Rule row |
+|---|---|---|---|
+| G1 | Launch at login | the system takes the registration, still says on after Ice is started again, and gives it up; that a login then starts Ice was not run | kept |
+| G0 | Show Ice icon | off: `blocked(iconUnreadable)`, nothing hidden, no IceBar | removed, in effect on |
+| G0b | Ice icon, custom, as template | a stored custom icon is drawn in its colour, and without it as a template; the file chooser itself was not driven. The built-in icons: the owner's own report | kept |
+| U1 | Use Ice Bar | off: the member is drawn whether the section is "hidden" or shown | removed, in effect on |
+| G2 | IceBar location | dynamic: under the pointer for a click on empty bar, under the icon otherwise; pointer; icon: each within 2 pt | kept |
+| G3 | Show on click | on and off as said. **Defect**: a click on another app's item also showed the IceBar (the window list Ice asked is empty on 27). Repaired (`MenuBarPointRule`), passed after | kept, repaired |
+| G4, V4 | Show on hover, its delay | shown 0.18 s after resting at delay 0 and 1.19 s at delay 1 s; gone on leaving; not over another app's item (after G3's repair) | kept |
+| G5 | Show on scroll | one direction shows, the other closes; off: neither | kept |
+| G6 | Automatically rehide | timed (2 s): closed 1.9 s after the pointer left; focused app: closed on the change, stayed 10 s without one; off: stayed. **Defect**: smart took the system's full-screen windows for the clicked one (never closing, or closing for any click). Repaired (`SmartRehideRule`), 3 of 3 after | kept, repaired |
+| G7 | Item spacing | not run: "Apply" quits every app with an item | removed |
+| A | Tint (solid, gradient), shadow, border and its colour and width, shape full with round and square caps, inset, dynamic | each changes the bar's pixels as configured | kept |
+| A2 | Shape split | drawn exactly as full: the pass's regions equal to the pixel | removed; a stored split is the full one |
+| A8 | Reset | asks, then tint and shape are none | kept |
+| H1 | Hotkey: toggle the hidden section | shows, closes | kept |
+| H3 | Hotkey: search; a click on a result | the panel opens and lists; the click opens nothing | removed, with the menu entry |
+| H4 | Hotkey: enable the Ice Bar | toggles the setting, whose off is U1 | removed |
+| H5 | Hotkey: toggle application menus | the front app's menu titles leave the bar and come back | kept |
+| H6 | The recorder | the pressed combination is stored and fires | kept |
+| V1 | Divider style | at rest neither draws; in a drag "chevron" is a sliver, "none" nothing | removed, in effect none |
+| V2 | Hide app menus | only outside IceBar mode (U1) | removed |
+| V3 | Secondary context menu | right-click and Control-click open it; off: nothing; its two entries open the editor and the settings | kept |
+| V5 | Show all sections while dragging | a drag gives the items back either way; only an unseen divider's width differs (5 pt, 18 pt) | removed, in effect on |
+| K1-K3 | Always-hidden section and hotkey; temporarily-shown delay | known dead | removed |
+| B1 | A click on an IceBar cell | opens that item's menu | (the feature) |
+| D1 | Hold Command on the bar | the length is given back at once, the member answers at its place again, hidden again after; dragged right of the divider it leaves the roster. **Defect** found here and in D2: after the drag Ice hid on a roster read mid-drag and kept the taken-out item listed. Repaired (`IceBarArrangingRule.holdsBarForOwner`) | repaired |
+| D2 | A quick drag into the hidden section | 10 of 10: retire 0.12 s after the drag's start, in the roster and the IceBar about 1.3 s after its end; taken out again 10 of 10 after the repair (3 of 4 before) | repaired |
+| T6 | The cut build | the five panes show exactly what is kept; Ice's menus have no search; every removed setting and hotkey, stored at its old value, has no effect | -- |
+| C1, P1 | Kept settings together; set in the window, Ice started again | see STATUS | -- |
+
+Two things the plan said that the pass changed: a stored value of a removed setting is left as
+it is (the models do not write a setting that is not offered); a pass that could not read
+every process still counts as a reading for "is the pointer on an item", with Ice's icon and
+the system's items taken from the last complete pass (Codex, review of the code).
+
+## Appendix C: the review of the code (simplify, four views; Codex gpt-5.6-terra, two rounds)
+
+| From | Finding | Ruling |
+|---|---|---|
+| Codex | `@ViewBuilder` left on the array property in `MenuBarShapePicker` | adopted (it compiled; it was misplaced) |
+| Codex | a pass that is not complete must not count as a reading | disputed with `ItemCatalog.carryOver` (other apps' items are carried 30 s) and the cost (10 s episodes of a dead bar); Codex maintained with new evidence: Ice's icon and the system's items are not carried. Adopted in its second form: those frames come from the last complete pass |
+| Codex, altitude | stored values of removed settings were overwritten at launch | adopted: a setting that is not offered is not written |
+| altitude | the hold after arranging ended on a re-read that was attempted, not one whose reading was taken | adopted: `MenuBarItemManager.lastPassBeganAt` |
+| simplification | "arranging ended" noticed in two places | adopted: the tick alone |
+| simplification | `MenuBarPointRule` took a `y` it never read; a dead `visible_helper` parameter in the runner | adopted |
+| altitude | freshness of the roster belongs in the machine's own sample; other ways into quiet (blocked to ok, mode on) still hide on the first sample | not done: a change to the hiding machine, outside this pass. Recorded in STATUS as INFERRED |
+| altitude | the overlay test uses the main screen and the Dock's level | kept for this one-display Mac; recorded |
+| reuse | the runner parses the report itself, re-reading the file at each poll; it repeats the staging steps of `run-s5.sh`; `settingsdrive` forks `dragown`'s safety core | not done: one-shot probes, runs of a minute; `dragown` keeps the "any event" counter that 27.0.1 resets, noted in the probes' README |
+| efficiency | nothing on a hot path | -- |
+
+Security review: not dispatched; the change touches no authentication, payment, personal data,
+storage or network path. The probes post input events; their guards are the plan's section 2.

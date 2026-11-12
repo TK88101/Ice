@@ -13,7 +13,6 @@ public enum SmartRehideRule {
     public static func isSystemOverlay(layer: Int, frame: BarRect, screen: BarRect) -> Bool {
         layer >= overlayLayer
             && frame.minX <= screen.minX && frame.minY <= screen.minY
-            && frame.minX + frame.width >= screen.minX + screen.width
-            && frame.minY + frame.height >= screen.minY + screen.height
+            && frame.maxX >= screen.maxX && frame.maxY >= screen.maxY
     }
 }

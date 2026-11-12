@@ -13,9 +13,11 @@ public enum MenuBarPointRule {
     ///     is not hidden by Ice: other apps' items, the system's, Ice's icon.
     ///   - hasReading: a pass has read the bar. Without one every point is
     ///     taken for an item, so nothing is shown on a guess.
-    public static func isOnItem(x: Double, y: Double, itemFrames: [BarRect], hasReading: Bool) -> Bool {
+    ///
+    /// Only `x` is asked: the caller knows the point is on the bar, and an
+    /// item's window is as tall as the bar.
+    public static func isOnItem(x: Double, itemFrames: [BarRect], hasReading: Bool) -> Bool {
         guard hasReading else { return true }
-        // The bar's whole height: an item's window is as tall as the bar.
-        return itemFrames.contains { x >= $0.minX - margin && x <= $0.minX + $0.width + margin }
+        return itemFrames.contains { x >= $0.minX - margin && x <= $0.maxX + margin }
     }
 }

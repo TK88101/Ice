@@ -12,11 +12,10 @@ import time
 
 from settings_lab import (
     ALL_MODS, ALL_MODS_NAMES, BAR_Y, KEY_F13, KEY_F14, KEY_F15, KEY_F16, KEY_F17,
-    Failed, Lab, NotRun, hotkey_data, is_hidden_rest, mid_x, record, verdict,
+    PARK, Failed, Lab, NotRun, hotkey_data, is_hidden_rest, mid_x, record, verdict,
 )
 
 SCREEN_WIDTH = 1728
-PARK = (700, 600)
 ESCAPE = 53
 
 
@@ -667,7 +666,7 @@ REGIONS = {
 
 def bar_colours(run, name, settings):
     """The mean colour of each region with Ice running under those settings."""
-    with Lab(run, name, settings, visible_helper=False, member=False) as lab:
+    with Lab(run, name, settings, member=False) as lab:
         time.sleep(5.0)
         colours = {}
         for region, rect in REGIONS.items():
@@ -754,7 +753,7 @@ def g1(run):
     """Launch at login: the system takes the registration and gives it up again."""
     checks, facts = [], {}
     try:
-        with Lab(run, "G1-on", {}, visible_helper=False, member=False) as lab:
+        with Lab(run, "G1-on", {}, member=False) as lab:
             owner_front = lab.front_pid()
             try:
                 lab.open_settings()
@@ -765,7 +764,7 @@ def g1(run):
                 checks.append(("the toggle goes on", facts["atStart"] == 0 and facts["afterClick"] == 1))
             finally:
                 lab.activate(owner_front)
-        with Lab(run, "G1-relaunched", {}, visible_helper=False, member=False) as lab:
+        with Lab(run, "G1-relaunched", {}, member=False) as lab:
             owner_front = lab.front_pid()
             try:
                 lab.open_settings()
@@ -775,7 +774,7 @@ def g1(run):
                 lab.activate(owner_front)
     finally:
         # Whatever happened above, the registration is given up.
-        with Lab(run, "G1-off", {}, visible_helper=False, member=False) as lab:
+        with Lab(run, "G1-off", {}, member=False) as lab:
             owner_front = lab.front_pid()
             try:
                 lab.open_settings()
@@ -815,7 +814,7 @@ def h6(run):
 def a8(run):
     """The appearance editor's reset."""
     checks, facts = [], {}
-    with Lab(run, "A8", appearance(partial(tint=RED), shape=1), visible_helper=False, member=False) as lab:
+    with Lab(run, "A8", appearance(partial(tint=RED), shape=1), member=False) as lab:
         owner_front = lab.front_pid()
         try:
             lab.open_settings()
@@ -866,7 +865,7 @@ def g0b(run):
     icon = json.dumps({"name": "Custom", "hidden": image, "visible": image}).encode()
     for template in (False, True):
         name = "G0b-template" if template else "G0b-colour"
-        with Lab(run, name, {"IceIcon": icon, "CustomIceIconIsTemplate": template}, visible_helper=False, member=False) as lab:
+        with Lab(run, name, {"IceIcon": icon, "CustomIceIconIsTemplate": template}, member=False) as lab:
             time.sleep(3.0)
             own = lab.own_item("Ice.ControlItem.Visible")
             frame = own["frame"]
@@ -911,7 +910,7 @@ def t6_panes(run):
     """Every pane of the settings window: exactly what is offered on macOS 27."""
     checks, facts = [], {}
     stored = dict(appearance(partial(tint=RED), shape=2))
-    with Lab(run, "T6-panes", stored, visible_helper=False, member=False) as lab:
+    with Lab(run, "T6-panes", stored, member=False) as lab:
         owner_front = lab.front_pid()
         try:
             rows = lab.open_settings()
@@ -978,6 +977,11 @@ def t6_removed(run):
         checks.append(("Use Ice Bar stored off: the member is hidden all the same", is_hidden_rest(lab.snapshot())))
         checks.append(("Show Ice icon stored off: the icon is on the bar", lab.own_item("Ice.ControlItem.Visible") is not None))
         checks.append(("the always-hidden section stored on: no divider of it", lab.own_item("Ice.ControlItem.AlwaysHidden") is None))
+        # Not the divider style: on a domain that never ran Ice, Ice's own
+        # migration writes that key at launch, on every system.
+        facts["storedAfterLaunch"] = {key: lab.default(key) for key in ("UseIceBar", "ShowIceIcon", "EnableAlwaysHiddenSection", "ShowAllSectionsOnUserDrag")}
+        checks.append(("what was stored for them is left as it was",
+                       facts["storedAfterLaunch"] == {"UseIceBar": "0", "ShowIceIcon": "0", "EnableAlwaysHiddenSection": "1", "ShowAllSectionsOnUserDrag": "0"}))
         lab.park()
         before = len(titled_windows(lab))
         press_hotkey(lab, "SearchMenuBarItems")
@@ -999,11 +1003,15 @@ def t6_removed(run):
             x = mid_x(other["frame"])
             lab.wait_idle()
             process = lab.drive_started("drag", x, BAR_Y, x + 5, BAR_Y, "--expect", "pid:%d" % other["pid"],
-                                        "--pause", 3.5, "--return", "--seconds", 0.3)
-            # The press comes about a second after the start (the driver first
-            # proves whose item is under the point).
-            time.sleep(2.6)
+                                        "--pause", 5.0, "--return", "--seconds", 0.3)
+            # The press comes a second or more after the start (the driver
+            # first proves whose item is under the point): the divider is read
+            # until it changes or the pause is nearly over.
+            deadline = time.time() + 4.0
             divider = lab.own_item("Ice.ControlItem.Hidden")
+            while time.time() < deadline and divider and divider["frame"][2] == 18:
+                time.sleep(0.2)
+                divider = lab.own_item("Ice.ControlItem.Hidden")
             lab.drive_ended(process)
             facts["dividerWhileDragging"] = divider["frame"] if divider else None
             checks.append(("divider style and show-all stored at their other values: a drag shows the divider as with the defaults (5 pt)",

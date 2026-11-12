@@ -23,13 +23,13 @@ struct MenuBarShapePicker: View {
         }
     }
 
-    @ViewBuilder
     /// On macOS 27 a split shape is drawn as a full one, so it is not offered
     /// there (plan 2026-11-12-settings-cleanup, case A2).
     private var offeredShapeKinds: [MenuBarShapeKind] {
         MenuBarShapeKind.allCases.filter { $0 != .split || SettingsOffer.offers(.splitShape) }
     }
 
+    @ViewBuilder
     private var shapeKindPicker: some View {
         IcePicker("Shape Kind", selection: $configuration.shapeKind) {
             ForEach(offeredShapeKinds) { shapeKind in

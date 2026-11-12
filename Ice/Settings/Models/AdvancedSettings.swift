@@ -81,28 +81,38 @@ final class AdvancedSettings: ObservableObject {
         $enableAlwaysHiddenSection
             .receive(on: DispatchQueue.main)
             .sink { enable in
-                Defaults.set(enable, forKey: .enableAlwaysHiddenSection)
+                // A value in effect only because the setting is not offered
+                // here is not the owner's: what they stored stays.
+                if SettingsOffer.offers(.enableAlwaysHiddenSection) {
+                    Defaults.set(enable, forKey: .enableAlwaysHiddenSection)
+                }
             }
             .store(in: &c)
 
         $showAllSectionsOnUserDrag
             .receive(on: DispatchQueue.main)
             .sink { showAll in
-                Defaults.set(showAll, forKey: .showAllSectionsOnUserDrag)
+                if SettingsOffer.offers(.showAllSectionsOnUserDrag) {
+                    Defaults.set(showAll, forKey: .showAllSectionsOnUserDrag)
+                }
             }
             .store(in: &c)
 
         $sectionDividerStyle
             .receive(on: DispatchQueue.main)
             .sink { style in
-                Defaults.set(style.rawValue, forKey: .sectionDividerStyle)
+                if SettingsOffer.offers(.sectionDividerStyle) {
+                    Defaults.set(style.rawValue, forKey: .sectionDividerStyle)
+                }
             }
             .store(in: &c)
 
         $hideApplicationMenus
             .receive(on: DispatchQueue.main)
             .sink { shouldHide in
-                Defaults.set(shouldHide, forKey: .hideApplicationMenus)
+                if SettingsOffer.offers(.hideApplicationMenus) {
+                    Defaults.set(shouldHide, forKey: .hideApplicationMenus)
+                }
             }
             .store(in: &c)
 

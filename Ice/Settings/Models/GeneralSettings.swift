@@ -130,7 +130,11 @@ final class GeneralSettings: ObservableObject {
         $showIceIcon
             .receive(on: DispatchQueue.main)
             .sink { showIceIcon in
-                Defaults.set(showIceIcon, forKey: .showIceIcon)
+                // A value in effect only because the setting is not offered
+                // here is not the owner's: what they stored stays.
+                if SettingsOffer.offers(.showIceIcon) {
+                    Defaults.set(showIceIcon, forKey: .showIceIcon)
+                }
             }
             .store(in: &c)
 
@@ -162,7 +166,9 @@ final class GeneralSettings: ObservableObject {
         $useIceBar
             .receive(on: DispatchQueue.main)
             .sink { useIceBar in
-                Defaults.set(useIceBar, forKey: .useIceBar)
+                if SettingsOffer.offers(.useIceBar) {
+                    Defaults.set(useIceBar, forKey: .useIceBar)
+                }
             }
             .store(in: &c)
 
