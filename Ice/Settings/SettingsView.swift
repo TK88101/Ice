@@ -66,11 +66,22 @@ struct SettingsView: View {
         .navigationTitle(navigationTitle)
     }
 
+    /// The panes offered. On macOS 27 the layout pane is not one: Ice cannot
+    /// move another app's item there, so nothing in it could be arranged
+    /// (plan 2026-11-12-settings-cleanup); its two status lines are in the
+    /// General pane.
+    private var sidebarIdentifiers: [SettingsNavigationIdentifier] {
+        if #available(macOS 27, *) {
+            return SettingsNavigationIdentifier.allCases.filter { $0 != .menuBarLayout }
+        }
+        return SettingsNavigationIdentifier.allCases
+    }
+
     @ViewBuilder
     private var sidebar: some View {
         List(selection: $navigationState.settingsNavigationIdentifier) {
             Section {
-                ForEach(SettingsNavigationIdentifier.allCases) { identifier in
+                ForEach(sidebarIdentifiers) { identifier in
                     sidebarItem(for: identifier)
                 }
             } header: {
@@ -140,7 +151,7 @@ struct SettingsView: View {
         case .advanced:
             AdvancedSettingsPane(settings: appState.settings.advanced)
         case .about:
-            AboutSettingsPane(updatesManager: appState.updatesManager)
+            AboutSettingsPane()
         }
     }
 }

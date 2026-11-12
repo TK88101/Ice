@@ -52,11 +52,13 @@ final class UpdatesManager: NSObject, ObservableObject {
         }
     }
 
-    /// Performs the initial setup of the manager.
+    /// Performs the initial setup of the manager. The updater is never
+    /// started: this is a local fork, and the feed it would read is the
+    /// upstream release's, which would replace it (the owner, 2026-11-12;
+    /// plan 2026-11-12-settings-cleanup). Nothing reads `updaterController`
+    /// any more, so it is never made.
     func performSetup(with appState: AppState) {
         self.appState = appState
-        _ = updaterController
-        configureCancellables()
     }
 
     /// Configures the internal observers for the manager.
@@ -67,23 +69,8 @@ final class UpdatesManager: NSObject, ObservableObject {
             .assign(to: &$lastUpdateCheckDate)
     }
 
-    /// Checks for app updates.
-    @objc func checkForUpdates() {
-        #if DEBUG
-        // Checking for updates hangs in debug mode.
-        let alert = NSAlert()
-        alert.messageText = "Checking for updates is not supported in debug mode."
-        alert.runModal()
-        #else
-        guard let appState else {
-            return
-        }
-        // Activate the app in case an alert needs to be displayed.
-        appState.activate(withPolicy: .regular)
-        appState.openWindow(.settings)
-        updater.checkForUpdates()
-        #endif
-    }
+    /// Does nothing: this fork does not update itself (see `performSetup`).
+    @objc func checkForUpdates() { }
 }
 
 // MARK: UpdatesManager: SPUUpdaterDelegate

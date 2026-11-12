@@ -3,6 +3,7 @@
 //  Ice
 //
 
+import IceCore
 import LaunchAtLogin
 import SwiftUI
 
@@ -177,7 +178,35 @@ struct GeneralSettingsPane: View {
         useIceBar
         if settings.useIceBar {
             iceBarLocationPicker
+            iceBarStatus
         }
+    }
+
+    /// On macOS 27 in IceBar mode: what Ice says of its hiding, and how to
+    /// repair an icon left of its divider (the layout pane's two lines,
+    /// which is not offered there; plan 2026-11-12-settings-cleanup).
+    @ViewBuilder
+    private var iceBarStatus: some View {
+        if #available(macOS 27, *) {
+            let notice = IcePlacementNotice.notice(
+                placement: appState.itemManager.iconPlacement,
+                isIceBarMode: settings.useIceBar,
+                isDragging: appState.isDraggingMenuBarItem
+            )
+            if let status = appState.hidingCheckStatus {
+                iceBarStatusLine(status.message)
+            }
+            if let notice, appState.hidingCheckStatus?.message != notice.message {
+                iceBarStatusLine(notice.message)
+            }
+        }
+    }
+
+    private func iceBarStatusLine(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
