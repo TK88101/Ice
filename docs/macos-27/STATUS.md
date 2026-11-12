@@ -373,3 +373,13 @@ these runs had outside `k8` (the row above), and is covered by `IceBarHidingMach
 | Not verified | every rest was `notVerified(noReference,unchecked:n)`: on this bar Ice cannot check its own hide (the section above). What is measured is the owner's eyes and Ice's own report of its state, not a pixel check | MEASURED (the notes) |
 | The Mac afterwards | Ice and the helper stopped, the lab domains empty, the release Ice's settings byte-identical; 7 stored values of other items changed in MenuBarAgent's store, no key added or removed. The item the owner dragged in was left where Ice's exit drew it: for the owner to drag back | MEASURED (C7) / the order: the owner's |
 | How long | 22 minutes, of which about 15 were Ice's three waits (4.4, 4.3 and 6.4 minutes): on this bar every change of members or placement costs three baseline retries before Ice rests | MEASURED (`steps.jsonl`) |
+
+## Free use on the owner's bar (lab-identity copy, run `20261112-181149-free`, build `3d419c4`, 2026-11-12): unusable as built
+
+| what | status | tag |
+|---|---|---|
+| What happened | 223 s of the owner using the bar normally (items dragged left of the divider, the mouse on the bar, part of it under a screen recording): Ice never reached a rest. The length was applied and retired within 2 to 5 s four times (67/69 s, 102/105, 135/138, 196/201); the members left the bar and came back; the IceBar was never offered. The owner: "useless" | MEASURED (`report.jsonl`; the owner's recording) |
+| Why, one | the coordinator calls the pointer being over the menu bar "interacting" (`IceBarHidingCoordinator.swift:130`), and the machine retires the length on interaction in every phase before a rest (baselining, settling, confirming). Snapshots show `isInteracting` true around three of the four retires | MEASURED (snapshots) / the code |
+| Why, two | on this bar every baseline ends `skip(noReference)`, yet the machine still runs its baseline, a 20 s settle and up to three baseline retries before it rests unverified: about 3 minutes with the pointer kept off the bar (the second sitting). The retries exist for a baseline cut by a capture; the event `baseline(ok:)` no longer says why it failed | MEASURED (both runs) / the code (Codex, same day) |
+| The 135/138 retire | no interaction in the snapshots, no status or observation event; under the screen recording. A soft layout change (frontmost app, menu edge) while settling would do it; which one is not in the report | TBD |
+| The owner's settings afterwards | Ice quit by the owner; the lab domain empty, the release Ice's settings unchanged | MEASURED |
