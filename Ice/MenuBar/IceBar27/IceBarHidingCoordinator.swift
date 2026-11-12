@@ -45,6 +45,12 @@ final class IceBarHidingCoordinator {
     /// item of the owner's, gone from the bar and absent from the IceBar).
     /// So a drag that began is reported by the next sample whatever its end.
     private var dragBegan = false
+    /// When the owner last stopped arranging, and when the last completed
+    /// re-read began: until a pass later than the arranging's end has read
+    /// the bar, the machine is told the owner still has it
+    /// (`IceBarArrangingRule.holdsBarForOwner`).
+    private var arrangingEndedAt: Double?
+    private var rereadAt: Double?
     /// Command pressed or released: the machine hears of it now, not at the next tick.
     private lazy var flagsMonitor = EventMonitor.universal(for: .flagsChanged) { [weak self] event in
         Task { @MainActor in
@@ -113,6 +119,7 @@ final class IceBarHidingCoordinator {
                     dragBegan = true
                     tick()
                 } else {
+                    arrangingEndedAt = ProcessInfo.processInfo.systemUptime
                     keepDividersHidden(appState: appState)
                     rereadSoon()
                 }
@@ -158,10 +165,12 @@ final class IceBarHidingCoordinator {
             guard !Task.isCancelled, let self, let appState = self.appState, !appState.isDraggingMenuBarItem else {
                 return
             }
+            let began = ProcessInfo.processInfo.systemUptime
             await appState.itemManager.cacheItemsRegardless()
             guard !Task.isCancelled else {
                 return
             }
+            self.rereadAt = began
             self.tick()
         }
     }
@@ -182,14 +191,6 @@ final class IceBarHidingCoordinator {
             let sample = sample(appState: appState, screen: screen, menuMaxX: menuMaxX)
             dragBegan = false
             isInteracting = sample.isInteracting
-            // Command let go: read the bar once what was dropped has landed
-            // and the divider has settled, as after any drop. Not earlier: a
-            // pass that still saw the item left of the divider would hide it
-            // again (Codex review).
-            if wasArranging, !sample.isDragging {
-                rereadSoon()
-            }
-            wasArranging = sample.isDragging
             send(.sample(sample))
         }
     }
@@ -206,15 +207,27 @@ final class IceBarHidingCoordinator {
             spaceID: UInt64(truncatingIfNeeded: appState.activeSpace.spaceID)
         )
         let isMouseOnBar = appState.hidEventManager.isMouseInsideMenuBar(appState: appState, screen: screen)
+        let isArranging = IceBarArrangingRule.isArranging(
+            isDragging: appState.isDraggingMenuBarItem || dragBegan,
+            isCommandDown: NSEvent.modifierFlags.contains(.command),
+            isPointerOnBar: isMouseOnBar
+        )
+        let now = ProcessInfo.processInfo.systemUptime
+        // Command let go, or a drag over: read the bar once what was dropped
+        // has landed and the divider has settled, and hide nothing before
+        // that pass (Codex review; run 20261112-192750-s6).
+        if wasArranging, !isArranging {
+            arrangingEndedAt = now
+            rereadSoon()
+        }
+        wasArranging = isArranging
         return IceBarHidingSample(
             signature: signature,
             preconditions: roster.preconditions,
             membership: roster.membership,
             isInteracting: isMouseOnBar || appState.navigationState.isIceBarPresented,
-            isDragging: IceBarArrangingRule.isArranging(
-                isDragging: appState.isDraggingMenuBarItem || dragBegan,
-                isCommandDown: NSEvent.modifierFlags.contains(.command),
-                isPointerOnBar: isMouseOnBar
+            isDragging: IceBarArrangingRule.holdsBarForOwner(
+                isArranging: isArranging, arrangingEndedAt: arrangingEndedAt, rereadAt: rereadAt, now: now
             ),
             boundaryUsable: appState.itemManager.hiddenBoundaryUsable
         )
