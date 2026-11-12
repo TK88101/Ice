@@ -112,12 +112,14 @@ PLIST
         "ICEWATCH_SHA=$(t7_sha $shared/apps/icewatch)" "TOOL_SHA=$(t7_sha $shared/lab-tool.py)" \
         "HIDE_LIMIT=150" "START_LIMIT=5" "TIME_SCALE=0.02" > $shared/lab.env
     print -l -- "S5_SHA=$(t7_sha $shared/run-s5.sh)" "S5TOOL_SHA=$(t7_sha $shared/s5-tool.py)" \
-        "START_WAIT=150" "OWNER_WAIT=150" "EVIDENCE_ROOT=$evidence" "RELEASE_DOMAIN=$release" "$@" > $shared/s5.env
+        "START_WAIT=150" "OWNER_WAIT=150" "REST_LIMIT=150" "REST_SECONDS=1" "EVIDENCE_ROOT=$evidence" "RELEASE_DOMAIN=$release" "$@" > $shared/s5.env
 }
 
 # The report of a sitting that passes, bent by the arguments: `left` (an item
-# of the owner's left of the divider at the start), `unverified` (the helper
-# never verified), `release` (the release's settings written while Ice runs).
+# of the owner's left of the divider at the start), `norest` (Ice never rests
+# with the helper hidden), `noref` (every rest unverified, as on the owner's
+# bar), `release` (the release's settings written while Ice runs). The stub's
+# clock is a second a line: two snapshots of a rest in a row last REST_SECONDS.
 fixture() {
     python3 -I - $here "$@" > $LAB_STUB_FIXTURE <<'PY'
 import importlib.util, json, sys
@@ -136,8 +138,10 @@ def member(key):
 def emit(event, **fields):
     print(json.dumps(dict(fields, event=event)))
 
+STATUS = "notVerified(noReference,unchecked:1)" if "noref" in bend else "verified"
+
 def rest(members, visible, **fields):
-    values = dict(phase="resting", status="verified", lengthSet=True, lengthApplied=True, calibratedHiddenLength=736, isIceBarOffered=True,
+    values = dict(phase="resting", status=STATUS, lengthSet=True, lengthApplied=True, calibratedHiddenLength=736, isIceBarOffered=True,
                   roster=[member(m) for m in members], cells=[dict(m, disabled=False) for m in members],
                   checks=[dict(m, outcome="hidden") for m in members], cacheHidden=members, cacheVisible=visible + [ICE])
     values.update(fields)
@@ -152,10 +156,10 @@ if "release" in bend:
     print(json.dumps({"writeRelease": 1}))
 emit("snapshot", **t.snapshot(roster=[member(H)], cacheHidden=[H], cacheVisible=BAR + [ICE]))
 emit("length", applied=736, decided=736, held=False)
-if "unverified" in bend:
-    emit("status", status="notVerified(noReference)")
+if "norest" in bend:
+    emit("status", status="notVerified(lengthNotApplied)")
     sys.exit(0)
-emit("status", status="verified")
+emit("status", status=STATUS)
 rest([H], BAR)
 rest([H], BAR, isIceBarPresented=True)
 others = [BAR[0]]
@@ -163,7 +167,7 @@ wait('"q":"doOwn","a":"y"')
 emit("snapshot", **t.snapshot(roster=[member(H), member(OWN)], cacheHidden=[H, OWN], cacheVisible=others + [ICE]))
 wait('"step":"ownSeen"')
 emit("status", status="notVerified(lengthNotApplied)")
-emit("status", status="verified")
+emit("status", status=STATUS)
 rest([H, OWN], others)
 rest([H, OWN], others, isIceBarPresented=True)
 wait('"q":"doInvert","a":"y"')
@@ -172,7 +176,8 @@ emit("status", status="blocked(iconLeftOfDivider)")
 emit("snapshot", **t.snapshot(status="blocked(iconLeftOfDivider)", iconPlacement="iconLeftOfDivider", roster=[member(H)], cacheVisible=BAR + [ICE]))
 wait('"q":"paneSays"')
 emit("length", applied=736, decided=736, held=False)
-emit("status", status="verified")
+emit("status", status=STATUS)
+rest([H], BAR)
 rest([H], BAR)
 wait('"q":"itemBack"')
 rest([H], BAR, **{"pass": 3})
@@ -237,7 +242,7 @@ check "an unknown argument is refused"
 
 build_staging
 fixture
-answers "" y y y "my item" y y y y y y
+answers "" y y y y "my item" y y y y y y
 sitting; code=$?
 run=$(run_dir)
 (( code == 0 )) && grep -q 'S5 結果：通過' $tmp/out.txt && [[ $(< $run/verdict.json) == *'"result": "pass"'* ]]
@@ -253,21 +258,21 @@ check "the owner's name for the item and the member Ice saw are in the evidence"
 
 build_staging
 fixture
-answers "" y y s s
+answers "" y y y s s
 sitting; code=$?
 (( code == 1 )) && grep -q 'S5 結果：部分通過' $tmp/out.txt && grep -q 'helper only' $tmp/out.txt && grep -q 'C5 skipped  C6 skipped' $tmp/out.txt
 check "skipping the own item and the icon drag is partial, and says helper only"
 
 build_staging
 fixture
-answers "" y n s s
+answers "" y y n s s
 sitting; code=$?
 (( code == 1 )) && grep -q 'S5 結果：沒通過' $tmp/out.txt && grep -q 'C4: the owner answered n to helperMenu' $tmp/out.txt
 check "a no from the owner fails, with the question named"
 
 build_staging
 fixture
-answers "" x y y s s
+answers "" x y y y s s
 sitting
 grep -q '請輸入 y、n 或 s' $tmp/out.txt && grep -q 'S5 結果：部分通過' $tmp/out.txt
 check "an answer that is not y, n or s is asked again"
@@ -282,15 +287,29 @@ clean_after
 check "and it is cleaned up as any other"
 
 build_staging
-fixture unverified
+fixture norest
 answers ""
 sitting; code=$?
-(( code == 1 )) && grep -q 'S5 結果：沒通過' $tmp/out.txt && grep -q 'wait for verified ran out (last status: notVerified(noReference))' $tmp/out.txt && ! grep -q '第 1 步' $tmp/out.txt
-check "a helper that stays unverified fails with its status, and the owner is asked nothing"
+(( code == 1 )) && grep -q 'S5 結果：沒通過' $tmp/out.txt && grep -q 'wait for rested ran out (last status: notVerified(lengthNotApplied))' $tmp/out.txt && ! grep -q '第 1 步' $tmp/out.txt
+check "a helper Ice never rests on fails with its status, and the owner is asked nothing"
+
+build_staging
+fixture noref
+answers "" y y y y "my item" y y y y y y
+sitting; code=$?
+(( code == 0 )) && grep -q 'S5 結果：通過' $tmp/out.txt && grep -q 'the helper: hidden, not verified: Ice said notVerified(noReference,unchecked:1)' $tmp/out.txt
+check "a sitting where Ice can verify nothing, as on the owner's bar, passes on the owner's answers and says not verified"
+
+build_staging
+fixture
+answers "" n y y s s
+sitting; code=$?
+(( code == 1 )) && grep -q 'C3: the owner still saw the helper on the bar' $tmp/out.txt
+check "a helper the owner still sees on the bar fails"
 
 build_staging
 fixture release
-answers "" y y s s
+answers "" y y y s s
 sitting; code=$?
 run=$(run_dir)
 (( code == 1 )) && grep -q "the release Ice's settings changed" $tmp/out.txt && grep -q "defaults import $release $run/prefs-before.plist" $tmp/out.txt
@@ -298,7 +317,7 @@ check "changed release settings fail the sitting and the restore command is prin
 
 build_staging
 fixture
-answers "" y
+answers "" y y
 sitting; code=$?
 (( code == 1 )) && grep -q 'the sitting ended early: no answer to helperMenu' $tmp/out.txt && clean_after
 check "input that ends early ends the sitting as cut short, cleaned up"

@@ -4,9 +4,12 @@
 # front. It starts a lab-identity copy of the staged Ice and one sacrificial
 # helper item, waits for Ice to hide the helper, then asks the owner, line by
 # line, to look, click and drag, and judges the sitting with s5-tool.py from
-# Ice's report and the owner's answers.
+# Ice's report and the owner's answers. It does not wait for `verified`: on
+# the owner's bar, which overflows at rest, Ice can check nothing (run
+# 20261112-120353), so it waits for Ice to rest with the length applied and
+# the IceBar offered, and the owner's eyes decide.
 #
-#   /Users/Shared/IceReverse-lab/run-s5.sh             the sitting, about 16 minutes
+#   /Users/Shared/IceReverse-lab/run-s5.sh             the sitting, about 5 minutes for its first step
 #   /Users/Shared/IceReverse-lab/run-s5.sh --dry-run   the guards only; starts nothing
 #
 # Everything it trusts is in its own directory, written by stage-lab.sh and
@@ -49,13 +52,17 @@ esac
 
 # --- lab.env and s5.env, read as words --------------------------------------------------
 
-HIDE_LIMIT=1100
 START_LIMIT=20
 TIME_SCALE=1
 # A settled first read, and the helper's membership (recorded on the steps for s5-tool.py).
 START_WAIT=120
 # The owner's own drag: until Ice sees it.
 OWNER_WAIT=300
+# Ice at rest with the length applied for REST_SECONDS (s5-tool.py's
+# REST_SECONDS says why), waited for REST_LIMIT: the first lasting rest came
+# 187 s after Ice's start in run 20261112-120353.
+REST_LIMIT=420
+REST_SECONDS=15
 HELPER_LIFETIME=3600
 RUN_LIMIT=2400
 EVIDENCE_ROOT=$HOME/IceReverse-evidence
@@ -77,12 +84,12 @@ read_env() { # <file> <strict: 0|1> <known keys...>
 }
 seen=()
 # lab.env is run-lab.sh's: only what the sitting shares with it is read.
-read_env $shared/lab.env 0 OWNER_USER GIT_REV ICE_SHA TARGET_SHA ICEWATCH_SHA TOOL_SHA HIDE_LIMIT START_LIMIT TIME_SCALE
-read_env $shared/s5.env 1 S5_SHA S5TOOL_SHA START_WAIT OWNER_WAIT HELPER_LIFETIME RUN_LIMIT EVIDENCE_ROOT RELEASE_DOMAIN
+read_env $shared/lab.env 0 OWNER_USER GIT_REV ICE_SHA TARGET_SHA ICEWATCH_SHA TOOL_SHA START_LIMIT TIME_SCALE
+read_env $shared/s5.env 1 S5_SHA S5TOOL_SHA START_WAIT OWNER_WAIT REST_LIMIT REST_SECONDS HELPER_LIFETIME RUN_LIMIT EVIDENCE_ROOT RELEASE_DOMAIN
 for key in OWNER_USER GIT_REV ICE_SHA TARGET_SHA ICEWATCH_SHA TOOL_SHA S5_SHA S5TOOL_SHA; do
     (( ${seen[(Ie)$key]} )) || { print -u2 -- "run-s5: lab.env or s5.env lacks $key; stopped."; exit 2; }
 done
-[[ $HIDE_LIMIT == <1-> && $START_LIMIT == <1-> && $START_WAIT == <1-> && $OWNER_WAIT == <1-> && $HELPER_LIFETIME == <1-10800>
+[[ $START_LIMIT == <1-> && $START_WAIT == <1-> && $OWNER_WAIT == <1-> && $REST_LIMIT == <1-> && $REST_SECONDS == <1-> && $HELPER_LIFETIME == <1-10800>
     && $RUN_LIMIT == <1-> && $TIME_SCALE =~ '^[0-9]+(\.[0-9]+)?$' && $EVIDENCE_ROOT == /* ]] \
     || { print -u2 -- "run-s5: a value in lab.env or s5.env is out of range; stopped."; exit 2; }
 
@@ -406,8 +413,8 @@ own_item() {
     found=$(s5 new-member $report $cut $helper)
     cut=$(seq_now)
     mark_at $cut ownSeen "\"member\":${found:-null}"
-    say "  Ice 看到了一個新圖標（${${found#*\"namespace\": \"}%%\"*}）。現在等它藏好並驗證（最多 $(minutes $HIDE_LIMIT) 分鐘），這段時間請不要動……"
-    await C5 $HIDE_LIMIT verified $cut || { [[ -z $ended ]] && say "  沒等到 verified。"; return; }
+    say "  Ice 看到了一個新圖標（${${found#*\"namespace\": \"}%%\"*}）。現在等它藏好，通常 3 分鐘左右（最多 $(minutes $REST_LIMIT) 分鐘），這段時間請不要動……"
+    await C5 $REST_LIMIT rested $cut $REST_SECONDS 2 || { [[ -z $ended ]] && say "  沒等到：Ice 沒有把它藏住。"; return; }
     nap 3
     print -n -- "  這是哪個圖標？打個名字方便記錄（直接按 Return 也行）："
     read -r name || { print; ended="no name (the input ended)"; return 2; }
@@ -424,8 +431,8 @@ icon_drag() {
     await C6 $OWNER_WAIT status $cut 'blocked(iconLeftOfDivider' || { [[ -z $ended ]] && say "  沒等到：Ice 沒有說圖標放錯了。"; return; }
     ask paneSays "  設定視窗裡有沒有出現一行提醒，說 Ice 圖標要在分隔線右邊？" || return 2
     cut=$cut_at
-    say "  現在按住 Command，把 Ice 圖標拖回分隔線右邊。等它重新藏好（最多 $(minutes $HIDE_LIMIT) 分鐘）……"
-    await C6 $HIDE_LIMIT verified $cut || { [[ -z $ended ]] && say "  沒等到 verified。"; return; }
+    say "  現在按住 Command，把 Ice 圖標拖回分隔線右邊。等它重新藏好（最多 $(minutes $REST_LIMIT) 分鐘）……"
+    await C6 $REST_LIMIT rested $cut $REST_SECONDS || { [[ -z $ended ]] && say "  沒等到：Ice 沒有重新藏好。"; return; }
     ask paneClear "  那行提醒消失了嗎？" || return 2
 }
 
@@ -451,13 +458,14 @@ steps_of_sitting() {
     say "==== S5：在你自己的菜單欄上驗收 ($GIT_REV) ===="
     say "會發生的事：一份測試用的 Ice 和一個假圖標會出現在菜單欄上，結束時都會消失。"
     say "正式版 Ice 的設定不會被動到。你的圖標排列順序有可能變，結束時我會檢查並告訴你。"
-    say "前 $(minutes $(( HIDE_LIMIT / 3 ))) 分鐘左右請讓 Terminal 留在最前面，不要動電腦；之後照提示做。隨時可按 Control-C 結束。"
+    say "前 4 分鐘左右請讓 Terminal 留在最前面，不要動電腦；之後照提示做。隨時可按 Control-C 結束。"
+    say "Ice 在你的菜單欄上沒辦法自己確認「藏好了」（你的菜單欄平常就是滿的），所以這次由你用眼睛看。"
     print -n -- "按 Return 開始："
     read -r || { print; ended="not started (the input ended)"; return 2; }
     cool_down
     app=$(stage_ice) || { ended="staging the copy failed ($run/codesign.log)"; return 2; }
     start_ice $app || { ended="Ice did not start ($run/report.log)"; return 2; }
-    mark iceStarted "\"limit\":$START_WAIT"
+    mark iceStarted "\"limit\":$START_WAIT,\"rest\":$REST_SECONDS"
     say "Ice 啟動了，等它讀完菜單欄……"
     await - $START_WAIT settled
     [[ -z $ended ]] || return 2
@@ -479,12 +487,12 @@ steps_of_sitting() {
         cat $run/helper.txt
         return 0
     fi
-    say "假圖標進了 Ice。等它藏好並驗證，通常 5 分鐘左右（最多 $(minutes $HIDE_LIMIT) 分鐘）。請不要動電腦……"
-    await C3 $HIDE_LIMIT verified $cut || { [[ -z $ended ]] || return 2; say "沒等到 verified，到此為止。"; return 0; }
-    nap 3
+    say "假圖標進了 Ice。等 Ice 把它藏住，通常 3 到 4 分鐘（最多 $(minutes $REST_LIMIT) 分鐘）。請不要動電腦……"
+    await C3 $REST_LIMIT rested $cut $REST_SECONDS 1 || { [[ -z $ended ]] || return 2; say "沒等到：Ice 沒有把假圖標藏住，到此為止。"; return 0; }
     say ""
-    say "好了，假圖標已經藏進 Ice。接下來請照做並回答。"
+    say "好了，Ice 說它把假圖標藏起來了。接下來請照做並回答。"
     say "第 1 步"
+    ask helperGone "  看菜單欄：Ice 圖標左邊是不是沒有多出一個陌生的小圖標（假圖標已經看不到了）？" || return 2
     ask helperListed "  點一下 Ice 圖標。彈出的小條裡有沒有一個圖標（那個假圖標）？" || return 2
     ask helperMenu "  在小條裡點那個圖標。它的選單有沒有打開？" || return 2
     say "第 2 步：把你自己的一個圖標放進 Ice。"

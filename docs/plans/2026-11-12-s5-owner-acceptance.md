@@ -173,6 +173,32 @@ runner; `timedOut` names the status at the cut, not since the wait began; no run
 test drives a C5 or C6 timeout (the judge's unit tests do); about 15 s of the test
 suite is waits that end by timeout.
 
+## 3b. Amended after the first sitting (2026-11-12, the owner's yes the same day)
+
+Run `20261112-120353` failed at C3 after 19 minutes: on the owner's bar no rest can be
+`verified`. The bar overflows at rest (10 status items, 8 on the bar, the system's `«`
+listed with no Ice running), and the detector's baseline gives no template while a fold
+is present (`StripAssessor.swift:124-130`, frozen): STATUS, "S5, the owner's sitting".
+D7's rule "an unverified hide never counts in S5" made `verified` a condition of
+looking, against the product's own state model (the parent plan's O1 and D-c: unverified,
+the length is applied and the IceBar offered). Debated with Codex (one round, agreed):
+
+- **C3 is now**: within `REST_LIMIT` (420 s) Ice rests with the length applied and the
+  IceBar offered for `REST_SECONDS` (15 s) without a break, the helper its one member,
+  ready and pressable, its one cell enabled; and the owner does not say the helper is
+  still on the bar (a new first question). Verified or not: the verdict carries
+  `verified` and, when not, the note "hidden, not verified" with Ice's status.
+  15 s because Ice's first three rests on that bar lasted 1 to 3 s (40, 89, 137 s: its
+  baseline retries) and the fourth stayed (from 187 s); replayed over that report the
+  rule holds at 203 s.
+- C5 and C6 wait for the same kind of rest, not for `verified`.
+- A `pass` now means: usable by the owner's eyes, on a bar where Ice cannot vouch for
+  the hide. It is not the lab's `verified`, and STATUS must say which it was.
+- If the panel does not list the helper or the click does not open its menu, the
+  project stops there (the owner's decision, 2026-11-12).
+- Not done: lifting the fold rule in the frozen detector (large, uncertain); raising
+  `CheckPlan`'s two-candidate cap (not the cause: Codex, same day).
+
 ## 4. Risks and rollback
 
 - Ice misbehaves with the owner's item hidden: Return or Control-C ends it; with Ice

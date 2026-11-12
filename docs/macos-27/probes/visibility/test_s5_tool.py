@@ -73,7 +73,8 @@ class Sitting:
         r, bend = self.report, self.bend
         helper = member(HELPER)
         without_own = [e for e in BAR if e != OWN]
-        self.mark("iceStarted", **bend.get("iceStarted", {}))
+        # 0.5 s a line: two snapshots of a rest in a row make a lasting one
+        self.mark("iceStarted", **dict({"rest": 0.5}, **bend.get("iceStarted", {})))
         r.snap(hiddenBoundaryUsable=False, cacheVisible=BAR + [ICE_ITEM])
         r.snap(cacheVisible=bend.get("startVisible", BAR) + [ICE_ITEM], cacheHidden=bend.get("startHidden", []),
                iconPlacement=bend.get("startPlacement"), roster=bend.get("startRoster", []))
@@ -82,9 +83,13 @@ class Sitting:
         r.snap(roster=held, cacheHidden=entries(helper), cacheVisible=BAR + [ICE_ITEM])
         r.length(736)
         r.status(bend.get("helperStatus", "verified"))
-        rest(r, held, BAR, status=bend.get("helperStatus", "verified"))
+        for _ in range(1 if bend.get("shortRest") else 2):
+            rest(r, held, BAR, status=bend.get("helperStatus", "verified"))
+        if bend.get("shortRest"):
+            r.snap(roster=held, cacheVisible=BAR + [ICE_ITEM])
         if not bend.get("neverPresented"):
-            rest(r, held, BAR, isIceBarPresented=True)
+            rest(r, held, BAR, isIceBarPresented=True, status=bend.get("helperStatus", "verified"))
+        self.answer("helperGone")
         self.answer("helperListed")
         self.answer("helperMenu")
         self.answer("doOwn", "y" if self.own else "s")
@@ -99,7 +104,8 @@ class Sitting:
                 r.status(text)
             r.status(bend.get("ownStatus", "verified"))
             rest(r, both, without_own, status=bend.get("ownStatus", "verified"))
-            rest(r, both, without_own, isIceBarPresented=True, cells=bend.get("ownCells", [dict(e, disabled=False) for e in entries(*both)]))
+            rest(r, both, without_own, isIceBarPresented=True, status=bend.get("ownStatus", "verified"),
+                 cells=bend.get("ownCells", [dict(e, disabled=False) for e in entries(*both)]))
             self.mark("ownName", name="the example item")
             self.answer("ownListed")
             self.answer("ownMenu")
@@ -117,6 +123,8 @@ class Sitting:
             r.length(736)
             if not bend.get("neverBack"):
                 r.status("verified")
+                rest(r, [helper], BAR)
+                rest(r, [helper], BAR)
             self.answer("paneClear")
         if self.own:
             self.answer("itemBack")
@@ -225,13 +233,38 @@ class S5ToolTests(unittest.TestCase):
         self.assertIn("ran out (last status: none)", " ".join(verdict["reasons"]))
 
     def test_cells_that_are_not_the_roster_fail_the_rest(self):
-        reasons = s5.rest_reasons(*self.rest_with(cells=[]))
+        reasons = s5.rest_reasons(*self.rest_with(cells=[]), 0)
         self.assertEqual(reasons, ["the IceBar's cells are not the members, each enabled"])
 
-    def test_an_unverified_rest_fails_and_names_the_status(self):
-        verdict = self.judge(helperStatus="notVerified(noReference)")
+    def test_a_rest_ice_could_not_verify_counts_and_is_noted(self):
+        verdict = self.judge(helperStatus="notVerified(noReference,unchecked:1)")
+        self.assertEqual(verdict["result"], "pass", verdict["reasons"])
+        self.assertFalse(verdict["verified"])
+        self.assertIn("the helper: hidden, not verified: Ice said notVerified(noReference,unchecked:1)", verdict["notes"])
+
+    def test_a_verified_rest_is_recorded_as_verified(self):
+        self.assertTrue(self.judge()["verified"])
+
+    def test_a_rest_that_did_not_last_fails_and_names_the_status(self):
+        sitting = Sitting(own=False, invert=False)
+        sitting.bend.update(shortRest=True, neverPresented=True)
+        verdict = self.judge(sitting)
         self.assert_clause(verdict, "C3", "fail", "fail")
-        self.assertIn("notVerified(noReference)", " ".join(verdict["reasons"]))
+        self.assertIn("never rested with the length applied for 0.5 s (last status: verified)", " ".join(verdict["reasons"]))
+
+    def test_a_helper_the_owner_still_sees_on_the_bar_fails(self):
+        self.assert_clause(self.judge(helperGone="n"), "C3", "fail", "fail")
+
+    def test_a_rest_lasts_only_without_a_break(self):
+        report = Report()
+        for lasting in (True, False, True):
+            rest(report, [member(HELPER)], BAR, phase="resting" if lasting else "quiet")
+        path = os.path.join(self.root, "broken.jsonl")
+        with open(path, "w") as handle:
+            handle.write(report.text())
+        events = s5.lab.load_report(path)
+        self.assertIsNone(s5.lasting_rest(events, 0, 1.0))
+        self.assertIsNotNone(s5.lasting_rest(events, 0, 0.0))
 
     def test_a_no_to_the_helper_question_fails(self):
         self.assert_clause(self.judge(helperMenu="n"), "C4", "fail", "fail")
@@ -286,8 +319,10 @@ class S5ToolTests(unittest.TestCase):
         cells = [dict(e, disabled=True) for e in entries(member(HELPER), own_member())]
         self.assert_clause(self.judge(ownCells=cells), "C5", "fail", "fail")
 
-    def test_an_own_item_that_stays_unverified_fails(self):
-        self.assert_clause(self.judge(ownStatus="notVerified(unchecked:1)"), "C5", "fail", "fail")
+    def test_an_own_item_ice_could_not_verify_counts_and_is_noted(self):
+        verdict = self.judge(ownStatus="notVerified(unchecked:1)")
+        self.assertEqual(verdict["clauses"]["C5"], "pass", verdict["reasons"])
+        self.assertIn("the owner's item: hidden, not verified: Ice said notVerified(unchecked:1)", verdict["notes"])
 
     # --- C6: the icon left of the divider ------------------------------------------------
 
@@ -393,6 +428,9 @@ class S5ToolTests(unittest.TestCase):
         self.assertFalse(s5.predicate_holds(events, "members", [str(len(events)), "2"]))
         self.assertTrue(s5.predicate_holds(events, "fresh", [str(len(events) - 1)]))
         self.assertFalse(s5.predicate_holds(events, "fresh", [str(len(events))]))
+        self.assertTrue(s5.predicate_holds(events, "rested", ["0", "0.5", "1"]))
+        self.assertFalse(s5.predicate_holds(events, "rested", ["0", "0.5", "3"]))
+        self.assertFalse(s5.predicate_holds(events, "rested", ["0", "60"]))
         self.assertTrue(s5.predicate_holds(events, "verified", ["0"]))
         self.assertTrue(s5.predicate_holds(events, "status", ["0", "blocked(iconLeftOfDivider"]))
 

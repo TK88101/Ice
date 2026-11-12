@@ -41,6 +41,12 @@ Key = dict[str, str]
 # (run-s5.sh's START_WAIT), which it records on its steps: this is only what
 # stands when a step carries none.
 START_WAIT = 120
+# Seconds, by the report's clock, a rest must last to count: on a bar where
+# Ice cannot check (the owner's overflows at rest, so no baseline finds a
+# reference) it applies a length, rests a second or two, retires it and tries
+# again, three times, before it rests for good (run 20261112-120353: rests of
+# 1 to 3 s at 40, 89 and 137 s, then from 187 s on). The runner records its own.
+REST_SECONDS = 15
 CLAUSES = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]
 SECTIONS = ["cacheAlwaysHidden", "cacheHidden", "cacheVisible"]
 STORE_ENTRIES = "TrailingItemPreferredPositions"
@@ -144,32 +150,52 @@ def fresh_snapshots(events: list[Event], since: int, passes: int = FRESH_PASSES)
     return [snap for snap in lab.snapshots(events) if snap["seq"] > since and is_complete(snap) and snap["pass"] >= base + passes]
 
 
-def rest_reasons(events: list[Event], members: list[Key], since: int, until: Optional[Event]) -> list[str]:
-    """Why no verified rest holding exactly `members` lies after `since` and
+def is_rest(snap: Event) -> bool:
+    """Ice holding a length with the IceBar offered: hidden as far as Ice can
+    do it, verified or not (the parent plan's O1)."""
+    return snap["phase"] == "resting" and bool(snap["lengthApplied"]) and bool(snap["isIceBarOffered"])
+
+
+def lasting_rest(events: list[Event], since: int, seconds: float, count: Optional[int] = None, until: Optional[int] = None) -> Optional[Event]:
+    """The last snapshot of the first rest after `since` that lasted `seconds`
+    by the report's clock without a break (and, with `count`, held that many
+    members throughout)."""
+    first = None
+    for snap in lab.snapshots(events):
+        if snap["seq"] <= since or (until is not None and snap["seq"] > until):
+            continue
+        if not is_rest(snap) or (count is not None and len(snap["roster"]) != count):
+            first = None
+            continue
+        first = first or snap
+        if snap["t"] - first["t"] >= seconds:
+            return snap
+    return None
+
+
+def rest_reasons(events: list[Event], members: list[Key], since: int, until: Optional[Event], seconds: float) -> list[str]:
+    """Why no lasting rest holding exactly `members` lies after `since` and
     before the step `until` (the owner's answer about that rest), if any."""
-    end = until["seq"] if until else len(events)
-    status = lab.first_status(events, "verified", since)
-    if status is None or status["seq"] > end:
-        found = [event for event in lab.statuses(events, since) if event["seq"] <= end]
-        return [f"never verified (last status: {found[-1]['status'] if found else 'none'})"]
-    snap = lab.snapshot_after(events, status["seq"])
-    if snap is None or snap["status"] != "verified":
-        return ["no snapshot taken while verified"]
+    snap = lasting_rest(events, since, seconds, len(members), until["seq"] if until else None)
+    if snap is None:
+        found = [event for event in lab.statuses(events, since) if until is None or event["seq"] <= until["seq"]]
+        return [f"Ice never rested with the length applied for {seconds:g} s (last status: {found[-1]['status'] if found else 'none'})"]
     reasons = []
     if keys(snap["roster"]) != members:
-        reasons.append("the verified roster is not the expected members")
+        reasons.append("the roster at rest is not the expected members")
     if not all(is_ready(entry) for entry in snap["roster"]):
         reasons.append("a member is not ready and pressable")
     if snap["blockers"]:
         reasons.append(f"{len(snap['blockers'])} blocker(s)")
     if keys(snap["cells"]) != members or any(cell["disabled"] for cell in snap["cells"]):
         reasons.append("the IceBar's cells are not the members, each enabled")
-    hidden = keys([check for check in snap["checks"] if check["outcome"] == "hidden"])
-    if hidden != members:
-        reasons.append("not every member's check is hidden")
-    if not snap["lengthApplied"]:
-        reasons.append("no length standing while verified")
     return reasons
+
+
+def unverified_note(events: list[Event], since: int, seconds: float, count: int, until: Optional[Event]) -> Optional[str]:
+    """What the pane says of a rest Ice could not check; `None` for a verified one."""
+    snap = lasting_rest(events, since, seconds, count, until["seq"] if until else None)
+    return None if snap is None or snap["status"] == "verified" else f"hidden, not verified: Ice said {snap['status']}"
 
 
 def was_presented(events: list[Event], members: list[Key], since: int, until: Optional[Event]) -> bool:
@@ -191,6 +217,8 @@ def predicate_holds(events: list[Event], name: str, args: list[str]) -> bool:
         return start_snapshot(events) is not None
     if name == "members":  # <since> <count>: a complete snapshot with that many members
         return any(snap["seq"] > since and is_complete(snap) and len(snap["roster"]) == int(args[1]) for snap in lab.snapshots(events))
+    if name == "rested":  # <since> <seconds> [count]: a rest that lasted, with that many members
+        return lasting_rest(events, since, float(args[1]), int(args[2]) if len(args) > 2 else None) is not None
     if name == "fresh":  # <since>: a complete snapshot of a discovery pass begun after it
         return bool(fresh_snapshots(events, since))
     return lab.predicate_holds(events, name, args)
@@ -332,7 +360,11 @@ def judge_own_item(verdict: Verdict, events: list[Event], steps: list[Event], he
     verdict.extra["member"] = chosen
     both = keys([helper, chosen])
     listed, menu = answer(steps, "ownListed"), answer(steps, "ownMenu")
-    reasons = timed_out(events, steps, "C5") or rest_reasons(events, both, cut, listed)
+    seconds = rest_seconds(steps)
+    reasons = timed_out(events, steps, "C5") or rest_reasons(events, both, cut, listed, seconds)
+    note = unverified_note(events, cut, seconds, 2, listed)
+    if note:
+        verdict.notes.append(f"the owner's item: {note}")
     # Up to the owner's answer: what Ice says while the item is dragged back later is not this step's.
     blocked = lab.first_status(events, "blocked(positional", cut)
     if blocked and blocked["seq"] <= (listed["seq"] if listed else len(events)):
@@ -360,8 +392,8 @@ def judge_icon_drag(verdict: Verdict, events: list[Event], steps: list[Event]) -
         if retired is None or retired["seq"] > (snap["seq"] if snap else len(events)):
             reasons.append("the length was not retired before Ice said blocked")
         says = answer(steps, "paneSays")
-        if says is None or lab.first_status(events, "verified", max(says["seq"], blocked["seq"])) is None:
-            reasons.append("never verified again after the drag back")
+        if says is None or lasting_rest(events, max(says["seq"], blocked["seq"]), rest_seconds(steps)) is None:
+            reasons.append("Ice never rested with the length applied again after the drag back")
     verdict.settle("C6", reasons + answer_reasons(steps, ["paneSays", "paneClear"]))
 
 
@@ -402,6 +434,11 @@ def judge(directory: str) -> Event:
     return verdict.json(aborted)
 
 
+def rest_seconds(steps: list[Event]) -> float:
+    """How long a rest must last: the runner's own number, on its first step."""
+    return (lab.step(steps, "iceStarted") or {}).get("rest", REST_SECONDS)
+
+
 def judge_report(verdict: Verdict, events: list[Event], steps: list[Event]) -> None:
     judge_clauses(verdict, events, steps)
     start = start_snapshot(events)
@@ -422,9 +459,15 @@ def judge_clauses(verdict: Verdict, events: list[Event], steps: list[Event]) -> 
     waited = helper_up.get("limit", START_WAIT)
     if not verdict.settle("C2", helper_reasons(events, cut, helper["identifier"], waited), otherwise="notEstablished"):
         return
-    listed = answer(steps, "helperListed")
-    if not verdict.settle("C3", timed_out(events, steps, "C3") or rest_reasons(events, [helper], cut, listed)):
+    listed, seconds = answer(steps, "helperListed"), rest_seconds(steps)
+    gone = answer(steps, "helperGone")
+    still_drawn = ["the owner still saw the helper on the bar"] if gone is not None and gone["a"] == "n" else []
+    if not verdict.settle("C3", (timed_out(events, steps, "C3") or rest_reasons(events, [helper], cut, listed, seconds)) + still_drawn):
         return
+    note = unverified_note(events, cut, seconds, 1, listed)
+    verdict.extra["verified"] = note is None
+    if note:
+        verdict.notes.append(f"the helper: {note}")
     if listed is not None:
         shown = [] if was_presented(events, [helper], cut, answer(steps, "helperMenu")) else ["the report never showed the IceBar with the helper's one cell enabled"]
         verdict.settle("C4", shown + answer_reasons(steps, ["helperListed", "helperMenu"]))
