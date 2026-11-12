@@ -432,4 +432,14 @@ finding is in the plan's appendix B.
 | Launch at login: that a login starts Ice was not run. The custom icon's file chooser was not driven. macOS 14 to 26: not runnable here; everything removed is removed only on 27 | INFERRED / not run |
 | The hiding machine still hides on the first sample after leaving `blocked` or turning the mode on, whatever the roster's age; only the way out of arranging waits for a fresh pass | INFERRED (code review) |
 | `ScreenCapture.checkPermissions` reads a window list that is empty on 27 and falls back on a value macOS gives once: Screen Recording granted while Ice runs may not be seen until Ice is started again | INFERRED (code review), not this pass's |
-| About 1770 empty `com.icespike4.lab.*` preference files of earlier lab runs are in `~/Library/Preferences` | MEASURED (count); not deleted |
+
+### The staging folders, cleared (2026-11-12, at the owner's ask)
+
+| what | status | tag |
+|---|---|---|
+| The lab matrix's evidence (13 runs, 2626 files) | copied with `ditto` from `/Users/Shared/IceReverse-lab/evidence` to `~/IceReverse-evidence/lab-matrix/`, every file's sha256 equal; the hashes are in `MANIFEST.sha256.json` there | MEASURED |
+| The route C, spike and t7 runs | each already in `~/IceReverse-evidence/<run id>` with the same bytes, but for t7's `20261007-181858-t7`, copied now | MEASURED |
+| `/Users/Shared/IceReverse-c2`, `-icebar`, `-spike` | deleted | MEASURED |
+| `/Users/Shared/IceReverse-lab`, `-t7` | everything of the owner's deleted (the staged Ice, the helpers, `icewatch`, the scripts); what `icetest` wrote under `evidence/` is left, the owner's account may not delete it. `run-lab.sh`, `run-s5.sh`, `run-t7.sh` and the settings pass need `stage-lab.sh` (or `stage-t7.sh`) run again before their next use | MEASURED |
+| 1721 empty `com.icespike4.lab.*` preference files | each read as an empty dictionary, then deleted. 94 other `com.icespike4.*` files (trace, t7, the helpers) were not asked about and are left | MEASURED |
+

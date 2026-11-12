@@ -757,7 +757,8 @@ bar -- INFERRED from the fix that made calibration work).
 ## The lab matrix's first run: what moved the references (read 2026-10-09)
 
 Run `20261008-234718` (`icetest`, build `1a33df4`, evidence in
-`/Users/Shared/IceReverse-lab/evidence/`); nothing was run again, the run's reports,
+`/Users/Shared/IceReverse-lab/evidence/`, since 2026-11-12 in
+`~/IceReverse-evidence/lab-matrix/`); nothing was run again, the run's reports,
 logs and bar captures were read. Plan `2026-10-09-lab-first-run-followup`, section 1.
 
 **MEASURED -- the bar moves under Ice between its baseline and its trials.** `drawn`
