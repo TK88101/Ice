@@ -25,9 +25,6 @@ final class IceBarHidingCoordinator {
     /// (`DiscoveredCachePlan.settleSeconds`), and a little more.
     private static let rereadDelay: Duration = .milliseconds(Int(DiscoveredCachePlan.settleSeconds * 1000) + 150)
 
-    /// After Command is let go: long enough for a dropped item to have landed.
-    private static let releaseDelay: Duration = .milliseconds(200)
-
     private weak var appState: AppState?
     /// Hide at once, unverified, unless the lab asks for the checks (plan
     /// 2026-11-12-hide-at-once).
@@ -141,10 +138,10 @@ final class IceBarHidingCoordinator {
     /// a pass has read them against the settled divider: the passes come
     /// every five seconds, so one is run as soon as the divider has settled,
     /// and the machine is sampled right after it.
-    private func rereadSoon(after delay: Duration = rereadDelay) {
+    private func rereadSoon() {
         reread?.cancel()
         reread = Task { [weak self] in
-            try? await Task.sleep(for: delay)
+            try? await Task.sleep(for: Self.rereadDelay)
             guard !Task.isCancelled, let self, let appState = self.appState, !appState.isDraggingMenuBarItem else {
                 return
             }
@@ -153,14 +150,6 @@ final class IceBarHidingCoordinator {
                 return
             }
             self.tick()
-            // An early read can find the divider still settling (Command let
-            // go right after a drop): one more once it has.
-            if delay < Self.rereadDelay {
-                try? await Task.sleep(for: Self.rereadDelay)
-                if !Task.isCancelled, !self.isLengthApplied {
-                    self.rereadSoon()
-                }
-            }
         }
     }
 
@@ -179,10 +168,12 @@ final class IceBarHidingCoordinator {
             keepDividersHidden(appState: appState)
             let sample = sample(appState: appState, screen: screen, menuMaxX: menuMaxX)
             isInteracting = sample.isInteracting
-            // Command let go with nothing dragged: the divider has stood at
-            // standard length all the while, so the bar can be read at once.
-            if wasArranging, !sample.isDragging, !appState.isDraggingMenuBarItem {
-                rereadSoon(after: Self.releaseDelay)
+            // Command let go: read the bar once what was dropped has landed
+            // and the divider has settled, as after any drop. Not earlier: a
+            // pass that still saw the item left of the divider would hide it
+            // again (Codex review).
+            if wasArranging, !sample.isDragging {
+                rereadSoon()
             }
             wasArranging = sample.isDragging
             send(.sample(sample))
