@@ -38,6 +38,13 @@ final class IceBarHidingCoordinator {
     private var reread: Task<Void, Never>?
     /// The last sample found the owner arranging (`IceBarArrangingRule`).
     private var wasArranging = false
+    /// A Command-drag began since the last sample. The machine is sampled
+    /// once a second, and a drag can begin and end between two samples: it
+    /// would then never retire the length, the dropped item would be pushed
+    /// off with the members and listed nowhere (run 20261112-184440-free: an
+    /// item of the owner's, gone from the bar and absent from the IceBar).
+    /// So a drag that began is reported by the next sample whatever its end.
+    private var dragBegan = false
     /// Command pressed or released: the machine hears of it now, not at the next tick.
     private lazy var flagsMonitor = EventMonitor.universal(for: .flagsChanged) { [weak self] event in
         Task { @MainActor in
@@ -91,18 +98,24 @@ final class IceBarHidingCoordinator {
                 self?.tick()
             }
             .store(in: &cancellables)
-        // A drop: the owner expects the item hidden now, not at the next pass.
+        // A drag begins: the real divider and the members are given back
+        // now. It ends: the owner expects the item hidden now, not at the
+        // next pass.
         appState.hidEventManager.$isDraggingMenuBarItem
             .removeDuplicates()
-            .filter { !$0 }
             .dropFirst()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self, weak appState] _ in
+            .sink { [weak self, weak appState] isDragging in
                 guard let self, let appState else {
                     return
                 }
-                keepDividersHidden(appState: appState)
-                rereadSoon()
+                if isDragging {
+                    dragBegan = true
+                    tick()
+                } else {
+                    keepDividersHidden(appState: appState)
+                    rereadSoon()
+                }
             }
             .store(in: &cancellables)
         timer = .scheduledTimer(withTimeInterval: Self.tickInterval, repeats: true) { [weak self] _ in
@@ -167,6 +180,7 @@ final class IceBarHidingCoordinator {
             }
             keepDividersHidden(appState: appState)
             let sample = sample(appState: appState, screen: screen, menuMaxX: menuMaxX)
+            dragBegan = false
             isInteracting = sample.isInteracting
             // Command let go: read the bar once what was dropped has landed
             // and the divider has settled, as after any drop. Not earlier: a
@@ -198,7 +212,7 @@ final class IceBarHidingCoordinator {
             membership: roster.membership,
             isInteracting: isMouseOnBar || appState.navigationState.isIceBarPresented,
             isDragging: IceBarArrangingRule.isArranging(
-                isDragging: appState.isDraggingMenuBarItem,
+                isDragging: appState.isDraggingMenuBarItem || dragBegan,
                 isCommandDown: NSEvent.modifierFlags.contains(.command),
                 isPointerOnBar: isMouseOnBar
             ),
