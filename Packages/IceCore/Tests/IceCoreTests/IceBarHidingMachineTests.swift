@@ -993,6 +993,17 @@ struct IceBarHidingMachineTests {
         #expect(driver.restLength == 736)
     }
 
+    @Test("a member that appears while nothing is hidden is hidden on that very sample")
+    func firstMemberHiddenOnItsSample() {
+        var driver = Self.atOnce()
+        driver.members = Self.roster([])
+        driver.run(Self.sample(Self.signature(items: ["v1"], members: []), membership: Self.roster([])), ticks: 3)
+        #expect(driver.length == nil)
+
+        driver.members = Self.roster()
+        #expect(driver.tick().first == .setLength(736))
+    }
+
     @Test("another app in front, a longer menu, another Space: the rest stays and nothing is captured")
     func softChangesOweNothing() {
         var driver = Self.atOnce()

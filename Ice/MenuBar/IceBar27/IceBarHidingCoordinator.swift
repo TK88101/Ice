@@ -73,6 +73,15 @@ final class IceBarHidingCoordinator {
                 self?.send(.mode(isIceBar: isIceBar))
             }
             .store(in: &cancellables)
+        // A pass changed the roster: the machine hears of it now, not at the next tick.
+        appState.itemManager.$iceBarRoster
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.tick()
+            }
+            .store(in: &cancellables)
         // A drop: the owner expects the item hidden now, not at the next pass.
         appState.hidEventManager.$isDraggingMenuBarItem
             .removeDuplicates()

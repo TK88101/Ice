@@ -354,7 +354,10 @@ public struct IceBarHidingMachine: Equatable, Sendable {
                 failures = 0
                 baselineRetries = 0
                 displacedRetries = 0
-                return enterQuiet(now)
+                let retired = enterQuiet(now)
+                // At standard length already, the sample is of the bar as it
+                // is: a member that has just appeared is hidden on it.
+                return parameters.verifies || !retired.isEmpty ? retired : advance(sample, now: now)
             }
             // Nothing was checked, so a soft change owes nothing.
             guard parameters.verifies else { return advance(sample, now: now) }
