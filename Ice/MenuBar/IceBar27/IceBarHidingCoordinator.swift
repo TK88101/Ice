@@ -25,6 +25,9 @@ final class IceBarHidingCoordinator {
     /// (`DiscoveredCachePlan.settleSeconds`), and a little more.
     private static let rereadDelay: Duration = .milliseconds(Int(DiscoveredCachePlan.settleSeconds * 1000) + 150)
 
+    /// After Command is let go: long enough for a dropped item to have landed.
+    private static let releaseDelay: Duration = .milliseconds(200)
+
     private weak var appState: AppState?
     /// Hide at once, unverified, unless the lab asks for the checks (plan
     /// 2026-11-12-hide-at-once).
@@ -36,6 +39,15 @@ final class IceBarHidingCoordinator {
     private var work: Task<Void, Never>?
     /// The early re-read under way: see `rereadSoon`.
     private var reread: Task<Void, Never>?
+    /// The last sample found the owner arranging (`IceBarArrangingRule`).
+    private var wasArranging = false
+    /// Command pressed or released: the machine hears of it now, not at the next tick.
+    private lazy var flagsMonitor = EventMonitor.universal(for: .flagsChanged) { [weak self] event in
+        Task { @MainActor in
+            self?.tick()
+        }
+        return event
+    }
     private var isSampling = false
 
     private var observer: (displayID: CGDirectDisplayID, observer: HiddenLengthObserver)?
@@ -102,6 +114,7 @@ final class IceBarHidingCoordinator {
             }
         }
         timer?.tolerance = Self.tickTolerance
+        flagsMonitor.start()
     }
 
     // MARK: - Events
@@ -128,10 +141,10 @@ final class IceBarHidingCoordinator {
     /// a pass has read them against the settled divider: the passes come
     /// every five seconds, so one is run as soon as the divider has settled,
     /// and the machine is sampled right after it.
-    private func rereadSoon() {
+    private func rereadSoon(after delay: Duration = rereadDelay) {
         reread?.cancel()
         reread = Task { [weak self] in
-            try? await Task.sleep(for: Self.rereadDelay)
+            try? await Task.sleep(for: delay)
             guard !Task.isCancelled, let self, let appState = self.appState, !appState.isDraggingMenuBarItem else {
                 return
             }
@@ -140,6 +153,14 @@ final class IceBarHidingCoordinator {
                 return
             }
             self.tick()
+            // An early read can find the divider still settling (Command let
+            // go right after a drop): one more once it has.
+            if delay < Self.rereadDelay {
+                try? await Task.sleep(for: Self.rereadDelay)
+                if !Task.isCancelled, !self.isLengthApplied {
+                    self.rereadSoon()
+                }
+            }
         }
     }
 
@@ -158,6 +179,12 @@ final class IceBarHidingCoordinator {
             keepDividersHidden(appState: appState)
             let sample = sample(appState: appState, screen: screen, menuMaxX: menuMaxX)
             isInteracting = sample.isInteracting
+            // Command let go with nothing dragged: the divider has stood at
+            // standard length all the while, so the bar can be read at once.
+            if wasArranging, !sample.isDragging, !appState.isDraggingMenuBarItem {
+                rereadSoon(after: Self.releaseDelay)
+            }
+            wasArranging = sample.isDragging
             send(.sample(sample))
         }
     }
@@ -179,7 +206,11 @@ final class IceBarHidingCoordinator {
             preconditions: roster.preconditions,
             membership: roster.membership,
             isInteracting: isMouseOnBar || appState.navigationState.isIceBarPresented,
-            isDragging: appState.isDraggingMenuBarItem,
+            isDragging: IceBarArrangingRule.isArranging(
+                isDragging: appState.isDraggingMenuBarItem,
+                isCommandDown: NSEvent.modifierFlags.contains(.command),
+                isPointerOnBar: isMouseOnBar
+            ),
             boundaryUsable: appState.itemManager.hiddenBoundaryUsable
         )
     }

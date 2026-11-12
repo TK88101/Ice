@@ -38,6 +38,16 @@ ends, one cache pass is run as soon as the divider has settled (1 s, plus 0.15 s
 the machine sampled right after it, so a drop is hidden in about that time and not at
 the next 5 s pass.
 
+D4 Taking an item out (the owner, 2026-11-12: "how do I get it out?"). The owner is
+arranging, and Ice gives the real divider and the hidden items back, during a
+Command-drag as before and now also while Command is held with the pointer on the menu
+bar (`IceBarArrangingRule`): hold Command, the members are drawn, drag one right of the
+divider, let go. A change of the modifier keys samples the machine at once. Arranging
+several items at once in the layout pane, as Ice does before macOS 27, needs Ice to
+move another app's item itself: refused on macOS 27 in this fork (a synthetic drag
+moved a helper 3 of 4 times, 2026-09; never tried on a real item). To be measured
+before anything is built on it.
+
 Not done: any capture-based check in this mode; changing the frozen detector; changing
 how membership is decided (still: left of the divider at standard length).
 
