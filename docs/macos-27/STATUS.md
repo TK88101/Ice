@@ -440,6 +440,6 @@ finding is in the plan's appendix B.
 | The lab matrix's evidence (13 runs, 2626 files) | copied with `ditto` from `/Users/Shared/IceReverse-lab/evidence` to `~/IceReverse-evidence/lab-matrix/`, every file's sha256 equal; the hashes are in `MANIFEST.sha256.json` there | MEASURED |
 | The route C, spike and t7 runs | each already in `~/IceReverse-evidence/<run id>` with the same bytes, but for t7's `20261007-181858-t7`, copied now | MEASURED |
 | `/Users/Shared/IceReverse-c2`, `-icebar`, `-spike` | deleted | MEASURED |
-| `/Users/Shared/IceReverse-lab`, `-t7` | everything of the owner's deleted (the staged Ice, the helpers, `icewatch`, the scripts); what `icetest` wrote under `evidence/` is left, the owner's account may not delete it. `run-lab.sh`, `run-s5.sh`, `run-t7.sh` and the settings pass need `stage-lab.sh` (or `stage-t7.sh`) run again before their next use | MEASURED |
-| 1721 empty `com.icespike4.lab.*` preference files | each read as an empty dictionary, then deleted. 94 other `com.icespike4.*` files (trace, t7, the helpers) were not asked about and are left | MEASURED |
+| `/Users/Shared/IceReverse-lab`, `-t7` | everything of the owner's deleted (the staged Ice, the helpers, `icewatch`, the scripts); what `icetest` wrote under `evidence/` the owner then deleted with `sudo`, and the `icetest` account with its home folder: nothing of either is left. `run-lab.sh`, `run-s5.sh`, `run-t7.sh` and the settings pass need `stage-lab.sh` (or `stage-t7.sh`) run again before their next use | MEASURED |
+| 1721 empty `com.icespike4.lab.*` preference files, then the 94 other `com.icespike4.*` ones (trace, t7, the helpers) | each read as an empty dictionary, then deleted; none is left. The release Ice's settings were not touched | MEASURED |
 
