@@ -383,3 +383,12 @@ these runs had outside `k8` (the row above), and is covered by `IceBarHidingMach
 | Why, two | on this bar every baseline ends `skip(noReference)`, yet the machine still runs its baseline, a 20 s settle and up to three baseline retries before it rests unverified: about 3 minutes with the pointer kept off the bar (the second sitting). The retries exist for a baseline cut by a capture; the event `baseline(ok:)` no longer says why it failed | MEASURED (both runs) / the code (Codex, same day) |
 | The 135/138 retire | no interaction in the snapshots, no status or observation event; under the screen recording. A soft layout change (frontmost app, menu edge) while settling would do it; which one is not in the report | TBD |
 | The owner's settings afterwards | Ice quit by the owner; the lab domain empty, the release Ice's settings unchanged | MEASURED |
+
+## Hide at once (build `2499e5f`, plan 2026-11-12-hide-at-once), on the owner's bar, 2026-11-12
+
+| what | status | tag |
+|---|---|---|
+| What changed | Ice runs the hiding machine with `verifies` off: a member left of a settled divider is hidden on the sample that brings it, at 736 (or the last verified length), and Ice rests "not verified" with the IceBar offered. No baseline, no observation, no wait, no regard for the pointer. A pass is run 1.15 s after a drop or a retire. `-IceLabVerify YES` (what `run-lab.sh` passes) keeps the machine as it was | MEASURED (IceCore 722 tests, app build, Codex review: no findings) |
+| A helper appearing, three runs | from the helper's item being up to the length applied: 2.6 s (build `57d8862`), then 1.3 s and 1.3 s (build `2499e5f`); the IceBar offered within 0.4 s of that | MEASURED (runs `20261112-183019-selftest` and the two after it, owner's account) |
+| The owner's free use, run `20261112-183251-free`, 171 s | three of the owner's items dragged in, one after another; each time Ice rested again 1.1 to 4.1 s after it had retired the length (a retire comes with the drag's start, so the time holds the drag itself); the IceBar was presented 20 times; every cell enabled, no press failed; an icon dragged left of the divider read `blocked(iconLeftOfDivider)` and recovered within 2 s of being put back. Every rest `notVerified(unchecked:n)` | MEASURED (`report.jsonl`). What the owner thought of it: TBD |
+| Still so | the hidden items show on the bar for about a second at every change of members (the divider decides membership at standard length); nothing is verified in this mode | MEASURED (the retires) / by design |
