@@ -27,6 +27,11 @@ enum LabReport {
         return arguments[name].map { $0 as? String ?? String(describing: $0) }
     }
 
+    /// `-IceLabVerify YES`: the hiding machine checks its own hide, as the
+    /// lab matrix judges it. Without it Ice hides at once, unverified (plan
+    /// 2026-11-12-hide-at-once).
+    static let verifiesHiding = launchArgument("IceLabVerify") == "YES"
+
     /// The report launch's settings; `nil` in every other launch.
     static var plan: LabReportPlan? {
         if case .report(let plan) = launch { plan } else { nil }

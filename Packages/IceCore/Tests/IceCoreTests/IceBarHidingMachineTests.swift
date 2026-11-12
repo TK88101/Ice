@@ -920,4 +920,122 @@ struct IceBarHidingMachineTests {
         #expect(zip(reports, reports.dropFirst()).allSatisfy { $0 != $1 })
         #expect(reports.last == .state(.blocked(reasons: Self.blocks[0].reasons)))
     }
+
+    // MARK: - Hiding at once, unverified (plan 2026-11-12-hide-at-once)
+
+    static func atOnce() -> Driver {
+        var driver = Driver()
+        driver.machine = IceBarHidingMachine(parameters: .unverified)
+        driver.send(.mode(isIceBar: true))
+        return driver
+    }
+
+    @Test("members left of a usable divider are hidden on the first sample: no wait, no baseline, no observation")
+    func hidesAtOnce() {
+        var driver = Self.atOnce()
+        let commands = driver.tick(seconds: 0.1)
+
+        #expect(commands.first == .setLength(736))
+        #expect(driver.restLength == 736)
+        #expect(driver.machine.lengthApplied)
+        #expect(driver.baselines == 0)
+        #expect(driver.observed.isEmpty)
+        #expect(!driver.machine.awaitsAnswer)
+    }
+
+    @Test("it says so: hiding requested, not verified, every member unchecked")
+    func saysUnverified() {
+        var driver = Self.atOnce()
+        driver.tick()
+
+        guard case .requestedNotVerified(let reasons) = driver.state else {
+            Issue.record("the state is \(String(describing: driver.state))")
+            return
+        }
+        #expect(reasons.contains { if case .membersUnchecked(let keys) = $0 { keys.count == 2 } else { false } })
+    }
+
+    @Test("the pointer on the bar neither delays the hide nor undoes it")
+    func pointerDoesNotUndo() {
+        var driver = Self.atOnce()
+        driver.tick(Self.sample(interacting: true))
+        #expect(driver.restLength == 736)
+
+        let mark = driver.log.count
+        driver.run(Self.sample(interacting: true), ticks: 30)
+        #expect(driver.since(mark).isEmpty)
+        #expect(driver.length == 736)
+    }
+
+    @Test("a Command-drag gives the real divider back, and the drop hides again on the next usable sample")
+    func dragThenDrop() {
+        var driver = Self.atOnce()
+        driver.tick()
+
+        #expect(driver.tick(Self.sample(dragging: true)).first == .setLength(nil))
+        driver.run(Self.sample(dragging: true), ticks: 5)
+        #expect(driver.length == nil)
+
+        // The drop: the divider has not settled yet, then it has.
+        #expect(driver.tick(Self.sample(boundaryUsable: false), seconds: 0.5).isEmpty)
+        #expect(driver.tick(seconds: 0.5).first == .setLength(736))
+    }
+
+    @Test("a member dragged in is hidden with the others, with no interval kept between two hides")
+    func memberAdded() {
+        var driver = Self.atOnce()
+        driver.tick()
+        let three = Self.roster([Self.member(1), Self.member(2), Self.member(3)])
+        let grown = Self.sample(Self.signature(items: ["v1", "m1", "m2", "m3"], members: ["m1", "m2", "m3"]), membership: three)
+
+        #expect(driver.tick(grown).first == .setLength(nil))
+        #expect(driver.tick(grown).first == .setLength(736))
+        #expect(driver.restLength == 736)
+    }
+
+    @Test("another app in front, a longer menu, another Space: the rest stays and nothing is captured")
+    func softChangesOweNothing() {
+        var driver = Self.atOnce()
+        driver.tick()
+        let mark = driver.log.count
+
+        driver.run(Self.sample(Self.signature(frontmostPID: 11, menuMaxX: 900, spaceID: 8)), ticks: 10)
+
+        #expect(driver.since(mark).isEmpty)
+        #expect(driver.restLength == 736)
+        #expect(driver.observed.isEmpty)
+    }
+
+    @Test("nothing is hidden before the divider decided the sections, nor with nothing left of it")
+    func waitsForTheBoundary() {
+        var driver = Self.atOnce()
+        driver.run(Self.sample(boundaryUsable: false), ticks: 5)
+        #expect(driver.length == nil)
+
+        var empty = Self.atOnce()
+        empty.members = Self.roster([])
+        empty.run(ticks: 5)
+        #expect(empty.length == nil)
+    }
+
+    @Test("a failed precondition still blocks: the length is retired and none is applied", arguments: blocks)
+    func preconditionsStillBlock(block: PreferenceHidingPreconditionResult) {
+        var driver = Self.atOnce()
+        driver.tick()
+
+        #expect(driver.tick(Self.sample(preconditions: block)).first == .setLength(nil))
+        driver.run(Self.sample(preconditions: block), ticks: 5)
+        #expect(driver.length == nil)
+        #expect(!driver.machine.lengthApplied)
+    }
+
+    @Test("the standard parameters still verify: a baseline first, never a length at once")
+    func standardStillVerifies() {
+        var driver = Driver()
+        driver.send(.mode(isIceBar: true))
+        driver.run(ticks: 2)
+        #expect(driver.length == nil)
+        #expect(IceBarHidingParameters.standard.verifies)
+        #expect(!IceBarHidingParameters.unverified.verifies)
+    }
 }

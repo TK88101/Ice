@@ -416,7 +416,7 @@ start_ice() { # <app> <executable> <bundle id> <report file> <always-hidden true
     fi
     mkfifo $fifo || return 1
     : > $report
-    OS_ACTIVITY_DT_MODE=YES $app/Contents/MacOS/$exec -IceLabReport YES $hold -SUEnableAutomaticChecks NO -SUAutomaticallyUpdate NO \
+    OS_ACTIVITY_DT_MODE=YES $app/Contents/MacOS/$exec -IceLabReport YES -IceLabVerify YES $hold -SUEnableAutomaticChecks NO -SUAutomaticallyUpdate NO \
         < $fifo > $report 2> ${report%.jsonl}.log &
     ice_pid=$!
     ice_exec=$app/Contents/MacOS/$exec

@@ -20,13 +20,22 @@ final class IceBarHidingCoordinator {
     private static let tickInterval: TimeInterval = 1
     private static let tickTolerance: TimeInterval = 0.2
 
+    /// After the length became standard, or a drag ended, the divider must
+    /// stand collapsed this long before a pass may decide the sections
+    /// (`DiscoveredCachePlan.settleSeconds`), and a little more.
+    private static let rereadDelay: Duration = .milliseconds(Int(DiscoveredCachePlan.settleSeconds * 1000) + 150)
+
     private weak var appState: AppState?
-    private var machine = IceBarHidingMachine()
+    /// Hide at once, unverified, unless the lab asks for the checks (plan
+    /// 2026-11-12-hide-at-once).
+    private var machine = IceBarHidingMachine(parameters: LabReport.verifiesHiding ? .standard : .unverified)
     private var timer: Timer?
     private var cancellables = Set<AnyCancellable>()
 
     /// The baseline or observation under way.
     private var work: Task<Void, Never>?
+    /// The early re-read under way: see `rereadSoon`.
+    private var reread: Task<Void, Never>?
     private var isSampling = false
 
     private var observer: (displayID: CGDirectDisplayID, observer: HiddenLengthObserver)?
@@ -64,6 +73,20 @@ final class IceBarHidingCoordinator {
                 self?.send(.mode(isIceBar: isIceBar))
             }
             .store(in: &cancellables)
+        // A drop: the owner expects the item hidden now, not at the next pass.
+        appState.hidEventManager.$isDraggingMenuBarItem
+            .removeDuplicates()
+            .filter { !$0 }
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak appState] _ in
+                guard let self, let appState else {
+                    return
+                }
+                keepDividersHidden(appState: appState)
+                rereadSoon()
+            }
+            .store(in: &cancellables)
         timer = .scheduledTimer(withTimeInterval: Self.tickInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tick()
@@ -89,6 +112,25 @@ final class IceBarHidingCoordinator {
         // At standard length the items are back on the bar: an open IceBar would list them twice.
         if !isLengthApplied, let appState, appState.navigationState.isIceBarPresented {
             appState.menuBarManager.iceBarPanel.close()
+        }
+    }
+
+    /// The items are back on the bar at standard length, and stay there until
+    /// a pass has read them against the settled divider: the passes come
+    /// every five seconds, so one is run as soon as the divider has settled,
+    /// and the machine is sampled right after it.
+    private func rereadSoon() {
+        reread?.cancel()
+        reread = Task { [weak self] in
+            try? await Task.sleep(for: Self.rereadDelay)
+            guard !Task.isCancelled, let self, let appState = self.appState, !appState.isDraggingMenuBarItem else {
+                return
+            }
+            await appState.itemManager.cacheItemsRegardless()
+            guard !Task.isCancelled else {
+                return
+            }
+            self.tick()
         }
     }
 
@@ -159,6 +201,9 @@ final class IceBarHidingCoordinator {
         switch command {
         case .setLength(let length):
             appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = LabReport.applied(length).map { CGFloat($0) }
+            if length == nil {
+                rereadSoon()
+            }
         case .takeBaseline(let token, let members, let ready):
             takeBaseline(token: token, members: members, ready: ready)
         case .observe(let token, let length, let closesBurst):

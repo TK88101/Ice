@@ -25,6 +25,12 @@ public struct IceBarHidingParameters: Equatable, Sendable {
     /// answers sessions of 4.2 s, not of 1.5 s (plan
     /// 2026-10-19-verify-in-a-clean-burst, D1).
     public let cleanBurstAge: Double
+    /// Whether Ice checks its own hide: a baseline with the section shown, a
+    /// walk, a settle, re-checks. When not, the members are hidden the moment
+    /// the divider has decided them, at the best-effort length, and the rest
+    /// says "not verified" (O1); nothing is captured and nothing waits for
+    /// the pointer to leave the bar (plan 2026-11-12-hide-at-once).
+    public let verifies: Bool
 
     public init(
         quietPeriod: Double,
@@ -32,8 +38,10 @@ public struct IceBarHidingParameters: Equatable, Sendable {
         maxFailures: Int,
         restDwell: Double,
         calibration: HiddenLengthParameters,
-        cleanBurstAge: Double = CaptureBurstParameters.standard.observationNeed
+        cleanBurstAge: Double = CaptureBurstParameters.standard.observationNeed,
+        verifies: Bool = true
     ) {
+        self.verifies = verifies
         self.quietPeriod = quietPeriod
         self.minInterval = minInterval
         self.maxFailures = maxFailures
@@ -48,6 +56,18 @@ public struct IceBarHidingParameters: Equatable, Sendable {
         maxFailures: 3,
         restDwell: 1,
         calibration: .standard
+    )
+
+    /// What Ice runs with: hide at once, verify nothing. On the owner's bar,
+    /// which overflows at rest, no baseline finds a reference, so the checks
+    /// could only delay the hide (runs 20261112-120353 and -181149-free).
+    public static let unverified = IceBarHidingParameters(
+        quietPeriod: 0,
+        minInterval: 0,
+        maxFailures: 0,
+        restDwell: 1,
+        calibration: .standard,
+        verifies: false
     )
 }
 
@@ -336,6 +356,8 @@ public struct IceBarHidingMachine: Equatable, Sendable {
                 displacedRetries = 0
                 return enterQuiet(now)
             }
+            // Nothing was checked, so a soft change owes nothing.
+            guard parameters.verifies else { return advance(sample, now: now) }
             guard case .resting(var rest) = phase else { return enterQuiet(now) }
             // D-e: the length stays; the checks are owed again.
             rest.pending = PendingChange(change: change, since: now)
@@ -379,7 +401,15 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     // MARK: - Calibration
 
     private mutating func start(_ sample: IceBarHidingSample, now: Double) -> [IceBarHidingCommand] {
-        guard !sample.isInteracting, sample.boundaryUsable, !sample.membership.members.isEmpty, !throttled(now) else { return [] }
+        guard sample.boundaryUsable, !sample.membership.members.isEmpty else { return [] }
+        guard parameters.verifies else {
+            // No capture to disturb: the pointer may be on the bar (the owner
+            // has just dropped an item there), and no interval is kept.
+            let length = bestEffortLength(after: [])
+            phase = .resting(Rest(length: length, checks: [:], chevronListed: nil, pending: nil))
+            return [.setLength(length)]
+        }
+        guard !sample.isInteracting, !throttled(now) else { return [] }
         lastStart = now
         let token = takeToken()
         phase = .baselining(token: token)
