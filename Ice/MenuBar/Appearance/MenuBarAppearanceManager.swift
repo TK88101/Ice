@@ -5,6 +5,7 @@
 
 import Cocoa
 import Combine
+import IceCore
 import OSLog
 
 /// A manager for the appearance of the menu bar.
@@ -45,7 +46,11 @@ final class MenuBarAppearanceManager: ObservableObject {
     private func loadInitialState() {
         do {
             if let data = Defaults.data(forKey: .menuBarAppearanceConfigurationV2) {
-                configuration = try decoder.decode(MenuBarAppearanceConfigurationV2.self, from: data)
+                var stored = try decoder.decode(MenuBarAppearanceConfigurationV2.self, from: data)
+                // A shape kind not offered on this system is the one it is drawn as.
+                let kind = SettingsOffer.effectiveShapeKind(stored: stored.shapeKind.rawValue, isMacOS27: SettingsOffer.isMacOS27)
+                stored.shapeKind = MenuBarShapeKind(rawValue: kind) ?? stored.shapeKind
+                configuration = stored
             }
         } catch {
             Logger.serialization.error("Error decoding menu bar appearance configuration: \(error)")

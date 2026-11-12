@@ -32,6 +32,22 @@ final class MenuBarItemManager: ObservableObject {
         (lastDiscoveredSet, completedPasses)
     }
 
+    /// macOS 27: whether that point of the bar (top-left origin) is on a
+    /// status item, by the last pass's frames (`MenuBarPointRule`): other
+    /// apps' items, the system's and Ice's icon. Not Ice's dividers, and not
+    /// the items Ice hides, whose frames still read as on the bar.
+    @available(macOS 27, *)
+    func isOnMenuBarItem(_ point: CGPoint) -> Bool {
+        let set = lastDiscoveredSet
+        let hidden = isIceBarOffered ? Set(iceBarRoster.rules.membership.members.compactMap(\.key)) : []
+        let items = (set?.items ?? []).filter { $0.position == .onBar && !hidden.contains($0.key) }
+        let frames = items.compactMap(\.frame) + (set?.systemElements ?? []) + [set?.visibleControlItem?.frame].compactMap { $0 }
+        return MenuBarPointRule.isOnItem(
+            x: Double(point.x), y: Double(point.y), itemFrames: frames,
+            hasReading: set.map { $0.completeness != .permissionDenied } ?? false
+        )
+    }
+
     /// One divider's state changes as Ice's own model reports them (D10,
     /// macOS 27 only): whether its control item is collapsed
     /// (`.showSection`), when that last changed, and a generation bumped on

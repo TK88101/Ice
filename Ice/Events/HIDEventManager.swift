@@ -258,6 +258,7 @@ extension HIDEventManager {
                 let mouseLocation = MouseHelpers.locationCoreGraphics,
                 let windowUnderMouse = WindowInfo.createWindows(option: .onScreen)
                     .filter({ $0.layer < CGWindowLevelForKey(.cursorWindow) })
+                    .filter({ !self.isSystemOverlay($0, on: screen) })
                     .first(where: { $0.bounds.contains(mouseLocation) && $0.title?.isEmpty == false }),
                 let owningApplication = windowUnderMouse.owningApplication
             else {
@@ -281,6 +282,17 @@ extension HIDEventManager {
                 section.hide()
             }
         }
+    }
+
+    /// macOS 27: one of the system's full-screen windows above every app,
+    /// which is never what a click landed in (`SmartRehideRule`).
+    private func isSystemOverlay(_ window: WindowInfo, on screen: NSScreen) -> Bool {
+        guard #available(macOS 27, *) else {
+            return false
+        }
+        return SmartRehideRule.isSystemOverlay(
+            layer: Int(window.layer), frame: BarRect(window.bounds), screen: BarRect(CGDisplayBounds(screen.displayID))
+        )
     }
 
     // MARK: Handle Secondary Context Menu
@@ -497,6 +509,11 @@ extension HIDEventManager {
     func isMouseInsideMenuBarItem(appState: AppState, screen: NSScreen) -> Bool {
         guard let mouseLocation = MouseHelpers.locationCoreGraphics else {
             return false
+        }
+        // macOS 27 lists no menu bar item windows: the window list below
+        // would call every item empty space (plan 2026-11-12-settings-cleanup, G3).
+        if #available(macOS 27, *) {
+            return appState.itemManager.isOnMenuBarItem(mouseLocation)
         }
         let windowIDs = Bridging.getMenuBarWindowList(option: [.onScreen, .activeSpace, .itemsOnly])
         return windowIDs.contains { windowID in

@@ -5,6 +5,7 @@
 
 import Combine
 import Foundation
+import IceCore
 import OSLog
 
 /// Model for the app's Hotkeys settings.
@@ -13,8 +14,11 @@ final class HotkeysSettings: ObservableObject {
     /// The app's hotkey registry.
     let registry = HotkeyRegistry()
 
-    /// The app's hotkeys.
-    let hotkeys = HotkeyAction.allCases.map { action in
+    /// The app's hotkeys: one for each action offered on this system. An
+    /// action that is not offered has no hotkey, so a combination stored for
+    /// it earlier is neither loaded nor registered (plan
+    /// 2026-11-12-settings-cleanup).
+    let hotkeys = HotkeyAction.allCases.filter(SettingsOffer.offers).map { action in
         Hotkey(action: action)
     }
 

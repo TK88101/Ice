@@ -568,10 +568,6 @@ final class ControlItem {
 
     /// Creates a menu to show under the control item.
     private func createMenu(with appState: AppState) -> NSMenu {
-        func hotkey(withAction action: HotkeyAction) -> Hotkey? {
-            appState.settings.hotkeys.hotkey(withAction: action)
-        }
-
         let menu = NSMenu(title: "Ice")
 
         let settingsItem = NSMenuItem(
@@ -584,13 +580,37 @@ final class ControlItem {
 
         menu.addItem(.separator())
 
+        // On macOS 27 a click on a search result does nothing, so the panel
+        // is not offered there (plan 2026-11-12-settings-cleanup, case H3).
+        if SettingsOffer.offers(.searchMenuBarItems) {
+            addSearchItem(to: menu, appState: appState)
+            menu.addItem(.separator())
+        }
+
+        // Add items to toggle the hidden and always-hidden sections.
+        addSectionItems(to: menu, appState: appState)
+
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(
+            title: "Quit Ice",
+            action: #selector(NSApp.terminate),
+            keyEquivalent: "q"
+        )
+        quitItem.keyEquivalentModifierMask = .command
+        menu.addItem(quitItem)
+
+        return menu
+    }
+
+    private func addSearchItem(to menu: NSMenu, appState: AppState) {
         let searchItem = NSMenuItem(
             title: "Search Menu Bar Items",
             action: #selector(showSearchPanel),
             keyEquivalent: ""
         )
         if
-            let hotkey = hotkey(withAction: .searchMenuBarItems),
+            let hotkey = appState.settings.hotkeys.hotkey(withAction: .searchMenuBarItems),
             let keyCombination = hotkey.keyCombination
         {
             searchItem.keyEquivalent = keyCombination.key.keyEquivalent
@@ -598,10 +618,9 @@ final class ControlItem {
         }
         searchItem.target = self
         menu.addItem(searchItem)
+    }
 
-        menu.addItem(.separator())
-
-        // Add items to toggle the hidden and always-hidden sections.
+    private func addSectionItems(to menu: NSMenu, appState: AppState) {
         for name: MenuBarSection.Name in [.hidden, .alwaysHidden] {
             guard
                 let section = appState.menuBarManager.section(withName: name),
@@ -625,18 +644,6 @@ final class ControlItem {
             item.representedObject = section
             menu.addItem(item)
         }
-
-        menu.addItem(.separator())
-
-        let quitItem = NSMenuItem(
-            title: "Quit Ice",
-            action: #selector(NSApp.terminate),
-            keyEquivalent: "q"
-        )
-        quitItem.keyEquivalentModifierMask = .command
-        menu.addItem(quitItem)
-
-        return menu
     }
 
     /// Shows the control item's menu.

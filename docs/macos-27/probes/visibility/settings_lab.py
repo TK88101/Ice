@@ -23,9 +23,11 @@ import subprocess
 import sys
 import time
 
-SHARED = "/Users/Shared/IceReverse-lab"
-EVIDENCE = os.path.expanduser("~/IceReverse-evidence")
-RELEASE_DOMAIN = "com.jordanbaird.Ice"
+# The three S6_* overrides are test-settings.sh's: stub helpers, a throwaway
+# evidence directory and a stand-in for the release's domain.
+SHARED = os.environ.get("S6_SHARED", "/Users/Shared/IceReverse-lab")
+EVIDENCE = os.environ.get("S6_EVIDENCE", os.path.expanduser("~/IceReverse-evidence"))
+RELEASE_DOMAIN = os.environ.get("S6_RELEASE_DOMAIN", "com.jordanbaird.Ice")
 LAB_PREFIX = "com.icespike4.lab."
 HELPER_DOMAINS = ("com.icespike4.target", "com.icespike4.protected")
 IDLE_WAIT_SECONDS = 600
@@ -237,14 +239,19 @@ class Lab:
     """One launch of the lab copy with a case's settings."""
 
     def __init__(self, run, name, settings=None, visible_helper=True, member=True, arguments=(), expect_hidden=True,
-                 fresh_visible=False):
+                 fresh_visible=False, keep_settings=False):
         self.state = load_state(run)
         self.dir = os.path.join(run, name)
         self.settings = merged_settings(settings)
-        self.visible_helper = visible_helper
+        # Always: a launch without it moves where the system remembers Ice's
+        # divider, and the next launch finds the helper left of it (sessions
+        # 20261112-201934-s6 and -202047-s6).
+        del visible_helper
+        self.visible_helper = True
         self.member = member
         self.arguments = list(arguments)
         self.expect_hidden = expect_hidden
+        self.keep_settings = keep_settings
         self.ice = None
         self.helpers = []
         self.report_path = os.path.join(self.dir, "report.jsonl")
@@ -293,6 +300,9 @@ class Lab:
         # position of an earlier case (a case that drags an item would
         # otherwise leave it where the next case does not expect it).
         domain = self.state["ice_id"]
+        if self.keep_settings:
+            # The launch after a case changed settings in the window: as stored.
+            return
         for stale in (domain,) + HELPER_DOMAINS:
             subprocess.run(["/usr/bin/defaults", "delete", stale], capture_output=True)
         path = os.path.join(self.dir, "settings.plist")

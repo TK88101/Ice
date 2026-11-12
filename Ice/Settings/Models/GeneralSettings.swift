@@ -4,6 +4,7 @@
 //
 
 import Combine
+import IceCore
 import OSLog
 import SwiftUI
 
@@ -93,6 +94,11 @@ final class GeneralSettings: ObservableObject {
         Defaults.ifPresent(key: .itemSpacingOffset, assign: &itemSpacingOffset)
         Defaults.ifPresent(key: .autoRehide, assign: &autoRehide)
         Defaults.ifPresent(key: .rehideInterval, assign: &rehideInterval)
+
+        // What is not offered on this system has the one value that works
+        // (plan 2026-11-12-settings-cleanup).
+        showIceIcon = SettingsOffer.inEffect(.showIceIcon, stored: showIceIcon)
+        useIceBar = SettingsOffer.inEffect(.useIceBar, stored: useIceBar)
 
         Defaults.ifPresent(key: .iceBarLocation) { rawValue in
             if let location = IceBarLocation(rawValue: rawValue) {

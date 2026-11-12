@@ -51,8 +51,10 @@ struct GeneralSettingsPane: View {
             IceSection {
                 rehideOptions
             }
-            IceSection {
-                spacingOptions
+            if SettingsOffer.offers(.itemSpacing) {
+                IceSection {
+                    spacingOptions
+                }
             }
         }
     }
@@ -68,7 +70,9 @@ struct GeneralSettingsPane: View {
 
     @ViewBuilder
     private var iceIconOptions: some View {
-        showIceIcon
+        if SettingsOffer.offers(.showIceIcon) {
+            showIceIcon
+        }
         if settings.showIceIcon {
             iceIconPicker
         }
@@ -175,7 +179,9 @@ struct GeneralSettingsPane: View {
 
     @ViewBuilder
     private var iceBarOptions: some View {
-        useIceBar
+        if SettingsOffer.offers(.useIceBar) {
+            useIceBar
+        }
         if settings.useIceBar {
             iceBarLocationPicker
             iceBarStatus

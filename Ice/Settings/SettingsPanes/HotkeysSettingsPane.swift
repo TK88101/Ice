@@ -3,6 +3,7 @@
 //  Ice
 //
 
+import IceCore
 import SwiftUI
 
 struct HotkeysSettingsPane: View {
@@ -15,8 +16,10 @@ struct HotkeysSettingsPane: View {
                 hotkeyRecorder(forSection: .hidden)
                 hotkeyRecorder(forSection: .alwaysHidden)
             }
-            IceSection("Menu Bar Items") {
-                hotkeyRecorder(forAction: .searchMenuBarItems)
+            if SettingsOffer.offers(.searchMenuBarItems) {
+                IceSection("Menu Bar Items") {
+                    hotkeyRecorder(forAction: .searchMenuBarItems)
+                }
             }
             IceSection("Other") {
                 hotkeyRecorder(forAction: .enableIceBar)

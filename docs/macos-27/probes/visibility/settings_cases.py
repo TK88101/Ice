@@ -153,6 +153,9 @@ def g4(run):
         checks.append(("the delay setting delays by 1 s (within 0.35)", abs(difference - 1.0) <= 0.35))
     else:
         checks.append(("the delay setting delays by 1 s (within 0.35)", False))
+    with Lab(run, "G4-item", {"ShowOnHover": True, "ShowOnClick": False, "ShowOnHoverDelay": 0.0}) as lab:
+        other = lab.item(lab.visible_id)
+        checks.append(("on: resting on another app's item does not show", hover_time(lab, mid_x(other["frame"]), 2.5) is None))
     with Lab(run, "G4-off", {"ShowOnHover": False, "ShowOnClick": False}) as lab:
         checks.append(("off: resting on empty bar does not show", hover_time(lab, lab.empty_x(), 2.5) is None))
     return dict(verdict(checks), facts=facts)
@@ -203,12 +206,17 @@ def g6(run):
         owner_front = lab.front_pid()
         front = lab.start_front()
         try:
+            # The app the owner works in is the active one: the smart rule
+            # asks, a quarter of a second after the click, whether the clicked
+            # window's app is active, and an app that the click itself brings
+            # forward may not be yet (it was not, in one run of two).
+            checks.append(("smart: the pass's own app is in front", bring_front(lab, front)))
             lab.park()
             opened(lab)
             time.sleep(2.0)
             checks.append(("smart: it stays while nothing is clicked", lab.shown()))
             click_front_window(lab, front)
-            checks.append(("smart: a click in another app's window closes it", lab.wait_shown(False, 3.0)))
+            checks.append(("smart: a click in the front app's window closes it", lab.wait_shown(False, 3.0)))
         finally:
             lab.activate(owner_front)
     with Lab(run, "G6-timed", {"AutoRehide": True, "RehideStrategy": 1, "RehideInterval": 2.0}) as lab:
@@ -701,10 +709,14 @@ def a_all(run):
     checks.append(("full shape, round caps: tinted inside, the corner outside it is not",
                    dominant(full["middle"], 0) and not dominant(full["corner"], 0)))
     split = measured("A2-split", appearance(partial(tint=RED), shape=2))
-    checks.append(("split shape: tinted over the menus, not between the menus and the notch",
-                   dominant(split["menus"], 0) and not dominant(split["middle"], 0)))
-    facts["splitDrawnAsFull"] = all(split[region] == full[region] for region in REGIONS)
+    # On macOS 27 a split shape was drawn exactly as the full one (run
+    # 20261112-200049-s6), so it is not offered and a stored one is the full.
+    facts["splitDrawnAsFull"] = all(abs(a - b) <= 1.0 for region in REGIONS for a, b in zip(split[region], full[region]))
+    checks.append(("a stored split shape is drawn as the full one", facts["splitDrawnAsFull"]))
     flush = measured("A6-notinset", appearance(partial(tint=RED), shape=1, inset=False))
+    square = measured("A9-square", appearance(partial(tint=RED), shape=1, inset=False, caps=(SQUARE, SQUARE)))
+    checks.append(("end caps: square ones tint the bar's corner, round ones do not",
+                   dominant(square["corner"], 0) and not dominant(flush["corner"], 0)))
     checks.append(("inset: the bar's top rows are tinted without it and not with it",
                    dominant(flush["top"], 0) and not dominant(full["top"], 0)))
     thin = measured("A3-border1", appearance(partial(border=GREEN, border_width=1.0), shape=1))
@@ -714,9 +726,12 @@ def a_all(run):
     checks.append(("border width: 3 pt puts more of it there than 1 pt", thick["edge"][1] > thin["edge"][1] + 5))
     blue = measured("A7-borderblue", appearance(partial(border=BLUE, border_width=3.0), shape=1))
     checks.append(("border colour: another colour is drawn as that colour", dominant(blue["bottom"], 2)))
-    shadow = measured("A4-shadow", appearance(partial(shadow=True)))
-    checks.append(("shadow: the rows under the bar are darker", sum(shadow["under"]) < -3))
-    checks.append(("no shadow: they are not (solid tint case)", sum(solid["under"]) > -3))
+    # A pair of launches one after the other: what is under the bar's edge is
+    # the window below it, which changes over minutes.
+    plain = bar_colours(run, "A4-noshadow", {})
+    shadowed = bar_colours(run, "A4-shadow", appearance(partial(shadow=True)))
+    facts["A4-shadow"] = {"under": shift(shadowed, plain, "under"), "panels": shadowed["panels"]}
+    checks.append(("shadow: the rows under the bar are darker than without it", sum(facts["A4-shadow"]["under"]) < -6))
     dynamic = measured("A5-dynamic", appearance(dynamic=True, light=partial(tint=GREEN), dark=partial(tint=BLUE)))
     import subprocess
     dark = subprocess.run(["/usr/bin/defaults", "read", "-g", "AppleInterfaceStyle"], capture_output=True).stdout.decode().strip() == "Dark"
@@ -865,6 +880,213 @@ def g0b(run):
 
 
 CASES.update({"G1": g1, "H6": h6, "A8": a8, "G0b": g0b})
+
+
+# --- The cut build: what is left, what is gone ------------------------------------------------
+
+PANES = {
+    "General": {
+        "present": ["Launch at login", "Ice icon", "Location", "Show on click", "Show on hover", "Show on scroll", "Automatically rehide"],
+        "absent": ["Show Ice icon", "Use Ice Bar", "Menu bar item spacing", "Apply"],
+    },
+    "Menu Bar Appearance": {
+        "present": ["Use dynamic appearance", "Tint", "Shadow", "Border", "Shape Kind"],
+        "absent": [],
+    },
+    "Hotkeys": {
+        "present": ["Toggle the hidden section", "Toggle application menus"],
+        "absent": ["Search menu bar items", "Enable the Ice Bar", "Toggle the always-hidden section", "Menu Bar Items"],
+    },
+    "Advanced": {
+        "present": ["Enable secondary context menu", "Show on hover delay", "Permissions"],
+        "absent": ["Enable the always-hidden section", "Show all sections when ⌘ Command + dragging menu bar items",
+                   "Section divider style", "Hide app menus when showing menu bar items", "Temporarily shown item delay",
+                   "Menu Bar Sections"],
+    },
+    "About": {"present": ["Version 1.0", "Acknowledgements", "Quit Ice"], "absent": ["Check for Updates", "Contribute", "Report a Bug", "Support Ice"]},
+}
+
+
+def t6_panes(run):
+    """Every pane of the settings window: exactly what is offered on macOS 27."""
+    checks, facts = [], {}
+    stored = dict(appearance(partial(tint=RED), shape=2))
+    with Lab(run, "T6-panes", stored, visible_helper=False, member=False) as lab:
+        owner_front = lab.front_pid()
+        try:
+            rows = lab.open_settings()
+            sidebar = [row.get("value") for row in rows if row["role"] == "AXStaticText" and row["depth"] >= 8]
+            facts["sidebar"] = sidebar
+            checks.append(("the sidebar has the five panes and no layout pane",
+                           sidebar == ["General", "Menu Bar Appearance", "Hotkeys", "Advanced", "About"]))
+            for pane, expected in PANES.items():
+                rows = lab.select_pane(pane)
+                texts = [text for row in rows if row["depth"] < 8 for text in lab.texts([row])]
+                missing = [text for text in expected["present"] if text not in texts]
+                extra = [text for text in expected["absent"] if text in texts]
+                facts[pane] = {"missing": missing, "extra": extra}
+                checks.append(("%s: what is offered is there" % pane, not missing))
+                checks.append(("%s: what is not offered is not" % pane, not extra))
+                if pane == "Menu Bar Appearance":
+                    shape = (lab.control_after("Shape Kind", "AXPopUpButton", rows) or {}).get("value")
+                    facts["storedSplitShownAs"] = shape
+                    checks.append(("a stored split shape is shown as Full", shape == "Full"))
+        finally:
+            lab.activate(owner_front)
+    return dict(verdict(checks), facts=facts)
+
+
+def t6_menus(run):
+    """Ice's own menu and the secondary menu: their entries, and that they do what they say."""
+    checks, facts = [], {}
+    with Lab(run, "T6-menus", {"EnableSecondaryContextMenu": True}) as lab:
+        owner_front = lab.front_pid()
+        try:
+            lab.click_at(lab.icon_x(), lab.pid, right=True, hold=0.4)
+            time.sleep(0.8)
+            menus = lab.open_menus()
+            entries = [title for title, _ in lab.menu_entries(menus[0])] if menus else []
+            facts["iconMenu"] = entries
+            checks.append(("the icon's menu: settings, show the hidden section, quit; no search",
+                           entries == ["Ice Settings…", "Show Hidden Section", "Quit Ice"]))
+            if menus and lab.choose(menus[0], "Show Hidden Section"):
+                checks.append(("Show Hidden Section shows the IceBar", lab.wait_shown(True)))
+                lab.close_bar()
+            menu = lab.open_secondary_menu()
+            facts["secondaryMenu"] = [title for title, _ in lab.menu_entries(menu)]
+            before = len(titled_windows(lab))
+            checks.append(("the secondary menu has the appearance editor and the settings",
+                           facts["secondaryMenu"] == ["Edit Menu Bar Appearance…", "Ice Settings…"]))
+            if lab.choose(menu, "Edit Menu Bar Appearance…"):
+                time.sleep(1.5)
+                checks.append(("Edit Menu Bar Appearance… opens the editor", len(titled_windows(lab)) > before))
+        finally:
+            lab.activate(owner_front)
+    return dict(verdict(checks), facts=facts)
+
+
+def t6_removed(run):
+    """Every removed setting stored at its old value, every removed hotkey stored: none has an effect."""
+    checks, facts = [], {}
+    stored = {
+        "ShowIceIcon": False, "UseIceBar": False, "EnableAlwaysHiddenSection": True, "SectionDividerStyle": 1,
+        "ShowAllSectionsOnUserDrag": False, "HideApplicationMenus": True, "ItemSpacingOffset": 8.0, "TempShowInterval": 3.0,
+    }
+    stored.update(stored_hotkeys())
+    with Lab(run, "T6-removed", stored) as lab:
+        # Reaching here means the member was hidden: IceBar mode is in effect with "Use Ice Bar" stored off.
+        checks.append(("Use Ice Bar stored off: the member is hidden all the same", is_hidden_rest(lab.snapshot())))
+        checks.append(("Show Ice icon stored off: the icon is on the bar", lab.own_item("Ice.ControlItem.Visible") is not None))
+        checks.append(("the always-hidden section stored on: no divider of it", lab.own_item("Ice.ControlItem.AlwaysHidden") is None))
+        lab.park()
+        before = len(titled_windows(lab))
+        press_hotkey(lab, "SearchMenuBarItems")
+        time.sleep(1.5)
+        checks.append(("the search hotkey, stored: no panel", len(titled_windows(lab)) == before))
+        press_hotkey(lab, "EnableIceBar")
+        time.sleep(1.5)
+        checks.append(("the Ice Bar hotkey, stored: the member stays hidden", is_hidden_rest(lab.snapshot())))
+        press_hotkey(lab, "ToggleAlwaysHiddenSection")
+        checks.append(("the always-hidden hotkey, stored: nothing shown", not lab.wait_shown(True, 1.5)))
+        press_hotkey(lab, "ToggleHiddenSection")
+        checks.append(("the hidden section's hotkey, kept: it shows the IceBar", lab.wait_shown(True)))
+        lab.close_bar()
+        owner_front = lab.front_pid()
+        front = lab.start_front()
+        try:
+            window = front["window"]
+            other = lab.item(lab.visible_id)
+            x = mid_x(other["frame"])
+            lab.wait_idle()
+            process = lab.drive_started("drag", x, BAR_Y, x + 5, BAR_Y, "--expect", "pid:%d" % other["pid"],
+                                        "--pause", 3.5, "--return", "--seconds", 0.3)
+            # The press comes about a second after the start (the driver first
+            # proves whose item is under the point).
+            time.sleep(2.6)
+            divider = lab.own_item("Ice.ControlItem.Hidden")
+            lab.drive_ended(process)
+            facts["dividerWhileDragging"] = divider["frame"] if divider else None
+            checks.append(("divider style and show-all stored at their other values: a drag shows the divider as with the defaults (5 pt)",
+                           bool(divider) and divider["frame"][2] == 5))
+            lab.holds(is_hidden_rest, 6.0)
+            titles = lab.read("menus")
+            lab.send("bar open")
+            lab.wait_shown(True)
+            time.sleep(1.5)
+            checks.append(("Hide app menus stored on: showing the IceBar leaves the front app's menus",
+                           lab.read("menus")["owner"] == titles["owner"] and len(lab.read("menus")["titles"]) == len(titles["titles"])))
+            lab.close_bar()
+            del window
+        finally:
+            lab.activate(owner_front)
+    return dict(verdict(checks), facts=facts)
+
+
+def c1(run):
+    """Every kept setting away from its default at once."""
+    checks, facts = [], {}
+    settings = {
+        "ShowOnHover": True, "ShowOnScroll": True, "ShowOnClick": True, "IceBarLocation": 1, "AutoRehide": True,
+        "RehideStrategy": 1, "RehideInterval": 3.0, "EnableSecondaryContextMenu": False, "ShowOnHoverDelay": 0.5,
+    }
+    settings.update(stored_hotkeys({"ToggleHiddenSection": KEY_F13}))
+    settings.update(appearance(partial(tint=BLUE, border=GREEN, border_width=2.0, shadow=True), shape=1))
+    with Lab(run, "C1", settings) as lab:
+        lab.drive("move", PARK[0], PARK[1], "--tap", "hid")
+        x = lab.empty_x()
+        seen = hover_time(lab, x, 3.0)
+        facts["hoverSeconds"] = seen
+        checks.append(("hover shows it, after the delay", seen is not None and 0.3 <= seen <= 1.2))
+        middle, width = panel_mid(lab)
+        checks.append(("under the pointer", width is not None and near(middle, clamped_mid(x, width))))
+        lab.drive("move", PARK[0], PARK[1], "--tap", "hid", "--hold", 0.5)
+        checks.append(("leaving closes it", lab.wait_shown(False, 5.0)))
+        lab.click_empty(x, hold=0.6)
+        checks.append(("a click shows it", lab.wait_shown(True)))
+        lab.click_empty(x, hold=0.3)
+        checks.append(("a click closes it", lab.wait_shown(False)))
+        lab.park()
+        press_hotkey(lab, "ToggleHiddenSection")
+        checks.append(("the hotkey shows it", lab.wait_shown(True)))
+        lab.drive("move", PARK[0] + 40, PARK[1], "--hold", 0.2)
+        started = time.time()
+        closed = lab.wait_shown(False, 7.0)
+        facts["timedSeconds"] = time.time() - started if closed else None
+        checks.append(("the timed rehide closes it after its 3 s", closed and 2.0 <= facts["timedSeconds"] <= 6.0))
+        before = len(lab.open_menus())
+        lab.click_empty(x, right=True, hold=1.0)
+        checks.append(("the secondary menu, off, stays away", len(lab.open_menus()) == before))
+        colours = lab.read("mean", lab.shot("middle", REGIONS["middle"]))["mean"][:3]
+        facts["bar"] = colours
+        checks.append(("and the bar is tinted", colours[2] > colours[1] + 20))
+    return dict(verdict(checks), facts=facts)
+
+
+def p1(run):
+    """Settings changed in the window are stored and in effect after Ice is started again."""
+    checks, facts = [], {}
+    with Lab(run, "P1-set", {"ShowOnHover": False, "ShowOnClick": True}) as lab:
+        owner_front = lab.front_pid()
+        try:
+            lab.open_settings()
+            lab.click_row(lab.control_after("Show on hover", "AXCheckBox"))
+            lab.click_row(lab.control_after("Show on click", "AXCheckBox"))
+            time.sleep(1.0)
+            facts["inWindow"] = [checkbox_value(lab, "Show on hover"), checkbox_value(lab, "Show on click")]
+            checks.append(("the two switches change in the window", facts["inWindow"] == [1, 0]))
+        finally:
+            lab.activate(owner_front)
+    with Lab(run, "P1-again", keep_settings=True) as lab:
+        facts["stored"] = [lab.default("ShowOnHover"), lab.default("ShowOnClick")]
+        checks.append(("both are stored", facts["stored"] == ["1", "0"]))
+        lab.click_empty(hold=0.8)
+        checks.append(("show on click, off: a click shows nothing", not lab.wait_shown(True, 2.0)))
+        lab.drive("move", PARK[0], PARK[1], "--tap", "hid")
+        checks.append(("show on hover, on: resting on the bar shows the IceBar", hover_time(lab, lab.empty_x(), 3.0) is not None))
+    return dict(verdict(checks), facts=facts)
+
+
+CASES.update({"T6-panes": t6_panes, "T6-menus": t6_menus, "T6-removed": t6_removed, "C1": c1, "P1": p1})
 
 
 def run_case(run, name):

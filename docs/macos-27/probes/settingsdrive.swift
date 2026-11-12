@@ -8,6 +8,7 @@
 //   settingsdrive items                                  every status item over AX (pid, bundle, identifier, frame)
 //   settingsdrive hit <x> <y>                            the element at a point and its ancestors
 //   settingsdrive windows <pid>                          that process's windows (window list)
+//   settingsdrive under <x> <y>                          the on-screen windows containing a point, front to back
 //   settingsdrive menus                                  the menu bar owner's menu titles and frames
 //   settingsdrive gap [<from> <to>]                      the middle of the widest empty stretch of the bar
 //   settingsdrive mean <png> [<x> <y> <w> <h>]           mean RGBA of a PNG (or of a pixel rect of it)
@@ -558,6 +559,29 @@ func main() -> Int32 {
             return 1
         }
         emit(["x": Double(middle), "y": 12])
+        return 0
+    case "under":
+        // The on-screen windows that contain a point, front to back: owner,
+        // layer, and whether the window has a title (never the title itself).
+        guard let x = number(1), let y = number(2) else { usage() }
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        let point = CGPoint(x: x, y: y)
+        let found = list.compactMap { window -> [String: Any]? in
+            guard let bounds = window[kCGWindowBounds as String] as? [String: Double],
+                  CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0).contains(point)
+            else { return nil }
+            let pid = (window[kCGWindowOwnerPID as String] as? Int).map { pid_t($0) } ?? 0
+            let application = NSRunningApplication(processIdentifier: pid)
+            return [
+                "pid": Int(pid),
+                "bundle": application?.bundleIdentifier ?? "?",
+                "active": application?.isActive ?? false,
+                "regular": application?.activationPolicy == .regular,
+                "layer": window[kCGWindowLayer as String] ?? NSNull(),
+                "titled": !((window[kCGWindowName as String] as? String) ?? "").isEmpty,
+            ]
+        }
+        emit(["windows": found])
         return 0
     case "windows":
         guard arguments.count > 1, let pid = pid_t(arguments[1]) else { usage() }

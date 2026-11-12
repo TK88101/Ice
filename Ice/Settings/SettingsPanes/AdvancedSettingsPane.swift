@@ -3,6 +3,7 @@
 //  Ice
 //
 
+import IceCore
 import SwiftUI
 
 struct AdvancedSettingsPane: View {
@@ -25,21 +26,39 @@ struct AdvancedSettingsPane: View {
 
     var body: some View {
         IceForm {
-            IceSection("Menu Bar Sections") {
-                enableAlwaysHiddenSection
-                showAllSectionsOnUserDrag
-                sectionDividerStyle
+            if offersAnySectionSetting {
+                IceSection("Menu Bar Sections") {
+                    if SettingsOffer.offers(.enableAlwaysHiddenSection) {
+                        enableAlwaysHiddenSection
+                    }
+                    if SettingsOffer.offers(.showAllSectionsOnUserDrag) {
+                        showAllSectionsOnUserDrag
+                    }
+                    if SettingsOffer.offers(.sectionDividerStyle) {
+                        sectionDividerStyle
+                    }
+                }
             }
             IceSection("Other") {
-                hideApplicationMenus
+                if SettingsOffer.offers(.hideApplicationMenus) {
+                    hideApplicationMenus
+                }
                 enableSecondaryContextMenu
                 showOnHoverDelay
-                tempShowInterval
+                if SettingsOffer.offers(.tempShowInterval) {
+                    tempShowInterval
+                }
             }
             IceSection("Permissions") {
                 allPermissions
             }
         }
+    }
+
+    /// Whether the "Menu Bar Sections" group has anything in it on this
+    /// system (plan 2026-11-12-settings-cleanup).
+    private var offersAnySectionSetting: Bool {
+        [.enableAlwaysHiddenSection, .showAllSectionsOnUserDrag, .sectionDividerStyle].contains(where: SettingsOffer.offers)
     }
 
     @ViewBuilder

@@ -4,6 +4,7 @@
 //
 
 import Combine
+import IceCore
 import SwiftUI
 
 // MARK: - AdvancedSettings
@@ -63,6 +64,14 @@ final class AdvancedSettings: ObservableObject {
                 sectionDividerStyle = style
             }
         }
+
+        // What is not offered on this system has the one value that works
+        // (plan 2026-11-12-settings-cleanup).
+        enableAlwaysHiddenSection = SettingsOffer.inEffect(.enableAlwaysHiddenSection, stored: enableAlwaysHiddenSection)
+        showAllSectionsOnUserDrag = SettingsOffer.inEffect(.showAllSectionsOnUserDrag, stored: showAllSectionsOnUserDrag)
+        hideApplicationMenus = SettingsOffer.inEffect(.hideApplicationMenus, stored: hideApplicationMenus)
+        let style = SettingsOffer.effectiveDividerStyle(stored: sectionDividerStyle.rawValue, isMacOS27: SettingsOffer.isMacOS27)
+        sectionDividerStyle = SectionDividerStyle(rawValue: style) ?? sectionDividerStyle
     }
 
     /// Configures the internal observers for the model.

@@ -3,6 +3,8 @@
 //  Ice
 //
 
+import IceCore
+
 enum HotkeyAction: String, Codable, CaseIterable {
     // Menu Bar Sections
     case toggleHiddenSection = "ToggleHiddenSection"
@@ -17,6 +19,10 @@ enum HotkeyAction: String, Codable, CaseIterable {
 
     @MainActor
     func perform(appState: AppState) {
+        // Whatever calls it: an action not offered on this system does nothing.
+        guard SettingsOffer.offers(self) else {
+            return
+        }
         switch self {
         case .toggleHiddenSection:
             guard let section = appState.menuBarManager.section(withName: .hidden) else {

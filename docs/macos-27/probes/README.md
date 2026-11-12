@@ -24,6 +24,8 @@ reject the result. For the same reason `swift test` in `Packages/IceCore` needs
 | `watch3.swift` | Polls the helpers at 5Hz and reports any order change | none |
 | `inject3.swift` | Can a coordinate-only synthetic drag move another process's item? | **injects mouse events**; moves the cursor for ~2s then restores it |
 | `dragown.swift` | What does macOS 27 remember of a dragged status item? (the drag itself; run by `visibility/run-remembered.sh`) | `drag`: **injects mouse and Command events**, moves the cursor for ~2s then restores it; only ever the `com.icespike4.target` item across the adjacent `com.icespike4.protected` one, refused or aborted on any hardware input. `read`, `selftest`: none |
+| `settingsdrive.swift` | The settings pass (plan `2026-11-12-settings-cleanup`): does each setting, hotkey and menu of Ice do what it says on a live bar? Reads items, windows and Ice's settings window over AX; `selftest` checks its rules | the input commands (`move`, `click`, `scroll`, `key`, `command`, `drag`) **inject mouse and key events** and move the cursor (restored); each refuses unless no hardware input arrived for 5 s, proves by an AX hit test whose element is under the point (Ice's lab copy, a helper, or bar space with no item of anyone's), and lets go on hardware input. `key` posts at the HID tap (a Carbon hotkey hears no other). The reading commands: none |
+| `settingsfront.swift` | The pass's own front app: a small floating window and three title menus, a target for "a click elsewhere" and "another app comes forward" | a Dock icon and a window while it runs |
 
 `axspike2.swift` carries the accumulated edits from its final run — three probes
 plus a spacer, screenshots at each width. Read it before running it.
@@ -174,3 +176,22 @@ dragged by the owner. Evidence in `~/IceReverse-evidence/<run id>-s5/`.
 (side effects: the stub copies', the helper's and a stand-in release domain's
 defaults, deleted).
 
+### The settings pass (`settings_lab.py`, `settings_cases.py`)
+
+`settings_lab.py begin <Ice.app>` stages a lab-identity copy (`com.icespike4.lab.r<id>.s6`)
+of a scratch build; `settings_cases.py <run> <case>...` starts it once per case with that
+case's settings written before launch, a helper right of Ice's divider and one left of it,
+drives the bar through `settingsdrive` and writes `<case>.json`; `settings_lab.py finish
+<run>` deletes the domains and compares the release Ice's settings. `test-settings.sh` runs
+the unit tests and one launch against stubs. Three things it learned:
+
+- On macOS 27.0.1 the "any event" idle counter is reset by events that are nobody's input,
+  and a pointer move or key posted at the HID tap resets the hardware counter of its own
+  kind: the driver asks the input kinds one by one and, for those two, watches where the
+  cursor is instead.
+- macOS remembers a status item's place by its autosave name outside the app's own
+  defaults, and a launch without the visible helper moves where Ice's divider is
+  remembered: every launch starts both helpers, the member under a new name.
+- A full-screen window of the system's sits above every app (levels 20 and 21) and, on the
+  owner's bar, a notch app's overlay covers the stretch left of the items: "what is at this
+  point" is asked of Accessibility, not of the window list or of pixels there.
