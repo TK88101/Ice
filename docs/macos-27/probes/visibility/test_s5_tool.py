@@ -73,6 +73,7 @@ class Sitting:
         r, bend = self.report, self.bend
         helper = member(HELPER)
         without_own = [e for e in BAR if e != OWN]
+        self.mark("iceStarted", **bend.get("iceStarted", {}))
         r.snap(hiddenBoundaryUsable=False, cacheVisible=BAR + [ICE_ITEM])
         r.snap(cacheVisible=bend.get("startVisible", BAR) + [ICE_ITEM], cacheHidden=bend.get("startHidden", []),
                iconPlacement=bend.get("startPlacement"), roster=bend.get("startRoster", []))
@@ -92,8 +93,10 @@ class Sitting:
             r.snap(roster=both, blockers=bend.get("blockers", []), cacheHidden=entries(*both), cacheVisible=without_own + [ICE_ITEM])
             if not bend.get("neverSeen"):
                 self.mark("ownSeen", member=dict(OWN))
-            for clause in bend.get("timedOut", []):
-                self.mark("timedOut", clause=clause, wait="verified")
+            if "C5" in bend.get("timedOut", []):
+                self.mark("timedOut", clause="C5", wait="verified")
+            for text in bend.get("ownBefore", []):
+                r.status(text)
             r.status(bend.get("ownStatus", "verified"))
             rest(r, both, without_own, status=bend.get("ownStatus", "verified"))
             rest(r, both, without_own, isIceBarPresented=True, cells=bend.get("ownCells", [dict(e, disabled=False) for e in entries(*both)]))
@@ -102,10 +105,14 @@ class Sitting:
             self.answer("ownMenu")
         self.answer("doInvert", "y" if self.invert else "s")
         if self.invert:
-            r.length(None)
+            if not bend.get("neverRetired"):
+                r.length(None)
             r.status(bend.get("invertStatus", "blocked(iconLeftOfDivider)"))
             r.snap(status="blocked(iconLeftOfDivider)", iconPlacement="iconLeftOfDivider", isIceBarOffered=bend.get("offeredWhileBlocked", False),
+                   calibratedHiddenLength=bend.get("blockedLength"),
                    roster=[helper], cacheVisible=BAR + [ICE_ITEM])
+            if "C6" in bend.get("timedOut", []):
+                self.mark("timedOut", clause="C6", wait="verified")
             self.answer("paneSays")
             r.length(736)
             if not bend.get("neverBack"):
@@ -113,6 +120,7 @@ class Sitting:
             self.answer("paneClear")
         if self.own:
             self.answer("itemBack")
+        self.mark("lastLook")
         rest(r, [helper], bend.get("endVisible", BAR), completeness=bend.get("endCompleteness", "complete"), **{"pass": bend.get("endPass", 3)})
         self.mark("stopping")
         self.mark("cleanup", **dict(dict(ice=True, domain=True, prefsUnchanged=True, store={"added": [], "removed": [], "changed": 3}),
@@ -163,8 +171,10 @@ class S5ToolTests(unittest.TestCase):
     # --- C1, C2: the setup ------------------------------------------------------------
 
     def test_an_owner_item_left_of_the_divider_at_the_start_is_not_established(self):
+        # The fixture goes on as a sitting that passed, so its end does not match
+        # this start: the clauses are what is judged here (test-s5.sh has the result).
         verdict = self.judge(startHidden=[OWN])
-        self.assert_clause(verdict, "C1", "notEstablished", "notEstablished")
+        self.assertEqual(verdict["clauses"]["C1"], "notEstablished", verdict["reasons"])
         self.assertEqual(verdict["clauses"]["C2"], "notReached")
 
     def test_an_icon_left_of_the_divider_at_the_start_is_not_established(self):
@@ -178,6 +188,16 @@ class S5ToolTests(unittest.TestCase):
         for _ in range(250):  # 0.5 s a line: the settled snapshot comes after 120 s
             sitting.report.snap(hiddenBoundaryUsable=False)
         self.assert_clause(self.judge(sitting), "C1", "notEstablished", "notEstablished")
+
+    def test_the_start_is_judged_by_the_limit_the_runner_waited(self):
+        # the settled snapshot is the report's third line: 1.5 s
+        self.assert_clause(self.judge(iceStarted={"limit": 1}), "C1", "notEstablished", "notEstablished")
+        self.assertEqual(self.judge(iceStarted={"limit": 2})["clauses"]["C1"], "pass")
+
+    def test_the_order_is_judged_also_when_the_sitting_ended_at_an_earlier_clause(self):
+        verdict = self.judge(helperRoster=[], endVisible=list(reversed(BAR)))
+        self.assertEqual(verdict["clauses"]["C2"], "notEstablished")
+        self.assert_clause(verdict, "C8", "changed", "fail")
 
     def test_a_helper_that_never_becomes_the_member_is_not_established(self):
         self.assert_clause(self.judge(helperRoster=[]), "C2", "notEstablished", "notEstablished")
@@ -236,12 +256,28 @@ class S5ToolTests(unittest.TestCase):
         self.assertIn("no second member was seen", " ".join(verdict["reasons"]))
 
     def test_an_own_item_whose_wait_ran_out_fails_whatever_the_report_shows_later(self):
-        self.assert_clause(self.judge(timedOut=["C5"]), "C5", "fail", "fail")
-
-    def test_a_positional_blocker_fails_and_is_named(self):
-        verdict = self.judge(blockers=[{"namespace": "com.example.c", "identifier": "shared"}], ownStatus="blocked(positional:1)")
+        verdict = self.judge(timedOut=["C5"])
         self.assert_clause(verdict, "C5", "fail", "fail")
-        self.assertIn("blocked(positional:1)", " ".join(verdict["reasons"]))
+        self.assertIn("C5: the runner's wait for verified ran out", " ".join(verdict["reasons"]))
+
+    def test_an_icebar_shown_only_after_the_owners_answer_does_not_count(self):
+        sitting = Sitting(own=False, invert=False)
+        sitting.bend["neverPresented"] = True
+        sitting.build()
+        rest(sitting.report, [member(HELPER)], BAR, isIceBarPresented=True)
+        sitting.build = lambda: sitting
+        self.assert_clause(self.judge(sitting), "C4", "fail", "fail")
+
+    def test_a_positional_blocker_on_the_way_fails_and_is_named(self):
+        verdict = self.judge(ownBefore=["blocked(positional:1)"])
+        self.assert_clause(verdict, "C5", "fail", "fail")
+        self.assertIn("Ice said blocked(positional:1)", " ".join(verdict["reasons"]))
+
+    def test_a_positional_blocker_after_the_owners_answer_is_not_this_steps(self):
+        sitting = Sitting().build()
+        sitting.report.status("blocked(positional:1)")
+        sitting.build = lambda: sitting
+        self.assertEqual(self.judge(sitting)["clauses"]["C5"], "pass")
 
     def test_a_stale_own_member_fails(self):
         self.assert_clause(self.judge(ownMember={"condition": "stale", "pressable": False}), "C5", "fail", "fail")
@@ -261,8 +297,21 @@ class S5ToolTests(unittest.TestCase):
     def test_an_icebar_offered_while_blocked_fails(self):
         self.assert_clause(self.judge(offeredWhileBlocked=True), "C6", "fail", "fail")
 
+    def test_a_length_still_standing_while_blocked_fails(self):
+        self.assert_clause(self.judge(blockedLength=736), "C6", "fail", "fail")
+
+    def test_a_length_never_retired_fails(self):
+        verdict = self.judge(neverRetired=True)
+        self.assert_clause(verdict, "C6", "fail", "fail")
+        self.assertIn("not retired", " ".join(verdict["reasons"]))
+
     def test_never_verified_again_after_the_drag_back_fails(self):
         self.assert_clause(self.judge(neverBack=True), "C6", "fail", "fail")
+
+    def test_a_wait_that_ran_out_during_the_icon_drag_fails(self):
+        verdict = self.judge(timedOut=["C6"])
+        self.assert_clause(verdict, "C6", "fail", "fail")
+        self.assertIn("C6: the runner's wait for verified ran out", " ".join(verdict["reasons"]))
 
     def test_a_no_to_the_pane_question_fails(self):
         self.assert_clause(self.judge(paneSays="n"), "C6", "fail", "fail")

@@ -2,7 +2,7 @@
 """The owner's acceptance sitting's judge (plan 2026-11-12-s5-owner-acceptance, D7).
 
 Pure: it reads what run-s5.sh left in the sitting's directory and decides.
-Run by run-s5.sh as `python3 -I s5-tool.py ...`, tested by test_s5_tool.py on
+Run by run-s5.sh as `python3 -I -B s5-tool.py ...`, tested by test_s5_tool.py on
 synthetic input. Nothing here starts a process or touches the bar. The
 report's reading and its damage rules are lab-tool.py's, loaded from beside
 this file.
@@ -172,10 +172,12 @@ def rest_reasons(events: list[Event], members: list[Key], since: int, until: Opt
     return reasons
 
 
-def was_presented(events: list[Event], members: list[Key], since: int) -> bool:
-    """The IceBar shown with exactly `members`' cells, every one enabled."""
+def was_presented(events: list[Event], members: list[Key], since: int, until: Optional[Event]) -> bool:
+    """The IceBar shown with exactly `members`' cells, every one enabled,
+    after `since` and before the step `until` (the owner's answer about it)."""
+    end = until["seq"] if until else len(events)
     return any(
-        snap["seq"] > since and snap["isIceBarPresented"] and keys(snap["cells"]) == members
+        since < snap["seq"] <= end and snap["isIceBarPresented"] and keys(snap["cells"]) == members
         and not any(cell["disabled"] for cell in snap["cells"])
         for snap in lab.snapshots(events)
     )
@@ -329,11 +331,13 @@ def judge_own_item(verdict: Verdict, events: list[Event], steps: list[Event], he
     chosen, cut = seen["member"], seen["seq"]
     verdict.extra["member"] = chosen
     both = keys([helper, chosen])
-    reasons = timed_out(events, steps, "C5") or rest_reasons(events, both, cut, answer(steps, "ownListed"))
+    listed, menu = answer(steps, "ownListed"), answer(steps, "ownMenu")
+    reasons = timed_out(events, steps, "C5") or rest_reasons(events, both, cut, listed)
+    # Up to the owner's answer: what Ice says while the item is dragged back later is not this step's.
     blocked = lab.first_status(events, "blocked(positional", cut)
-    if blocked:
+    if blocked and blocked["seq"] <= (listed["seq"] if listed else len(events)):
         reasons.append(f"Ice said {blocked['status']}")
-    if not reasons and not was_presented(events, both, cut):
+    if not reasons and not was_presented(events, both, cut, menu):
         reasons.append("the report never showed the IceBar with exactly the two cells enabled")
     verdict.settle("C5", reasons + answer_reasons(steps, ["ownListed", "ownMenu"]))
 
@@ -350,8 +354,11 @@ def judge_icon_drag(verdict: Verdict, events: list[Event], steps: list[Event]) -
         snap = lab.snapshot_after(events, blocked["seq"])
         if snap is None or not snap["status"].startswith("blocked("):
             reasons.append("no snapshot taken while blocked")
-        elif snap["isIceBarOffered"] or snap["lengthApplied"]:
+        elif snap["isIceBarOffered"] or snap["lengthApplied"] or snap["calibratedHiddenLength"] is not None:
             reasons.append("an IceBar or a length stood while blocked")
+        retired = lab.first_retire(events, cut)
+        if retired is None or retired["seq"] > (snap["seq"] if snap else len(events)):
+            reasons.append("the length was not retired before Ice said blocked")
         says = answer(steps, "paneSays")
         if says is None or lab.first_status(events, "verified", max(says["seq"], blocked["seq"])) is None:
             reasons.append("never verified again after the drag back")
@@ -359,12 +366,12 @@ def judge_icon_drag(verdict: Verdict, events: list[Event], steps: list[Event]) -
 
 
 def judge_order(verdict: Verdict, events: list[Event], steps: list[Event], start: Event) -> None:
-    stopping = lab.step(steps, "stopping")
-    if stopping is None:
+    """C8, whenever the runner took its last look at the bar: also in a
+    sitting that ended at an earlier clause, since Ice and the helper ran."""
+    look, stopping = lab.step(steps, "lastLook"), lab.step(steps, "stopping")
+    if look is None or stopping is None:
         return
-    answers = [entry for entry in steps if entry["step"] == "answer"]
-    since = answers[-1]["seq"] if answers else 0
-    ends = [snap for snap in fresh_snapshots(events, since) if snap["seq"] <= stopping["seq"]]
+    ends = [snap for snap in fresh_snapshots(events, look["seq"]) if snap["seq"] <= stopping["seq"]]
     back = answer(steps, "itemBack")
     reasons = ["the owner did not say the item is back in its place"] if back is not None and back["a"] != "y" else []
     if ends:
@@ -376,7 +383,7 @@ def judge_order(verdict: Verdict, events: list[Event], steps: list[Event], start
     if reasons or ends:
         verdict.settle("C8", reasons, otherwise="changed")
     else:
-        verdict.settle("C8", ["no complete snapshot of a discovery pass begun after the last answer"], otherwise="notEstablished")
+        verdict.settle("C8", ["no complete snapshot of a discovery pass begun after the runner's last look"], otherwise="notEstablished")
 
 
 def judge(directory: str) -> Event:
@@ -396,6 +403,14 @@ def judge(directory: str) -> Event:
 
 
 def judge_report(verdict: Verdict, events: list[Event], steps: list[Event]) -> None:
+    judge_clauses(verdict, events, steps)
+    start = start_snapshot(events)
+    if start is not None:
+        judge_order(verdict, events, steps, start)
+
+
+def judge_clauses(verdict: Verdict, events: list[Event], steps: list[Event]) -> None:
+    """C1 to C6, each only once the one before it holds or was skipped."""
     started = lab.step(steps, "iceStarted") or {}
     if not verdict.settle("C1", start_reasons(events, started.get("limit", START_WAIT)), otherwise="notEstablished"):
         return
@@ -411,11 +426,10 @@ def judge_report(verdict: Verdict, events: list[Event], steps: list[Event]) -> N
     if not verdict.settle("C3", timed_out(events, steps, "C3") or rest_reasons(events, [helper], cut, listed)):
         return
     if listed is not None:
-        shown = [] if was_presented(events, [helper], cut) else ["the report never showed the IceBar with the helper's one cell enabled"]
+        shown = [] if was_presented(events, [helper], cut, answer(steps, "helperMenu")) else ["the report never showed the IceBar with the helper's one cell enabled"]
         verdict.settle("C4", shown + answer_reasons(steps, ["helperListed", "helperMenu"]))
     judge_own_item(verdict, events, steps, helper)
     judge_icon_drag(verdict, events, steps)
-    judge_order(verdict, events, steps, start_snapshot(events))
 
 
 # --- for the owner ---------------------------------------------------------------------------------
@@ -499,4 +513,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    try:
+        sys.exit(main(sys.argv))
+    except Exception as error:  # never 1: to the runner's waits that is "not yet"
+        sys.stderr.write(f"s5-tool: {type(error).__name__}: {error}\n")
+        sys.exit(2)

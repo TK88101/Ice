@@ -52,7 +52,7 @@ esac
 HIDE_LIMIT=1100
 START_LIMIT=20
 TIME_SCALE=1
-# A settled first read, and the helper's membership (s5-tool.py's START_LIMIT).
+# A settled first read, and the helper's membership (recorded on the steps for s5-tool.py).
 START_WAIT=120
 # The owner's own drag: until Ice sees it.
 OWNER_WAIT=300
@@ -121,11 +121,12 @@ done
 running=$(ps -U $(id -u) -o comm= | grep -E '/Ice\.app/Contents/MacOS/|/IceLab[A-Za-z0-9]*$|/vzhelper$' || true)
 [[ -z $running ]] || guard "an Ice or a helper is already running; quit it first (Ice's own menu, Quit): ${running//$'\n'/, }"
 preflight=$($icewatch preflight 2>/dev/null)
-# The system's capture indicator answers to this capture too (run 20261009-234913).
-last_capture=$EPOCHREALTIME
 [[ $preflight == *'"axTrusted":true'* && $preflight == *'"screenCapture":true'* ]] \
     || guard "Terminal lacks Accessibility or Screen Recording in this account (System Settings > Privacy & Security, for Terminal; not for Ice): ${preflight:-icewatch answered nothing}"
 menu_frame=$($icewatch menu-frame 2>/dev/null)
+# The system's capture indicator answers to the probes' captures too (run
+# 20261009-234913): the cool-down before Ice starts counts from the last of them.
+last_capture=$EPOCHREALTIME
 [[ $menu_frame == *'"verdict":"fits"'* ]] || guard "Terminal must be in front (an app with a short menu); icewatch menu-frame: ${menu_frame:-nothing}"
 displays=$(system_profiler SPDisplaysDataType 2>/dev/null | grep -c 'Resolution:' || true)
 (( displays == 1 )) || guard "$displays displays: the sitting is for the built-in display alone"
@@ -428,8 +429,24 @@ icon_drag() {
     ask paneClear "  那行提醒消失了嗎？" || return 2
 }
 
-# 0 when the sitting ran to where it could; 2 when it was cut short (`ended`).
+# The runner's last look at the bar, for the order of the owner's items (C8):
+# taken however far the sitting got, once Ice ran.
+last_look() {
+    local cut=$(seq_now)
+    say "最後檢查一次你的圖標順序……"
+    mark_at $cut lastLook
+    await - 60 fresh $cut
+}
+
+# Fails when the sitting was cut short (`ended` says why).
 sitting() {
+    steps_of_sitting
+    [[ -z $ended && -n $ice_pid ]] && last_look
+    [[ -z $ended ]]
+}
+
+# 0 when the sitting ran to where it could; 2 when it was cut short (`ended`).
+steps_of_sitting() {
     local app cut did_own=0
     say "==== S5：在你自己的菜單欄上驗收 ($GIT_REV) ===="
     say "會發生的事：一份測試用的 Ice 和一個假圖標會出現在菜單欄上，結束時都會消失。"
@@ -487,9 +504,6 @@ sitting() {
         say "第 4 步：按住 Command，把你剛才放進去的圖標拖回原來的位置。"
         ask itemBack "  它回到原位了嗎？" || return 2
     fi
-    say "最後檢查一次你的圖標順序……"
-    await - 60 fresh $cut_at
-    [[ -z $ended ]] || return 2
 }
 
 sitting || true

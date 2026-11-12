@@ -154,6 +154,25 @@ Serial: T2 reads T1's verdict format, T3 and T4 need T2; nothing is dispatched.
 - The prompts and the result line are in Chinese, for the owner; reasons stay as the
   report words them.
 
+- A wait of the runner's that ran out is a step (`timedOut`, with its clause): the judge
+  fails the clause on it and does not look for a later `verified`. The runner's budgets
+  (`limit`) and the member it saw (`ownSeen`) are on its steps too.
+- C8 is judged whenever Ice ran, from the runner's `lastLook` step: also when the
+  sitting ended at C1, C2 or C3.
+- The staging must be the owner's own, no link, not writable by others (review: the
+  sha256 live beside what they check, so they catch a stale staging, not another
+  account's); the evidence root likewise.
+
+Review of the code (2026-11-12, cap two rounds): round 1, four quality reviewers, a
+security reviewer and Codex: no P0, no CRITICAL or HIGH; 8 P1 or MEDIUM taken (the three
+above, one writer for steps, the cells check, a unit-tested `wait`, the helper's KILL,
+no bytecode cache). Round 2, one reviewer and Codex: 3 P1 taken (C5's blocker bounded
+by the owner's answer, C8 on early ends, the cool-down counted from the last probe
+capture) and C6's retired length. Left, P2: the store's own keys are decided by the
+runner; `timedOut` names the status at the cut, not since the wait began; no runner
+test drives a C5 or C6 timeout (the judge's unit tests do); about 15 s of the test
+suite is waits that end by timeout.
+
 ## 4. Risks and rollback
 
 - Ice misbehaves with the owner's item hidden: Return or Control-C ends it; with Ice
