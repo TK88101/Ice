@@ -53,9 +53,9 @@ ditto "$scratch/apps/Protected.app" $shared/apps/Protected.app
 ditto "$scratch/apps/Menus.app" $shared/apps/Menus.app
 cp "$bin/icewatch" $shared/apps/icewatch
 ditto "$ice_app" $shared/Ice.app
-cp "$here/run-lab.sh" "$here/lab-tool.py" $shared/
-chmod 0755 $shared/run-lab.sh
-chmod 0644 $shared/lab-tool.py
+cp "$here/run-lab.sh" "$here/lab-tool.py" "$here/run-s5.sh" "$here/s5-tool.py" $shared/
+chmod 0755 $shared/run-lab.sh $shared/run-s5.sh
+chmod 0644 $shared/lab-tool.py $shared/s5-tool.py
 chmod -R go-w $shared/apps $shared/Ice.app
 
 revision=$(git -C "$repo" rev-parse --short HEAD)
@@ -69,6 +69,11 @@ print -l -- \
     "ICEWATCH_SHA=$(t7_sha $shared/apps/icewatch)" \
     "TOOL_SHA=$(t7_sha $shared/lab-tool.py)" > $shared/lab.env
 chmod 0644 $shared/lab.env
+# The owner's acceptance sitting (plan 2026-11-12-s5-owner-acceptance) reads
+# lab.env for what it shares with the matrix and this for its own two files;
+# run-lab.sh refuses a lab.env line it does not know, so they are not there.
+print -l -- "S5_SHA=$(t7_sha $shared/run-s5.sh)" "S5TOOL_SHA=$(t7_sha $shared/s5-tool.py)" > $shared/s5.env
+chmod 0644 $shared/s5.env
 
 # The staged copy has the release's bundle id: it must not be what
 # LaunchServices resolves the id to (T7's R9). The runner's own copies are
@@ -80,4 +85,5 @@ if (( $(staged_records) > 0 )); then
 fi
 
 echo "stage-lab: staged $revision for $isolated in $shared"
+echo "stage-lab: the owner's sitting is checked from the owner's own Terminal: $shared/run-s5.sh --dry-run"
 /bin/zsh $shared/run-lab.sh --dry-run

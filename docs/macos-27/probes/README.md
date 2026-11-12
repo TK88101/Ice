@@ -157,3 +157,20 @@ and Terminal brought to the front in turn. It never posts an input event.
 forward) are the runner's; `vzhelper --autosave` with two items names the second
 `<name>-2`.
 
+The owner's acceptance sitting (plan 2026-11-12-s5-owner-acceptance):
+`stage-lab.sh` also stages `run-s5.sh` and `s5-tool.py` and records their sha256
+in `s5.env`. `run-s5.sh` is the one command the owner starts in the owner's own
+account, in Terminal, in front (`--dry-run`: the guards only): one copy of Ice
+under `com.icespike4.lab.r<run id>.s5` with the report on, one sacrificial
+helper, then prompts the owner answers with `y`, `n` or `s`; judged by
+`s5-tool.py` from the report and the answers. Side effects: the copy's and the
+helper's items on the owner's bar for the sitting, their defaults domains
+(deleted and checked empty), MenuBarAgent's records of them and values it
+stores for the owner's items (left; the difference is recorded and the bar's
+order judged). The release Ice's settings are read twice, never written. It
+never posts an input event: the one item of the owner's that goes into Ice is
+dragged by the owner. Evidence in `~/IceReverse-evidence/<run id>-s5/`.
+`test_s5_tool.py` and `test-s5.sh` test the judge and the runner against stubs
+(side effects: the stub copies', the helper's and a stand-in release domain's
+defaults, deleted).
+

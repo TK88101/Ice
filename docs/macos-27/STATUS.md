@@ -311,7 +311,7 @@ was posted. T2b did not complete its three-run protocol.
 | The owner's decision, 2026-11-12 | no more full overnight matrix. "Three clean rounds running" was never met in nine sittings (best: two of three, 2026-10-19) and is given up. S4 closes on the gate of plan `2026-11-12-displaced-baseline`, section 3: **a lower acceptance confidence, chosen on purpose, not an equivalent** | the owner's ruling |
 | Fixed since | a rest whose reading finds the bar displaced as one piece (at least two references, each found well, all the same distance off) retires the length and baselines again, at most 3 times until a length verifies; a reading that is unstable for another reason (references covered by the frontmost app's menus, `front-long`) keeps the length as before | MEASURED (unit tests: IceCore 712, MenuBarDiscovery 88, lab-tool 53; app build; `check-a3a4.sh`) |
 | The rule over old runs | of 1893 observations in runs `20261019-004100`, `20261031-015900` and this one, 6 were unstable; the rule is true of `k8`'s two and of none of `front-long`'s four | MEASURED (the rule replayed over the reports) |
-| The recovery, live | not witnessed. One `run-lab.sh k8` timed across a clock digit change is the only live run planned (plan section 3, G3) | TBD |
+| The recovery, live | **unit-tested, not witnessed live.** G3's one run (`20261112-100028`, build `a5630ab`, `icetest`, 2026-11-12) started at 10:00:28, after the clock's change at 10:00:00: `k8` **pass**, verified at 473 s at length 728, 19 observations, every one stable with both references `unique` at offset 0, one "IceBar baseline: ok true", no discovery incomplete. A regression pass only: no reading was displaced, so the recovery path was not entered. Not run again (plan section 3, G3) | MEASURED (`1-k8/report-1.jsonl`, `report-1.log`, `verdict.json`) |
 
 ### The evidence S4 closes on
 
@@ -323,7 +323,7 @@ these runs had outside `k8` (the row above), and is covered by `IceBarHidingMach
 | Scenario | Expected | Latest live pass | Level |
 |---|---|---|---|
 | `sparse` `k2` `k4` `press` `addremove` `fresh-off` `fresh-on` `placed-off` `placed-on` `front-short` `relaunch` | verified | run `20261111-233109`, `9a6d7a6` | MEASURED |
-| `k8` | verified | run `20261019-004100`, `0fbae72`, three rounds. Since: failed 2026-10-31 (the 600 s limit; `HIDE_LIMIT` since) and 2026-11-11 (the displaced bar; fixed above). No live pass on the current code | MEASURED; the fix unit-tested only |
+| `k8` | verified | run `20261019-004100`, `0fbae72`, three rounds. Since: failed 2026-10-31 (the 600 s limit; `HIDE_LIMIT` since) and 2026-11-11 (the displaced bar; fixed above). Live pass on the current code: run `20261112-100028`, `a5630ab`, one round, no displaced reading in it | MEASURED; the recovery unit-tested only |
 | `front-long` | best effort | run `20261111-233109`, `9a6d7a6` | MEASURED |
 | `positional` `incomplete` | blocked, unverified | run `20261111-233109`, `9a6d7a6` | MEASURED |
 | `drawn` | failed, as expected | run `20261111-233109`, `9a6d7a6` | MEASURED |
