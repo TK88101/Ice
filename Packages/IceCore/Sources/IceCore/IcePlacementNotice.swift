@@ -6,15 +6,22 @@ public enum IcePlacementNotice: Equatable, Sendable {
     /// Ice's icon was read on the bar, left of its hidden divider.
     case iconLeftOfDivider
 
-    /// The layout pane's line, and the hiding status line for the same state.
+    static let template = "Ice's icon is left of its hidden-section divider, so Ice hides nothing. "
+        + "Hold Command and drag Ice's icon to the right of the divider."
+
+    /// The layout pane's line, and the hiding status line for the same state,
+    /// as data (plan 2026-11-13-zh-hant, D3).
     /// The repair is the owner's Command-drag; whether macOS keeps a dragged
     /// position is not promised (not measured: STATUS "Remembered positions").
-    public var message: String {
+    public var ownerMessage: OwnerMessage {
         switch self {
-        case .iconLeftOfDivider:
-            "Ice's icon is left of its hidden-section divider, so Ice hides nothing. "
-                + "Hold Command and drag Ice's icon to the right of the divider."
+        case .iconLeftOfDivider: OwnerMessage(Self.template)
         }
+    }
+
+    /// The same line in English.
+    public var message: String {
+        ownerMessage.rendered()
     }
 
     /// Where Ice holds its icon to be after a discovery pass. Only a pass

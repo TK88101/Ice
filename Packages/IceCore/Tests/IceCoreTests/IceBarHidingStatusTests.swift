@@ -99,4 +99,69 @@ struct IceBarHidingStatusTests {
         let summary = IceBarHidingStatus.state(.blocked(reasons: [.positionalItemsLeftOfDivider([Self.blocker("Secret App")])])).logSummary
         #expect(!summary.contains("Secret"))
     }
+
+    // MARK: - Owner messages as data (plan 2026-11-13-zh-hant, D3)
+
+    static let everyState: [IceBarHidingStatus] = [
+        .off,
+        .state(.verifiedHidden),
+        .state(.visibleFailed(drawn: [tag("a")])),
+        .state(.requestedNotVerified(reasons: [.lengthNotApplied])),
+        .state(.requestedNotVerified(reasons: [.lengthNotApplied, .noMembers])),
+        .state(.requestedNotVerified(reasons: [.noMembers])),
+        .state(.requestedNotVerified(reasons: [.confirming])),
+        .state(.requestedNotVerified(reasons: [.noReference])),
+        .state(.requestedNotVerified(reasons: [.captureRefused])),
+        .state(.requestedNotVerified(reasons: [.baselineStale])),
+        .state(.requestedNotVerified(reasons: [.foldSeen([tag("a")])])),
+        .state(.requestedNotVerified(reasons: [.membersUnchecked([tag("a")])])),
+        .state(.requestedNotVerified(reasons: [.staleMembers([tag("a")])])),
+        .state(.requestedNotVerified(reasons: [.stackedMembers([tag("a")])])),
+        .state(.requestedNotVerified(reasons: [.layoutChangePending(.itemsChanged)])),
+        .state(.blocked(reasons: [.iceIconNotRightOfDivider(.iconLeftOfDivider)])),
+        .state(.blocked(reasons: [.iceIconNotRightOfDivider(.iconUnreadable)])),
+        .state(.blocked(reasons: [.iceIconNotRightOfDivider(.dividerUnusable)])),
+        .state(.blocked(reasons: [.discoveryIncomplete(.permissionDenied)])),
+        .state(.blocked(reasons: [.ownReadNotOk(.failed)])),
+        .state(.blocked(reasons: [.positionalItemsLeftOfDivider([blocker("Wi-Fi")])])),
+        .state(.blocked(reasons: [.positionalItemsLeftOfDivider([blocker("Wi-Fi"), blocker(nil)])])),
+    ]
+
+    @Test("the English line is the owner message looked up as itself, for every state", arguments: everyState)
+    func messageIsIdentityRendering(status: IceBarHidingStatus) {
+        #expect(status.message == status.ownerMessage?.rendered())
+    }
+
+    @Test("every template a state asks for is listed in allTemplates, and the lookup is used", arguments: everyState)
+    func templatesAreListed(status: IceBarHidingStatus) {
+        var asked = [String]()
+        let rendered = status.ownerMessage?.rendered { template in
+            asked.append(template)
+            return "<\(template)>"
+        }
+        #expect(Set(asked).isSubset(of: OwnerMessage.allTemplates))
+        if status != .off {
+            #expect(rendered?.hasPrefix("<") == true)
+        }
+    }
+
+    @Test("an item's name is passed as itself, never looked up")
+    func namesAreVerbatim() {
+        var asked = [String]()
+        let status = IceBarHidingStatus.state(.blocked(reasons: [.positionalItemsLeftOfDivider([Self.blocker("Wi-Fi")])]))
+        let rendered = status.ownerMessage?.rendered { template in
+            asked.append(template)
+            return template
+        }
+        #expect(!asked.contains("Wi-Fi"))
+        #expect(rendered?.contains("Wi-Fi") == true)
+    }
+
+    @Test("the placement notice is an owner message too")
+    func noticeIsOwnerMessage() {
+        let notice = IcePlacementNotice.iconLeftOfDivider
+        #expect(notice.message == notice.ownerMessage.rendered())
+        #expect(OwnerMessage.allTemplates.contains(notice.ownerMessage.template))
+    }
 }
+

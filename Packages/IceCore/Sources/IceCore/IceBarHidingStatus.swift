@@ -9,27 +9,59 @@ public enum IceBarHidingStatus: Equatable, Sendable {
 
     /// The known limits, said with every line but a blocked one.
     static let limits = "Ice Bar on macOS 27 shows app icons and opens items with a left click."
+    /// A line and the limits after it.
+    static let joinTemplate = "%@ %@"
 
-    /// The layout pane's line; it may name items.
-    public var message: String? {
+    static let verified = "Ice Bar: the chosen items are hidden (checked)."
+    static let nothingLeft = "Ice Bar: nothing is left of Ice's divider, so nothing is hidden."
+    static let gettingReady = "Ice Bar: getting ready to hide the chosen items."
+    static let notVerified = "Ice Bar: hiding requested, not verified (%@)."
+    static let stillDrawn = "Ice Bar: an item meant to be hidden is still drawn on the menu bar."
+    static let iconUnreadable = "Ice's icon is not on the menu bar, so Ice hides nothing. Turn on Show Ice icon, or make room for it."
+    static let dividerUnusable = "Ice's hidden-section divider is not on the menu bar, so Ice hides nothing."
+    static let incomplete = "Ice could not read every menu bar item, so it hides nothing until it can."
+    static let positionalOne = "Ice cannot tell %@ from another item of the same app, so it hides nothing. "
+        + "Hold Command and drag it to the right of Ice's divider."
+    static let positionalMany = "Ice cannot tell %@ from another item of the same app, so it hides nothing. "
+        + "Hold Command and drag them to the right of Ice's divider."
+    static let anItem = "an item"
+    static let whys = [
+        "nothing to check", "checking once more", "no item to compare with", "the menu bar could not be captured",
+        "the last check is more than ten minutes old", "an item may be folded behind «", "an item could not be checked",
+        "an item cannot be reached right now", "an item overlaps another", "the layout changed; checking again",
+    ]
+
+    /// Every template of this type (`OwnerMessage.allTemplates`).
+    static var templates: [String] {
+        [
+            verified, nothingLeft, gettingReady, notVerified, stillDrawn, iconUnreadable, dividerUnusable, incomplete,
+            positionalOne, positionalMany, anItem,
+        ] + whys
+    }
+
+    /// The layout pane's line, as data; it may name items.
+    public var ownerMessage: OwnerMessage? {
         switch self {
         case .off:
             return nil
         case .state(.blocked(let reasons)):
             return reasons.first.map(Self.blockedLine)
         case .state(.verifiedHidden):
-            return Self.withLimits("Ice Bar: the chosen items are hidden (checked).")
+            return Self.withLimits(OwnerMessage(Self.verified))
         case .state(.requestedNotVerified(let reasons)):
             if reasons.contains(.lengthNotApplied) {
-                return Self.withLimits(reasons.contains(.noMembers)
-                    ? "Ice Bar: nothing is left of Ice's divider, so nothing is hidden."
-                    : "Ice Bar: getting ready to hide the chosen items.")
+                return Self.withLimits(OwnerMessage(reasons.contains(.noMembers) ? Self.nothingLeft : Self.gettingReady))
             }
             let why = reasons.first.map(Self.why) ?? Self.why(.noMembers)
-            return Self.withLimits("Ice Bar: hiding requested, not verified (\(why)).")
+            return Self.withLimits(OwnerMessage(Self.notVerified, .message(OwnerMessage(why))))
         case .state(.visibleFailed):
-            return Self.withLimits("Ice Bar: an item meant to be hidden is still drawn on the menu bar.")
+            return Self.withLimits(OwnerMessage(Self.stillDrawn))
         }
+    }
+
+    /// The layout pane's line in English (`ownerMessage` looked up as itself).
+    public var message: String? {
+        ownerMessage?.rendered()
     }
 
     /// The log's line: case names and counts only, never an item's name.
@@ -44,40 +76,40 @@ public enum IceBarHidingStatus: Equatable, Sendable {
         }
     }
 
-    private static func withLimits(_ line: String) -> String {
-        "\(line) \(limits)"
+    private static func withLimits(_ line: OwnerMessage) -> OwnerMessage {
+        OwnerMessage(joinTemplate, .message(line), .message(OwnerMessage(limits)))
     }
 
-    private static func blockedLine(_ reason: PreferenceHidingBlockReason) -> String {
+    private static func blockedLine(_ reason: PreferenceHidingBlockReason) -> OwnerMessage {
         switch reason {
         case .iceIconNotRightOfDivider(.iconLeftOfDivider):
-            return IcePlacementNotice.iconLeftOfDivider.message
+            return IcePlacementNotice.iconLeftOfDivider.ownerMessage
         case .iceIconNotRightOfDivider(.iconUnreadable):
-            return "Ice's icon is not on the menu bar, so Ice hides nothing. Turn on Show Ice icon, or make room for it."
+            return OwnerMessage(iconUnreadable)
         case .iceIconNotRightOfDivider(.dividerUnusable):
-            return "Ice's hidden-section divider is not on the menu bar, so Ice hides nothing."
+            return OwnerMessage(dividerUnusable)
         case .discoveryIncomplete, .ownReadNotOk:
-            return "Ice could not read every menu bar item, so it hides nothing until it can."
+            return OwnerMessage(incomplete)
         case .positionalItemsLeftOfDivider(let blockers):
-            let names = blockers.map { $0.name ?? "an item" }.joined(separator: ", ")
-            let pronoun = blockers.count == 1 ? "it" : "them"
-            return "Ice cannot tell \(names) from another item of the same app, so it hides nothing. "
-                + "Hold Command and drag \(pronoun) to the right of Ice's divider."
+            let names = blockers.map { blocker -> OwnerMessage.Argument in
+                blocker.name.map(OwnerMessage.Argument.verbatim) ?? .message(OwnerMessage(anItem))
+            }
+            return OwnerMessage(blockers.count == 1 ? positionalOne : positionalMany, .list(names))
         }
     }
 
     private static func why(_ reason: PreferenceHidingNotVerifiedReason) -> String {
         switch reason {
-        case .lengthNotApplied, .noMembers: "nothing to check"
-        case .confirming: "checking once more"
-        case .noReference: "no item to compare with"
-        case .captureRefused: "the menu bar could not be captured"
-        case .baselineStale: "the last check is more than ten minutes old"
-        case .foldSeen: "an item may be folded behind «"
-        case .membersUnchecked: "an item could not be checked"
-        case .staleMembers: "an item cannot be reached right now"
-        case .stackedMembers: "an item overlaps another"
-        case .layoutChangePending: "the layout changed; checking again"
+        case .lengthNotApplied, .noMembers: whys[0]
+        case .confirming: whys[1]
+        case .noReference: whys[2]
+        case .captureRefused: whys[3]
+        case .baselineStale: whys[4]
+        case .foldSeen: whys[5]
+        case .membersUnchecked: whys[6]
+        case .staleMembers: whys[7]
+        case .stackedMembers: whys[8]
+        case .layoutChangePending: whys[9]
         }
     }
 
