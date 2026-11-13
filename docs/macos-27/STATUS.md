@@ -488,3 +488,16 @@ Codex: the plan reviewed once (REVISE, answered in the plan); the harness change
 | An anchor rule to cover remove-then-add | rejected after Codex review (AX frames are not drawn-ness) | plan D2b |
 
 Evidence: `~/IceReverse-evidence/20261113-flash/`. Rollback: `~/Ice-release-archive/Ice-1.0-before-flash-fix-20261113.zip`. Codex: the plan three rounds (REVISE, REVISE, AGREE), the code two (one P2 fixed, then clean), D2b one round and a debate (dropped).
+
+## Traditional Chinese and the language option (2026-11-13, plan 2026-11-13-zh-hant, version 1.1.0, installed as the daily Ice)
+
+| what | status | tag |
+|---|---|---|
+| Completeness | 199 keys (compiler-extracted, hand-listed, IceCore templates), every one with a zh-Hant value (`check-zh-hant.sh`) | MEASURED |
+| L1 System on the owner's list (ja, en, zh-Hant) | Settings in English | MEASURED |
+| L2 繁體中文 chosen in the pane by automation, Ice relaunched by its own button | every pane and both right-click menus read in Chinese (`zh_check.py`); run 1 found three English texts (Launch at login, the hotkey button's accessibility labels, a space between Chinese sentences), fixed; run 2: nothing English left. The About pane's copyright line stays English on purpose | MEASURED, runs 16:07 and 16:10 |
+| L3 back to System | English again after relaunch; the app's `AppleLanguages` removed | MEASURED |
+| Layout | no clipping seen in the Chinese panes' captures | MEASURED (by eye) |
+| The owner's setting | System (English), the owner's choice | as left |
+
+Evidence: `~/IceReverse-evidence/20261113-zh/`. Codex: the plan three rounds (REVISE, REVISE, AGREE), the code four (two P2 fixed, then clean twice).

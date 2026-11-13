@@ -49,6 +49,8 @@ menu bar, where a click opens their menu.
 - Ice's own icon must stay to the right of its divider; if it is not, Settings says so.
 - A newly launched app's item that lands left of the divider is listed in the Ice Bar within
   about two seconds.
+- **Language**: English or Traditional Chinese (繁體中文), in Settings > General > Language;
+  "System" follows the macOS language list. Ice uses the new language after it relaunches.
 
 On macOS 27 Settings only shows what was seen to work there. Not offered on 27: the
 always-hidden section, item spacing, the search panel, divider styles, hiding application
