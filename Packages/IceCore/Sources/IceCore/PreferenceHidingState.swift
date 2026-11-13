@@ -59,6 +59,11 @@ public enum PreferenceHidingLayoutChange: Equatable, Sendable {
             return false
         }
         let added = Set(new.items).subtracting(old.items)
+        // D2: a removal may move the divider, so nothing added beside it is
+        // judged (a title change is one of each).
+        guard removed.isEmpty || added.isEmpty else {
+            return false
+        }
         return added.isDisjoint(with: old.members) && added.isDisjoint(with: new.members) && added.isSubset(of: new.visibleItems)
     }
 }

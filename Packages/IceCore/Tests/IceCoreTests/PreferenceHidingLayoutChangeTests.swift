@@ -197,6 +197,13 @@ struct PreferenceHidingLayoutChangeTests {
         #expect(PreferenceHidingLayoutChange.between(old, signature(items: ["v1", "h1"], members: ["h1"])) == .visibleItemsChanged)
     }
 
+    @Test("an item gone and one added in the same change retire, even read right of the boundary: a title change is one")
+    func removalWithAdditionIsStructural() {
+        let old = signature(items: ["v1", "h1"])
+        let new = signature(items: ["v2", "h1"], visible: ["v2"])
+        #expect(PreferenceHidingLayoutChange.between(old, new) == .itemsChanged)
+    }
+
     @Test("a member released while its item stays retires")
     func memberReleasedIsStructural() {
         let old = signature(items: ["v1", "h1", "h2"], members: ["h1", "h2"])
