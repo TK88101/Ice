@@ -6,13 +6,18 @@
 Each case starts the lab copy with its settings, drives the bar, and writes
 <run>/<case>.json: `pass`, `fail` (with the failed checks) or `notRun`.
 """
+import base64
 import json
+import os
+import plistlib
+import subprocess
 import sys
+import threading
 import time
 
 from settings_lab import (
     ALL_MODS, ALL_MODS_NAMES, BAR_Y, KEY_F13, KEY_F14, KEY_F15, KEY_F16, KEY_F17,
-    PARK, Failed, Lab, NotRun, hotkey_data, is_hidden_rest, mid_x, record, verdict,
+    PARK, Failed, Lab, NotRun, drive_path, hotkey_data, is_hidden_rest, mid_x, record, uptime, verdict,
 )
 
 SCREEN_WIDTH = 1728
@@ -1095,6 +1100,284 @@ def p1(run):
 
 
 CASES.update({"T6-panes": t6_panes, "T6-menus": t6_menus, "T6-removed": t6_removed, "C1": c1, "P1": p1})
+
+
+# --- The limits left by the settings pass (plan 2026-11-13-untested-limits) ------------------
+
+RETURN = 36
+KEY_G = 5
+# The driver's click: the button goes down this long after `postedAt`.
+CLICK_DOWN_AFTER = 0.15
+# Ice's smart rehide asks whether the clicked app is active this long after the click.
+SMART_REHIDE_DELAY = 0.25
+
+
+def stored_icon(lab):
+    """The stored Ice icon, from an export of the lab domain (`defaults read` cuts long data)."""
+    path = os.path.join(lab.dir, "prefs-%d.plist" % int(time.time() * 1000))
+    subprocess.run(["/usr/bin/defaults", "export", lab.state["ice_id"], path], capture_output=True)
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as handle:
+        data = plistlib.load(handle).get("IceIcon")
+    return json.loads(data) if data else None
+
+
+def icon_bytes(icon, side):
+    """The image data of one side of a stored custom icon, or None."""
+    encoded = ((icon or {}).get(side) or {}).get("data", {}).get("_0")
+    return base64.b64decode(encoded) if encoded else None
+
+
+def key_to_ice(lab, code, mods=None):
+    """A key, only while Ice's lab copy is the front app: a key goes wherever the focus is."""
+    if lab.front_pid() != lab.pid:
+        raise Failed("Ice is not the front app; no key is posted")
+    lab.drive("key", code, *(["--mods", mods] if mods else []))
+
+
+def chooser_buttons(lab):
+    return [row for row in lab.rows() if row["role"] == "AXButton" and row.get("title") in ("Open", "開く")]
+
+
+def wait_for(condition, seconds, step=0.2):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if condition():
+            return True
+        time.sleep(step)
+    return bool(condition())
+
+
+def l1(run):
+    """The custom icon chosen through the file chooser."""
+    checks, facts = [], {}
+    with Lab(run, "L1", member=False) as lab:
+        path = os.path.join(lab.dir, "chosen.png")
+        with open(path, "wb") as handle:
+            handle.write(red_png())
+        owner_front = lab.front_pid()
+        try:
+            rows = lab.open_settings()
+            picker = next((row for role in ("AXMenuButton", "AXPopUpButton", "AXButton")
+                           for row in [lab.control_after("Ice icon", role, rows)] if row), None)
+            if picker is None:
+                raise Failed("no control after Ice icon")
+            facts["pickerRole"] = picker["role"]
+            lab.click_row(picker)
+            menus = lab.open_menus() if wait_for(lambda: lab.open_menus(), 3.0, 0.1) else []
+            chose = bool(menus) and lab.choose(menus[0], "Choose image…")
+            checks.append(("the icon menu offers Choose image…", chose))
+            opened = chose and wait_for(lambda: chooser_buttons(lab), 5.0, 0.3)
+            checks.append(("the file chooser opens in Ice's lab copy", opened))
+            if opened:
+                def fields(rows):
+                    return [tuple(row.get("frame") or ()) for row in rows if row["role"] == "AXTextField"]
+                before = fields(lab.rows())
+                key_to_ice(lab, KEY_G, "cmd,shift")
+                time.sleep(1.2)
+                after = fields(lab.rows())
+                # The Go to field is the text field that was not there before the key
+                # (the chooser's list shows each file name as a text field too).
+                new = [index for index, frame in enumerate(after) if frame not in before]
+                facts["goToField"] = new
+                done = subprocess.run([drive_path(), "axset",
+                                       str(lab.pid), "AXTextField", str(new[-1] if new else -1), path], capture_output=True)
+                facts["axset"] = done.stdout.decode().strip()
+                time.sleep(0.4)
+                facts["goTo"] = path in [row.get("value") for row in lab.rows() if row["role"] == "AXTextField"]
+                checks.append(("its Go to field takes the path", facts["goTo"]))
+                key_to_ice(lab, RETURN)
+                time.sleep(1.5)
+                key_to_ice(lab, RETURN)
+                facts["chooserLeft"] = wait_for(lambda: not chooser_buttons(lab), 4.0, 0.3)
+                checks.append(("the chooser closes on Open", facts["chooserLeft"]))
+        finally:
+            if chooser_buttons(lab) and lab.front_pid() == lab.pid:
+                lab.drive("key", ESCAPE)
+            lab.activate(owner_front)
+        icon = stored_icon(lab)
+        facts["storedName"] = (icon or {}).get("name")
+        checks.append(("the chosen file's bytes are stored as the custom icon",
+                       facts["storedName"] == "Custom" and icon_bytes(icon, "visible") == red_png()))
+        # Secondary: the icon on the bar in the file's own colour.
+        time.sleep(1.0)
+        frame = lab.own_item("Ice.ControlItem.Visible")["frame"]
+        facts["drawn"] = lab.read("mean", lab.shot("icon-after", frame))["mean"][:3]
+        checks.append(("and drawn on the bar in its own colour (red over blue)", facts["drawn"][0] - facts["drawn"][2] > 40))
+    return dict(verdict(checks), facts=facts)
+
+
+class FrontWatch:
+    """The front app's pid, polled on a thread: when a click made another app active."""
+
+    def __init__(self, lab):
+        self.lab, self.samples, self.stopped = lab, [], threading.Event()
+        self.thread = threading.Thread(target=self.poll, daemon=True)
+
+    def poll(self):
+        while not self.stopped.is_set():
+            self.samples.append((uptime(), self.lab.front_pid()))
+            time.sleep(0.02)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_):
+        self.stopped.set()
+        self.thread.join(2)
+
+    def first(self, pid, after):
+        found = [at for at, front in self.samples if front == pid and at >= after]
+        return found[0] if found else None
+
+
+def l2(run, tries=10):
+    """Smart rehide: a click in another app's window, which that click brings to the front.
+
+    The owner's front app stays the one in front until the click; `settingsfront`'s
+    window floats above it, so the click lands in it (the driver checks the pid at the
+    point). Each try records how long after the button went down `settingsfront` was
+    front, so a try that closed is told apart from one that never met the race.
+    """
+    checks, facts = [], {"tries": []}
+    with Lab(run, "L2", {"AutoRehide": True, "RehideStrategy": 0}) as lab:
+        owner_front = lab.front_pid()
+        front = lab.start_front()
+        window = front["window"]
+        try:
+            for _ in range(tries):
+                lab.activate(owner_front)
+                lab.park()
+                attempt = {"behind": lab.front_pid() != front["pid"]}
+                lab.send("bar open")
+                attempt["opened"] = lab.wait_shown(True)
+                with FrontWatch(lab) as watch:
+                    result = lab.drive("click", window[0] + window[2] / 2, window[1] + window[3] / 2,
+                                       "--expect", "pid:%d" % front["pid"], "--hold", 0.2)
+                    attempt["closed"] = lab.wait_shown(False, 2.0)
+                    down = result["postedAt"] + CLICK_DOWN_AFTER
+                    # A close may come before a slow app is front: watch on for it (Codex review).
+                    wait_for(lambda: watch.first(front["pid"], down) is not None, 2.0, 0.05)
+                active = watch.first(front["pid"], down)
+                attempt["activeAfter"] = None if active is None else round(active - down, 3)
+                facts["tries"].append(attempt)
+                if not attempt["closed"]:
+                    lab.close_bar()
+                    lab.wait_shown(False, 2.0)
+        finally:
+            lab.activate(owner_front)
+    ran = [t for t in facts["tries"] if t["behind"] and t["opened"] and t["activeAfter"] is not None]
+    late = [t for t in ran if t["activeAfter"] > SMART_REHIDE_DELAY]
+    facts["closed"] = "%d of %d" % (sum(t["closed"] for t in ran), len(ran))
+    facts["lateActivations"] = len(late)
+    checks.append(("every try ran as meant (app behind, IceBar open, the click brought it forward)", len(ran) == tries))
+    checks.append(("the IceBar closed within 2 s every time", all(t["closed"] for t in ran)))
+    return dict(verdict(checks), facts=facts)
+
+
+def report_times(lab, identifier, origin):
+    """From Ice's report: uptimes of each roster change and whether it holds `identifier`, and of each length."""
+    rosters, lengths = [], []
+    for event in lab.events():
+        if event["event"] == "roster":
+            rosters.append((origin + event["t"], any(m.get("identifier") == identifier for m in event["members"])))
+        elif event["event"] == "length":
+            lengths.append((origin + event["t"], event.get("applied")))
+    return rosters, lengths
+
+
+def follow(lab, identifier, pid, seconds=10.0):
+    """Samples the item from now: on the bar (it answers at its place), in the roster, neither.
+
+    `nowhere` counts only from the item's first appearance among the bar's items: before
+    that it does not exist yet, which is no one's fault.
+    """
+    samples, start = [], uptime()
+    while uptime() - start < seconds:
+        rostered = any(member["identifier"] == identifier for member in lab.snapshot()["roster"])
+        item, exists, on_bar = lab.item(identifier), False, False
+        if item and item.get("frame"):
+            exists = True
+            x = mid_x(item["frame"])
+            on_bar = 0 <= x <= SCREEN_WIDTH and lab.read("hit", x, BAR_Y).get("pid") == pid
+        samples.append((uptime(), exists, rostered or on_bar))
+        time.sleep(0.2)
+    seen = [s for s in samples if s[1] or s[2]]
+    tail = samples[samples.index(seen[0]):] if seen else []
+    nowhere = sum(later[0] - earlier[0] for earlier, later in zip(tail, tail[1:]) if not earlier[2])
+    return {"nowhere": round(nowhere, 2), "listedAtEnd": bool(samples and samples[-1][2]), "samples": len(samples)}
+
+
+def l3(run, offsets=(1.9, 2.15, 2.35)):
+    """A new item while Ice is blocked by its icon left of the divider, then the icon put back.
+
+    The helper is started at an offset from the start of the drag that puts the icon back
+    (negative: before it), so that in some tries the roster Ice holds at the drop cannot
+    include it. What is asserted is the sequence: no length is applied after the drop on
+    a roster without the new item, so the item is never pushed off unlisted.
+    """
+    checks, facts = [], {"tries": []}
+    with Lab(run, "L3") as lab:
+        origin = lab.report_origin()
+        stamp = lambda: "vz-s6-n-%s-%s" % (lab.state["run_id"], time.strftime("%H%M%S"))
+        identifier = stamp()
+        helper = lab.start_helper("Target.app", identifier, "target")
+        facts["controlAtRest"] = follow(lab, identifier, helper.pid)
+        members = 2
+        lab.wait(lambda s: is_hidden_rest(s, members), 20, "both members hidden")
+        for offset in offsets:
+            attempt = {"offset": offset}
+            divider = divider_frame(lab)
+            visible = lab.item(lab.visible_id)["frame"]
+            lab.drive("drag", lab.icon_x(), BAR_Y, divider[0] - 10, BAR_Y, "--expect", "pid:%d" % lab.pid,
+                      "--command-first", 1.6, "--seconds", 0.8)
+            attempt["blocked"] = lab.holds(lambda s: "blocked" in str(s.get("status")), 8.0)
+            time.sleep(1.0)
+            identifier = stamp()
+            back = ("drag", lab.icon_x(), BAR_Y, (mid_x(divider_frame(lab)) + mid_x(visible)) / 2, BAR_Y,
+                    "--expect", "pid:%d" % lab.pid, "--command-first", 1.6, "--seconds", 0.8)
+            if offset < 0:
+                helper = lab.start_helper("Target.app", identifier, "target")
+                time.sleep(-offset)
+                result = lab.drive(*back)
+            else:
+                lab.wait_idle()
+                process = lab.drive_started(*back)
+                time.sleep(offset)
+                helper = lab.start_helper("Target.app", identifier, "target")
+                result = lab.drive_ended(process, back)
+            drop = result["endedAt"]
+            attempt.update(follow(lab, identifier, helper.pid))
+            rosters, lengths = report_times(lab, identifier, origin)
+            held = [has for at, has in rosters if at <= drop]
+            attempt["rosterAtDropHadIt"] = bool(held and held[-1])
+            first_with = next((at for at, has in rosters if has and at > drop), None)
+            first_length = next((at for at, applied in lengths if applied is not None and at > drop), None)
+            attempt["lengthAfterDrop"] = None if first_length is None else round(first_length - drop, 2)
+            attempt["rosterWithItAfterDrop"] = None if first_with is None else round(first_with - drop, 2)
+            attempt["unblocked"] = "blocked" not in str(lab.snapshot().get("status"))
+            facts["tries"].append(attempt)
+            members += 1
+            # The next try must start from a hidden rest (Codex review).
+            attempt["settledAfter"] = lab.holds(lambda s: is_hidden_rest(s, members), 20.0)
+            if not attempt["settledAfter"]:
+                break
+    ran = [t for t in facts["tries"] if t["blocked"] and t["unblocked"] and t["settledAfter"]]
+    stale = [t for t in ran if not t["rosterAtDropHadIt"]]
+    facts["staleAtDrop"] = len(stale)
+    checks.append(("each try went through blocked and out of it", len(ran) == len(offsets)))
+    checks.append(("in at least one, the roster at the drop did not hold the new item (the condition)", len(stale) >= 1))
+    checks.append(("then no length came before a roster with the new item",
+                   all(t["lengthAfterDrop"] is None or (t["rosterWithItAfterDrop"] is not None
+                       and t["rosterWithItAfterDrop"] <= t["lengthAfterDrop"]) for t in stale)))
+    checks.append(("the new item was never pushed off unlisted (0.4 s of sampling slack)", all(t["nowhere"] <= 0.4 for t in ran)))
+    checks.append(("and is listed in the end, every time", all(t["listedAtEnd"] for t in ran)))
+    return dict(verdict(checks), facts=facts)
+
+
+CASES.update({"L1": l1, "L2": l2, "L3": l3})
 
 
 def run_case(run, name):

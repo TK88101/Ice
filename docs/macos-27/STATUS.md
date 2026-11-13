@@ -443,3 +443,25 @@ finding is in the plan's appendix B.
 | `/Users/Shared/IceReverse-lab`, `-t7` | everything of the owner's deleted (the staged Ice, the helpers, `icewatch`, the scripts); what `icetest` wrote under `evidence/` the owner then deleted with `sudo`, and the `icetest` account with its home folder: nothing of either is left. `run-lab.sh`, `run-s5.sh`, `run-t7.sh` and the settings pass need `stage-lab.sh` (or `stage-t7.sh`) run again before their next use | MEASURED |
 | 1721 empty `com.icespike4.lab.*` preference files, then the 94 other `com.icespike4.*` ones (trace, t7, the helpers) | each read as an empty dictionary, then deleted; none is left. The release Ice's settings were not touched | MEASURED |
 
+
+## The limits of the settings pass, tested (2026-11-13, plan 2026-11-13-untested-limits)
+
+macOS 27.0.1 (26A434), the owner's account and bar, build `1ade8e9` plus the harness
+changes of this plan, a lab-identity copy, sacrificial helpers, synthetic input. Run
+`20261113-123139-s6` (cases L1, L2, L3; `finish.json`: nothing left running, the lab domain
+empty, the release Ice's settings byte-identical).
+
+| what | status | tag |
+|---|---|---|
+| The custom icon through the file chooser (L1) | "Choose image…" opens the chooser in Ice; its Go to field takes a path; Open closes it; the stored icon is "Custom" and its data equal byte for byte to the chosen PNG; the bar shows the red square in its own colour (`icon-after.png`). The case's pixel-mean check failed: the mean over the icon's frame takes in today's blue bar around the 16 pt square (a weak check, Codex's plan point 7); the picture is the evidence. Third attempt; the first two failed in the harness (the driver's new `axset` not rebuilt; the Go to field not told from the list's file names) | MEASURED |
+| Smart rehide, a click that brings another app forward (L2) | 10 of 10 closed within 2 s; the clicked app was front 0.10 to 0.13 s after the button went down, so the 250 ms decision point was never reached first. The race exists only for an app slower to activate than that: not seen, not repaired | MEASURED (this Mac) / INFERRED (a slower app) |
+| Leaving `blocked` with an old roster (L3) | the stale condition produced in 3 tries (the roster at the drop of Ice's icon without the new item, started 0.05 to 0.5 s before it): each time the length came with the roster that held the item (0.34/0.34, 1.05/1.06, 0.78/0.78 s after the drop). The limit stated on 2026-11-12 does not occur: leaving `blocked` by a drag is held as leaving arranging is, and blocked's preconditions come from the same pass as the roster. One try ended blocked again (the harness dropped the icon left of the divider): not counted | MEASURED (3 tries) |
+| A new app's item at rest | neither on the bar nor in the IceBar for about 2 s (one sample of the harness, 1.95 s), until the next pass lists it: it lands left of the divider and is pushed off at once. Seen the same in L3 after a drop (1.8, 2.0 s) | MEASURED; resolution about 2 s |
+| Launch at login, an actual login (L4) | not run: it needs a logout of the owner's session. The registration was measured (G1, 2026-11-12) | not run |
+| Screen Recording granted while Ice runs (L5) | not run: a grant needs the owner's password in System Settings | INFERRED (code), not run |
+
+These replace the three rows "Launch at login…", "The hiding machine still hides…" and
+"`ScreenCapture.checkPermissions`…" of the settings pass's limits, which stay as they were
+written for that date.
+
+Codex: the plan reviewed once (REVISE, answered in the plan); the harness changes reviewed three rounds (2, 1, 0 findings, all P2, fixed; L2 and L3 re-read against them: no try of this run is affected).

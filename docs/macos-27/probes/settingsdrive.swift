@@ -296,7 +296,7 @@ func find(in element: AXUIElement, role: String, title: String, depth: Int = 0, 
     guard depth < 40 else { return }
     if attribute(element, kAXRoleAttribute as String) as? String == role {
         let names = [kAXTitleAttribute as String, kAXDescriptionAttribute as String, "AXIdentifier"].compactMap { attribute(element, $0) as? String }
-        if names.contains(title) { found.append(element) }
+        if title == "*" || names.contains(title) { found.append(element) }
     }
     for child in (attribute(element, kAXChildrenAttribute as String) as? [AXUIElement]) ?? [] {
         find(in: child, role: role, title: title, depth: depth + 1, into: &found)
@@ -617,6 +617,22 @@ func main() -> Int32 {
             return 1
         }
         let error = AXUIElementPerformAction(found[index], kAXPressAction as CFString)
+        emit(["result": error == .success ? "done" : "failed", "error": Int(error.rawValue), "matches": found.count])
+        return error == .success ? 0 : 1
+    case "axset":
+        // A text field's value set over Accessibility (the file chooser's "Go
+        // to" field, plan 2026-11-13 L1): typed keys would go through the
+        // owner's input method.
+        guard arguments.count > 4, let pid = pid_t(arguments[1]), let index = Int(arguments[3]) else { usage() }
+        var found = [AXUIElement]()
+        for window in axWindows(pid) { find(in: window, role: arguments[2], title: "*", into: &found) }
+        // A negative index counts from the last match: the newest sheet's field.
+        let at = index < 0 ? found.count + index : index
+        guard at >= 0, at < found.count else {
+            emit(["result": "failed", "reason": "notFound", "matches": found.count])
+            return 1
+        }
+        let error = AXUIElementSetAttributeValue(found[at], kAXValueAttribute as CFString, arguments[4] as CFString)
         emit(["result": error == .success ? "done" : "failed", "error": Int(error.rawValue), "matches": found.count])
         return error == .success ? 0 : 1
     case "move":
