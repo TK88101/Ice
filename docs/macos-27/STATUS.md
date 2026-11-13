@@ -474,3 +474,17 @@ Codex: the plan reviewed once (REVISE, answered in the plan); the harness change
 | Ice's menu bar item service (XPC) | starts and the session activates with the team-signed build (it never started ad-hoc, row at the top of this file) | MEASURED, 1 launch |
 | Permissions, launch at login | granted; registered and enabled | MEASURED; an actual login not yet seen |
 | Members | none yet: the new identity starts with nothing left of its divider | MEASURED |
+
+## No flash when an icon comes or goes right of the divider (2026-11-13, plan 2026-11-13-flash-on-item-change, build `4de4081`, installed as the daily Ice)
+
+| what | status | tag |
+|---|---|---|
+| The owner's report | any third-party icon added or removed showed the hidden items for about 1.2 s; the hiding machine retired the length on every change of the item set | MEASURED (owner's recording; log 14:40:11 and 14:40:16) |
+| An icon removed | the length stays: 3 of 3 helper quits (E2), and a member's helper quitting (E4: members 5 to 4, no retire) | MEASURED, helpers only, owner's bar |
+| An icon added right of the divider | the length stays when no icon went since the last standard-length pass (E1 run 1); it still retires once when one did (E1 runs 2, 3; E3 A) | MEASURED |
+| An icon gone and one added in the same pass | retires once, then hides again; the new helper drawn right of the divider (E3 B) | MEASURED |
+| An icon added left of the divider | retires once, the item becomes a member (members 4 to 5) and is hidden at 1.5 s (E4) | MEASURED (status log); the IceBar not opened (Ice's icon is not pressed by automation) |
+| A changing title | an item whose title changes reads as one gone and one added: still retires once | INFERRED (code), not run |
+| An anchor rule to cover remove-then-add | rejected after Codex review (AX frames are not drawn-ness) | plan D2b |
+
+Evidence: `~/IceReverse-evidence/20261113-flash/`. Rollback: `~/Ice-release-archive/Ice-1.0-before-flash-fix-20261113.zip`. Codex: the plan three rounds (REVISE, REVISE, AGREE), the code two (one P2 fixed, then clean), D2b one round and a debate (dropped).

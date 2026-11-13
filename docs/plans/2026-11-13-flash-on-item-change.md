@@ -51,6 +51,14 @@ D2 `visibleBoundary`, kept by `PreferenceHidingRoster`, never estimated:
   retiring.
 No widths or frames of removed items are kept.
 
+D2b Rejected: an "anchor" (an added item judged visible when right of an item seen
+visible on an earlier pass). Codex REVISE (BLOCKER: AX frames are not drawn-ness,
+`ItemPosition.swift` 7-12, FINDINGS 621-624 and 661-663; order not proven to change
+only by a drag), then the debate chose dropping it: D2's AX risk is bounded by a
+boundary read at standard length; an anchor would claim visibility after that
+boundary was deliberately cleared. Limit kept, said to the owner: after an item goes,
+the next addition still shows the hidden items once, until a standard-length pass.
+
 D2a The display a boundary belongs to. A pass's display is identified by
 `DiscoveryResult.bounds` together with `DiscoveryResult.origin` (the display's origin
 in the global Accessibility space, `LiveDisplay.bar()`), which the pass itself read.
@@ -78,8 +86,10 @@ left of the divider must not stay unlisted.
 Safety argument. An item is hidden and unlisted only if it sits left of the divider
 and is not a member. A pure removal adds no item. An addition is soft only when its
 own frame, read in that pass, is right of a boundary that was read at standard length
-and has seen no removal since; additions since then only move the real divider left.
-So a soft addition is right of the real divider, unless its AX frame lies (R2).
+and has seen no removal since (additions since then only move the real divider left).
+A change with both a removal and an addition stays structural in the classifier itself
+(a title change is one). So a soft addition is right of the real divider, unless its
+AX frame lies (R1).
 
 Not done: an item whose title changes reads as a removal plus an addition (tags are titles), so it still retires; membership still changes only at standard length; a member that appears,
 or an item read left of the boundary, still shows the hidden items for about a second
@@ -117,6 +127,14 @@ identity and team), archive the installed app, install. With Ice hiding, sacrifi
 helpers only (`com.icespike4.*`), `framepoll` recording Ice's divider and the helpers'
 frames throughout, and after every event a 1 s capture of the bar (evidence folder,
 not the repository):
+- Run 1 (build 54aab32+4de4081, 15:08): E2 3 of 3; E1 1 of 3: the second and third
+  additions came after a removal had cleared the boundary and retired at 1.4 s, as D2
+  as D2 says (`e12-frames*.log`); D2b, an attempt to remove that, was rejected.
+- Run 2 (same build, 15:12-15:15): E3 as designed (retire once, new helper drawn at
+  `x1222`); E4 the helper seeded left of the divider read `x1132`, the length retired,
+  members 4 to 5, hidden again at 1.5 s; its quit retired nothing (members 5 to 4). E5:
+  every helper ended drawn (E1 capture, E3 frames) or a member (E4). The IceBar was not
+  opened: membership is read from the status log.
 - E1 add a helper right of the divider, 3 times: the divider stays at its length; the
   helper's item is drawn on the bar (the capture), so it is not hidden;
 - E2 quit it, 3 times: the divider stays at its length; nothing new is drawn;
