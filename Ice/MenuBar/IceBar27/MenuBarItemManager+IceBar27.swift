@@ -69,7 +69,8 @@ extension MenuBarItemManager {
             hiddenDividerState: hiddenDividerState,
             childIdentifiersByPID: discovery.childIdentifiersByPID,
             iconPlacement: iconPlacement,
-            hasExited: Self.hasExited
+            hasExited: Self.hasExited,
+            display: BarDisplay(bounds: discovery.bounds, originX: discovery.origin.x, originY: discovery.origin.y)
         )
         let tags = Set(next.rules.lastKeys.keys)
         next.lastItems = next.lastItems.filter { tags.contains($0.key) }

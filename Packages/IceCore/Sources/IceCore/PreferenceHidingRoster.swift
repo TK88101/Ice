@@ -9,6 +9,16 @@ public struct PreferenceHidingRoster: Equatable, Sendable {
     public private(set) var itemTags = [TagKey]()
     /// The key each member was last read with (G1 asks its process).
     public private(set) var lastKeys = [TagKey: ItemKey]()
+    /// The hidden divider's right edge as the last trusted pass read it, on
+    /// that pass's display; `nil` before one, after a pass on another display,
+    /// and after any pass that read an item gone (plan
+    /// 2026-11-13-flash-on-item-change, D2, D2a: a removal may move the
+    /// divider, and nothing estimates by how much).
+    public var visibleBoundary: Double? { boundary?.maxX }
+    private var boundary: VisibleBoundary?
+    /// The item tags of the last readable pass on the bar at or right of
+    /// `visibleBoundary` (D3); empty without a boundary.
+    public private(set) var visibleTags = Set<TagKey>()
 
     public init() {}
 
@@ -20,12 +30,14 @@ public struct PreferenceHidingRoster: Equatable, Sendable {
     ///   - iconPlacement: the placement Ice holds
     ///     (`IcePlacementNotice.placement(held:read:dividerAtStandardLength:)`).
     ///   - hasExited: whether no process has this pid any more.
+    ///   - display: the display the pass read (D2a).
     public func advanced(
         set: DiscoveredItemSet,
         hiddenDividerState: DividerState,
         childIdentifiersByPID: [Int32: [String?]],
         iconPlacement: PreferenceHidingIconPlacement?,
-        hasExited: (Int32) -> Bool
+        hasExited: (Int32) -> Bool,
+        display: BarDisplay
     ) -> PreferenceHidingRoster {
         var next = self
         if set.completeness != .permissionDenied {
@@ -37,6 +49,11 @@ public struct PreferenceHidingRoster: Equatable, Sendable {
                 previousMembers: previous, childIdentifiersByPID: childIdentifiersByPID
             )
             next.itemTags = set.items.map(\.tagKey).sorted { ($0.namespace, $0.title) < ($1.namespace, $1.title) }
+            next.boundary = Self.boundary(
+                after: boundary, set: set, hiddenDividerState: hiddenDividerState, display: display,
+                removed: !Set(itemTags).isSubset(of: next.itemTags)
+            )
+            next.visibleTags = Self.visibleTags(of: set, boundary: next.boundary?.maxX)
             let tags = Set(next.membership.members.map(\.tag))
             var keys = lastKeys.filter { tags.contains($0.key) }
             for member in next.membership.members {
@@ -55,7 +72,43 @@ public struct PreferenceHidingRoster: Equatable, Sendable {
     public func signature(frontmostPID: Int32?, menuMaxX: Double?, displayID: UInt32?, spaceID: UInt64?) -> LayoutSignature {
         LayoutSignature(
             items: itemTags, members: membership.members.map(\.tag), frontmostPID: frontmostPID,
-            menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID
+            menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID, visibleItems: visibleTags
         )
     }
+
+    /// D2: a trusted pass sets the boundary; any other keeps it only on the
+    /// same display and when nothing was read gone.
+    private static func boundary(
+        after previous: VisibleBoundary?,
+        set: DiscoveredItemSet,
+        hiddenDividerState: DividerState,
+        display: BarDisplay,
+        removed: Bool
+    ) -> VisibleBoundary? {
+        let trusted = DiscoveredCachePlan.evaluate(
+            reading: set.hiddenDivider, state: hiddenDividerState, ownRead: set.ownRead
+        ).minX != nil
+        if trusted, let frame = set.hiddenDivider?.frame, frame.hasFiniteComponents {
+            return VisibleBoundary(maxX: frame.maxX, display: display)
+        }
+        guard let previous, previous.display == display, !removed else { return nil }
+        return previous
+    }
+
+    /// D3: on the bar, a finite frame, its left edge at or right of the boundary.
+    private static func visibleTags(of set: DiscoveredItemSet, boundary: Double?) -> Set<TagKey> {
+        guard let boundary else { return [] }
+        return Set(set.items.compactMap { item in
+            guard item.position == .onBar, let frame = item.frame, frame.hasFiniteComponents, frame.minX >= boundary else {
+                return nil
+            }
+            return item.tagKey
+        })
+    }
+}
+
+/// The hidden divider's right edge and the display it was read on.
+private struct VisibleBoundary: Equatable, Sendable {
+    let maxX: Double
+    let display: BarDisplay
 }

@@ -18,6 +18,12 @@ public struct LayoutSignature: Hashable, Sendable {
     public let menuMaxX: Int?
     public let displayID: UInt32?
     public let spaceID: UInt64?
+    /// The item tags this pass read on the bar right of the visible boundary
+    /// (`PreferenceHidingRoster.visibleTags`). Not a change by itself: it only
+    /// lets `PreferenceHidingLayoutChange.between` tell an item added right of
+    /// the divider from one that may be hidden (plan
+    /// 2026-11-13-flash-on-item-change, D1).
+    public let visibleItems: Set<TagKey>
 
     public init(
         items: [TagKey],
@@ -25,7 +31,8 @@ public struct LayoutSignature: Hashable, Sendable {
         frontmostPID: Int32?,
         menuMaxX: Double?,
         displayID: UInt32?,
-        spaceID: UInt64?
+        spaceID: UInt64?,
+        visibleItems: Set<TagKey> = []
     ) {
         self.items = items
         self.members = members
@@ -33,5 +40,6 @@ public struct LayoutSignature: Hashable, Sendable {
         self.menuMaxX = menuMaxX.flatMap { $0.isFinite ? Int(exactly: $0.rounded()) : nil }
         self.displayID = displayID
         self.spaceID = spaceID
+        self.visibleItems = visibleItems
     }
 }

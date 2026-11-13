@@ -8,7 +8,9 @@ import Testing
 /// section to be shown.
 @Suite("PreferenceHidingLayoutChange")
 struct PreferenceHidingLayoutChangeTests {
-    static let events: [PreferenceHidingLayoutChange] = [.displayChanged, .itemsChanged, .frontmostAppChanged, .menuWidthChanged, .spaceChanged]
+    static let events: [PreferenceHidingLayoutChange] = [
+        .displayChanged, .itemsChanged, .visibleItemsChanged, .frontmostAppChanged, .menuWidthChanged, .spaceChanged,
+    ]
     let hiddenClean = SectionItemCheck.checked(.hidden(folded: false))
 
     func item(_ identifier: String, pid: Int32, position: ItemPosition = .onBar) -> DiscoveredItem {
@@ -111,9 +113,13 @@ struct PreferenceHidingLayoutChangeTests {
         frontmostPID: Int32? = 10,
         menuMaxX: Double? = 400,
         displayID: UInt32? = 1,
-        spaceID: UInt64? = 7
+        spaceID: UInt64? = 7,
+        visible: [String] = []
     ) -> LayoutSignature {
-        fixtureSignature(items: items, members: members, frontmostPID: frontmostPID, menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID)
+        fixtureSignature(
+            items: items, members: members, frontmostPID: frontmostPID, menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID,
+            visible: visible
+        )
     }
 
     @Test("equal signatures are no change")
@@ -148,5 +154,63 @@ struct PreferenceHidingLayoutChangeTests {
         #expect(!PreferenceHidingLayoutChange.frontmostAppChanged.isStructural)
         #expect(!PreferenceHidingLayoutChange.menuWidthChanged.isStructural)
         #expect(!PreferenceHidingLayoutChange.spaceChanged.isStructural)
+        #expect(!PreferenceHidingLayoutChange.visibleItemsChanged.isStructural)
+    }
+
+    // MARK: - Items that come or go right of the divider (plan 2026-11-13-flash-on-item-change, D1)
+
+    @Test("a pure removal is soft: nothing new can be hidden by it")
+    func pureRemovalIsSoft() {
+        let old = signature(items: ["v1", "v2", "h1"])
+        #expect(PreferenceHidingLayoutChange.between(old, signature(items: ["v1", "h1"])) == .visibleItemsChanged)
+    }
+
+    @Test("an item added and read right of the boundary is soft")
+    func visibleAdditionIsSoft() {
+        let new = signature(items: ["v1", "v2", "h1"], visible: ["v1", "v2"])
+        #expect(PreferenceHidingLayoutChange.between(signature(), new) == .visibleItemsChanged)
+    }
+
+    @Test("an item added and not read right of the boundary retires")
+    func unknownAdditionIsStructural() {
+        let new = signature(items: ["v1", "v2", "h1"], visible: ["v1"])
+        #expect(PreferenceHidingLayoutChange.between(signature(), new) == .itemsChanged)
+    }
+
+    @Test("an added tag that is a member retires, even read right of the boundary")
+    func addedMemberIsStructural() {
+        let old = signature(items: ["v1"], members: ["h1"])
+        let new = signature(items: ["v1", "h1"], members: ["h1"], visible: ["v1", "h1"])
+        #expect(PreferenceHidingLayoutChange.between(old, new) == .itemsChanged)
+    }
+
+    @Test("members that grew, or were reordered, retire")
+    func membersGrewIsStructural() {
+        let old = signature(items: ["v1", "h1", "h2"], members: ["h1", "h2"])
+        #expect(PreferenceHidingLayoutChange.between(old, signature(items: ["v1", "h1", "h2"], members: ["h1", "h2", "v1"])) == .itemsChanged)
+        #expect(PreferenceHidingLayoutChange.between(old, signature(items: ["v1", "h1", "h2"], members: ["h2", "h1"])) == .itemsChanged)
+    }
+
+    @Test("members that shrank with their items (a process gone) are soft")
+    func membersShrankIsSoft() {
+        let old = signature(items: ["v1", "h1", "h2"], members: ["h1", "h2"])
+        #expect(PreferenceHidingLayoutChange.between(old, signature(items: ["v1", "h1"], members: ["h1"])) == .visibleItemsChanged)
+    }
+
+    @Test("a member released while its item stays retires")
+    func memberReleasedIsStructural() {
+        let old = signature(items: ["v1", "h1", "h2"], members: ["h1", "h2"])
+        #expect(PreferenceHidingLayoutChange.between(old, signature(items: ["v1", "h1", "h2"], members: ["h1"])) == .itemsChanged)
+    }
+
+    @Test("a display change wins over a soft item change")
+    func displayWinsOverSoft() {
+        let new = signature(items: ["v1"], displayID: 2)
+        #expect(PreferenceHidingLayoutChange.between(signature(), new) == .displayChanged)
+    }
+
+    @Test("visibility alone is no change")
+    func visibilityAloneIsNoChange() {
+        #expect(PreferenceHidingLayoutChange.between(signature(), signature(visible: ["v1"])) == nil)
     }
 }

@@ -10,6 +10,11 @@
 public enum PreferenceHidingLayoutChange: Equatable, Sendable {
     case displayChanged
     case itemsChanged
+    /// Items came or went, and none of them can be hidden unlisted: every
+    /// added item was read right of the visible boundary, none is a member,
+    /// and the members did not grow (plan 2026-11-13-flash-on-item-change,
+    /// D1). A pure removal is one.
+    case visibleItemsChanged
     case frontmostAppChanged
     case menuWidthChanged
     case spaceChanged
@@ -22,7 +27,7 @@ public enum PreferenceHidingLayoutChange: Equatable, Sendable {
     public var isStructural: Bool {
         switch self {
         case .displayChanged, .itemsChanged: true
-        case .frontmostAppChanged, .menuWidthChanged, .spaceChanged: false
+        case .visibleItemsChanged, .frontmostAppChanged, .menuWidthChanged, .spaceChanged: false
         }
     }
 
@@ -31,11 +36,30 @@ public enum PreferenceHidingLayoutChange: Equatable, Sendable {
     /// structural one is never hidden behind a soft one.
     public static func between(_ old: LayoutSignature, _ new: LayoutSignature) -> PreferenceHidingLayoutChange? {
         if old.displayID != new.displayID { return .displayChanged }
-        if old.items != new.items || old.members != new.members { return .itemsChanged }
+        if old.items != new.items || old.members != new.members {
+            return itemsChangeIsVisible(old, new) ? .visibleItemsChanged : .itemsChanged
+        }
         if old.frontmostPID != new.frontmostPID { return .frontmostAppChanged }
         if old.menuMaxX != new.menuMaxX { return .menuWidthChanged }
         if old.spaceID != new.spaceID { return .spaceChanged }
         return nil
+    }
+
+    /// D1: the members are the old ones less some (in their order) whose items
+    /// are gone too (a process that exited, `PreferenceHidingMembership.carried`),
+    /// no added item is a member, and every added item was read right of the
+    /// boundary.
+    private static func itemsChangeIsVisible(_ old: LayoutSignature, _ new: LayoutSignature) -> Bool {
+        let kept = Set(new.members)
+        guard kept.isSubset(of: old.members), new.members == old.members.filter(kept.contains) else {
+            return false
+        }
+        let removed = Set(old.items).subtracting(new.items)
+        guard Set(old.members).subtracting(kept).isSubset(of: removed) else {
+            return false
+        }
+        let added = Set(new.items).subtracting(old.items)
+        return added.isDisjoint(with: old.members) && added.isDisjoint(with: new.members) && added.isSubset(of: new.visibleItems)
     }
 }
 

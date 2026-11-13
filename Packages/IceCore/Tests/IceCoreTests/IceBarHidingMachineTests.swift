@@ -31,9 +31,13 @@ struct IceBarHidingMachineTests {
         frontmostPID: Int32 = 10,
         menuMaxX: Double? = 400,
         displayID: UInt32 = 1,
-        spaceID: UInt64 = 7
+        spaceID: UInt64 = 7,
+        visible: [String] = []
     ) -> LayoutSignature {
-        fixtureSignature(items: items, members: members, frontmostPID: frontmostPID, menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID)
+        fixtureSignature(
+            items: items, members: members, frontmostPID: frontmostPID, menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID,
+            visible: visible
+        )
     }
 
     static func sample(
@@ -919,6 +923,44 @@ struct IceBarHidingMachineTests {
         let reports = driver.reports
         #expect(zip(reports, reports.dropFirst()).allSatisfy { $0 != $1 })
         #expect(reports.last == .state(.blocked(reasons: Self.blocks[0].reasons)))
+    }
+
+    // MARK: - Items that come or go right of the divider (plan 2026-11-13-flash-on-item-change)
+
+    static let softChanges: [LayoutSignature] = [
+        signature(items: ["m1", "m2"]),
+        signature(items: ["v1", "v2", "m1", "m2"], visible: ["v1", "v2"]),
+    ]
+
+    @Test("verifying: an item gone, or one added right of the divider, keeps the length and owes a re-check", arguments: softChanges)
+    func softItemChangeKeepsLengthVerifying(changed: LayoutSignature) {
+        var driver = Driver()
+        driver.settle()
+        let mark = driver.log.count
+        driver.tick(Self.sample(changed))
+        #expect(!driver.since(mark).contains(.setLength(nil)))
+        #expect(driver.restLength == 736)
+        #expect(driver.state == .requestedNotVerified(reasons: [.layoutChangePending(.visibleItemsChanged)]))
+    }
+
+    @Test("at once: an item gone, or one added right of the divider, changes nothing", arguments: softChanges)
+    func softItemChangeKeepsLengthAtOnce(changed: LayoutSignature) {
+        var driver = Self.atOnce()
+        driver.tick()
+        let mark = driver.log.count
+        driver.run(Self.sample(changed), ticks: 5)
+        #expect(!driver.since(mark).contains(.setLength(nil)))
+        #expect(driver.length == 736)
+    }
+
+    @Test("at once: an item gone, then one added that is not read right of the divider, retires on the addition")
+    func removalThenAdditionRetires() {
+        var driver = Self.atOnce()
+        driver.tick()
+        driver.tick(Self.sample(Self.signature(items: ["m1", "m2"])))
+        #expect(driver.length == 736)
+        let commands = driver.tick(Self.sample(Self.signature(items: ["v2", "m1", "m2"])))
+        #expect(commands.first == .setLength(nil))
     }
 
     // MARK: - Hiding at once, unverified (plan 2026-11-12-hide-at-once)

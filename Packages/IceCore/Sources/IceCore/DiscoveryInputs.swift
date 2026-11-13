@@ -52,6 +52,22 @@ public struct BarBounds: Equatable, Sendable {
     }
 }
 
+/// Which display a pass read: its bar's extent and its origin in the global
+/// Accessibility space (MenuBarDiscovery's `DiscoveryResult.bounds` and
+/// `.origin`, which IceCore cannot name). Two displays of one size differ by
+/// origin (plan 2026-11-13-flash-on-item-change, D2a).
+public struct BarDisplay: Equatable, Sendable {
+    public let bounds: BarBounds
+    public let originX: Double
+    public let originY: Double
+
+    public init(bounds: BarBounds, originX: Double, originY: Double) {
+        self.bounds = bounds
+        self.originX = originX
+        self.originY = originY
+    }
+}
+
 /// One Accessibility attribute read: what it produced, and what it cost to
 /// find out. `error` is the `AXError` case name, `"success"` when the call
 /// simply worked -- a `String` rather than a typed error so this file need

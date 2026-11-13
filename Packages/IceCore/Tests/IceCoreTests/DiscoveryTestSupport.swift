@@ -59,10 +59,11 @@ func fixtureSignature(
     frontmostPID: Int32? = 10,
     menuMaxX: Double? = 400,
     displayID: UInt32? = 1,
-    spaceID: UInt64? = 7
+    spaceID: UInt64? = 7,
+    visible: [String] = []
 ) -> LayoutSignature {
     LayoutSignature(
         items: items.map(fixtureTag), members: members.map(fixtureTag), frontmostPID: frontmostPID,
-        menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID
+        menuMaxX: menuMaxX, displayID: displayID, spaceID: spaceID, visibleItems: Set(visible.map(fixtureTag))
     )
 }
