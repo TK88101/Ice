@@ -13,7 +13,6 @@ import SwiftUI
 /// offers a relaunch.
 struct LanguagePicker: View {
     @State private var language = LanguageStore.current
-    @State private var launchedWith = LanguageStore.current
 
     var body: some View {
         IcePicker("Language", selection: $language) {
@@ -25,7 +24,7 @@ struct LanguagePicker: View {
         .onChange(of: language) { _, newValue in
             LanguageStore.current = newValue
         }
-        if language != launchedWith {
+        if language != LanguageStore.atLaunch {
             Button("Relaunch Ice") {
                 LanguageStore.relaunch()
             }
@@ -39,18 +38,27 @@ struct LanguagePicker: View {
 enum LanguageStore {
     private static let key = "AppleLanguages"
 
+    /// The language this process was started with: read once, before any
+    /// write, so a pending change stays pending however often the pane is built.
+    static let atLaunch = read()
+
     static var current: AppLanguage {
         get {
-            let domain = Bundle.main.bundleIdentifier.flatMap(UserDefaults.standard.persistentDomain(forName:))
-            return AppLanguage(storedLanguages: domain?[key] as? [String])
+            read()
         }
         set {
+            _ = atLaunch
             if let languages = newValue.storedLanguages {
                 UserDefaults.standard.set(languages, forKey: key)
             } else {
                 UserDefaults.standard.removeObject(forKey: key)
             }
         }
+    }
+
+    private static func read() -> AppLanguage {
+        let domain = Bundle.main.bundleIdentifier.flatMap(UserDefaults.standard.persistentDomain(forName:))
+        return AppLanguage(storedLanguages: domain?[key] as? [String])
     }
 
     /// Starts a new Ice once this one has quit, then quits.

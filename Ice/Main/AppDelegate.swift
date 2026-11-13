@@ -14,6 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: NSApplicationDelegate Methods
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // The language this process runs in, read before anything can change it
+        // (plan 2026-11-13-zh-hant, D4).
+        _ = LanguageStore.atLaunch
         // A trace launch starts nothing but its own bootstrap (plan
         // 2026-10-07-icebar-preference-hiding, S1).
         guard LabTrace.launch == .normal else {
