@@ -40,7 +40,14 @@ enum LanguageStore {
 
     /// The language this process was started with: read once, before any
     /// write, so a pending change stays pending however often the pane is built.
-    static let atLaunch = read()
+    /// A command-line `-AppleLanguages` (the lab's) wins, as it does for the bundle.
+    static let atLaunch: AppLanguage = {
+        let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        if let languages = arguments[key] as? [String] {
+            return AppLanguage(storedLanguages: languages)
+        }
+        return read()
+    }()
 
     static var current: AppLanguage {
         get {
