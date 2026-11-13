@@ -26,7 +26,7 @@ menu bar, where a click opens their menu.
 1. If the upstream Ice is installed, quit it (and turn off its "Launch at login"). Two menu
    bar managers running at once fight over the bar. This fork has its own bundle id
    (`io.github.tk88101.Ice`), so the two do not share settings.
-2. Download `Ice-1.0.dmg` from the [latest release](https://github.com/TK88101/Ice/releases/latest),
+2. Download `Ice-<version>.dmg` (for example `Ice-1.0.1.dmg`) from the [latest release](https://github.com/TK88101/Ice/releases/latest),
    open it and drag Ice into `Applications`.
 3. **First launch is blocked.** The app is signed with an Apple Development certificate and is
    not notarized, so macOS says it cannot verify the developer. Right-click Ice in
