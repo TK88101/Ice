@@ -1,115 +1,68 @@
 <div align="center">
     <img src="Ice/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width=200 height=200>
-    <h1>Ice</h1>
+    <h1>Ice for macOS 27</h1>
 </div>
 
-Ice is a powerful menu bar management tool. While its primary function is hiding and showing menu bar items, it aims to cover a wide variety of additional features to make it one of the most versatile menu bar tools available.
+A personal fork of [jordanbaird/Ice](https://github.com/jordanbaird/Ice), the menu bar manager, made to work on macOS 27.
 
-![Banner](https://github.com/user-attachments/assets/4423085c-4e4b-4f3d-ad0f-90a217c03470)
+[![Download](https://img.shields.io/github/v/release/TK88101/Ice?style=flat-square&label=download)](https://github.com/TK88101/Ice/releases/latest)
+![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-blue?style=flat-square)
+![Tested](https://img.shields.io/badge/tested-macOS%2027.0.1-fa4e49?style=flat-square)
+[![License](https://img.shields.io/github/license/TK88101/Ice?style=flat-square)](LICENSE)
 
-[![Download](https://img.shields.io/badge/download-latest-brightgreen?style=flat-square)](https://github.com/jordanbaird/Ice/releases/latest)
-![Platform](https://img.shields.io/badge/platform-macOS-blue?style=flat-square)
-![Requirements](https://img.shields.io/badge/requirements-macOS%2014%2B-fa4e49?style=flat-square)
-[![Sponsor](https://img.shields.io/badge/Sponsor%20%E2%9D%A4%EF%B8%8F-8A2BE2?style=flat-square)](https://github.com/sponsors/jordanbaird)
-[![Website](https://img.shields.io/badge/Website-015FBA?style=flat-square)](https://icemenubar.app)
-[![License](https://img.shields.io/github/license/jordanbaird/Ice?style=flat-square)](LICENSE)
+## Why this fork
 
-> [!IMPORTANT]
-> macOS 27: this fork lists menu bar items but cannot hide them there -- see [docs/macos-27/STATUS.md](docs/macos-27/STATUS.md).
-
-> [!NOTE]
-> Ice is currently in active development. Some features have not yet been implemented. Download the latest release [here](https://github.com/jordanbaird/Ice/releases/latest) and see the roadmap below for upcoming features.
-
-<a href="https://www.buymeacoffee.com/jordanbaird" target="_blank">
-    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;">
-</a>
+On macOS 27 the system no longer lets an app move another app's menu bar items, and the
+upstream release stops hiding anything there. This fork hides them a different way: the
+items you choose are moved off the bar and shown in the **Ice Bar**, a panel under the
+menu bar, where a click opens their menu.
 
 ## Install
 
-### Manual Installation
+Download `Ice-1.0.dmg` from the [latest release](https://github.com/TK88101/Ice/releases/latest),
+open it and drag Ice into `Applications`.
 
-Download the "Ice.zip" file from the [latest release](https://github.com/jordanbaird/Ice/releases/latest) and move the unzipped app into your `Applications` folder.
+- The app is signed with an Apple Development certificate and is **not notarized**. On a Mac
+  other than the developer's, macOS will block the first launch: right-click Ice and choose
+  Open, or allow it in System Settings > Privacy & Security.
+- Ice needs **Accessibility** and **Screen Recording** permissions (System Settings > Privacy
+  & Security). It asks for them on first launch.
+- The bundle id is `io.github.tk88101.Ice`, so it does not share settings with the upstream
+  Ice. Quit the upstream app before using this one: two menu bar managers fight over the bar.
 
-### Homebrew
+## Using it on macOS 27
 
-Install Ice using the following command:
+- **Hide an item**: hold Command and drag it to the left of Ice's divider. It leaves the bar
+  and appears in the Ice Bar.
+- **Show hidden items**: click an empty area of the menu bar (or hover, scroll, or use the
+  hotkey, as set in Settings). Click an item in the Ice Bar to open its menu.
+- **Take an item out**: hold Command with the pointer on the menu bar; the hidden items come
+  back to their places. Drag the one you want to the right of the divider.
+- Ice's own icon must stay to the right of its divider; if it is not, Settings says so.
+- A newly launched app's item that lands left of the divider is listed in the Ice Bar within
+  about two seconds.
 
-```sh
-brew install --cask jordanbaird-ice
-```
+On macOS 27 Settings only shows what was seen to work there. Not offered on 27: the
+always-hidden section, item spacing, the search panel, divider styles, hiding application
+menus, the split menu bar shape, and automatic updates. On macOS 14 to 26 the app behaves as
+upstream.
 
-## Features/Roadmap
+What was measured, how, and what is still open: [docs/macos-27/STATUS.md](docs/macos-27/STATUS.md).
 
-### Menu bar item management
+## Known limits
 
-- [x] Hide menu bar items
-- [x] "Always-hidden" menu bar section
-- [x] Show hidden menu bar items when hovering over the menu bar
-- [x] Show hidden menu bar items when an empty area in the menu bar is clicked
-- [x] Show hidden menu bar items by scrolling or swiping in the menu bar
-- [x] Automatically rehide menu bar items
-- [x] Hide application menus when they overlap with shown menu bar items
-- [x] Drag and drop interface to arrange individual menu bar items
-- [x] Display hidden menu bar items in a separate bar (e.g. for MacBooks with the notch)
-- [x] Search menu bar items
-- [x] Menu bar item spacing (BETA)
-- [ ] Profiles for menu bar layout
-- [ ] Individual spacer items
-- [ ] Menu bar item groups
-- [ ] Show menu bar items when trigger conditions are met
+- Tested on one Mac with one display, macOS 27.0.1. macOS 14 to 26 were not run with this
+  build.
+- The Ice Bar shows each item as its app's icon, not the item's own picture.
+- Launch at login is registered; an actual login start has not been observed yet.
 
-### Menu bar appearance
+## Build
 
-- [x] Menu bar tint (solid and gradient)
-- [x] Menu bar shadow
-- [x] Menu bar border
-- [x] Custom menu bar shapes (rounded and/or split)
-- [ ] Remove background behind menu bar
-- [ ] Rounded screen corners
-- [ ] Different settings for light/dark mode
+Open `Ice.xcodeproj`, scheme `Ice`. Build outside `~/Documents` if that folder is synced by
+iCloud (synced files carry attributes that break code signing). To sign with your own team,
+set `DEVELOPMENT_TEAM` and change the bundle id.
 
-### Hotkeys
+## Credits and license
 
-- [x] Toggle individual menu bar sections
-- [x] Show the search panel
-- [x] Enable/disable the Ice Bar
-- [x] Show/hide section divider icons
-- [x] Toggle application menus
-- [ ] Enable/disable auto rehide
-- [ ] Temporarily show individual menu bar items
-
-### Other
-
-- [x] Launch at login
-- [x] Automatic updates
-- [ ] Menu bar widgets
-
-## Why does Ice only support macOS 14 and later?
-
-Ice uses a number of system APIs that are available starting in macOS 14. As such, there are no plans to support earlier versions of macOS.
-
-## Gallery
-
-#### Show hidden menu bar items below the menu bar
-
-![Ice Bar](https://github.com/user-attachments/assets/f1429589-6186-4e1b-8aef-592219d49b9b)
-
-#### Drag-and-drop interface to arrange menu bar items
-
-![Menu Bar Layout](https://github.com/user-attachments/assets/095442ba-f2d0-4bb4-9632-91e26ef8d45b)
-
-#### Customize the menu bar's appearance
-
-![Menu Bar Appearance](https://github.com/user-attachments/assets/8c22c185-c3d2-49bb-971e-e1fc17df04b3)
-
-#### Menu bar item search
-
-![Menu Bar Item Search](https://github.com/user-attachments/assets/d1a7df3a-4989-4077-a0b1-8e7d5a1ba5b8)
-
-#### Custom menu bar item spacing
-
-![Menu Bar Item Spacing](https://github.com/user-attachments/assets/b196aa7e-184a-4d4c-b040-502f4aae40a6)
-
-## License
-
-Ice is available under the [GPL-3.0 license](LICENSE).
+Ice is by [Jordan Baird](https://github.com/jordanbaird); this fork keeps its code and adds
+the macOS 27 work. Available under the [GPL-3.0 license](LICENSE), as the original.
