@@ -56,10 +56,20 @@ def untranslated(texts, keys, kept=KEPT, foreign=()):
     return sorted(set(found))
 
 
+IDLE_WAIT_SECONDS = 3600
+
+
 def drive(*arguments):
-    done = subprocess.run([DRIVE] + [str(a) for a in arguments], capture_output=True)
-    lines = done.stdout.decode().strip().splitlines()
-    return json.loads(lines[-1]) if lines else {}
+    """One settingsdrive call; an input refused because the owner is using
+    the Mac is tried again every 2 s, up to IDLE_WAIT_SECONDS, never forced."""
+    deadline = time.time() + IDLE_WAIT_SECONDS
+    while True:
+        done = subprocess.run([DRIVE] + [str(a) for a in arguments], capture_output=True)
+        lines = done.stdout.decode().strip().splitlines()
+        result = json.loads(lines[-1]) if lines else {}
+        if result.get("result") != "refused" or time.time() > deadline:
+            return result
+        time.sleep(2)
 
 
 def texts_of(rows):
