@@ -19,16 +19,24 @@ menu bar, where a click opens their menu.
 
 ## Install
 
-Download `Ice-1.0.dmg` from the [latest release](https://github.com/TK88101/Ice/releases/latest),
-open it and drag Ice into `Applications`.
+> [!IMPORTANT]
+> This build is for **macOS 27**. On macOS 14 to 26 use the
+> [upstream Ice](https://github.com/jordanbaird/Ice/releases/latest): this fork was not tested there.
 
-- The app is signed with an Apple Development certificate and is **not notarized**. On a Mac
-  other than the developer's, macOS will block the first launch: right-click Ice and choose
-  Open, or allow it in System Settings > Privacy & Security.
-- Ice needs **Accessibility** and **Screen Recording** permissions (System Settings > Privacy
-  & Security). It asks for them on first launch.
-- The bundle id is `io.github.tk88101.Ice`, so it does not share settings with the upstream
-  Ice. Quit the upstream app before using this one: two menu bar managers fight over the bar.
+1. If the upstream Ice is installed, quit it (and turn off its "Launch at login"). Two menu
+   bar managers running at once fight over the bar. This fork has its own bundle id
+   (`io.github.tk88101.Ice`), so the two do not share settings.
+2. Download `Ice-1.0.dmg` from the [latest release](https://github.com/TK88101/Ice/releases/latest),
+   open it and drag Ice into `Applications`.
+3. **First launch is blocked.** The app is signed with an Apple Development certificate and is
+   not notarized, so macOS says it cannot verify the developer. Right-click Ice in
+   `Applications` and choose **Open**, or go to System Settings > Privacy & Security and click
+   **Open Anyway**. This is needed only once.
+4. **Grant two permissions** when Ice asks, in System Settings > Privacy & Security:
+   **Accessibility** (required: Ice cannot manage the bar without it) and **Screen Recording**
+   (for the menu bar appearance options). If Screen Recording is granted while Ice runs, quit
+   and reopen Ice.
+5. Optional: turn on "Launch at login" in Ice's Settings > General.
 
 ## Using it on macOS 27
 
