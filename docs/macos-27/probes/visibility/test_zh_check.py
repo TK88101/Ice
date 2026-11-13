@@ -30,6 +30,9 @@ class UntranslatedTest(unittest.TestCase):
     def test_other_apps_names_pass(self):
         self.assertEqual(zh.untranslated(["Dropbox"], self.keys, foreign={"Dropbox"}), [])
 
+    def test_the_legal_notice_stays_english(self):
+        self.assertEqual(zh.untranslated(["Copyright © 2026 TK88101. Based on Ice"], self.keys), [])
+
     def test_short_codes_pass_but_are_not_language(self):
         self.assertEqual(zh.untranslated(["OK"], set()), [])
 

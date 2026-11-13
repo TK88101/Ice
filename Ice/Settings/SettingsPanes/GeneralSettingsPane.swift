@@ -63,7 +63,10 @@ struct GeneralSettingsPane: View {
 
     @ViewBuilder
     private var appOptions: some View {
-        LaunchAtLogin.Toggle()
+        // The package's own label has no zh-Hant (plan 2026-11-13-zh-hant, L2).
+        LaunchAtLogin.Toggle {
+            Text("Launch at login")
+        }
         LanguagePicker()
     }
 

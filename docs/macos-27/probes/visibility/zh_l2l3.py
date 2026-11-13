@@ -56,7 +56,7 @@ def choose_language(pid, label):
 
 def relaunch(pid):
     rows = z.drive("axdump", pid)["rows"]
-    button = next(r for r in rows if r["role"] == "AXButton" and r.get("title") in ("Relaunch Ice", "重新啟動 Ice"))
+    button = next(r for r in rows if r["role"] == "AXButton" and ({r.get("title"), r.get("description")} & {"Relaunch Ice", "重新啟動 Ice"}))
     x, y, w, h = button["frame"]
     z.drive("click", x + w / 2, y + h / 2, "--expect", "pid:%d" % pid)
     deadline = time.time() + 30

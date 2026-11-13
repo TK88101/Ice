@@ -101,7 +101,7 @@ struct HotkeyRecorder<Label: View>: View {
 
     @ViewBuilder
     private var trailingSegmentLabel: some View {
-        let (name, label, padding) = if model.isRecording {
+        let (name, label, padding): (String, LocalizedStringKey, Double) = if model.isRecording {
             ("escape", "Cancel", 6.0)
         } else if model.hotkey.isEnabled {
             ("xmark", "Clear", 7.5)
@@ -112,7 +112,7 @@ struct HotkeyRecorder<Label: View>: View {
             .resizable()
             .aspectRatio(1, contentMode: .fit)
             .padding(padding)
-            .accessibilityLabel(label)
+            .accessibilityLabel(Text(label))
     }
 }
 

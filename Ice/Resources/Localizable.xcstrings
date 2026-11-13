@@ -17,7 +17,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ %@"
+            "value": "%@%@"
           }
         }
       }
@@ -334,6 +334,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "選擇影像⋯"
+          }
+        }
+      }
+    },
+    "Clear": {
+      "localizations": {
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除"
           }
         }
       }
@@ -980,6 +990,16 @@
         }
       }
     },
+    "Launch at login": {
+      "localizations": {
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登入時啟動"
+          }
+        }
+      }
+    },
     "Leading End Cap": {
       "localizations": {
         "zh-Hant": {
@@ -1291,6 +1311,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "結束 Ice"
+          }
+        }
+      }
+    },
+    "Record": {
+      "localizations": {
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "錄製"
           }
         }
       }

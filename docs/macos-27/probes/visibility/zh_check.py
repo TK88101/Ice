@@ -25,6 +25,8 @@ DRIVE = os.environ.get("S6_DRIVE", os.path.expanduser("~/.cache/icereverse-s6/se
 PANES = ["一般", "選單列外觀", "快速鍵", "進階", "關於"]
 # Names that stay as they are (plan D5), and texts that are not language.
 KEPT = {"Ice", "Ice Bar", "English", "BETA", "macOS", "Ice Cube"}
+# The About pane's legal notice (Info.plist), kept as written: names and a licence.
+LEGAL = re.compile(r"^Copyright ©")
 NOT_LANGUAGE = re.compile(r"^[\d\s.,:;%·•+\-–—×/()«»|⌘⌥⌃⇧↩⎋⇥]*$")
 
 
@@ -49,7 +51,7 @@ def untranslated(texts, keys, kept=KEPT, foreign=()):
     found = []
     for text in texts:
         text = text.strip()
-        if not text or text in kept or text in foreign or NOT_LANGUAGE.match(text) or is_chinese(text):
+        if not text or text in kept or text in foreign or NOT_LANGUAGE.match(text) or LEGAL.match(text) or is_chinese(text):
             continue
         if text in keys or re.search(r"[A-Za-z]{3,}", text):
             found.append(text)
