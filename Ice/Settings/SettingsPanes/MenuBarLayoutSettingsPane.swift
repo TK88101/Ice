@@ -104,13 +104,13 @@ struct MenuBarLayoutSettingsPane: View {
     @ViewBuilder
     private var hidingCheckStatusLine: some View {
         if let status = appState.hidingCheckStatus {
-            statusLine(status.message)
+            statusLine(status.message.localized)
         }
     }
 
     private func statusLine(_ message: String) -> some View {
         IceSection {
-            Text(message)
+            Text(verbatim: message)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
                 .padding(10)
@@ -128,8 +128,8 @@ struct MenuBarLayoutSettingsPane: View {
             isIceBarMode: appState.settings.general.useIceBar,
             isDragging: appState.isDraggingMenuBarItem
         )
-        if let notice, appState.hidingCheckStatus?.message != notice.message {
-            statusLine(notice.message)
+        if let notice, appState.hidingCheckStatus?.message != notice.ownerMessage {
+            statusLine(notice.ownerMessage.localized)
         }
     }
 

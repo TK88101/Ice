@@ -1791,7 +1791,7 @@ extension MenuBarItemManager {
         guard let targetItem = items.first else {
             logger.warning("Not enough room to show \(item.logString, privacy: .public)")
             let alert = NSAlert()
-            alert.messageText = "Not enough room to show \"\(item.displayName)\""
+            alert.messageText = String(localized: "Not enough room to show \"\(item.displayName)\"")
             alert.runModal()
             return
         }

@@ -571,7 +571,7 @@ final class ControlItem {
         let menu = NSMenu(title: "Ice")
 
         let settingsItem = NSMenuItem(
-            title: "Ice Settings…",
+            title: String(localized: "Ice Settings…"),
             action: #selector(AppDelegate.openSettingsWindow),
             keyEquivalent: ","
         )
@@ -593,7 +593,7 @@ final class ControlItem {
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(
-            title: "Quit Ice",
+            title: String(localized: "Quit Ice"),
             action: #selector(NSApp.terminate),
             keyEquivalent: "q"
         )
@@ -605,7 +605,7 @@ final class ControlItem {
 
     private func addSearchItem(to menu: NSMenu, appState: AppState) {
         let searchItem = NSMenuItem(
-            title: "Search Menu Bar Items",
+            title: String(localized: "Search Menu Bar Items"),
             action: #selector(showSearchPanel),
             keyEquivalent: ""
         )
@@ -629,7 +629,9 @@ final class ControlItem {
                 continue
             }
             let item = NSMenuItem(
-                title: "\(section.isHidden ? "Show" : "Hide") \(name.displayString) Section",
+                title: section.isHidden
+                    ? String(localized: "Show \(name.displayString) Section")
+                    : String(localized: "Hide \(name.displayString) Section"),
                 action: #selector(toggleMenuBarSection),
                 keyEquivalent: ""
             )

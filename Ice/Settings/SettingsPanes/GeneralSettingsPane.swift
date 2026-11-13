@@ -21,16 +21,16 @@ struct GeneralSettingsPane: View {
         case -16: "none"
         case 0: "default"
         case 16: "max"
-        default: LocalizedStringKey(tempItemSpacingOffset.formatted())
+        default: LocalizedStringKey("\(tempItemSpacingOffset.formatted())")
         }
     }
 
     private var rehideIntervalKey: LocalizedStringKey {
         let formatted = settings.rehideInterval.formatted()
         if settings.rehideInterval == 1 {
-            return LocalizedStringKey(formatted + " second")
+            return LocalizedStringKey("\(formatted) second")
         } else {
-            return LocalizedStringKey(formatted + " seconds")
+            return LocalizedStringKey("\(formatted) seconds")
         }
     }
 
@@ -64,6 +64,7 @@ struct GeneralSettingsPane: View {
     @ViewBuilder
     private var appOptions: some View {
         LaunchAtLogin.Toggle()
+        LanguagePicker()
     }
 
     // MARK: Ice Icon Options
@@ -160,7 +161,7 @@ struct GeneralSettingsPane: View {
     @ViewBuilder
     private func iceIconMenuItem(for imageSet: ControlItemImageSet) -> some View {
         Label {
-            Text(imageSet.name.rawValue)
+            Text(LocalizedStringKey(imageSet.name.rawValue))
         } icon: {
             if let nsImage = imageSet.hidden.nsImage(for: appState) {
                 switch imageSet.name {
@@ -200,16 +201,16 @@ struct GeneralSettingsPane: View {
                 isDragging: appState.isDraggingMenuBarItem
             )
             if let status = appState.hidingCheckStatus {
-                iceBarStatusLine(status.message)
+                iceBarStatusLine(status.message.localized)
             }
-            if let notice, appState.hidingCheckStatus?.message != notice.message {
-                iceBarStatusLine(notice.message)
+            if let notice, appState.hidingCheckStatus?.message != notice.ownerMessage {
+                iceBarStatusLine(notice.ownerMessage.localized)
             }
         }
     }
 
     private func iceBarStatusLine(_ message: String) -> some View {
-        Text(message)
+        Text(verbatim: message)
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)

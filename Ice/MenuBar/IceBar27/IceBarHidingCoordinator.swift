@@ -269,7 +269,7 @@ final class IceBarHidingCoordinator {
         case .report(let status):
             logger.info("IceBar hiding: \(status.logSummary, privacy: .public)")
             LabReport.record(.status(status.logSummary))
-            appState.hidingCheckStatus = status.message.map(HidingCheckStatus.init(message:))
+            appState.hidingCheckStatus = status.ownerMessage.map(HidingCheckStatus.init(message:))
         }
     }
 

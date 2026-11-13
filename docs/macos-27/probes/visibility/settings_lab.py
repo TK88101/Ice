@@ -65,6 +65,14 @@ ALL_MODS_NAMES = "ctrl,opt,shift,cmd"
 KEY_F13, KEY_F14, KEY_F15, KEY_F16, KEY_F17 = 105, 107, 113, 106, 64
 
 
+
+def ice_command(executable, arguments):
+    """Ice's command line in the lab. `-AppleLanguages (en)` keeps Ice English
+    whatever its domain holds, so the English selectors hold (plan
+    2026-11-13-zh-hant, D7): the argument domain wins over the app domain."""
+    return [executable, "-IceLabReport", "YES", "-SUEnableAutomaticChecks", "NO", "-SUAutomaticallyUpdate", "NO",
+            "-AppleLanguages", "(en)"] + list(arguments)
+
 class NotRun(Exception):
     """The case could not be run (no idle Mac, a refused press): never a pass."""
 
@@ -317,7 +325,7 @@ class Lab:
         self.started_uptime = uptime()
         with open(self.report_path, "wb") as report, open(os.path.join(self.dir, "report.log"), "wb") as log:
             self.ice = subprocess.Popen(
-                [executable, "-IceLabReport", "YES", "-SUEnableAutomaticChecks", "NO", "-SUAutomaticallyUpdate", "NO"] + self.arguments,
+                ice_command(executable, self.arguments),
                 stdin=subprocess.PIPE, stdout=report, stderr=log, env=environment,
             )
         deadline = time.time() + 15

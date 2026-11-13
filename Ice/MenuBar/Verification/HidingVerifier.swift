@@ -15,10 +15,17 @@ struct HidingCheckStatus: Equatable {
     /// One line: "Hiding did not take effect for N item(s)" when anything is still drawn; otherwise "Hidden: N" when
     /// something was seen hidden, followed by "Not checked: <reason names>" for what could not be checked; "Not checked:
     /// <reason names>" alone when nothing was observed; "No items to check" when the section was empty.
-    let message: String
+    /// As data, compared as data and rendered at the view (plan 2026-11-13-zh-hant, D3).
+    let message: OwnerMessage
+
+    static let notEffective = "Hiding did not take effect for %@ item(s)"
+    static let hidden = "Hidden: %@"
+    static let notChecked = "Not checked: %@"
+    static let noItems = "No items to check"
+    static let joinTemplate = "%@; %@"
 
     /// A line from IceBar's hiding on macOS 27 (plan 2026-10-03-icebar-build, D4).
-    init(message: String) {
+    init(message: OwnerMessage) {
         self.message = message
     }
 
@@ -27,13 +34,17 @@ struct HidingCheckStatus: Equatable {
             .union(summary.refused.keys)
             .union(summary.unverifiable.keys)
             .sorted()
-        let notChecked = reasons.isEmpty ? nil : "Not checked: \(reasons.joined(separator: ", "))"
+        // Reason names are code names, shown as they are.
+        let notChecked = reasons.isEmpty
+            ? nil
+            : OwnerMessage(Self.notChecked, .list(reasons.map(OwnerMessage.Argument.verbatim)))
         if summary.stillDrawn > 0 {
-            self.message = "Hiding did not take effect for \(summary.stillDrawn) item(s)"
+            self.message = OwnerMessage(Self.notEffective, .verbatim("\(summary.stillDrawn)"))
         } else if summary.hidden > 0 {
-            self.message = ["Hidden: \(summary.hidden)", notChecked].compactMap { $0 }.joined(separator: "; ")
+            let hidden = OwnerMessage(Self.hidden, .verbatim("\(summary.hidden)"))
+            self.message = notChecked.map { OwnerMessage(Self.joinTemplate, .message(hidden), .message($0)) } ?? hidden
         } else {
-            self.message = notChecked ?? "No items to check"
+            self.message = notChecked ?? OwnerMessage(Self.noItems)
         }
     }
 }

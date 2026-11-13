@@ -1,0 +1,26 @@
+# Keys the compiler cannot extract (plan 2026-11-13-zh-hant, D2, D6): one per line.
+# Settings pane names (SettingsNavigationIdentifier raw values)
+General
+Menu Bar Layout
+Menu Bar Appearance
+Hotkeys
+Advanced
+About
+# Ice icon set names (ControlItemImageSet.Name raw values)
+Arrow
+Chevron
+Door
+Dot
+Ellipsis
+Ice Cube
+Sunglasses
+Custom
+# Window titles (IceWindowIdentifier.titleString)
+Ice
+Permissions
+# The app's own status templates (HidingCheckStatus, OwnerMessage.appTemplates)
+Hiding did not take effect for %@ item(s)
+Hidden: %@
+Not checked: %@
+No items to check
+%@; %@

@@ -159,3 +159,13 @@ class JudgingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IceCommandTest(unittest.TestCase):
+    def test_lab_ice_is_english_whatever_its_domain_holds(self):
+        command = lab.ice_command("/x/Ice", ["-Extra", "1"])
+        index = command.index("-AppleLanguages")
+        self.assertEqual(command[index + 1], "(en)")
+        self.assertEqual(command[0], "/x/Ice")
+        self.assertEqual(command[-2:], ["-Extra", "1"])
+

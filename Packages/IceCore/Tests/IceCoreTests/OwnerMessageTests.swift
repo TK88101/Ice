@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import IceCore
 
@@ -68,5 +69,16 @@ struct OwnerMessageTests {
     func equality() {
         #expect(OwnerMessage("a %@", .verbatim("x")) == OwnerMessage("a %@", .verbatim("x")))
         #expect(OwnerMessage("a %@", .verbatim("x")) != OwnerMessage("a %@", .message(OwnerMessage("x"))))
+    }
+
+    /// Writes every template, one JSON array, to `$ICE_DUMP_TEMPLATES` when set
+    /// (the zh-Hant completeness check, plan 2026-11-13-zh-hant D6); a no-op otherwise.
+    @Test("allTemplates can be dumped for the completeness check")
+    func dumpTemplates() throws {
+        let templates = OwnerMessage.allTemplates.sorted()
+        #expect(!templates.isEmpty)
+        guard let path = ProcessInfo.processInfo.environment["ICE_DUMP_TEMPLATES"] else { return }
+        let data = try JSONSerialization.data(withJSONObject: templates, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: URL(fileURLWithPath: path))
     }
 }
