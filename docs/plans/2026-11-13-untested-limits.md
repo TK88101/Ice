@@ -72,3 +72,30 @@ IceBar.
 Each live case at most 3 attempts; a case that cannot get an idle Mac in 10 minutes is
 `notRun`. `/simcodex` at most 3 rounds. Codex on this plan: one review, its points
 answered here, then the cases.
+
+## 5. The install (the owner's answer, 2026-11-13: "名字不變 開發者 變成我了")
+
+The name stays Ice; the developer is the owner. Debated with Codex before the ask
+(`thecure`, REVISE accepted in full: the bundle id changes, one team for the app and its
+XPC service, a whitelist of settings, the old login item checked before the release is
+archived, the final signed candidate checked before anything is touched).
+
+| Step | What was done | Result |
+|---|---|---|
+| Identity | `PRODUCT_BUNDLE_IDENTIFIER` `io.github.tk88101.Ice` and `.MenuBarItemService` (with `MenuBarItemService.name`); `DEVELOPMENT_TEAM` `Q6WP7U2GDM` (the owner's own, of their two); copyright "© 2026 TK88101. Based on Ice, © 2025 Jordan Baird (GPL-3.0)": the upstream notice kept, the public handle rather than the owner's name (the repository is public) | built (Release, Apple Development, manual signing) |
+| The candidate checked | both bundles `TeamIdentifier=Q6WP7U2GDM`, designated requirements on the new ids, `codesign --verify --deep --strict`; started by path: the XPC session activated and the service ran (it never started for an ad-hoc build, STATUS line 40), Ice's icon and divider on the bar | MEASURED |
+| The release's login item | none: no Ice or `jordanbaird` record in `sfltool dumpbtm` for this user | MEASURED |
+| The release archived | `~/Ice-release-archive/Ice-0.11.13-dev.2-release.zip` (tree hash equal to the installed app, signature valid after extraction) and its settings exported beside it; then removed from `/Applications` and unregistered from LaunchServices | MEASURED |
+| Installed | `/Applications/Ice.app` = the candidate, registered | MEASURED |
+| Settings | 13 whitelisted keys copied from the release's domain (the icon, location, show on click/hover/scroll and delay, rehide, secondary menu, hotkeys, appearance); positions, updater, migration flags and settings removed on 27 not copied; the new domain's state before the copy kept in the archive | MEASURED (the import read back equal) |
+| Permissions | Accessibility and Screen Recording granted by the owner; they first removed the old and new entries and granted this build alone | MEASURED (the Advanced pane: both "Permission Granted") |
+| Launch at login | switched on by automation (the General pane's toggle, read back on); `sfltool dumpbtm`: `io.github.tk88101.Ice`, `/Applications/Ice.app`, enabled. An actual login stays the owner's next one | MEASURED (the registration) |
+| On the owner's bar | Ice's icon and divider on the bar; the status line: "nothing is left of Ice's divider, so nothing is hidden". A new identity starts with no member: macOS keeps where items stand by the app's identity, so the items the release hid have to be Command-dragged left of the divider again | MEASURED |
+| Codex on the identity diff | one P2: `CLAUDE.md` still told to guard the old domain; fixed (the file is the owner's, untracked) | done |
+
+Rollback: quit Ice, delete `/Applications/Ice.app`, extract the archive into
+`/Applications` with `ditto -x -k`; the release's own settings domain was never written.
+
+The lab's guard of the owner's settings (`settings_lab.py`'s `RELEASE_DOMAIN`) now
+watches `io.github.tk88101.Ice`. The retired matrix scripts (`run-s5.sh`, `stage-t7.sh`,
+`test-lab.sh`) still name the old domain; they are not run any more.

@@ -27,7 +27,9 @@ import time
 # evidence directory and a stand-in for the release's domain.
 SHARED = os.environ.get("S6_SHARED", "/Users/Shared/IceReverse-lab")
 EVIDENCE = os.environ.get("S6_EVIDENCE", os.path.expanduser("~/IceReverse-evidence"))
-RELEASE_DOMAIN = os.environ.get("S6_RELEASE_DOMAIN", "com.jordanbaird.Ice")
+# The owner's daily Ice since 2026-11-13 (plan 2026-11-13-untested-limits, section 5): its
+# settings are what a run must leave as they were.
+RELEASE_DOMAIN = os.environ.get("S6_RELEASE_DOMAIN", "io.github.tk88101.Ice")
 LAB_PREFIX = "com.icespike4.lab."
 HELPER_DOMAINS = ("com.icespike4.target", "com.icespike4.protected")
 IDLE_WAIT_SECONDS = 600

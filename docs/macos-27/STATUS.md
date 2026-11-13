@@ -465,3 +465,12 @@ These replace the three rows "Launch at login…", "The hiding machine still hid
 written for that date.
 
 Codex: the plan reviewed once (REVISE, answered in the plan); the harness changes reviewed three rounds (2, 1, 0 findings, all P2, fixed; L2 and L3 re-read against them: no try of this run is affected).
+
+## The daily Ice (2026-11-13, plan 2026-11-13-untested-limits section 5)
+
+| what | status | tag |
+|---|---|---|
+| `/Applications/Ice.app` | this fork, 1.0, `io.github.tk88101.Ice`, signed by the owner's team `Q6WP7U2GDM`; the upstream release archived in `~/Ice-release-archive/` | MEASURED |
+| Ice's menu bar item service (XPC) | starts and the session activates with the team-signed build (it never started ad-hoc, row at the top of this file) | MEASURED, 1 launch |
+| Permissions, launch at login | granted; registered and enabled | MEASURED; an actual login not yet seen |
+| Members | none yet: the new identity starts with nothing left of its divider | MEASURED |
