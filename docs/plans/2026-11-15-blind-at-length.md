@@ -305,3 +305,15 @@ Codex on the branch against `main`. Codex: no actionable correctness issue. No P
 | F1: a blind pass drops the members from `discoveredSectionMap`; a pass in the divider's settle after a retire then reads them as visible in `itemCache` (P2, INFERRED) | altitude | deferred: the IceBar reads the roster, not that map; a seam in STATUS |
 | F2: `coverableOwners` takes an app's other items from the last set, which on a blind pass lacks a non-member left of the divider (P2) | altitude | deferred: an app with a member and a non-member piled on the divider, on a second display; a seam in STATUS |
 | F3: the press's windows and the deferred section live beside `IceBarHold`, not in it (P2) | altitude | deferred |
+
+## Appendix E: the rehearsal (T10, 2026-11-16; evidence `~/IceReverse-evidence/20261116-blind-{3,4,5,6}/`)
+
+| Run | Build | What happened |
+|---|---|---|
+| 3 | `7395057` | measured nothing: the active menu bar was on the iPad (helpers read at x -760) and the guard refused. The runner now waits for the built-in bar to be the active one |
+| 4 | `7395057` | measured nothing: of three helpers the system folded two (the bar has room for one item beside the copy's two), and on 27.2 a folded item is in no read. The runner now keeps one helper on the bar at a time |
+| 5 | `7395057` | R1, R2 and the 65 s menu passed; R6 and what follows it failed: no arrival was noticed (`NSWorkspace.didLaunchApplicationNotification` is not posted for an app without a Dock icon), and one opening of the IceBar fell on a pass, which was judged not blind (`changedDuringPass`) and blocked, retiring the length once |
+| 6 | `c792686` | both repaired (a pass that straddles a change of the divider's state is blind; starts are read off `NSWorkspace.runningApplications`); 24 checks, all passed: STATUS has each |
+
+R5 (a drag during a hold) was not run live. A1 and A2 on `c792686`: IceCore 879 tests,
+the new rule files at 100 % of their lines, Debug and Release build.
