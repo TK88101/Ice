@@ -943,3 +943,13 @@ evidence `~/IceReverse-evidence/20261115-cover-feasibility/` and `20261115-cover
   lands at its process's remembered place. The agent's store then gains
   `status:vzhelper::<name>` and `<name>-2` in `TrailingItemPreferredPositions` and
   changes no other key (run `-t5e`).
+
+- A member whose app answers no hit test is covered once the tree has listed it unchanged
+  and silent in three passes a second apart (plan 2026-11-15-cover, Amendment B): the lab
+  helper's two slots 2.9 s after the length came back, together with a member wholly under
+  a notch app's window (run `-t5g`, build `048881f`).
+- A panel drawing the captured strip differs from that strip, as captured again, by 1 at
+  most in any channel (Display P3, 8 bit; 69 % of the pixels equal). Reading both strips
+  through a device-RGB bitmap widens that 1 to as much as 3 (24 against 25 in green read
+  15 against 18): compare strips in their own colour space (run `-t5g`'s saved strips:
+  486 of 486 columns within 1).

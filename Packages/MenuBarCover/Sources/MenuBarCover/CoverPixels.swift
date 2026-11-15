@@ -11,15 +11,15 @@ public enum CoverPixels {
     /// count as transparent.
     public static let transparentShare = 0.2
 
-    /// RGBA8 pixels of an image, row-major.
-    private static func rgba(_ image: CGImage) -> (width: Int, height: Int, pixels: [UInt8])? {
+    /// RGBA8 pixels of an image in `space`, row-major.
+    private static func rgba(_ image: CGImage, in space: CGColorSpace) -> (width: Int, height: Int, pixels: [UInt8])? {
         let width = image.width, height = image.height
         guard width > 0, height > 0 else { return nil }
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
             guard let context = CGContext(
                 data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             ) else {
                 return false
             }
@@ -29,9 +29,15 @@ public enum CoverPixels {
         return drawn ? (width, height, pixels) : nil
     }
 
-    /// Per pixel column, whether the two strips are the same there.
+    /// Per pixel column, whether the two strips are the same there. Both are
+    /// read in the first strip's colour space: two strips of one bar share
+    /// it, so their values are compared as captured. A conversion to another
+    /// space first widens a difference of one to three (MEASURED 2026-11-15,
+    /// T5 run 7, Display P3 read as device RGB).
     public static func sameColumns(_ a: CGImage, _ b: CGImage) -> [Bool]? {
-        guard let p = rgba(a), let q = rgba(b), p.width == q.width, p.height == q.height else { return nil }
+        let captured = a.colorSpace.flatMap { $0.model == .rgb && $0.supportsOutput ? $0 : nil }
+        let space = captured ?? CGColorSpaceCreateDeviceRGB()
+        guard let p = rgba(a, in: space), let q = rgba(b, in: space), p.width == q.width, p.height == q.height else { return nil }
         return (0..<p.width).map { x in
             for y in 0..<p.height {
                 let i = (y * p.width + x) * 4

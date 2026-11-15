@@ -56,8 +56,8 @@ menu bar, where a click opens their menu.
   the menu bar, so that bar looks like the built-in one; a click on the covered place is a
   click on empty menu bar space. This needs Screen Recording. Not covered: the bar of a
   full-screen Space, a menu bar that is not transparent, a hidden item of an app that also
-  has a visible one, a hidden item of an app without a main menu (it answers no
-  Accessibility hit test on that bar).
+  has a visible one. A hidden item of an app without a main menu is covered about three
+  seconds after Ice hides again.
 
 On macOS 27 Settings only shows what was seen to work there. Not offered on 27: the
 always-hidden section, item spacing, the search panel, divider styles, hiding application

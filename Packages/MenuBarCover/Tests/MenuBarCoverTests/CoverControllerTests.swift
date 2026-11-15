@@ -450,6 +450,26 @@ struct CoverControllerTests {
 
 @Suite("CoverPixels")
 struct CoverPixelsTests {
+    /// A two-column strip of one colour, its 8-bit values given as they are in Display P3.
+    static func displayP3(_ red: Int, _ green: Int, _ blue: Int) -> CGImage {
+        let space = CGColorSpace(name: CGColorSpace.displayP3)!
+        let context = CGContext(
+            data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 8, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.setFillColor(CGColor(colorSpace: space, components: [CGFloat(red) / 255, CGFloat(green) / 255, CGFloat(blue) / 255, 1])!)
+        context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        return context.makeImage()!
+    }
+
+    @Test("strips are compared as captured: a difference of one is not widened by a colour conversion (MEASURED, T5 run 7)")
+    func comparedAsCaptured() {
+        // The two pixels of run 7: the panel 24, the background 25 in green; converted to device RGB they read 15 and 18.
+        let panel = Self.displayP3(91, 24, 106)
+        #expect(CoverPixels.sameColumns(panel, Self.displayP3(91, 25, 106)) == [true, true])
+        #expect(CoverPixels.sameColumns(panel, Self.displayP3(91, 27, 106)) == [false, false])
+    }
+
     @Test("a bar that shows what lies below it is transparent; one that differs everywhere is not")
     func transparency() {
         let below = FakeCapturer.image(width: 100, gray: 40)
