@@ -1696,6 +1696,17 @@
         }
       }
     },
+    "The displays changed; Ice hides nothing until they settle.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顯示器有變動；在穩定下來之前，Ice 不會隱藏任何東西。"
+          }
+        }
+      }
+    },
     "This action cannot be undone.": {
       "localizations": {
         "zh-Hant": {
@@ -1842,6 +1853,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "可見"
+          }
+        }
+      }
+    },
+    "With more than one display connected, Ice hides nothing: one length cannot hide the items on every display's menu bar.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連接了多個顯示器時，Ice 不會隱藏任何東西：同一個長度無法同時隱藏每個顯示器選單列上的項目。"
           }
         }
       }

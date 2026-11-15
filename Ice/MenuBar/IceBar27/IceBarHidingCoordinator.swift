@@ -60,6 +60,9 @@ final class IceBarHidingCoordinator {
 
     private var observer: (displayID: CGDirectDisplayID, observer: HiddenLengthObserver)?
 
+    /// The displays connected (plan 2026-11-15-secondary-display, T2d).
+    private var topology = TopologyTracker()
+
     private let logger = Logger(category: "IceBarHiding")
 
     /// Whether Ice rests at a length, so the IceBar may be offered.
@@ -122,6 +125,14 @@ final class IceBarHidingCoordinator {
                 }
             }
             .store(in: &cancellables)
+        // The displays changed: block at once, drop work begun before, sample now.
+        topology.observe(Self.currentTopology(), now: ProcessInfo.processInfo.systemUptime)
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.displaysChanged()
+            }
+            .store(in: &cancellables)
         timer = .scheduledTimer(withTimeInterval: Self.tickInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tick()
@@ -170,14 +181,39 @@ final class IceBarHidingCoordinator {
         }
     }
 
+    private func displaysChanged() {
+        topology.observe(Self.currentTopology(), now: ProcessInfo.processInfo.systemUptime)
+        work?.cancel()
+        reread?.cancel()
+        isSampling = false
+        tick()
+    }
+
+    /// The connected displays that do not mirror another.
+    private static func currentTopology() -> DisplayTopology {
+        let screens = NSScreen.screens.filter { CGDisplayMirrorsDisplay($0.displayID) == kCGNullDirectDisplay }
+        let fingerprint = screens.map { screen in
+            let bounds = CGDisplayBounds(screen.displayID)
+            return "\(screen.displayID):\(bounds.minX),\(bounds.minY),\(bounds.width)x\(bounds.height)@\(screen.backingScaleFactor)"
+        }
+        .sorted()
+        .joined(separator: "|")
+        return DisplayTopology(fingerprint: fingerprint, count: screens.count)
+    }
+
     private func tick() {
         guard machine.phase != .off, !isSampling, let screen = NSScreen.screenWithActiveMenuBar ?? NSScreen.main else {
             return
         }
         isSampling = true
+        let generation = topology.generation
         Task {
             // Accessibility can block on a busy frontmost app: off the main thread.
             let menuMaxX = await Task.detached { screen.getApplicationMenuFrame()?.maxX }.value
+            // Begun under displays that have since changed: a new tick follows.
+            guard topology.accepts(generation) else {
+                return
+            }
             isSampling = false
             guard let appState else {
                 return
@@ -214,6 +250,8 @@ final class IceBarHidingCoordinator {
         appState: AppState, screen: NSScreen, menuMaxX: CGFloat?, isMouseOnBar: Bool, isArranging: Bool
     ) -> IceBarHidingSample {
         let roster = appState.itemManager.iceBarRoster.rules
+        // No measured multi-display topology yet: every one is unsupported (T1, D).
+        let displayBlock = topology.blockReason(now: ProcessInfo.processInfo.systemUptime, supported: false)
         let signature = roster.signature(
             frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
             menuMaxX: menuMaxX.map(Double.init),
@@ -222,7 +260,7 @@ final class IceBarHidingCoordinator {
         )
         return IceBarHidingSample(
             signature: signature,
-            preconditions: roster.preconditions,
+            preconditions: displayBlock.map { roster.preconditions.adding($0) } ?? roster.preconditions,
             membership: roster.membership,
             isInteracting: isMouseOnBar || appState.navigationState.isIceBarPresented,
             isDragging: IceBarArrangingRule.holdsBarForOwner(

@@ -29,6 +29,10 @@ public enum PreferenceHidingBlockReason: Equatable, Sendable {
     /// (c) `.positional` items left of the divider: the pane names them and
     /// asks the owner to move them right of it.
     case positionalItemsLeftOfDivider([PreferenceHidingBlocker])
+    /// More than one display, not a measured topology (`TopologyTracker`).
+    case multipleDisplays(Int)
+    /// The displays changed less than `TopologyTracker.settleSeconds` ago.
+    case displaysSettling
 }
 
 public enum PreferenceHidingPreconditionResult: Equatable, Sendable {
@@ -38,6 +42,11 @@ public enum PreferenceHidingPreconditionResult: Equatable, Sendable {
 
     public var isOk: Bool {
         self == .ok
+    }
+
+    /// This result with one more failing reason, appended after a, b, c.
+    public func adding(_ reason: PreferenceHidingBlockReason) -> PreferenceHidingPreconditionResult {
+        .blocked(reasons + [reason])
     }
 
     public var reasons: [PreferenceHidingBlockReason] {
