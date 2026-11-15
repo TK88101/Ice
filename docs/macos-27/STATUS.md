@@ -501,3 +501,14 @@ Evidence: `~/IceReverse-evidence/20261113-flash/`. Rollback: `~/Ice-release-arch
 | The owner's setting | System (English), the owner's choice | as left |
 
 Evidence: `~/IceReverse-evidence/20261113-zh/`. Codex: the plan three rounds (REVISE, REVISE, AGREE), the code four (two P2 fixed, then clean twice).
+
+## More than one display: no hiding while a second display is connected (2026-11-15, plan 2026-11-15-secondary-display)
+
+| what | status | tag |
+|---|---|---|
+| The owner's report | with the Sidecar connected, the hidden items were drawn on the Sidecar's bar and listed in the IceBar at once (two screenshots at one instant, 2026-11-14) | MEASURED |
+| A length that hides on the Sidecar bar | none of 64-2944 pt by 64 (46 lengths, built-in bar active, no menus and 4 menus of the front app): the members were drawn after the menus at every one; the built-in bar hid them at every length, its members' spot being under the notch and a third-party notch window | MEASURED, run `20261115-dualband-5`, Debug build under the daily identity (owner-approved, once), macOS 27, 2026-11-15 |
+| Other conditions (10 and 24 menus, Sidecar active) | not run: one condition without a hiding point already empties the shared set (rule fixed before the run) | -- |
+| What Ice now does | while more than one non-mirrored display is connected: standard length, no IceBar, the layout pane says why; a change of displays blocks at once and is decided after 2 s held | MEASURED (lab copy, build `a8b2158`: `blocked(multipleDisplays:2)`, length not set, IceBar not offered, 2 s after launch) |
+| Hiding again after the second display goes | unit-tested (`TopologyTrackerTests`); not run live: the Sidecar cannot be disconnected by automation | INFERRED (code and tests) |
+| Other displays and arrangements | untested | -- |

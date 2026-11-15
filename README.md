@@ -51,6 +51,10 @@ menu bar, where a click opens their menu.
   about two seconds.
 - **Language**: English or Traditional Chinese (繁體中文), in Settings > General > Language;
   "System" follows the macOS language list. Ice uses the new language after it relaunches.
+- **More than one display** (an external display, Sidecar): Ice hides nothing and offers no
+  Ice Bar while a second display is connected, so no item shows on a bar and in the Ice Bar
+  at once. One length cannot hide the items on every display's bar: on a Sidecar display no
+  length hid them at all. Hiding comes back about two seconds after the second display goes.
 
 On macOS 27 Settings only shows what was seen to work there. Not offered on 27: the
 always-hidden section, item spacing, the search panel, divider styles, hiding application
