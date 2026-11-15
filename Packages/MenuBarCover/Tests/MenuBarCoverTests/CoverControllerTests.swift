@@ -6,13 +6,13 @@ import Testing
 /// Plan 2026-11-15-cover, T2: the controller against a fake bar.
 final class FakeReader: CoverBarReading {
     var slotsByDisplay = [UInt32: [CoverSlot]?]()
-    /// What a hit at a display-local x returns.
-    var hit: (Double, UInt32) -> Int32? = { _, _ in nil }
+    /// What a hit at a display-local x answers.
+    var hit: (Double, UInt32) -> CoverHit = { _, _ in .silent }
     var hitCalls = 0
 
     func slots(of bar: CoverBar) -> [CoverSlot]? { slotsByDisplay[bar.displayID] ?? [] }
 
-    func owners(at xs: [Double], of bar: CoverBar) -> [Int32?] {
+    func owners(at xs: [Double], of bar: CoverBar) -> [CoverHit] {
         hitCalls += xs.count
         return xs.map { hit($0, bar.displayID) }
     }
@@ -94,6 +94,9 @@ final class Rig {
     var held = [() -> Void]()
     var reports = [(reports: [CoverBarReport], generation: Int)]()
     var paused = 0.0
+    /// Owners whose apps answer no hit test, and owners whose hit test fails.
+    var silentOwners = Set<Int32>()
+    var failingOwners = Set<Int32>()
     lazy var controller: CoverController = {
         let controller = CoverController(
             reader: reader, capturer: capturer, presenter: presenter,
@@ -135,7 +138,28 @@ final class Rig {
     func bar(_ slots: [CoverSlot]) {
         reader.slotsByDisplay[7] = slots
         reader.hit = { [unowned self] x, display in
-            self.presenter.blocks(x, display) ? nil : slots.first { $0.minX <= x && x < $0.maxX }?.owner
+            // A panel that takes mouse events, empty bar and a silent owner all answer nothing.
+            guard !self.presenter.blocks(x, display), let owner = slots.first(where: { $0.minX <= x && x < $0.maxX })?.owner,
+                  !self.silentOwners.contains(owner)
+            else {
+                return .silent
+            }
+            return self.failingOwners.contains(owner) ? .failed : .owner(owner)
+        }
+    }
+
+    /// A member whose app answers nothing (3), one that answers (1), a visible item (20); both members coverable.
+    func mixedBar() {
+        silentOwners = [3]
+        bar([slot(3, 440, 28), slot(1, 500, 38), slot(20, 600, 40)])
+    }
+
+    /// The first pass and two more, a second apart: what a silent member needs to stand.
+    func threePasses(_ coverable: Set<Int32>) {
+        start(coverable)
+        for _ in 0..<2 {
+            advance(1)
+            controller.tick()
         }
     }
 
@@ -314,6 +338,102 @@ struct CoverControllerTests {
         rig.holdsPasses = false
         rig.flush()
         #expect(rig.presenter.shown[7] == [496...580])
+    }
+
+    // MARK: Amendment B: a member whose app answers no hit test
+
+    @Test("a member whose app answers no hit test gets its panel on the third pass, and is not tested again under it")
+    func silentStands() {
+        let rig = Rig()
+        rig.mixedBar()
+        rig.start([1, 3])
+        #expect(rig.presenter.shown[7] == [496...542])
+        rig.advance(1)
+        rig.controller.tick()
+        #expect(rig.presenter.shown[7] == [496...542])
+        rig.advance(1)
+        rig.controller.tick()
+        #expect(rig.presenter.shown[7] == [436...472, 496...542])
+        #expect(rig.reports.last?.reports.first?.silent == [rig.slot(3, 440, 28)])
+        #expect(rig.reports.last?.reports.first?.verified == [rig.slot(3, 440, 28), rig.slot(1, 500, 38)])
+        let calls = rig.reader.hitCalls
+        rig.advance(1)
+        rig.controller.tick()
+        #expect(rig.reader.hitCalls == calls)
+        #expect(rig.presenter.shown[7] == [436...472, 496...542])
+    }
+
+    @Test("the periodic test of a bar with an answering member waits on that member, not the fixed time, and the silent member stays")
+    func silentReverified() {
+        let rig = Rig()
+        rig.mixedBar()
+        rig.threePasses([1, 3])
+        let paused = rig.paused
+        rig.advance(CoverController.reverifyEvery + 1)
+        rig.controller.tick()
+        #expect(rig.paused - paused < CoverController.openPoll * Double(CoverController.openPolls) / 2)
+        #expect(rig.presenter.shown[7] == [436...472, 496...542])
+        #expect(rig.presenter.ignoring.isEmpty)
+    }
+
+    @Test("a slot of another item that comes to overlap a silent member takes its panel away on the next tick, the candidates unchanged")
+    func silentOverlapped() {
+        let rig = Rig()
+        rig.mixedBar()
+        rig.threePasses([1, 3])
+        rig.bar([rig.slot(3, 440, 28), rig.slot(21, 450, 30), rig.slot(1, 500, 38), rig.slot(20, 600, 40)])
+        rig.advance(1)
+        rig.controller.tick()
+        #expect(rig.presenter.shown[7] == [496...542])
+        #expect(rig.reports.last?.reports.first?.silent.isEmpty == true)
+    }
+
+    @Test("an active-display change keeps a silent member's panel while the read is unchanged, and takes it at once when its frame moved")
+    func silentAcrossDisplayChange() {
+        let rig = Rig()
+        rig.mixedBar()
+        rig.threePasses([1, 3])
+        rig.controller.activeDisplayChanged()
+        #expect(rig.presenter.shown[7] == [436...472, 496...542])
+        rig.bar([rig.slot(3, 445, 28), rig.slot(1, 500, 38), rig.slot(20, 600, 40)])
+        rig.controller.activeDisplayChanged()
+        #expect(rig.presenter.shown[7] == [496...542])
+    }
+
+    @Test("a bar whose panels cover only silent members waits the fixed time before the periodic test, once, and the panel stays")
+    func silentOnlyBar() {
+        let rig = Rig()
+        rig.silentOwners = [3]
+        rig.bar([rig.slot(3, 440, 28), rig.slot(20, 600, 40)])
+        rig.threePasses([3])
+        #expect(rig.presenter.shown[7] == [436...472])
+        let paused = rig.paused
+        rig.advance(CoverController.reverifyEvery + 1)
+        rig.controller.tick()
+        #expect(abs(rig.paused - paused - CoverController.openPoll * Double(CoverController.openPolls)) < 1e-9)
+        #expect(rig.presenter.shown[7] == [436...472])
+        #expect(rig.presenter.ignoring.isEmpty)
+    }
+
+    @Test("a member whose hit test fails, rather than answering nothing, never gets a panel")
+    func failedNeverStands() {
+        let rig = Rig()
+        rig.failingOwners = [3]
+        rig.bar([rig.slot(3, 440, 28), rig.slot(1, 500, 38), rig.slot(20, 600, 40)])
+        rig.threePasses([1, 3])
+        rig.advance(1)
+        rig.controller.tick()
+        #expect(rig.presenter.shown[7] == [496...542])
+    }
+
+    @Test("going off forgets the silent members: after the length is applied again they need three passes anew")
+    func silentForgottenWhenOff() {
+        let rig = Rig()
+        rig.mixedBar()
+        rig.threePasses([1, 3])
+        rig.controller.sync(active: false, coverable: [])
+        rig.start([1, 3])
+        #expect(rig.presenter.shown[7] == [496...542])
     }
 
     @Test("a display that goes takes its panels with it")

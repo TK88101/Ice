@@ -114,7 +114,7 @@ func read(_ bar: CoverBar) -> Reading {
         let hits = reader.owners(at: CoverPlan.verificationPoints(slot), of: bar)
         if CoverPlan.isVerified(owner: slot.owner, hits: hits) {
             reading.verified.insert(slot)
-        } else if hits.allSatisfy({ $0 == nil }) {
+        } else if !hits.contains(where: { if case .owner = $0 { true } else { false } }) {
             reading.blocked += 1
         } else {
             reading.disagree.append(slot)
@@ -180,12 +180,14 @@ func checkCoverage(_ label: String) -> [UInt32: Reading] {
         let own = members(reading)
         check(own.allSatisfy { slot in frames.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } },
               "\(label) bar \(bar.displayID): every hit member slot (\(own.count)) lies inside a panel (\(frames.count))")
-        let foreign = reading.slots.filter { !own.contains($0) }
+        // A member whose app answers no hit test is covered too (Amendment B): a panel may meet any coverable owner's slot.
+        let foreign = reading.slots.filter { !coverable.contains($0.owner) }
         check(!foreign.contains { slot in frames.contains { $0.lowerBound < slot.maxX && slot.minX < $0.upperBound } } || own.isEmpty,
-              "\(label) bar \(bar.displayID): no panel meets a slot that is not a hit member's")
+              "\(label) bar \(bar.displayID): no panel meets a slot that is not a member's")
         // With the panels taking mouse events, nothing under them answers.
         let under = own.flatMap { reader.owners(at: CoverPlan.verificationPoints($0), of: bar) }
-        check(under.allSatisfy { $0 == nil || !coverable.contains($0!) }, "\(label) bar \(bar.displayID): no member is hit through a panel")
+        check(!under.contains { if case .owner(let pid) = $0 { coverable.contains(pid) } else { false } },
+              "\(label) bar \(bar.displayID): no member is hit through a panel")
     }
     return readings
 }

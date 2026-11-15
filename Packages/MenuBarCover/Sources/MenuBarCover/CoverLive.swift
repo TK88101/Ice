@@ -100,17 +100,22 @@ public final class LiveCoverBarReader: CoverBarReading {
         return slots
     }
 
-    public func owners(at xs: [Double], of bar: CoverBar) -> [Int32?] {
-        guard let agent = agent() else { return xs.map { _ in nil } }
+    public func owners(at xs: [Double], of bar: CoverBar) -> [CoverHit] {
+        guard let agent = agent() else { return xs.map { _ in .failed } }
         let y = Float(bar.frame.midY)
         return xs.map { x in
             var element: AXUIElement?
-            guard AXUIElementCopyElementAtPosition(agent.element, Float(bar.frame.minX) + Float(x), y, &element) == .success, let element else {
-                return nil
+            switch AXUIElementCopyElementAtPosition(agent.element, Float(bar.frame.minX) + Float(x), y, &element) {
+            case .success:
+                var pid: pid_t = 0
+                guard let element, AXUIElementGetPid(element, &pid) == .success else { return .failed }
+                return .owner(pid)
+            case .notImplemented:
+                // Nothing there that answers (MEASURED 2026-11-15): empty bar, a gap, a window above, an app without a main menu.
+                return .silent
+            default:
+                return .failed
             }
-            var pid: pid_t = 0
-            AXUIElementGetPid(element, &pid)
-            return pid
         }
     }
 }

@@ -26,9 +26,9 @@ public protocol CoverBarReading {
     /// The slots of every agent window with that bar's frame, display-local;
     /// `nil` when the agent cannot be read.
     func slots(of bar: CoverBar) -> [CoverSlot]?
-    /// The owner of the item hit at each display-local x of the bar's middle
-    /// line; `nil` for empty bar, another app's window above, or no answer.
-    func owners(at xs: [Double], of bar: CoverBar) -> [Int32?]
+    /// What a hit test answers at each display-local x of the bar's middle
+    /// line: the owner of the item hit, nothing (`silent`), or a failed call.
+    func owners(at xs: [Double], of bar: CoverBar) -> [CoverHit]
 }
 
 public struct CoverStrips {
@@ -65,7 +65,10 @@ public protocol CoverPresenting: AnyObject {
 public struct CoverBarReport: Equatable {
     public let displayID: UInt32
     public let slots: [CoverSlot]
+    /// Every slot under a panel, left to right.
     public let verified: [CoverSlot]
+    /// Those of them that stand without a hit test's answer (Amendment B).
+    public let silent: [CoverSlot]
     public let blocks: [ClosedRange<Double>]
     /// How long the bar's panels ignored mouse events for the hit tests.
     public let ignoredMilliseconds: Double

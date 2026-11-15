@@ -28,12 +28,15 @@ public final class CoverController {
         public var after: (Double, @escaping () -> Void) -> Void
         /// From a pass: waits that many seconds.
         public var pause: (Double) -> Void
+        /// Ice's own pid: its hidden divider's slot is no overlap (`CoverSilentTrack`).
+        public var ownPID: Int32
 
         public init(
             bars: @escaping () -> [CoverBar], backgroundKey: @escaping (CoverBar) -> String, canCapture: @escaping () -> Bool,
             now: @escaping () -> Double, background: @escaping (@escaping () -> Void) -> Void,
             main: @escaping (@escaping () -> Void) -> Void, mainSync: @escaping (() -> Void) -> Void,
-            after: @escaping (Double, @escaping () -> Void) -> Void, pause: @escaping (Double) -> Void
+            after: @escaping (Double, @escaping () -> Void) -> Void, pause: @escaping (Double) -> Void,
+            ownPID: Int32 = ProcessInfo.processInfo.processIdentifier
         ) {
             self.bars = bars
             self.backgroundKey = backgroundKey
@@ -44,11 +47,12 @@ public final class CoverController {
             self.mainSync = mainSync
             self.after = after
             self.pause = pause
+            self.ownPID = ownPID
         }
     }
 
-    /// Verified slots are hit-tested again this often (their panels ignore
-    /// mouse events meanwhile); candidates that failed are tried every pass.
+    /// The slots under panels are hit-tested again this often (their panels
+    /// ignore mouse events meanwhile); the others are tried every pass.
     public static let reverifyEvery = 10.0
     /// A background is taken again after this long whatever the signals say.
     public static let refreshEvery = 1800.0
@@ -67,9 +71,17 @@ public final class CoverController {
     private struct BarState {
         var slots = [CoverSlot]()
         var candidates = [CoverSlot]()
+        /// Confirmed by a hit test.
         var verified = [CoverSlot]()
+        /// Members whose app answers no hit test here (Amendment B).
+        var silent = CoverSilentTrack()
         var blocks = [ClosedRange<Double>]()
         var verifiedAt = -Double.infinity
+
+        /// Every slot under a panel, left to right.
+        var covered: [CoverSlot] {
+            (verified + silent.standing).sorted { ($0.minX, $0.maxX) < ($1.minX, $1.maxX) }
+        }
     }
 
     private struct Background {
@@ -91,6 +103,7 @@ public final class CoverController {
         let force: Bool
         let forcedID: Int?
         let now: Double
+        let own: Int32
     }
 
     private struct BarResult {
@@ -203,6 +216,7 @@ public final class CoverController {
         for id in states.keys {
             states[id]?.blocks = []
             states[id]?.verified = []
+            states[id]?.silent = CoverSilentTrack()
             states[id]?.verifiedAt = -.infinity
         }
         if had { onReport?([], generation) }
@@ -238,7 +252,7 @@ public final class CoverController {
         }
         let input = PassInput(
             generation: generation, bars: bars, coverable: coverable, states: states, grants: grants, keys: keys,
-            force: forceNext, forcedID: pendingForced, now: now
+            force: forceNext, forcedID: pendingForced, now: now, own: environment.ownPID
         )
         forceNext = false
         passRunning = true
@@ -285,31 +299,34 @@ public final class CoverController {
             let candidates = CoverPlan.candidates(slots: slots, coverable: input.coverable)
             var state = BarState(slots: slots, candidates: candidates, verifiedAt: previous.verifiedAt)
             var ignored = 0.0
+            let hits: [CoverSlot: [CoverHit]]
             if input.force || candidates != previous.candidates || input.now - previous.verifiedAt >= reverifyEvery {
-                // The verified slots lie under panels that take mouse events,
-                // which a hit test would hit instead.
+                // Every candidate again. A slot under a panel that takes mouse
+                // events answers nothing: the panels are opened for the test.
                 let toggles = !previous.blocks.isEmpty
                 let started = clock()
                 if toggles {
                     setIgnores(true, bar.displayID)
                     awaitOpen(previous.verified, on: bar, reader: reader, pause: pause)
                 }
-                state.verified = verify(candidates, on: bar, reader: reader)
+                hits = test(candidates, on: bar, reader: reader)
                 if toggles {
                     setIgnores(false, bar.displayID)
                     ignored = (clock() - started) * 1000
                 }
+                state.verified = candidates.filter { CoverPlan.isVerified(owner: $0.owner, hits: hits[$0] ?? []) }
                 state.verifiedAt = input.now
             } else {
-                // No panel lies over a candidate that failed: no toggle.
-                let kept = previous.verified.filter(candidates.contains)
-                state.verified = kept + verify(candidates.filter { !kept.contains($0) }, on: bar, reader: reader)
+                // No toggle: the slots under panels stay on the tree's word, the others are tested.
+                let kept = Set(previous.verified.filter(candidates.contains))
+                let standing = candidates.filter { previous.silent.stands($0, among: slots, own: input.own) }
+                hits = test(candidates.filter { !kept.contains($0) && !standing.contains($0) }, on: bar, reader: reader)
+                state.verified = candidates.filter { kept.contains($0) || CoverPlan.isVerified(owner: $0.owner, hits: hits[$0] ?? []) }
             }
-            let verified = Set(state.verified)
-            state.blocks = CoverPlan.blocks(
-                verified: state.verified, others: slots.filter { !verified.contains($0) },
-                barWidth: Double(bar.frame.width), notch: bar.notch
+            state.silent = previous.silent.advanced(
+                candidates: candidates, hitVerified: state.verified, slots: slots, hits: hits, own: input.own, now: input.now
             )
+            state.blocks = CoverPlan.blocks(verified: state.covered, others: slots, barWidth: Double(bar.frame.width), notch: bar.notch)
             results[bar.displayID] = BarResult(
                 state: state, ignoredMilliseconds: ignored,
                 strips: input.grants.contains(bar.displayID) ? capturer.strips(of: bar) : nil,
@@ -319,30 +336,35 @@ public final class CoverController {
         return results
     }
 
-    /// Waits until a slot that lay under a panel answers the hit test again:
-    /// the panels' new `ignoresMouseEvents` has reached the window server.
-    /// Gives up after `openPolls`: the slot may have moved.
-    private static func awaitOpen(_ covered: [CoverSlot], on bar: CoverBar, reader: CoverBarReading, pause: (Double) -> Void) {
-        guard let probe = covered.first else { return }
+    /// Waits until the panels' new `ignoresMouseEvents` has reached the window
+    /// server: a slot that lay under a panel, and whose owner answers, shows
+    /// it by answering again (given up after `openPolls`: it may have moved).
+    /// Where the panels cover only silent slots nothing can show it, and the
+    /// whole of that time is waited.
+    private static func awaitOpen(_ answering: [CoverSlot], on bar: CoverBar, reader: CoverBarReading, pause: (Double) -> Void) {
+        guard let probe = answering.first else {
+            pause(openPoll * Double(openPolls))
+            return
+        }
         let point = [(probe.minX + probe.maxX) / 2]
         for _ in 0..<openPolls {
-            if reader.owners(at: point, of: bar).first == probe.owner { return }
+            if reader.owners(at: point, of: bar).first == .owner(probe.owner) { return }
             pause(openPoll)
         }
     }
 
-    private static func verify(_ candidates: [CoverSlot], on bar: CoverBar, reader: CoverBarReading) -> [CoverSlot] {
-        guard !candidates.isEmpty else { return [] }
+    /// What a hit test answers at each candidate's verification points.
+    private static func test(_ candidates: [CoverSlot], on bar: CoverBar, reader: CoverBarReading) -> [CoverSlot: [CoverHit]] {
+        guard !candidates.isEmpty else { return [:] }
         let points = candidates.map(CoverPlan.verificationPoints)
-        let hits = reader.owners(at: points.flatMap { $0 }, of: bar)
-        var verified = [CoverSlot]()
+        let answers = reader.owners(at: points.flatMap { $0 }, of: bar)
+        var hits = [CoverSlot: [CoverHit]]()
         var index = 0
         for (candidate, own) in zip(candidates, points) {
-            let slice = Array(hits[index..<min(hits.count, index + own.count)])
+            hits[candidate] = Array(answers[min(index, answers.count)..<min(index + own.count, answers.count)])
             index += own.count
-            if CoverPlan.isVerified(owner: candidate.owner, hits: slice) { verified.append(candidate) }
         }
-        return verified
+        return hits
     }
 
     private func apply(_ results: [UInt32: BarResult], of input: PassInput) {
@@ -360,7 +382,7 @@ public final class CoverController {
             // An unreadable bar keeps what it had.
             guard let result = results[id] else { continue }
             let old = states[id] ?? BarState()
-            if old.blocks != result.state.blocks || old.verified != result.state.verified { changed = true }
+            if old.blocks != result.state.blocks || old.covered != result.state.covered { changed = true }
             states[id] = result.state
 
             if let strips = result.strips {
@@ -389,8 +411,8 @@ public final class CoverController {
                 if budget.nextAllowed(now: environment.now()) <= environment.now() { again = true }
             }
             reports.append(CoverBarReport(
-                displayID: id, slots: result.state.slots, verified: result.state.verified, blocks: result.state.blocks,
-                ignoredMilliseconds: result.ignoredMilliseconds
+                displayID: id, slots: result.state.slots, verified: result.state.covered, silent: result.state.silent.standing,
+                blocks: result.state.blocks, ignoredMilliseconds: result.ignoredMilliseconds
             ))
         }
         for id in states.keys where !input.bars.contains(where: { $0.displayID == id }) {

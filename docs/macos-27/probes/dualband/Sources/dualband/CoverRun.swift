@@ -106,7 +106,9 @@ final class CoverSitting {
     private struct ReportedBar {
         let display: UInt32
         let slots: [CoverSlot]
+        /// Every slot under a panel; `silent` are those of them that stand without a hit test's answer (Amendment B).
         let verified: [CoverSlot]
+        let silent: [CoverSlot]
         let blocks: [ClosedRange<Double>]
     }
 
@@ -121,11 +123,14 @@ final class CoverSitting {
         var bars = [ReportedBar]()
         for bar in raw {
             guard let display = (bar["display"] as? NSNumber)?.uint32Value, let all = slots(bar["slots"]), let verified = slots(bar["verified"]),
+                  let silent = slots(bar["silent"]),
                   let rows = bar["blocks"] as? [[NSNumber]], rows.allSatisfy({ $0.count == 2 && $0[0].doubleValue <= $0[1].doubleValue })
             else {
                 return nil
             }
-            bars.append(ReportedBar(display: display, slots: all, verified: verified, blocks: rows.map { $0[0].doubleValue...$0[1].doubleValue }))
+            bars.append(ReportedBar(
+                display: display, slots: all, verified: verified, silent: silent, blocks: rows.map { $0[0].doubleValue...$0[1].doubleValue }
+            ))
         }
         return bars
     }
@@ -271,11 +276,23 @@ final class CoverSitting {
               "a member more: the cover went (seq \(off.map(seq) ?? -1), no bars) before the length was retired (seq \(retired.map(seq) ?? -1))")
         if let retired, let again = wait(after: seq(retired), timeout: 40, { self.isLength($0, applied: 736) }),
            wait(after: seq(again), timeout: 10, { self.isCover($0, withBlocks: true) }) != nil {
-            spin(2)
+            spin(1)
+            let own = Set(reader.slots(of: external) ?? []).filter { $0.owner == added.pid }
+            // The helper's app answers no hit test on this bar: its slots stand after three passes a second apart (Amendment B).
+            let covering = wait(after: seq(again), timeout: 10) { event in
+                let reported = self.blocks(of: external.displayID, in: event)
+                return own.count == 2 && own.allSatisfy { self.inside($0, reported) }
+            }
+            guard !interrupted else { return stopped("the wait for the helper's slots to be covered") }
+            spin(1)
             let back = latestCover()
             check(true, "the length came back (seq \(seq(again))) and the cover after it (seq \(seq(back)))")
+            if let covering, let at = covering["t"] as? NSNumber, let from = again["t"] as? NSNumber {
+                let silent = coverBars(covering)?.first { $0.display == external.displayID }?.silent.count ?? 0
+                say(String(format: "note  the helper's slots were covered %.1f s after the length came back; %d slots stand without a hit test's answer",
+                           at.doubleValue - from.doubleValue, silent))
+            }
             invariants(back, "after the member", own: labPID)
-            let own = Set(reader.slots(of: external) ?? []).filter { $0.owner == added.pid }
             let reported = blocks(of: external.displayID, in: back)
             // The helper's slots outside every block lie under no panel: what a hit test answers there
             // and whether the helper is drawn there say why they were not verified.
@@ -287,8 +304,13 @@ final class CoverSitting {
                 let strips = capturer.strips(of: external)
                 let same = strips.flatMap { CoverPixels.sameColumns($0.onScreen, $0.below) }
                 for slot in bare {
-                    let hits = reader.owners(at: CoverPlan.verificationPoints(slot), of: external)
-                        .map { $0 == slot.owner ? "own" : $0.map { "pid \($0)" } ?? "nil" }
+                    let hits = reader.owners(at: CoverPlan.verificationPoints(slot), of: external).map { hit -> String in
+                        switch hit {
+                        case .owner(let pid): pid == slot.owner ? "own" : "pid \(pid)"
+                        case .silent: "silent"
+                        case .failed: "failed"
+                        }
+                    }
                     let columns = Int(slot.minX * external.scale)..<min(same?.count ?? 0, Int(slot.maxX * external.scale))
                     let drawn = same.map { same in "\(columns.filter { !same[$0] }.count) of \(columns.count)" } ?? "unread"
                     say("note  helper slot \(slot.minX)-\(slot.maxX) outside the blocks; hit test at its verification points: \(hits); "
