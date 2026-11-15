@@ -84,6 +84,10 @@ final class DebugIce: @unchecked Sendable {
         }
     }
 
+    static func dividerFrame(_ snapshot: [String: Any]) -> [Double]? {
+        ((snapshot["hiddenDivider"] as? [String: Any])?["frame"] as? [NSNumber])?.map(\.doubleValue)
+    }
+
     static func dividerWidth(_ snapshot: [String: Any]) -> Double? {
         ((snapshot["hiddenDivider"] as? [String: Any])?["frame"] as? [NSNumber])?[2].doubleValue
     }

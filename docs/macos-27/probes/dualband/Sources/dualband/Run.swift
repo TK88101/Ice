@@ -102,13 +102,26 @@ final class Sitting {
             let drift = Judge.changedLeft(of: second[index].width, sample: second[index], standard: first[index], excluded: masks[index])
             guard drift <= Judge.maxNewForeground else { throw Abort(reason: "standard strip unstable on \(bars[index].displayID): \(drift)") }
         }
-        guard let snapshot = ice?.snapshot else { throw Abort(reason: "no snapshot") }
-        let frames = DebugIce.memberFrames(snapshot, namespace: helperOnly ? "com.icespike4.target" : nil)
-        guard !frames.isEmpty, let reference = bars.first(where: { bar in
-            frames.allSatisfy { $0[0] + $0[2] / 2 >= bar.x && $0[0] + $0[2] / 2 <= bar.maxX }
-        }) else {
-            throw Abort(reason: "no member frames on one bar")
+        // The divider at standard width in a snapshot taken after the command;
+        // members' AX frames stack on macOS 27, so only their widths are used:
+        // at standard length they stand side by side left of the divider.
+        guard let snapshot = ice?.waitSnapshot(timeout: 6, { (DebugIce.dividerFrame($0)?[2] ?? .infinity) < 60 }),
+              let divider = DebugIce.dividerFrame(snapshot)
+        else {
+            throw Abort(reason: "divider never at standard width")
         }
+        let all = DebugIce.memberFrames(snapshot).map { $0[2] }
+        let helperWidths = DebugIce.memberFrames(snapshot, namespace: "com.icespike4.target").map { $0[2] }
+        guard !all.isEmpty, !(helperOnly && helperWidths.isEmpty),
+              let reference = bars.first(where: { divider[0] >= $0.x && divider[0] <= $0.maxX })
+        else {
+            throw Abort(reason: "no members or divider off every bar")
+        }
+        let total = all.reduce(0, +)
+        let slack = 4.0
+        // The helper started last, so it stands leftmost of the members.
+        let width = helperOnly ? helperWidths[0] : total
+        let frames = [[divider[0] - total - slack, divider[1], width + 2 * slack, divider[3]]]
         let spots = try bars.map { bar in
             guard let spot = Spot.columns(frames: frames, reference: reference, on: bar) else { throw Abort(reason: "spot off bar \(bar.displayID)") }
             return spot
