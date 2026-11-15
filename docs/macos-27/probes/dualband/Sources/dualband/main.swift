@@ -52,6 +52,10 @@ case "check":
     // A standard strip against itself: only whether the judge sees the members (spotForeground), not a hide verdict.
     print("standard self-check: spot", spot, "masks", masks, "spotForeground", reading.spotForeground,
           reading.spotForeground > Judge.maxSpotForeground ? "members seen" : "blind")
+case "cover":
+    // dualband cover <lab-identity Ice.app> <dir>: T5 of plan 2026-11-15-cover.
+    guard arguments.count >= 4 else { fail("usage: dualband cover <lab-identity Ice.app> <dir>") }
+    exit(CoverSitting(labApp: URL(fileURLWithPath: arguments[2]), dir: URL(fileURLWithPath: arguments[3], isDirectory: true)).run())
 case "run":
     guard arguments.count >= 4 else { fail("usage: dualband run <Debug Ice.app> <dir> [--resume]") }
     Run.main(debugApp: URL(fileURLWithPath: arguments[2]), dir: URL(fileURLWithPath: arguments[3], isDirectory: true),

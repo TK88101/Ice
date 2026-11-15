@@ -11,9 +11,20 @@ let package = Package(
         // (Packages/MenuBarCapture/Sources/MenuBarCapture/LiveStripCapturer.swift).
         .macOS(.v14),
     ],
+    dependencies: [
+        // T5 of plan 2026-11-15-cover reads the bars with the cover's own reader.
+        .package(name: "MenuBarCover", path: "../../../../Packages/MenuBarCover"),
+        .package(name: "IceCore", path: "../../../../Packages/IceCore"),
+    ],
     targets: [
         .target(name: "DualbandCore"),
-        .executableTarget(name: "dualband", dependencies: ["DualbandCore"]),
+        .executableTarget(
+            name: "dualband",
+            dependencies: [
+                "DualbandCore", .product(name: "MenuBarCover", package: "MenuBarCover"), .product(name: "IceCore", package: "IceCore"),
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .testTarget(name: "DualbandCoreTests", dependencies: ["DualbandCore"]),
     ]
 )

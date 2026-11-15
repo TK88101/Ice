@@ -15,13 +15,24 @@ final class DebugIce: @unchecked Sendable {
     private let lock = NSLock()
     private var buffer = Data()
     private var latest: [String: Any]?
+    private var all = [[String: Any]]()
     private let log: FileHandle?
 
-    init(app: URL, log url: URL) throws {
+    /// Every event read so far, in the report's order.
+    var events: [[String: Any]] {
+        lock.lock()
+        defer { lock.unlock() }
+        return all
+    }
+
+    init(
+        app: URL, log url: URL,
+        arguments: [String] = ["-IceLabReport", "YES", "-IceOwnerT0", "YES", "-SUEnableAutomaticChecks", "NO", "-SUAutomaticallyUpdate", "NO"]
+    ) throws {
         FileManager.default.createFile(atPath: url.path, contents: nil)
         log = try? FileHandle(forWritingTo: url)
         process.executableURL = app.appendingPathComponent("Contents/MacOS/Ice")
-        process.arguments = ["-IceLabReport", "YES", "-IceOwnerT0", "YES", "-SUEnableAutomaticChecks", "NO", "-SUAutomaticallyUpdate", "NO"]
+        process.arguments = arguments
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
@@ -40,8 +51,8 @@ final class DebugIce: @unchecked Sendable {
         while let newline = buffer.firstIndex(of: 0x0A) {
             let line = buffer[buffer.startIndex..<newline]
             buffer.removeSubrange(buffer.startIndex...newline)
-            if let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any], object["event"] as? String == "snapshot" {
-                latest = object
+            if let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any] {
+                if object["event"] as? String == "snapshot" { latest = object } else { all.append(object) }
             }
         }
     }
@@ -135,10 +146,12 @@ final class Helper {
     private let process = Process()
     private let input = Pipe()
 
-    init?(vzhelper: URL, log: URL) {
+    var pid: pid_t { process.processIdentifier }
+
+    init?(vzhelper: URL, log: URL, items: Int = 1, identifiers: String = "dualband-helper", glyphs: String = "target") {
         FileManager.default.createFile(atPath: log.path, contents: nil)
         process.executableURL = vzhelper
-        process.arguments = ["--controller", "\(getpid())", "--items", "1", "--identifiers", "dualband-helper", "--glyphs", "target", "--lifetime", "1800"]
+        process.arguments = ["--controller", "\(getpid())", "--items", "\(items)", "--identifiers", identifiers, "--glyphs", glyphs, "--lifetime", "1800"]
         process.standardInput = input
         process.standardOutput = try? FileHandle(forWritingTo: log)
         process.standardError = FileHandle.nullDevice

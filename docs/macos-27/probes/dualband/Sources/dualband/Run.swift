@@ -432,7 +432,6 @@ final class Sitting {
     }
 }
 
-@MainActor
 enum Run {
     static func main(debugApp: URL, dir: URL, resume: Bool) {
         signal(SIGINT) { _ in Sitting.stopRequested = true }
