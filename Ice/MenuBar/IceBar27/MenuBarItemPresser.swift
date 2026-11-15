@@ -7,6 +7,7 @@ import ApplicationServices
 import Foundation
 import IceCore
 import MenuBarDiscovery
+import OSLog
 
 /// Opens a menu bar item from the IceBar on macOS 27 by pressing it over
 /// Accessibility while it stays pushed off the bar (plan
@@ -84,6 +85,11 @@ enum MenuBarItemPresser {
         AXUIElementSetMessagingTimeout(target.element, pressTimeout)
         let start = ProcessInfo.processInfo.systemUptime
         let error = AXUIElementPerformAction(target.element, kAXPressAction as CFString)
+        if error != .success {
+            // The code and the time only: why a cell was disabled (an item's press failed in the owner's use, 2026-11-16).
+            let elapsed = ProcessInfo.processInfo.systemUptime - start
+            Logger(category: "IceBarPress").info("AXPress answered \(error.rawValue, privacy: .public) after \(elapsed, format: .fixed(precision: 2), privacy: .public) s")
+        }
         return PressOutcome.classify(
             succeeded: error == .success,
             timedOut: error == .cannotComplete,

@@ -195,7 +195,7 @@ final class IceBarHidingCoordinator {
         ])
         .receive(on: DispatchQueue.main)
         .sink { [weak self] _ in
-            self?.cover.invalidateBackgrounds()
+            self?.invalidateCoverBackgrounds()
         }
         .store(in: &cancellables)
         // An app started: where a pushed-off item is in no read, its item is
@@ -251,6 +251,22 @@ final class IceBarHidingCoordinator {
         let length = LabReport.applied(decided)
         writtenLength = length
         appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = length.map { CGFloat($0) }
+    }
+
+    /// How long after a display came up (connected, woken, unlocked) its bar
+    /// is captured again. A display fades in: a background captured during
+    /// that is darker than the bar it ends up under, and nothing says so
+    /// later (the owner's Sidecar, connected while Ice ran, 2026-11-16: the
+    /// panel 0.83 of the bar's brightness until Ice quit). INFERRED delays.
+    private static let backgroundSettleDelays: [TimeInterval] = [3, 8]
+
+    private func invalidateCoverBackgrounds() {
+        cover.invalidateBackgrounds()
+        for delay in Self.backgroundSettleDelays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.cover.invalidateBackgrounds()
+            }
+        }
     }
 
     /// The cover is on exactly while Ice rests with a length applied, over
