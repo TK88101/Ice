@@ -279,31 +279,27 @@ final class BlindSitting {
         if dailyWasRunning, !Daily.quit() { say("the daily Ice did not quit"); return 3 }
         say("note  the daily Ice was \(dailyWasRunning ? "running: quit for the sitting" : "not running: left so")")
 
-        // --- the helpers first, leftmost by their own preferred positions, so the copy finds them left of its divider
-        guard
-            let menu = launch("menu", executable: vzhelper("Target"), domain: "com.icespike4.target", autosave: "blind-\(stamp)-m", position: 30002,
-                              arguments: ["--items", "1", "--identifiers", "blind-menu", "--glyphs", "target", "--menu", "--lifetime", "900"]),
-            let second = launch("second", executable: vzhelper("Protected"), domain: "com.icespike4.protected", autosave: "blind-\(stamp)-s", position: 30001,
-                                arguments: ["--items", "1", "--identifiers", "blind-second", "--glyphs", "reference", "--lifetime", "900"]),
-            let popover = launch("popover", executable: popoverApp.appendingPathComponent("Contents/MacOS/dualband"), domain: "com.icespike4.protected",
-                                 autosave: "blind-\(stamp)-p", position: 30000, arguments: ["blind-popover", "--identifier", "blind-popover"])
-        else {
-            say("a helper did not start")
+        // --- one helper at a time: beside the copy's own two items the owner's bar has room for one more (run
+        // 20261116-blind-4: of three helpers the system folded two away, and on 27.2 a folded item is in no read).
+        func helper(_ name: String, app: String, identifier: String, suffix: String, extra: [String] = []) -> BlindHelper? {
+            launch(name, executable: vzhelper(app), domain: app == "Protected" ? "com.icespike4.protected" : "com.icespike4.target",
+                   autosave: "blind-\(stamp)-\(suffix)", position: 30000,
+                   arguments: ["--items", "1", "--identifiers", identifier, "--glyphs", "target", "--lifetime", "900"] + extra)
+        }
+        guard let menu = helper("menu", app: "Target", identifier: "blind-menu", suffix: "m", extra: ["--menu"]) else {
+            say("the menu helper did not start")
             return 2
         }
         spin(3)
-        let helperPIDs = Set([menu.pid, second.pid, popover.pid])
-        let helperXs = [(menu.pid, "blind-menu"), (second.pid, "blind-second"), (popover.pid, "blind-popover")].map { pid, identifier in
-            extras(of: pid)?.first { $0.identifier == identifier }?.x
-        }
-        let others = leftmostOther(excluding: helperPIDs)
-        say("note  helpers at x \(helperXs.map { $0.map { String(Int($0)) } ?? "unlisted" }), leftmost other item at \(others.map { String(Int($0)) } ?? "none")")
-        guard let rightmostHelper = helperXs.compactMap({ $0 }).max(), helperXs.allSatisfy({ $0 != nil }), let others, rightmostHelper < others else {
-            check(false, "the three helpers are on the bar, left of every other item")
+        let menuX = extras(of: menu.pid)?.first { $0.identifier == "blind-menu" }?.x
+        let others = leftmostOther(excluding: [menu.pid])
+        say("note  the menu helper at x \(menuX.map { String(Int($0)) } ?? "unlisted"), leftmost other item at \(others.map { String(Int($0)) } ?? "none")")
+        guard let menuX, let others, menuX > 0, menuX < others else {
+            check(false, "the menu helper is on the bar, left of every other item")
             return 1
         }
 
-        // --- the copy: it rests with the helpers among its members
+        // --- the copy: it rests with the helper among its members
         do {
             ice = try DebugIce(
                 app: labApp, log: dir.appendingPathComponent("blind-report.jsonl"),
@@ -319,8 +315,8 @@ final class BlindSitting {
             check(false, "the lab copy rested at \(Self.restLength)")
             return 1
         }
-        let members = until(8) { ["blind-menu", "blind-second", "blind-popover"].allSatisfy { self.cell($0) != nil } }
-        check(members, "the copy rested at 736 (seq \(seq(rest))) with the three helpers among its cells")
+        let members = until(8) { self.cell("blind-menu") != nil }
+        check(members, "the copy rested at 736 (seq \(seq(rest))) with the menu helper among its cells")
         guard members else { return 1 }
 
         // --- R1: a minute at rest
@@ -356,7 +352,7 @@ final class BlindSitting {
               String(format: "R2: the menu closed and the length was applied again %.1f s after", Date().timeIntervalSince(closedAt)))
         check(until(3) { !self.isListed("blind-menu", of: menu.pid) }, "R2: the helper's item is unlisted again")
 
-        // --- R4: a menu left open past the presser's 60 s; then a popover
+        // --- R4: a menu left open past the presser's 60 s
         guard openBar() else { check(false, "R4: the IceBar opened"); return 1 }
         pressed = press("blind-menu")
         retire = wait(after: pressed.mark, timeout: 3) { self.isLength($0, applied: nil) }
@@ -372,7 +368,29 @@ final class BlindSitting {
         again = wait(after: retire.map(seq) ?? pressed.mark, timeout: 6) { self.isLength($0, applied: Self.restLength) }
         check(again != nil, String(format: "R4: after the menu closed the length was applied again in %.1f s", Date().timeIntervalSince(closedAt)))
 
-        guard openBar() else { check(false, "R4: the IceBar opened for the popover"); return 1 }
+        /// The helper before is gone and the next one arrives while the section is hidden; 5 s later the IceBar
+        /// is asked for: the bar is read first, then the IceBar lists the arrival.
+        func arrive(_ label: String, identifier: String, start: () -> BlindHelper?) -> BlindHelper? {
+            closeBar()
+            spin(2)
+            guard let arrival = start() else { check(false, "\(label): the helper started"); return nil }
+            spin(5)
+            guard quiet() else { return nil }
+            let mark = lastSeq
+            let opened = openBar()
+            check(opened && lengths(after: mark, applied: nil) == 1 && lengths(after: mark, applied: Self.restLength) == 1,
+                  "\(label): the opening read the bar first (retires \(lengths(after: mark, applied: nil)), applied \(lengths(after: mark, applied: Self.restLength))) and the IceBar opened (\(opened))")
+            check(until(3) { self.cell(identifier)?.disabled == false }, "\(label): \(identifier) is among the cells, enabled")
+            return arrival
+        }
+
+        // --- R6 with the popover helper as the arrival, then R4's popover
+        menu.stop()
+        let popoverStart = {
+            self.launch("popover", executable: self.popoverApp.appendingPathComponent("Contents/MacOS/dualband"), domain: "com.icespike4.protected",
+                        autosave: "blind-\(self.stamp)-p", position: 30000, arguments: ["blind-popover", "--identifier", "blind-popover"])
+        }
+        guard let popover = arrive("R6", identifier: "blind-popover", start: popoverStart) else { return interrupted ? stopped("R6") : 1 }
         pressed = press("blind-popover")
         retire = wait(after: pressed.mark, timeout: 3) { self.isLength($0, applied: nil) }
         let shown = until(4) { popover.count("popover open") >= 1 }
@@ -387,6 +405,11 @@ final class BlindSitting {
               String(format: "R4: the popover closed and the length was applied again %.1f s after", Date().timeIntervalSince(closedAt)))
 
         // --- R3: an item that is not listed in time
+        popover.stop()
+        guard let second = arrive("R6 again", identifier: "blind-second",
+                                  start: { helper("second", app: "Protected", identifier: "blind-second", suffix: "s") })
+        else { return interrupted ? stopped("R6 again") : 1 }
+        closeBar()
         second.send("hide")
         spin(1)
         guard openBar() else { check(false, "R3: the IceBar opened"); return 1 }
@@ -396,52 +419,32 @@ final class BlindSitting {
         check(pressed.sent && retire != nil && again != nil,
               String(format: "R3: pressed a helper whose item is gone: retired, and the length applied again %.1f s after the retire", time(again) - time(retire)))
         check(until(5) { self.cell("blind-second")?.disabled == true }, "R3: its cell is disabled")
-        second.send("show")
 
-        // --- R6: an item that arrives while the section is hidden
-        closeBar()
-        guard let arrival = launch("arrival", executable: vzhelper("Hidden2"), domain: "com.icespike4.target", autosave: "blind-\(stamp)-a", position: nil,
-                                   arguments: ["--items", "1", "--identifiers", "blind-arrival", "--glyphs", "alt", "--lifetime", "900"])
-        else { check(false, "R6: the arriving helper started"); return 1 }
-        spin(5)
-        guard quiet() else { return stopped("R6") }
-        check(cell("blind-arrival") == nil, "R6: before any opening the arrival is not among the cells")
-        mark = lastSeq
-        let reopened = openBar()
-        check(reopened && lengths(after: mark, applied: nil) == 1 && lengths(after: mark, applied: Self.restLength) == 1,
-              "R6: the opening read the bar first (retires \(lengths(after: mark, applied: nil)), applied \(lengths(after: mark, applied: Self.restLength))) and the IceBar opened (\(reopened))")
-        check(until(3) { self.cell("blind-arrival") != nil }, "R6: the arrival is among the cells")
+        // --- R7: a member's app that started again
+        second.stop()
+        guard let restarted = arrive("R7", identifier: "blind-second",
+                                     start: { helper("second-again", app: "Protected", identifier: "blind-second", suffix: "s") })
+        else { return interrupted ? stopped("R7") : 1 }
 
         // --- R6, at once: asked within the grace, the debt stays and the next asking reads again
         closeBar()
-        guard launch("arrival2", executable: vzhelper("Hidden3"), domain: "com.icespike4.target", autosave: "blind-\(stamp)-b", position: nil,
-                     arguments: ["--items", "1", "--identifiers", "blind-arrival2", "--glyphs", "alt", "--lifetime", "900"]) != nil
-        else { check(false, "R6: the second arriving helper started"); return 1 }
+        restarted.stop()
+        spin(2)
+        guard let last = helper("arrival2", app: "Hidden3", identifier: "blind-arrival2", suffix: "b") else {
+            check(false, "R6 at once: the helper started")
+            return 1
+        }
         spin(0.5)
         mark = lastSeq
         let atOnce = openBar()
-        say("note  R6 at once: opened \(atOnce), retires \(lengths(after: mark, applied: nil)), the second arrival listed \(cell("blind-arrival2") != nil)")
+        say("note  R6 at once: opened \(atOnce), retires \(lengths(after: mark, applied: nil)), the arrival listed \(cell("blind-arrival2") != nil)")
         closeBar()
         spin(4)
         guard quiet() else { return stopped("R6, at once") }
         mark = lastSeq
         let later = openBar()
         check(later && until(3) { self.cell("blind-arrival2") != nil },
-              "R6 at once: a later opening lists the second arrival (retires then: \(lengths(after: mark, applied: nil)))")
-
-        // --- R7: a member's app that started again
-        closeBar()
-        arrival.stop()
-        spin(2)
-        guard launch("arrival-again", executable: vzhelper("Hidden2"), domain: "com.icespike4.target", autosave: "blind-\(stamp)-a", position: nil,
-                     arguments: ["--items", "1", "--identifiers", "blind-arrival", "--glyphs", "alt", "--lifetime", "900"]) != nil
-        else { check(false, "R7: the helper started again"); return 1 }
-        spin(5)
-        guard quiet() else { return stopped("R7") }
-        mark = lastSeq
-        let afterRestart = openBar()
-        check(afterRestart && until(3) { self.cell("blind-arrival")?.disabled == false },
-              "R7: after its app started again the member is listed and enabled (retires \(lengths(after: mark, applied: nil)))")
+              "R6 at once: a later opening lists the arrival (retires then: \(lengths(after: mark, applied: nil)))")
         closeBar()
 
         // --- R8: other lengths, as a limit
@@ -450,7 +453,7 @@ final class BlindSitting {
             spin(3)
             guard quiet() else { return stopped("R8") }
             say("note  R8: at \(Int(length)) pt the copy's hidden divider is listed: \(isListed(Self.hiddenDivider, of: labPID)); "
-                + "the menu helper's item is listed: \(isListed("blind-menu", of: menu.pid))")
+                + "the last helper's item is listed: \(isListed("blind-arrival2", of: last.pid))")
         }
         ice?.send("length release")
         spin(2)
