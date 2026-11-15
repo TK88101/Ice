@@ -14,6 +14,8 @@ func fail(_ message: String) -> Never {
 }
 
 let arguments = CommandLine.arguments
+// The popover helper of `blind` runs from its own bundle; its controller's pid comes first.
+if arguments.contains("blind-popover") { BlindPopover.main(arguments: arguments) }
 guard arguments.count >= 3 else { fail("usage: dualband selftest <dir> | run <Debug Ice.app> <dir> [--resume]") }
 
 switch arguments[1] {
@@ -56,6 +58,13 @@ case "cover":
     // dualband cover <lab-identity Ice.app> <dir>: T5 of plan 2026-11-15-cover.
     guard arguments.count >= 4 else { fail("usage: dualband cover <lab-identity Ice.app> <dir>") }
     exit(CoverSitting(labApp: URL(fileURLWithPath: arguments[2]), dir: URL(fileURLWithPath: arguments[3], isDirectory: true)).run())
+case "blind":
+    // dualband blind <lab-identity Ice.app> <Popover.app> <dir>: T10 of plan 2026-11-15-blind-at-length.
+    guard arguments.count >= 5 else { fail("usage: dualband blind <lab-identity Ice.app> <Popover.app> <dir>") }
+    exit(BlindSitting(
+        labApp: URL(fileURLWithPath: arguments[2]), popoverApp: URL(fileURLWithPath: arguments[3]),
+        dir: URL(fileURLWithPath: arguments[4], isDirectory: true)
+    ).run())
 case "run":
     guard arguments.count >= 4 else { fail("usage: dualband run <Debug Ice.app> <dir> [--resume]") }
     Run.main(debugApp: URL(fileURLWithPath: arguments[2]), dir: URL(fileURLWithPath: arguments[3], isDirectory: true),
