@@ -17,8 +17,18 @@ enum LabReport {
     static let launch = LabReportRule.launch(
         report: launchArgument(LabReportRule.reportArgument),
         holdLength: launchArgument(LabReportRule.holdLengthArgument),
-        bundleID: Bundle.main.bundleIdentifier
+        bundleID: Bundle.main.bundleIdentifier,
+        ownerIdentity: ownerT0Identity
     )
+
+    #if DEBUG
+    /// The owner-approved T0 sitting (plan 2026-11-15-secondary-display, G1,
+    /// G6): a Debug build launched with `-IceOwnerT0 YES` may report under the
+    /// daily identity. Compiled out of Release, argument name and all.
+    private static let ownerT0Identity: String? = launchArgument("IceOwnerT0") == "YES" ? "io.github.tk88101.Ice" : nil
+    #else
+    private static let ownerT0Identity: String? = nil
+    #endif
 
     /// A launch argument's value, from the arguments only, never a stored
     /// default (both lab modes read theirs this way).

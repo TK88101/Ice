@@ -29,6 +29,21 @@ struct LabReportRuleTests {
         #expect(launch(report: "YES", holdLength: "YES") == .report(LabReportPlan(holdLength: true)))
     }
 
+    @Test("an owner identity, passed only by a Debug build, reports under exactly that id and no other")
+    func ownerIdentity() {
+        let daily = "io.github.tk88101.Ice"
+        #expect(LabReportRule.launch(report: "YES", holdLength: nil, bundleID: daily, ownerIdentity: daily) == .report(LabReportPlan(holdLength: false)))
+        // Release passes no owner identity: the daily id is refused as before.
+        #expect(LabReportRule.launch(report: "YES", holdLength: nil, bundleID: daily, ownerIdentity: nil) == .refused(.notLabIdentity(daily)))
+        for other in ["io.github.tk88101.Ice2", "io.github.tk88101.ice", "com.jordanbaird.Ice", ""] {
+            #expect(LabReportRule.launch(report: "YES", holdLength: nil, bundleID: other, ownerIdentity: daily) == .refused(.notLabIdentity(other)))
+        }
+        #expect(LabReportRule.launch(report: "YES", holdLength: nil, bundleID: nil, ownerIdentity: daily) == .refused(.notLabIdentity(nil)))
+        // An empty owner identity grants nothing.
+        #expect(LabReportRule.launch(report: "YES", holdLength: nil, bundleID: "", ownerIdentity: "") == .refused(.notLabIdentity("")))
+        #expect(LabReportRule.launch(report: nil, holdLength: nil, bundleID: daily, ownerIdentity: daily) == .normal)
+    }
+
     @Test("the release identity, a fork's, the helpers', the trace's, a look-alike and no identity are refused")
     func refusesOtherIdentities() {
         let others = [

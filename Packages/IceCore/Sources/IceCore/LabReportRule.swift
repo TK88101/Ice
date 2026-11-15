@@ -144,13 +144,17 @@ public enum LabReportRule {
     ///     (never a stored default), `nil` when absent.
     ///   - holdLength: the value of `-IceLabHoldLength`, likewise.
     ///   - bundleID: the running bundle's identifier.
-    public static func launch(report: String?, holdLength: String?, bundleID: String?) -> LabReportLaunch {
+    ///   - ownerIdentity: one more identity allowed exactly, besides the lab
+    ///     prefix; only a Debug build passes one, for the owner-approved T0
+    ///     sitting (plan 2026-11-15-secondary-display, G1). `nil` in Release.
+    public static func launch(report: String?, holdLength: String?, bundleID: String?, ownerIdentity: String? = nil) -> LabReportLaunch {
         guard let report else { return .normal }
         guard let isOn = LabLaunchArguments.flag(report) else {
             return .refused(.badArgument(name: reportArgument, value: report))
         }
         guard isOn else { return .normal }
-        guard let bundleID, LabLaunchArguments.isLabIdentity(bundleID, prefix: labBundleIDPrefix) else {
+        let isOwner = ownerIdentity.map { !$0.isEmpty && $0 == bundleID } ?? false
+        guard let bundleID, isOwner || LabLaunchArguments.isLabIdentity(bundleID, prefix: labBundleIDPrefix) else {
             return .refused(.notLabIdentity(bundleID))
         }
         let holdLengthValue = holdLength ?? "NO"
