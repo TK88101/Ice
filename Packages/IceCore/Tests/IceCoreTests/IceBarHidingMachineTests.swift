@@ -985,6 +985,30 @@ struct IceBarHidingMachineTests {
         #expect(!driver.machine.awaitsAnswer)
     }
 
+    // Plan 2026-11-15-cover, D5.
+    @Test("unverified: a change of the active display alone keeps the length and says nothing")
+    func displayChangeAloneKeepsLength() {
+        var driver = Self.atOnce()
+        driver.tick(seconds: 0.1)
+        let mark = driver.log.count
+        driver.tick(Self.sample(Self.signature(displayID: 2)))
+        driver.tick(Self.sample(Self.signature(displayID: 1)))
+        #expect(driver.since(mark).isEmpty)
+        #expect(driver.length == 736)
+        #expect(driver.machine.lengthApplied)
+    }
+
+    @Test("unverified: a display change that comes with other items or members still retires the length", arguments: [
+        signature(items: ["v1", "v2", "m1", "m2"], displayID: 2), signature(members: ["m1"], displayID: 2),
+    ])
+    func displayChangeWithItemsRetires(changed: LayoutSignature) {
+        var driver = Self.atOnce()
+        driver.tick(seconds: 0.1)
+        let mark = driver.log.count
+        driver.tick(Self.sample(changed))
+        #expect(driver.since(mark).first == .setLength(nil))
+    }
+
     @Test("it says so: hiding requested, not verified, every member unchecked")
     func saysUnverified() {
         var driver = Self.atOnce()

@@ -45,6 +45,12 @@ public enum PreferenceHidingLayoutChange: Equatable, Sendable {
         return nil
     }
 
+    /// Whether the display with the active menu bar is all that changed: the
+    /// same items and the same members (plan 2026-11-15-cover, D5).
+    public static func isDisplayOnly(_ old: LayoutSignature, _ new: LayoutSignature) -> Bool {
+        old.displayID != new.displayID && old.items == new.items && old.members == new.members
+    }
+
     /// D1: the members are the old ones less some (in their order) whose items
     /// are gone too (a process that exited, `PreferenceHidingMembership.carried`),
     /// no added item is a member, and every added item was read right of the

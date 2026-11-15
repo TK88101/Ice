@@ -350,7 +350,11 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         if sample.isDragging { return enterQuiet(now) }
         if !sample.preconditions.isOk { return enterBlocked() }
         if let previous, let change = PreferenceHidingLayoutChange.between(previous, sample.signature) {
-            if change.isStructural {
+            // Hiding at once checks nothing against a display, and the cover
+            // follows the bars itself: the active display changing alone
+            // keeps the length (plan 2026-11-15-cover, D5).
+            let keepsLength = !parameters.verifies && PreferenceHidingLayoutChange.isDisplayOnly(previous, sample.signature)
+            if change.isStructural, !keepsLength {
                 failures = 0
                 baselineRetries = 0
                 displacedRetries = 0
