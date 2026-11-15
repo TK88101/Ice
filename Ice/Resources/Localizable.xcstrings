@@ -114,6 +114,17 @@
         }
       }
     },
+    "A display's menu bar is not transparent, so Ice cannot hide items on it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "某個顯示器的選單列不是透明的，因此 Ice 無法隱藏該選單列上的項目。"
+          }
+        }
+      }
+    },
     "About": {
       "extractionState": "manual",
       "localizations": {
@@ -907,6 +918,17 @@
         }
       }
     },
+    "Ice needs Screen Recording to hide items on a display that would still show them.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ice 需要「螢幕錄製」權限，才能在仍會顯示項目的顯示器上隱藏它們。"
+          }
+        }
+      }
+    },
     "Ice needs this to:": {
       "localizations": {
         "zh-Hant": {
@@ -1696,17 +1718,6 @@
         }
       }
     },
-    "The displays changed; Ice hides nothing until they settle.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "顯示器有變動；在穩定下來之前，Ice 不會隱藏任何東西。"
-          }
-        }
-      }
-    },
     "This action cannot be undone.": {
       "localizations": {
         "zh-Hant": {
@@ -1853,17 +1864,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "可見"
-          }
-        }
-      }
-    },
-    "With more than one display connected, Ice hides nothing: one length cannot hide the items on every display's menu bar.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "連接了多個顯示器時，Ice 不會隱藏任何東西：同一個長度無法同時隱藏每個顯示器選單列上的項目。"
           }
         }
       }

@@ -20,8 +20,6 @@ public enum IceBarHidingStatus: Equatable, Sendable {
     static let iconUnreadable = "Ice's icon is not on the menu bar, so Ice hides nothing. Turn on Show Ice icon, or make room for it."
     static let dividerUnusable = "Ice's hidden-section divider is not on the menu bar, so Ice hides nothing."
     static let incomplete = "Ice could not read every menu bar item, so it hides nothing until it can."
-    static let multipleDisplays = "With more than one display connected, Ice hides nothing: one length cannot hide the items on every display's menu bar."
-    static let displaysSettling = "The displays changed; Ice hides nothing until they settle."
     static let positionalOne = "Ice cannot tell %@ from another item of the same app, so it hides nothing. "
         + "Hold Command and drag it to the right of Ice's divider."
     static let positionalMany = "Ice cannot tell %@ from another item of the same app, so it hides nothing. "
@@ -37,7 +35,7 @@ public enum IceBarHidingStatus: Equatable, Sendable {
     static var templates: [String] {
         [
             verified, nothingLeft, gettingReady, notVerified, stillDrawn, iconUnreadable, dividerUnusable, incomplete,
-            positionalOne, positionalMany, anItem, multipleDisplays, displaysSettling,
+            positionalOne, positionalMany, anItem,
         ] + whys
     }
 
@@ -97,10 +95,6 @@ public enum IceBarHidingStatus: Equatable, Sendable {
                 blocker.name.map(OwnerMessage.Argument.verbatim) ?? .message(OwnerMessage(anItem))
             }
             return OwnerMessage(blockers.count == 1 ? positionalOne : positionalMany, .list(names))
-        case .multipleDisplays:
-            return OwnerMessage(multipleDisplays)
-        case .displaysSettling:
-            return OwnerMessage(displaysSettling)
         }
     }
 
@@ -126,8 +120,6 @@ public enum IceBarHidingStatus: Equatable, Sendable {
         case .discoveryIncomplete: "discoveryIncomplete"
         case .ownReadNotOk: "ownReadNotOk"
         case .positionalItemsLeftOfDivider(let blockers): "positional:\(blockers.count)"
-        case .multipleDisplays(let count): "multipleDisplays:\(count)"
-        case .displaysSettling: "displaysSettling"
         }
     }
 

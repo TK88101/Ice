@@ -24,3 +24,5 @@ Hidden: %@
 Not checked: %@
 No items to check
 %@; %@
+A display's menu bar is not transparent, so Ice cannot hide items on it.
+Ice needs Screen Recording to hide items on a display that would still show them.

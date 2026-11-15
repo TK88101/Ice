@@ -66,6 +66,16 @@ final class MenuBarItemManager: ObservableObject {
         )
     }
 
+    /// macOS 27: the pids all of whose discovered items are hidden-section
+    /// members, which the cover may cover (plan 2026-11-15-cover, D1).
+    @available(macOS 27, *)
+    var coverableOwners: Set<Int32> {
+        let members = iceBarRoster.rules.membership.members.compactMap(\.key)
+        let memberKeys = Set(members)
+        let others = (lastDiscoveredSet?.items ?? []).filter { !memberKeys.contains($0.key) }
+        return CoverPlan.coverable(memberOwners: members.map(\.pid), visibleOwners: others.map(\.key.pid))
+    }
+
     /// One divider's state changes as Ice's own model reports them (D10,
     /// macOS 27 only): whether its control item is collapsed
     /// (`.showSection`), when that last changed, and a generation bumped on

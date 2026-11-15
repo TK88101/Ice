@@ -115,6 +115,11 @@ struct LabReportTests {
         #expect(line(.press(namespace: "n", identifier: "a", answer: "sent")) == #"{"answer":"sent","event":"press","identifier":"a","namespace":"n","seq":1,"t":2}"#)
         #expect(line(.bar(action: "open", answer: "refused:notOffered")) == #"{"action":"open","answer":"refused:notOffered","event":"bar","seq":1,"t":2}"#)
         #expect(line(.unknownCommand) == #"{"event":"unknownCommand","seq":1,"t":2}"#)
+        // Plan 2026-11-15-cover, T5: one verification transaction, per bar.
+        let slot = CoverSlot(owner: 5, minX: 10, maxX: 48)
+        let bar = LabReportCoverBar(display: 7, slots: [slot, CoverSlot(owner: 9, minX: 60, maxX: 90)], verified: [slot], blocks: [6...52], ignoredMilliseconds: 4.5)
+        #expect(line(.cover(generation: 3, bars: [bar])) == #"{"bars":[{"blocks":[[6,52]],"display":7,"ignoredMs":4.5,"slots":[[5,10,48],[9,60,90]],"verified":[[5,10,48]]}],"event":"cover","generation":3,"seq":1,"t":2}"#)
+        #expect(line(.cover(generation: 4, bars: [])) == #"{"bars":[],"event":"cover","generation":4,"seq":1,"t":2}"#)
     }
 
     @Test("a snapshot's members, cells, frames and absent values")

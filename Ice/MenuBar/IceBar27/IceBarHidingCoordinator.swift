@@ -6,6 +6,7 @@
 import Cocoa
 import Combine
 import IceCore
+import MenuBarCover
 import MenuBarDetectorFeed
 import OSLog
 
@@ -60,8 +61,19 @@ final class IceBarHidingCoordinator {
 
     private var observer: (displayID: CGDirectDisplayID, observer: HiddenLengthObserver)?
 
-    /// The displays connected (plan 2026-11-15-secondary-display, T2d).
-    private var topology = DisplayTopologyTracker()
+    /// Covers the members a bar still draws at the applied length: a bar
+    /// without a notch draws them at every length (plan 2026-11-15-cover).
+    private let cover = CoverController(
+        reader: LiveCoverBarReader(), capturer: LiveCoverCapturer(), presenter: CoverPanelPresenter(),
+        environment: .live(backgroundKey: IceBarHidingCoordinator.coverBackgroundKey, canCapture: { ScreenCapture.cachedCheckPermissions() })
+    )
+    /// The display that had the active menu bar at the last tick.
+    private var activeDisplayID: CGDirectDisplayID?
+    /// The machine's last status line for the owner; the cover's notice is said after it.
+    private var statusMessage: OwnerMessage?
+
+    static let coverNoScreenRecording = "Ice needs Screen Recording to hide items on a display that would still show them."
+    static let coverBarNotTransparent = "A display's menu bar is not transparent, so Ice cannot hide items on it."
 
     private let logger = Logger(category: "IceBarHiding")
 
@@ -125,14 +137,33 @@ final class IceBarHidingCoordinator {
                 }
             }
             .store(in: &cancellables)
-        // The displays changed: block at once, drop work begun before, sample now.
-        topology.observe(Self.currentTopology(), now: ProcessInfo.processInfo.systemUptime)
-        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.displaysChanged()
-            }
-            .store(in: &cancellables)
+        cover.onReport = { [logger] reports, generation in
+            // Displays and counts, no item names.
+            let blocks = reports.map { "\($0.displayID):\($0.blocks.count)/\($0.verified.count)" }.joined(separator: " ")
+            logger.info("IceBar cover: generation \(generation, privacy: .public) blocks/verified \(blocks, privacy: .public)")
+            LabReport.record(.cover(generation: generation, bars: reports.map { report in
+                LabReportCoverBar(
+                    display: report.displayID, slots: report.slots, verified: report.verified, blocks: report.blocks,
+                    ignoredMilliseconds: report.ignoredMilliseconds
+                )
+            }))
+        }
+        // What can change a bar's background with no key saying so (plan D2).
+        let workspace = NSWorkspace.shared.notificationCenter
+        let distributed = DistributedNotificationCenter.default()
+        Publishers.MergeMany([
+            NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification),
+            workspace.publisher(for: NSWorkspace.didWakeNotification),
+            workspace.publisher(for: NSWorkspace.screensDidWakeNotification),
+            workspace.publisher(for: NSWorkspace.sessionDidBecomeActiveNotification),
+            distributed.publisher(for: Notification.Name("com.apple.screensaver.didstop")),
+            distributed.publisher(for: Notification.Name("com.apple.screenIsUnlocked")),
+        ])
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _ in
+            self?.cover.invalidateBackgrounds()
+        }
+        .store(in: &cancellables)
         timer = .scheduledTimer(withTimeInterval: Self.tickInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tick()
@@ -160,6 +191,42 @@ final class IceBarHidingCoordinator {
         if !isLengthApplied, let appState, appState.navigationState.isIceBarPresented {
             appState.menuBarManager.iceBarPanel.close()
         }
+        syncCover()
+    }
+
+    /// The cover is on exactly while Ice rests with a length applied, over
+    /// the roster's members (plan 2026-11-15-cover, D4); its notice follows
+    /// the machine's status line.
+    private func syncCover() {
+        guard let appState else {
+            return
+        }
+        let isActive = isLengthApplied && appState.settings.general.useIceBar
+        cover.sync(active: isActive, coverable: isActive ? appState.itemManager.coverableOwners : [])
+        let notice: OwnerMessage? = switch isActive ? cover.notice : nil {
+        case .noScreenRecording: OwnerMessage(Self.coverNoScreenRecording)
+        case .barNotTransparent: OwnerMessage(Self.coverBarNotTransparent)
+        case nil: nil
+        }
+        let message: OwnerMessage? = switch (statusMessage, notice) {
+        case (let status?, let notice?): OwnerMessage("%@ %@", .message(status), .message(notice))
+        case (let status?, nil): status
+        case (nil, let notice): notice
+        }
+        let status = message.map(HidingCheckStatus.init(message:))
+        if appState.hidingCheckStatus != status {
+            appState.hidingCheckStatus = status
+        }
+    }
+
+    /// What a bar's background depends on besides the windows under it: the
+    /// display's Space, light or dark, and the wallpaper store's date.
+    private static func coverBackgroundKey(_ bar: CoverBar) -> String {
+        let space = SpaceInfo.currentSpace(for: bar.displayID)?.spaceID ?? 0
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let store = NSHomeDirectory() + "/Library/Application Support/com.apple.wallpaper/Store/Index.plist"
+        let stamp = (try? FileManager.default.attributesOfItem(atPath: store)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        return "\(space)|\(isDark)|\(stamp)"
     }
 
     /// The items are back on the bar at standard length, and stay there until
@@ -181,45 +248,20 @@ final class IceBarHidingCoordinator {
         }
     }
 
-    private func displaysChanged() {
-        let before = topology.generation
-        topology.observe(Self.currentTopology(), now: ProcessInfo.processInfo.systemUptime)
-        // The notification also comes for a resolution change or a wake with
-        // the same displays: then nothing is stale and nothing is cancelled.
-        guard topology.generation != before else {
-            return
-        }
-        work?.cancel()
-        reread?.cancel()
-        isSampling = false
-        tick()
-    }
-
-    /// The connected displays that do not mirror another.
-    private static func currentTopology() -> DisplayTopology {
-        let screens = NSScreen.screens.filter { CGDisplayMirrorsDisplay($0.displayID) == kCGNullDirectDisplay }
-        let fingerprint = screens.map { screen in
-            let bounds = CGDisplayBounds(screen.displayID)
-            return "\(screen.displayID):\(bounds.minX),\(bounds.minY),\(bounds.width)x\(bounds.height)@\(screen.backingScaleFactor)"
-        }
-        .sorted()
-        .joined(separator: "|")
-        return DisplayTopology(fingerprint: fingerprint, count: screens.count)
-    }
-
     private func tick() {
+        cover.tick()
         guard machine.phase != .off, !isSampling, let screen = NSScreen.screenWithActiveMenuBar ?? NSScreen.main else {
             return
         }
+        // The other display's bar became the active one: the cover is verified again at once (D5).
+        if screen.displayID != activeDisplayID {
+            if activeDisplayID != nil { cover.activeDisplayChanged() }
+            activeDisplayID = screen.displayID
+        }
         isSampling = true
-        let generation = topology.generation
         Task {
             // Accessibility can block on a busy frontmost app: off the main thread.
             let menuMaxX = await Task.detached { screen.getApplicationMenuFrame()?.maxX }.value
-            // Begun under displays that have since changed: a new tick follows.
-            guard topology.accepts(generation) else {
-                return
-            }
             isSampling = false
             guard let appState else {
                 return
@@ -256,7 +298,6 @@ final class IceBarHidingCoordinator {
         appState: AppState, screen: NSScreen, menuMaxX: CGFloat?, isMouseOnBar: Bool, isArranging: Bool
     ) -> IceBarHidingSample {
         let roster = appState.itemManager.iceBarRoster.rules
-        let displayBlock = topology.blockReason(now: ProcessInfo.processInfo.systemUptime)
         let signature = roster.signature(
             frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
             menuMaxX: menuMaxX.map(Double.init),
@@ -265,7 +306,7 @@ final class IceBarHidingCoordinator {
         )
         return IceBarHidingSample(
             signature: signature,
-            preconditions: displayBlock.map { roster.preconditions.adding($0) } ?? roster.preconditions,
+            preconditions: roster.preconditions,
             membership: roster.membership,
             isInteracting: isMouseOnBar || appState.navigationState.isIceBarPresented,
             isDragging: IceBarArrangingRule.holdsBarForOwner(
@@ -301,6 +342,8 @@ final class IceBarHidingCoordinator {
         }
         switch command {
         case .setLength(let length):
+            // Off before the length goes: no panel outlives its layout (D4).
+            if length == nil { cover.sync(active: false, coverable: []) }
             appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = LabReport.applied(length).map { CGFloat($0) }
             if length == nil {
                 rereadSoon()
@@ -312,7 +355,7 @@ final class IceBarHidingCoordinator {
         case .report(let status):
             logger.info("IceBar hiding: \(status.logSummary, privacy: .public)")
             LabReport.record(.status(status.logSummary))
-            appState.hidingCheckStatus = status.ownerMessage.map(HidingCheckStatus.init(message:))
+            statusMessage = status.ownerMessage
         }
     }
 
@@ -325,12 +368,10 @@ final class IceBarHidingCoordinator {
         work = Task {
             let coverage = await observer?.takeBaseline(sectionMap: sectionMap)
             let ok = await observer?.covers(ready) ?? false
-            // Cancelled (the displays changed, or nobody waits): the reply is stale.
-            guard !Task.isCancelled else {
-                return
-            }
             // Reasons and counts, no item names.
-            logger.info("IceBar baseline: ok \(ok, privacy: .public) coverage \(coverage?.description ?? "noObserver", privacy: .public)")
+            if !Task.isCancelled {
+                logger.info("IceBar baseline: ok \(ok, privacy: .public) coverage \(coverage?.description ?? "noObserver", privacy: .public)")
+            }
             send(.baseline(token: token, ok: ok))
         }
     }
@@ -340,27 +381,26 @@ final class IceBarHidingCoordinator {
         work?.cancel()
         work = Task {
             let reading = await observer?.observe(closesBurst: closesBurst) ?? .nothing
-            guard !Task.isCancelled else {
-                return
+            if !Task.isCancelled {
+                let summary = VerificationSummary.make(reading.checks)
+                let chevron = reading.chevronListed.map(String.init) ?? "unread"
+                logger.info(
+                    """
+                    IceBar trial: length \(length, privacy: .public) hidden \(summary.hidden, privacy: .public) \
+                    drawn \(summary.stillDrawn, privacy: .public) of \(reading.checks.count, privacy: .public) \
+                    chevron \(chevron, privacy: .public) waited \(reading.waited, privacy: .public) \
+                    stable \(reading.diagnostics.map { String($0.captureStable) } ?? "unread", privacy: .public)
+                    """
+                )
+                LabReport.record(.observation(
+                    length: length,
+                    diagnostics: reading.diagnostics,
+                    waited: reading.waited,
+                    burst: reading.burst,
+                    // The burst's times are the observer's clock, the system uptime.
+                    sinceCapture: reading.burst.map { ProcessInfo.processInfo.systemUptime - $0.capturedAt }
+                ))
             }
-            let summary = VerificationSummary.make(reading.checks)
-            let chevron = reading.chevronListed.map(String.init) ?? "unread"
-            logger.info(
-                """
-                IceBar trial: length \(length, privacy: .public) hidden \(summary.hidden, privacy: .public) \
-                drawn \(summary.stillDrawn, privacy: .public) of \(reading.checks.count, privacy: .public) \
-                chevron \(chevron, privacy: .public) waited \(reading.waited, privacy: .public) \
-                stable \(reading.diagnostics.map { String($0.captureStable) } ?? "unread", privacy: .public)
-                """
-            )
-            LabReport.record(.observation(
-                length: length,
-                diagnostics: reading.diagnostics,
-                waited: reading.waited,
-                burst: reading.burst,
-                // The burst's times are the observer's clock, the system uptime.
-                sinceCapture: reading.burst.map { ProcessInfo.processInfo.systemUptime - $0.capturedAt }
-            ))
             send(.observed(
                 token: token, checks: reading.checks, chevronListed: reading.chevronListed, burst: reading.burst,
                 displaced: reading.displaced

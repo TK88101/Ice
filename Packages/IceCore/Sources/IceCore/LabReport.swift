@@ -333,6 +333,35 @@ public struct LabReportSnapshot: Equatable, Sendable {
 }
 
 /// One line of the report.
+/// One bar in a `cover` event: the slots read, those a hit test confirmed, the
+/// blocks covered, and how long the panels ignored mouse events for it.
+public struct LabReportCoverBar: Equatable, Sendable {
+    public let display: UInt32
+    public let slots: [CoverSlot]
+    public let verified: [CoverSlot]
+    public let blocks: [ClosedRange<Double>]
+    public let ignoredMilliseconds: Double
+
+    public init(display: UInt32, slots: [CoverSlot], verified: [CoverSlot], blocks: [ClosedRange<Double>], ignoredMilliseconds: Double) {
+        self.display = display
+        self.slots = slots
+        self.verified = verified
+        self.blocks = blocks
+        self.ignoredMilliseconds = ignoredMilliseconds
+    }
+
+    var json: LabJSON {
+        func list(_ slots: [CoverSlot]) -> LabJSON {
+            .array(slots.map { .array([.number(Double($0.owner)), .number($0.minX), .number($0.maxX)]) })
+        }
+        return .object([
+            "display": .number(Double(display)), "slots": list(slots), "verified": list(verified),
+            "blocks": .array(blocks.map { .array([.number($0.lowerBound), .number($0.upperBound)]) }),
+            "ignoredMs": .number(ignoredMilliseconds),
+        ])
+    }
+}
+
 public enum LabReportEvent: Equatable, Sendable {
     case start(pid: Int32, bundleID: String?, holdLength: Bool)
     /// Each status the machine reports, at the moment it does.
@@ -352,6 +381,9 @@ public enum LabReportEvent: Equatable, Sendable {
     /// A line of standard input that is no command.
     case unknownCommand
     case snapshot(LabReportSnapshot)
+    /// Each change of the cover (plan 2026-11-15-cover, T5): what one
+    /// verification transaction found on each bar; no bars when it goes off.
+    case cover(generation: Int, bars: [LabReportCoverBar])
 
     var name: String {
         switch self {
@@ -364,6 +396,7 @@ public enum LabReportEvent: Equatable, Sendable {
         case .bar: "bar"
         case .unknownCommand: "unknownCommand"
         case .snapshot: "snapshot"
+        case .cover: "cover"
         }
     }
 
@@ -403,6 +436,8 @@ public enum LabReportEvent: Equatable, Sendable {
             return [:]
         case .snapshot(let snapshot):
             return snapshot.fields
+        case .cover(let generation, let bars):
+            return ["generation": .number(Double(generation)), "bars": .array(bars.map(\.json))]
         }
     }
 }

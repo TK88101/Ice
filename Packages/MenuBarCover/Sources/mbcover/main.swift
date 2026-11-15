@@ -74,6 +74,8 @@ guard !coverable.isEmpty else {
 
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
+// Without this the process is no full app and is never made active.
+app.finishLaunching()
 var waited = 0.0
 while idleSeconds() < 30, waited < 1800 {
     spin(5)
@@ -119,9 +121,30 @@ func read(_ bar: CoverBar) -> Reading {
         }
     }
     presenter.setIgnoresMouseEvents(false, displayID: bar.displayID)
+    spin(0.05)
     print(String(format: "  bar %u: %d slots (tree %.0f ms), %d hit as listed, %d not hit (stale, empty or under another window), %d hit as another owner",
                  bar.displayID, reading.slots.count, treeMs, reading.verified.count, reading.blocked, reading.disagree.count))
     return reading
+}
+
+let systemWide = AXUIElementCreateSystemWide()
+
+/// Whether another app's window (not the menu bar, not an item) is what a point of a bar hits.
+func isForeign(_ x: Double, _ bar: CoverBar) -> Bool {
+    var element: AXUIElement?
+    guard AXUIElementCopyElementAtPosition(systemWide, Float(bar.frame.minX) + Float(x), Float(bar.frame.midY), &element) == .success,
+          let element else { return false }
+    var role: AnyObject?
+    AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+    var pid: pid_t = 0
+    AXUIElementGetPid(element, &pid)
+    return !((role as? String) ?? "").hasPrefix("AXMenuBar") && pid != agentPID
+}
+
+/// The columns that differ and are not within 3 pt of a point another app's window covers.
+func unexplained(_ columns: [Int], _ bar: CoverBar) -> Int {
+    let points = Set(columns.map { (Double($0) / bar.scale).rounded(.down) }).sorted()
+    return points.filter { x in !stride(from: x - 3, through: x + 3, by: 1).contains { isForeign($0 + 0.5, bar) } }.count
 }
 
 func members(_ reading: Reading) -> [CoverSlot] {
@@ -217,16 +240,21 @@ for bar in bars {
     presenter.setIgnoresMouseEvents(true, displayID: bar.displayID)
     spin(0.02)
     for block in blocks {
+        // A column that differs must lie under another app's window (Alcove's notch).
         let differing = columns(block).filter { !same[$0] }
-        // A column that differs must lie under another app's window: nothing of the bar is hit there.
-        let points = Set(differing.map { (Double($0) / bar.scale).rounded(.down) + 0.5 }).sorted()
-        let hits = reader.owners(at: points, of: bar)
-        let explained = hits.allSatisfy { $0 == nil }
-        check(explained, "bar \(bar.displayID) block [\(Int(block.lowerBound)),\(Int(block.upperBound))]: on-screen equals below-Menubar "
-              + "(\(differing.count) of \(columns(block).count) columns differ, all under another app's window: \(explained))")
-        let left = columns(max(0, block.lowerBound - 60)...block.lowerBound).filter { !unchanged[$0] }.count
-        let right = columns(block.upperBound...min(Double(bar.frame.width), block.upperBound + 60)).filter { !unchanged[$0] }.count
-        check(left == 0 && right == 0, "bar \(bar.displayID) block: the 60 pt left and right are as before the cover (\(left), \(right) columns changed)")
+        let loose = unexplained(differing, bar)
+        check(loose == 0, "bar \(bar.displayID) block [\(Int(block.lowerBound)),\(Int(block.upperBound))]: on-screen equals below-Menubar "
+              + "(\(differing.count) of \(columns(block).count) columns differ; \(loose) pt of them not under another app's window)")
+        // Another block's own columns changed too, as they should.
+        let elsewhere = blocks.filter { $0 != block }.map(columns)
+        func changed(_ range: ClosedRange<Double>) -> [Int] {
+            columns(range).filter { column in !unchanged[column] && !elsewhere.contains { $0.contains(column) } }
+        }
+        let left = changed(max(0, block.lowerBound - 60)...block.lowerBound)
+        let right = changed(block.upperBound...min(Double(bar.frame.width), block.upperBound + 60))
+        let moved = unexplained(left + right, bar)
+        check(moved == 0, "bar \(bar.displayID) block: the 60 pt left and right are as before the cover "
+              + "(\(left.count + right.count) columns changed; \(moved) pt of them not under another app's window)")
     }
     presenter.setIgnoresMouseEvents(false, displayID: bar.displayID)
 }
@@ -238,7 +266,8 @@ if let other = bars.first(where: { $0.displayID != initialActive }) {
     spin(2)
     controller.tick()
     spin(1)
-    print("active menu bar now on display \(activeMenuBarDisplay().map(String.init) ?? "?") (asked \(other.displayID), \(became ? "took" : "did not take"))")
+    print("active menu bar now on display \(activeMenuBarDisplay().map(String.init) ?? "?") (asked \(other.displayID), "
+          + "\(became ? "took" : "did not take"); this app active: \(app.isActive), key window: \(window?.isKeyWindow ?? false))")
     let second = checkCoverage("second")
     for bar in bars {
         let a = members(covered[bar.displayID]!), b = members(second[bar.displayID]!)
