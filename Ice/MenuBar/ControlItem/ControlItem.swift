@@ -177,6 +177,13 @@ final class ControlItem {
         statusItem.isVisible
     }
 
+    /// Whether the control item is in the menu bar at exactly this length:
+    /// Ice's own state of it, whatever Accessibility lists (macOS 27.2 lists
+    /// no item that is pushed off the bar; plan 2026-11-15-blind-at-length, D1).
+    func holdsLength(_ length: CGFloat) -> Bool {
+        statusItem.isVisible && statusItem.length == length
+    }
+
     /// The corresponding section name for the control item.
     var sectionName: MenuBarSection.Name {
         switch identifier {

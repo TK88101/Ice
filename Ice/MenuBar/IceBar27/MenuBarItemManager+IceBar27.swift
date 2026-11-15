@@ -70,8 +70,14 @@ extension MenuBarItemManager {
             childIdentifiersByPID: discovery.childIdentifiersByPID,
             iconPlacement: iconPlacement,
             hasExited: Self.hasExited,
-            display: BarDisplay(bounds: discovery.bounds, originX: discovery.origin.x, originY: discovery.origin.y)
+            display: BarDisplay(bounds: discovery.bounds, originX: discovery.origin.x, originY: discovery.origin.y),
+            holdsWrittenLength: (iceBarHidingStorage as? IceBarHidingCoordinator)?.holdsWrittenLength ?? false
         )
+        if next.rules.isBlindAtLength, !sawBlindPass {
+            sawBlindPass = true
+            // Once: which path this system takes (plan 2026-11-15-blind-at-length, D1).
+            Self.iceBarLogger.info("IceBar: a pass at the hiding length lists no hidden divider; presses will show the section first")
+        }
         let tags = Set(next.rules.lastKeys.keys)
         next.lastItems = next.lastItems.filter { tags.contains($0.key) }
         let itemsByKey = Dictionary(discovery.set.items.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
@@ -109,8 +115,11 @@ extension MenuBarItemManager {
         kill(pid, 0) == -1 && errno == ESRCH
     }
 
-    /// Presses the item while it stays pushed off the bar. One press per item
-    /// at a time; a failed press disables the item's cell.
+    /// Presses the item while it stays pushed off the bar; where a pushed-off
+    /// item is in no read (macOS 27.2), on the bar, the coordinator showing
+    /// the section for it (plan 2026-11-15-blind-at-length, D3). One press per
+    /// item at a time; a failed press disables the item's cell, one that was
+    /// called off (a drag, the mode, another press under way) does not.
     func pressFromIceBar(_ item: MenuBarItem) {
         guard !pendingPresses.contains(item.id), !unpressableItems.contains(item.id) else {
             return
@@ -121,8 +130,19 @@ extension MenuBarItemManager {
         }
         pendingPresses.insert(item.id)
         let generation = pressGeneration
+        let tag = iceBarRoster.rules.membership.members.first { iceBarRoster.lastItems[$0.tag]?.id == item.id }?.tag
         Task {
-            let outcome = await MenuBarItemPresser.press(key)
+            var outcome: PressOutcome?
+            switch await MenuBarItemPresser.press(key) {
+            case .pressed(let direct):
+                outcome = direct
+            case .notListed:
+                if let tag, let coordinator = iceBarHidingStorage as? IceBarHidingCoordinator {
+                    outcome = await coordinator.pressOnBar(key, tag: tag)
+                } else {
+                    outcome = .failed
+                }
+            }
             // The roster was reset meanwhile: this press speaks for no cell.
             guard generation == pressGeneration else {
                 return

@@ -26,7 +26,7 @@ final class IceBarHidingCoordinator {
     /// (`DiscoveredCachePlan.settleSeconds`), and a little more.
     private static let rereadDelay: Duration = .milliseconds(Int(DiscoveredCachePlan.settleSeconds * 1000) + 150)
 
-    private weak var appState: AppState?
+    private(set) weak var appState: AppState?
     /// Hide at once, unverified, unless the lab asks for the checks (plan
     /// 2026-11-12-hide-at-once).
     private var machine = IceBarHidingMachine(parameters: LabReport.verifiesHiding ? .standard : .unverified)
@@ -69,7 +69,22 @@ final class IceBarHidingCoordinator {
     )
     /// The length last written to the hidden divider (`applyLength`): `nil`
     /// at standard length, whatever the machine decided.
-    private var writtenLength: Double?
+    private(set) var writtenLength: Double?
+
+    // The hold of the bar at standard length (plan 2026-11-15-blind-at-length,
+    // D3, D4); its work is in `IceBarHidingCoordinator+Hold.swift`.
+    var hold = IceBarHold()
+    /// The press a hold has dispatched: the windows on screen before it, and
+    /// the first window of the pressed app that was not among them.
+    var heldPress: (token: Int, pid: pid_t, before: Set<UInt32>, opened: UInt32?)?
+    /// The IceBar asked for while a re-read was owed: opened when the
+    /// re-read's hold ends with the length applied (D4).
+    var deferredOpening: (token: Int, section: MenuBarSection.Name)?
+    /// The coordinator itself is calling `MenuBarSection.show()` for a
+    /// deferred opening: that call is not deferred again.
+    var isOpeningDeferred = false
+    /// When an app last started (the system uptime), `nil` before any.
+    var lastLaunchAt: Double?
     /// The display that had the active menu bar at the last tick.
     private var activeDisplayID: CGDirectDisplayID?
     /// The machine's last status line for the owner; the cover's notice is said after it.
@@ -77,12 +92,30 @@ final class IceBarHidingCoordinator {
 
     static let coverNoScreenRecording = "Ice needs Screen Recording to hide items on a display that would still show them."
     static let coverBarNotTransparent = "A display's menu bar is not transparent, so Ice cannot hide items on it."
+    /// Said after the status line on a system that lists no pushed-off item
+    /// (plan 2026-11-15-blind-at-length, D5).
+    static let blindLimits = "On this macOS version a hidden item opens with the hidden items back on the menu bar, "
+        + "and an item that appears while they are hidden is listed the next time the Ice Bar opens."
 
-    private let logger = Logger(category: "IceBarHiding")
+    let logger = Logger(category: "IceBarHiding")
 
     /// Whether Ice rests at a length, so the IceBar may be offered.
     var isLengthApplied: Bool {
         machine.lengthApplied
+    }
+
+    /// Ice's own state, not Accessibility, says the hidden control item is in
+    /// the bar at the length last written (`BlindAtLength`, D1).
+    var holdsWrittenLength: Bool {
+        guard let writtenLength, let controlItem = appState?.menuBarManager.controlItem(withName: .hidden) else {
+            return false
+        }
+        return controlItem.holdsLength(CGFloat(writtenLength))
+    }
+
+    /// IceBar mode is on, as the machine was last told.
+    var isModeOn: Bool {
+        machine.phase != .off
     }
 
     /// What the lab report reads of the machine (S4 design D1).
@@ -107,6 +140,7 @@ final class IceBarHidingCoordinator {
             .sink { [weak self, weak appState] isIceBar in
                 if !isIceBar {
                     appState?.itemManager.resetIceBarRoster()
+                    self?.endHold(.modeOff)
                 }
                 self?.send(.mode(isIceBar: isIceBar))
             }
@@ -167,6 +201,14 @@ final class IceBarHidingCoordinator {
             self?.cover.invalidateBackgrounds()
         }
         .store(in: &cancellables)
+        // An app started: where a pushed-off item is in no read, its item is
+        // read only at standard length (plan 2026-11-15-blind-at-length, D4).
+        workspace.publisher(for: NSWorkspace.didLaunchApplicationNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.lastLaunchAt = ProcessInfo.processInfo.systemUptime
+            }
+            .store(in: &cancellables)
         timer = .scheduledTimer(withTimeInterval: Self.tickInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tick()
@@ -228,10 +270,11 @@ final class IceBarHidingCoordinator {
         case .barNotTransparent: OwnerMessage(Self.coverBarNotTransparent)
         case nil: nil
         }
-        let message: OwnerMessage? = switch (statusMessage, notice) {
-        case (let status?, let notice?): OwnerMessage("%@ %@", .message(status), .message(notice))
-        case (let status?, nil): status
-        case (nil, let notice): notice
+        // The limits of a system that lists no pushed-off item, with any line but a blocked one (D5).
+        let isBlocked = if case .state(.blocked) = machine.status { true } else { false }
+        let blind = statusMessage != nil && !isBlocked && appState.itemManager.sawBlindPass ? OwnerMessage(Self.blindLimits) : nil
+        let message = [statusMessage, notice, blind].compactMap { $0 }.reduce(nil as OwnerMessage?) { said, next in
+            said.map { OwnerMessage("%@ %@", .message($0), .message(next)) } ?? next
         }
         let status = message.map(HidingCheckStatus.init(message:))
         if appState.hidingCheckStatus != status {
@@ -268,7 +311,7 @@ final class IceBarHidingCoordinator {
         }
     }
 
-    private func tick() {
+    func tick() {
         cover.tick()
         guard machine.phase != .off, !isSampling, let screen = NSScreen.screenWithActiveMenuBar ?? NSScreen.main else {
             return
@@ -303,11 +346,13 @@ final class IceBarHidingCoordinator {
                 rereadSoon()
             }
             wasArranging = isArranging
+            advanceHold(isArranging: isArranging, appState: appState)
             let sample = sample(
                 appState: appState, screen: screen, menuMaxX: menuMaxX, isMouseOnBar: isMouseOnBar, isArranging: isArranging
             )
             isInteracting = sample.isInteracting
             send(.sample(sample))
+            openDeferredIfApplied()
         }
     }
 
@@ -333,7 +378,8 @@ final class IceBarHidingCoordinator {
                 isArranging: isArranging, arrangingEndedAt: arrangingEndedAt,
                 rereadAt: appState.itemManager.lastPassBeganAt, now: ProcessInfo.processInfo.systemUptime
             ),
-            boundaryUsable: appState.itemManager.hiddenBoundaryUsable
+            boundaryUsable: appState.itemManager.hiddenBoundaryUsable,
+            isHeld: hold.isHeld
         )
     }
 

@@ -271,3 +271,18 @@ it returns (D3, `showing`). Two wordings adopted: the release's pass is awaited 
 token checked again after it; the opening waits for the length to be applied. Codex names
 the `showing` phase's window attribution as the step most likely to fail: R4 measures it
 on a menu and on a popover. Plan final, 2026-11-16.
+
+## Appendix C: what the building changed (2026-11-16)
+
+- D2: the item tags also lose the tag of a member whose process exited (positively gone),
+  so that exit is the soft change it is on a bar that lists the item gone (plan
+  `2026-11-13-flash-on-item-change`, D1); otherwise it would retire the length.
+- D3: the presser finds the element and presses it in two calls a main-actor hop apart
+  (`find`, `press`), so the hold can be marked `pressing` and the windows listed before
+  the press goes out; an element gone in between fails the press as before.
+- D4, D5: "the last pass was blind" is kept as "a blind pass was seen since Ice started"
+  (`MenuBarItemManager.sawBlindPass`): the pane's line then changes once, not with every
+  hold. The sentence is the app's own template beside the cover's notices
+  (`IceBarHidingCoordinator.blindLimits`, the hand-key list), not `IceBarHidingStatus`'s.
+- D4: the trusted pass's time is read at each tick (and at the tick `rereadSoon` makes
+  after its pass), not pushed by the pass.

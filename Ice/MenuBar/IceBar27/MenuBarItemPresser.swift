@@ -10,7 +10,9 @@ import MenuBarDiscovery
 
 /// Opens a menu bar item from the IceBar on macOS 27 by pressing it over
 /// Accessibility while it stays pushed off the bar (plan
-/// 2026-10-03-icebar-build, D3 and 9.5; T0 spike B: 5/5). No fallback.
+/// 2026-10-03-icebar-build, D3 and 9.5; T0 spike B: 5/5 on 27.0.1). Where a
+/// pushed-off item is not listed (27.2) the press answers `.notListed` and
+/// the coordinator shows the section for it (plan 2026-11-15-blind-at-length, D3).
 @available(macOS 27, *)
 enum MenuBarItemPresser {
     /// For each attribute read, as `LiveMenuBarAXReader` reads them.
@@ -19,20 +21,51 @@ enum MenuBarItemPresser {
     /// timeout is long; `PressOutcome` reads a late timeout as that menu.
     private static let pressTimeout: Float = 60
 
-    static func press(_ key: ItemKey) async -> PressOutcome {
+    /// What asking for a press came to.
+    enum Attempt: Equatable {
+        /// The item is in no read: its app has no extras bar, or no child
+        /// the key names. On macOS 27.2 that is every item pushed off the
+        /// bar (plan 2026-11-15-blind-at-length, F3); nothing was pressed.
+        case notListed
+        case pressed(PressOutcome)
+    }
+
+    /// An item's element as found, to be pressed at once.
+    struct Target: @unchecked Sendable {
+        fileprivate let element: AXUIElement
+    }
+
+    /// Finds the item and presses it where it is.
+    static func press(_ key: ItemKey) async -> Attempt {
+        guard let target = await find(key) else {
+            return .notListed
+        }
+        return .pressed(await press(target))
+    }
+
+    /// The item's element now, or `nil` when it is not listed.
+    static func find(_ key: ItemKey) async -> Target? {
+        await onGlobalQueue { findNow(key) }
+    }
+
+    static func press(_ target: Target) async -> PressOutcome {
+        await onGlobalQueue { pressNow(target) }
+    }
+
+    private static func onGlobalQueue<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
         await withCheckedContinuation { continuation in
             // Not a serial queue: one item's open menu must not hold up the next press.
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: pressNow(key))
+                continuation.resume(returning: body())
             }
         }
     }
 
-    private static func pressNow(_ key: ItemKey) -> PressOutcome {
+    private static func findNow(_ key: ItemKey) -> Target? {
         let app = AXUIElementCreateApplication(key.pid)
         AXUIElementSetMessagingTimeout(app, readTimeout)
         guard let bar = element(app, "AXExtrasMenuBar") else {
-            return .failed
+            return nil
         }
         // Type-checked one by one: another process chose these values.
         let children = LiveExtrasReader.childElements(attribute(bar, kAXChildrenAttribute))
@@ -42,12 +75,15 @@ enum MenuBarItemPresser {
             return PressTargetRule.identifier(role: string(child, kAXRoleAttribute), identifier: string(child, "AXIdentifier"))
         }
         guard let index = PressTargetRule.index(for: key, identifiers: identifiers) else {
-            return .failed
+            return nil
         }
-        let target = children[index]
-        AXUIElementSetMessagingTimeout(target, pressTimeout)
+        return Target(element: children[index])
+    }
+
+    private static func pressNow(_ target: Target) -> PressOutcome {
+        AXUIElementSetMessagingTimeout(target.element, pressTimeout)
         let start = ProcessInfo.processInfo.systemUptime
-        let error = AXUIElementPerformAction(target, kAXPressAction as CFString)
+        let error = AXUIElementPerformAction(target.element, kAXPressAction as CFString)
         return PressOutcome.classify(
             succeeded: error == .success,
             timedOut: error == .cannotComplete,

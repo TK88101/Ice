@@ -26,3 +26,4 @@ No items to check
 %@; %@
 A display's menu bar is not transparent, so Ice cannot hide items on it.
 Ice needs Screen Recording to hide items on a display that would still show them.
+On this macOS version a hidden item opens with the hidden items back on the menu bar, and an item that appears while they are hidden is listed the next time the Ice Bar opens.

@@ -97,6 +97,17 @@ final class MenuBarItemManager: ObservableObject {
     /// after the sections were read at standard length.
     private(set) var hiddenBoundaryUsable = false
 
+    /// When the last pass that could place items by the hidden divider began
+    /// (the system uptime): what a re-read before the IceBar opens waits
+    /// for, and what an app's start is compared with (`ArrivalRule`; plan
+    /// 2026-11-15-blind-at-length, D4).
+    private(set) var lastTrustedPassBeganAt: Double?
+
+    /// A pass was blind at length since Ice started (`BlindAtLength`): this
+    /// system lists no item that is pushed off the bar. Never reset: the
+    /// pane's line and the IceBar's opening go by it.
+    var sawBlindPass = false
+
     /// Where Ice's icon is against its hidden divider, as the last macOS 27
     /// pass with the divider at standard length read it, or not on the bar
     /// as any pass read it; `nil`: right of it (plan
@@ -663,6 +674,9 @@ extension MenuBarItemManager {
             }
             hiddenBoundaryUsable = !publication.notes.contains { note in
                 if case .hidden = note { true } else { false }
+            }
+            if hiddenBoundaryUsable {
+                lastTrustedPassBeganAt = passStart
             }
             let placement = IcePlacementNotice.placement(
                 held: iconPlacement,

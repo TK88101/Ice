@@ -162,6 +162,18 @@ final class MenuBarSection {
         }
 
         if useIceBar {
+            // Where an item pushed off the bar is in no read (macOS 27.2), an
+            // item that arrived while the section was hidden is read first:
+            // the coordinator opens the IceBar after that (plan
+            // 2026-11-15-blind-at-length, D4).
+            if
+                #available(macOS 27, *),
+                let coordinator = appState?.itemManager.iceBarHidingStorage as? IceBarHidingCoordinator,
+                coordinator.defersOpening(of: name)
+            {
+                return
+            }
+
             // On macOS 27 the IceBar is offered only while Ice rests at a
             // hiding length; otherwise its items are on the bar and the layout
             // pane says why (plan 2026-10-07-icebar-preference-hiding, T3b).

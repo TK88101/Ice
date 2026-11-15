@@ -1276,6 +1276,17 @@
         }
       }
     },
+    "On this macOS version a hidden item opens with the hidden items back on the menu bar, and an item that appears while they are hidden is listed the next time the Ice Bar opens.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在這個 macOS 版本上，開啟隱藏的項目時，隱藏的項目會回到選單列上；隱藏期間新出現的項目，會在下次開啟 Ice Bar 時列出。"
+          }
+        }
+      }
+    },
     "Open Ice Settings": {
       "localizations": {
         "zh-Hant": {
