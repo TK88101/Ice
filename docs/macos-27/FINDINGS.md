@@ -897,3 +897,49 @@ references `absent`, the fold `unreadable`). What the round showed beside that:
 - `drawn`: discovery read `incomplete:1` for 13 s at t = 280 s (cause unknown); Ice
   retired the length, said `blocked(discoveryIncomplete)`, and on recovery baselined and
   walked again from 736. One walk to the floor is about 330 s.
+
+## A second display's bar: what is read, what is hit, what covers (2026-11-15, plan 2026-11-15-cover)
+
+**MEASURED, the owner's Mac (built-in 1728 pt with a notch + Sidecar 1314 pt), macOS 27;
+evidence `~/IceReverse-evidence/20261115-cover-feasibility/` and `20261115-cover-t5{,b,c,d,e,f}`.**
+
+- `MenuBarAgent`'s Accessibility tree has one `AXWindow` per bar with that bar's frame and
+  one child per item slot with its frame on that bar; the slot's own child carries the
+  owning app's pid. A batched read of one bar takes 4-35 ms. The Sidecar's window lists
+  the hidden-section members at their standard-length places while the length is applied;
+  the built-in's lists none of them (the band hides them there).
+- The built-in can have three such windows with the same frame. Seconds after a length
+  change one read found two of them still listing the members at their old places while
+  the third did not; a later read found all three alike.
+- A hit test through `MenuBarAgent`'s element at a point of a bar returns the pid of the
+  app whose item is drawn there (1.2-1.6 ms), on both bars. A window of another app over
+  the bar stops it; a window of ours stops it while it takes mouse events and, a moment
+  after `ignoresMouseEvents` is set, no longer (the wait is polled: up to 0.2 s).
+- That answer comes from the owning app. On a bar other than the one its own status
+  window lies on, an app answers only if it has a main menu: it then answers with its
+  `AXMenuBar`, at any point of the bar. A minimal accessory app with one status item,
+  run twice under one identity: without `NSApp.mainMenu` its slot on the Sidecar answers
+  nothing (`kAXErrorNotImplemented`, -25208) at seven points while its slot on the
+  built-in answers with its pid; with a main menu both answer. Its application element
+  exposes the same 19 attribute names either way. Twelve of twelve third-party items on
+  the owner's Sidecar bar answer; our lab helper (`vzhelper`, no main menu) never does
+  (143 s, launched directly or through LaunchServices, with or without an item menu).
+- -25208 is also what the agent returns on empty bar space, in a gap between two slots
+  and under another app's window: the error does not tell an app that answers nothing
+  from nothing there.
+- The menu bar is transparent: in every empty stretch of both bars the on-screen pixels
+  equal the pixels of everything below the system's `Menubar` window (mean difference
+  0.0 of 255); a screen-filling window under the bar changed that by its shadow only.
+- `NSWorkspace.desktopImageURL` returns the system default, not the wallpaper in use: the
+  background cannot be drawn from a file.
+- A borderless panel at `.statusBar` level drawing those below-`Menubar` pixels over the
+  members leaves no seam in a capture (0 columns differ over the block, two sessions,
+  runs `-t5b` to `-t5e`); a notch app's window stays above it.
+- Single captures (two image calls, up to four within a second, then none for 12 s) did
+  not summon the violet capture block in any run; each shows the system's dot by the
+  clock for 10-20 s, which moves every item 3 pt left meanwhile.
+- A status item with a fresh autosave name and no seed lands left of every other item
+  (so left of Ice's divider: a hidden-section member); one without an autosave name
+  lands at its process's remembered place. The agent's store then gains
+  `status:vzhelper::<name>` and `<name>-2` in `TrailingItemPreferredPositions` and
+  changes no other key (run `-t5e`).
