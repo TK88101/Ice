@@ -286,3 +286,22 @@ on a menu and on a popover. Plan final, 2026-11-16.
   (`IceBarHidingCoordinator.blindLimits`, the hand-key list), not `IceBarHidingStatus`'s.
 - D4: the trusted pass's time is read at each tick (and at the tick `rereadSoon` makes
   after its pass), not pushed by the pass.
+
+## Appendix D: the review of the code (2026-11-16, /simcodex, capped at two rounds)
+
+Round 1: four reviewers once (reuse, simplification, efficiency, altitude; read-only) and
+Codex on the branch against `main`. Codex: no actionable correctness issue. No P0.
+
+| Finding | By | Ruling |
+|---|---|---|
+| `OpenedInterfaceWatcher` decoded the window list by hand (P1) | reuse | adopted: `Bridging.getWindowList` and `WindowInfo`, as upstream's own shown-for-a-click does |
+| the watcher kept waking after it had found the window (P2) | efficiency | adopted: it stops once found |
+| `deferredOpening` kept a copy of the hold's token (P2); the opening re-entered `show()` behind a flag (P2) | simplification, altitude | adopted: one `deferredSection`, read only while a re-read hold is current; `show(afterReread:)` |
+| `IceBarHold.passed(trusted:)` was always true (P2) | simplification | adopted: dropped |
+| `BlindSitting` repeats `CoverSitting`'s tools; `BlindHelper` beside `Helper`; the rig's own extras reader (P1 by the reviewer, P2 here) | reuse | deferred: lab code, and sharing means rewriting the cover's runner, which cannot be run again without a second display and a sitting |
+| the new suites repeat fixtures of their sibling suites (P2) | reuse, simplification | deferred |
+| `isExcused` repeats a condition `BlindAtLength` already has (P2) | simplification | kept: the rule defends itself whoever calls it, and is tested so |
+| `endHold(_:)` has one caller and one argument (P2) | simplification | kept |
+| F1: a blind pass drops the members from `discoveredSectionMap`; a pass in the divider's settle after a retire then reads them as visible in `itemCache` (P2, INFERRED) | altitude | deferred: the IceBar reads the roster, not that map; a seam in STATUS |
+| F2: `coverableOwners` takes an app's other items from the last set, which on a blind pass lacks a non-member left of the divider (P2) | altitude | deferred: an app with a member and a non-member piled on the divider, on a second display; a seam in STATUS |
+| F3: the press's windows and the deferred section live beside `IceBarHold`, not in it (P2) | altitude | deferred |
