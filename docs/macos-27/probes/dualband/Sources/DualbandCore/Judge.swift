@@ -66,6 +66,23 @@ public enum Judge {
         )
     }
 
+    /// Columns where nearly the whole height is near black (a notch app's
+    /// drawn blob over a coloured bar), widened by `pad` on each side.
+    public static func darkBlobs(in strip: GrayStrip, darkBelow: UInt8 = 24, share: Double = 0.7, pad: Int = 8) -> [Range<Int>] {
+        guard strip.height > 0 else { return [] }
+        var spans: [Range<Int>] = []
+        var start: Int?
+        for x in 0...strip.width {
+            let dark = x < strip.width && Double((0..<strip.height).filter { strip[x, $0] < darkBelow }.count) >= share * Double(strip.height)
+            if dark, start == nil { start = x }
+            if !dark, let s = start {
+                spans.append(max(0, s - pad)..<min(strip.width, x + pad))
+                start = nil
+            }
+        }
+        return spans
+    }
+
     public static func changedLeft(of limit: Int, sample: GrayStrip, standard: GrayStrip, excluded: [Range<Int>]) -> Int {
         guard limit > 0 else { return 0 }
         let columns = (0..<limit).filter { x in !excluded.contains { $0.contains(x) } }

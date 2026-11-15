@@ -171,7 +171,10 @@ enum Masks {
                 let owner = window[kCGWindowOwnerName as String] as? String, owner != "Window Server",
                 let boundsDict = window[kCGWindowBounds as String] as? NSDictionary,
                 let bounds = CGRect(dictionaryRepresentation: boundsDict),
-                bounds.intersects(barRect), bounds.width < bar.width * 0.9
+                bounds.intersects(barRect), bounds.width < bar.width * 0.9,
+                // A tall, mostly transparent container (a notch app's) is not masked
+                // whole: what it draws on the bar is found in the strip (`darkBlobs`).
+                bounds.height <= bar.barHeight * 2
             else {
                 continue
             }

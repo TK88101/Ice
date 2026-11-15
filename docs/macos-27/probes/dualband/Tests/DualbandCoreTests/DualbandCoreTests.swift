@@ -70,6 +70,17 @@ struct JudgeTests {
         #expect(try Judge.read(sample: sample, standard: standard, spot: 60..<80, excluded: [0..<100]).spotForeground == 0)
     }
 
+    @Test("a near-black full-height blob is found and widened; a dark glyph of part height is not")
+    func blobs() {
+        var marks: [(Int, Int, UInt8)] = []
+        for x in 30..<40 { for y in 0..<10 { marks.append((x, y, 5)) } }
+        for y in 0..<4 { marks.append((70, y, 5)) }
+        let bar = strip(100, 10, fill: 120, marks: marks)
+        #expect(Judge.darkBlobs(in: bar) == [22..<48])
+        #expect(Judge.darkBlobs(in: strip(100, 10, fill: 120)) == [])
+        #expect(Judge.darkBlobs(in: strip(10, 2, fill: 0)) == [0..<10])
+    }
+
     @Test("a spot at the left edge compares nothing left of it")
     func spotAtEdge() throws {
         #expect(try Judge.read(sample: strip(10, 1, marks: [(0, 0, 250)]), standard: strip(10, 1), spot: 0..<3).newForeground == 0)

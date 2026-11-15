@@ -99,7 +99,7 @@ final class Sitting {
         let first = try captureAll(tag: nil)
         Thread.sleep(forTimeInterval: 1.0)
         let second = try captureAll(tag: "\(cond)-standard")
-        let masks = bars.map { Masks.excluded(on: $0, ownPID: getpid()) }
+        let masks = bars.indices.map { Masks.excluded(on: bars[$0], ownPID: getpid()) + Judge.darkBlobs(in: second[$0]) }
         for index in bars.indices {
             let drift = Judge.changedLeft(of: second[index].width, sample: second[index], standard: first[index], excluded: masks[index])
             guard drift <= Judge.maxNewForeground else { throw Abort(reason: "standard strip unstable on \(bars[index].displayID): \(drift)") }
