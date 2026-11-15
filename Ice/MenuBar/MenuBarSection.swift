@@ -150,7 +150,11 @@ final class MenuBarSection {
     }
 
     /// Shows the section.
-    func show() {
+    ///
+    /// - Parameter afterReread: The coordinator's own call once the bar was
+    ///   read again for the IceBar (plan 2026-11-15-blind-at-length, D4):
+    ///   the opening is not deferred a second time.
+    func show(afterReread: Bool = false) {
         guard let menuBarManager, isHidden else {
             return
         }
@@ -167,6 +171,7 @@ final class MenuBarSection {
             // the coordinator opens the IceBar after that (plan
             // 2026-11-15-blind-at-length, D4).
             if
+                !afterReread,
                 #available(macOS 27, *),
                 let coordinator = appState?.itemManager.iceBarHidingStorage as? IceBarHidingCoordinator,
                 coordinator.defersOpening(of: name)

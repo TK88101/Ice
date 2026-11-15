@@ -39,9 +39,6 @@ extension IceBarHidingCoordinator {
             return false
         }
         logger.info("IceBar hold \(token, privacy: .public): ended \(String(describing: ending), privacy: .public)")
-        if deferredOpening?.token == token, ending != .finished {
-            deferredOpening = nil
-        }
         return true
     }
 
@@ -69,7 +66,7 @@ extension IceBarHidingCoordinator {
         }
         if
             let began = manager.lastTrustedPassBeganAt,
-            hold.passed(current.token, beganAt: began, trusted: true, now: uptime, reapply: Self.reapplyWait)
+            hold.passed(current.token, beganAt: began, now: uptime, reapply: Self.reapplyWait)
         {
             logger.info("IceBar hold \(current.token, privacy: .public): the bar was read, letting it go")
         }
@@ -99,7 +96,7 @@ extension IceBarHidingCoordinator {
         guard hold.dispatched(token) else {
             return nil
         }
-        heldPress = (token, key.pid, Set(OpenedInterfaceWatcher.onScreenWindows().map(\.id)), nil)
+        heldPress = (token, key.pid, OpenedInterfaceWatcher.onScreenWindowIDs(), nil)
         let outcome = await pressWatchingWindows(target, token: token)
         // A popover's press returns before the popover is up: one more look.
         if heldPress?.token == token, heldPress?.opened == nil {
@@ -135,15 +132,14 @@ extension IceBarHidingCoordinator {
     }
 
     /// The press, and while it is out a look at the windows every quarter
-    /// second: what it opened is found in its own interval.
+    /// second until what it opened is found: found in the press's own interval.
     private func pressWatchingWindows(_ target: MenuBarItemPresser.Target, token: Int) async -> PressOutcome {
         await withTaskGroup(of: PressOutcome?.self) { group in
             group.addTask {
                 await MenuBarItemPresser.press(target)
             }
             group.addTask { @MainActor [weak self] in
-                while !Task.isCancelled {
-                    self?.lookForOpenedWindow(token)
+                while !Task.isCancelled, self?.lookForOpenedWindow(token) == false {
                     try? await Task.sleep(for: Self.windowLookInterval)
                 }
                 return nil
@@ -159,12 +155,16 @@ extension IceBarHidingCoordinator {
         }
     }
 
-    private func lookForOpenedWindow(_ token: Int) {
+    /// Looks once for the window the press opened; `true` when there is
+    /// nothing more to look for (found, or this is no longer that press).
+    @discardableResult
+    private func lookForOpenedWindow(_ token: Int) -> Bool {
         guard var press = heldPress, press.token == token, press.opened == nil else {
-            return
+            return true
         }
-        press.opened = OpenedInterfaceRule.opened(by: press.pid, in: OpenedInterfaceWatcher.onScreenWindows(), before: press.before)
+        press.opened = OpenedInterfaceWatcher.opened(by: press.pid, before: press.before)
         heldPress = press
+        return press.opened != nil
     }
 
     /// A hold that ran its course: one pass of the bar as it is now, the
@@ -186,13 +186,13 @@ extension IceBarHidingCoordinator {
     /// length first and the coordinator opens the IceBar after it.
     func defersOpening(of section: MenuBarSection.Name) -> Bool {
         guard
-            !isOpeningDeferred, isLengthApplied, let manager = appState?.itemManager, manager.sawBlindPass,
+            isLengthApplied, let manager = appState?.itemManager, manager.sawBlindPass,
             ArrivalRule.isRereadOwed(lastLaunchAt: lastLaunchAt, trustedPassBeganAt: manager.lastTrustedPassBeganAt),
             let token = hold.begin(.reread, now: uptime, wait: Self.rereadWait)
         else {
             return false
         }
-        deferredOpening = (token, section)
+        deferredSection = section
         logger.info("IceBar hold \(token, privacy: .public): a re-read before the IceBar opens")
         tick()
         return true
@@ -200,19 +200,16 @@ extension IceBarHidingCoordinator {
 
     /// After a sample: the re-read's hold has let the bar go and the length
     /// is applied again, so the IceBar opens. Its token is spent by the
-    /// release, so it opens once.
+    /// release, so it opens once; the opening is not asked about a re-read
+    /// again (one read within `ArrivalRule.grace` leaves the debt owed).
     func openDeferredIfApplied() {
         guard
-            let opening = deferredOpening, case .reapplying? = hold.current?.phase, isLengthApplied,
-            release(opening.token, .finished)
+            let current = hold.current, current.purpose == .reread, case .reapplying = current.phase, isLengthApplied,
+            let section = deferredSection, release(current.token, .finished)
         else {
             return
         }
-        deferredOpening = nil
-        isOpeningDeferred = true
-        defer {
-            isOpeningDeferred = false
-        }
-        appState?.menuBarManager.section(withName: opening.section)?.show()
+        deferredSection = nil
+        appState?.menuBarManager.section(withName: section)?.show(afterReread: true)
     }
 }

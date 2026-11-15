@@ -116,12 +116,12 @@ public struct IceBarHold: Equatable, Sendable {
         return true
     }
 
-    /// A pass ended. A waiting re-read takes a trusted one that began after
-    /// the hold did: the bar is let go (`reapplying` until `now + reapply`)
-    /// and `true` is returned. Anything else changes nothing.
-    public mutating func passed(_ token: Int, beganAt passBeganAt: Double, trusted: Bool, now: Double, reapply: Double) -> Bool {
+    /// A trusted pass at standard length ended. A waiting re-read takes one
+    /// that began after the hold did: the bar is let go (`reapplying` until
+    /// `now + reapply`) and `true` is returned. Anything else changes nothing.
+    public mutating func passed(_ token: Int, beganAt passBeganAt: Double, now: Double, reapply: Double) -> Bool {
         guard var hold = current, hold.token == token, hold.purpose == .reread, case .waiting = hold.phase,
-              trusted, passBeganAt > hold.beganAt
+              passBeganAt > hold.beganAt
         else {
             return false
         }

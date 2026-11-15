@@ -27,7 +27,7 @@ struct IceBarHoldTests {
     /// A re-read hold that took its pass at 101.1 and waits for the length until 103.1.
     static func reapplyingHold() -> (hold: IceBarHold, token: Int) {
         var (hold, token) = rereadHold()
-        _ = hold.passed(token, beganAt: 101, trusted: true, now: 101.1, reapply: 2)
+        _ = hold.passed(token, beganAt: 101, now: 101.1, reapply: 2)
         return (hold, token)
     }
 
@@ -190,15 +190,13 @@ struct IceBarHoldTests {
 
     // MARK: - A re-read hold (D4)
 
-    @Test("a re-read waits for a trusted pass that began after it did; then it lets the bar go and waits for the length")
+    @Test("a re-read waits for a pass that began after it did; then it lets the bar go and waits for the length")
     func rereadPhases() {
         var (hold, token) = Self.rereadHold()
-        let before = hold.passed(token, beganAt: 99.9, trusted: true, now: 100.2, reapply: 2)
+        let before = hold.passed(token, beganAt: 99.9, now: 100.2, reapply: 2)
         #expect(!before, "a pass from before the hold")
-        let untrusted = hold.passed(token, beganAt: 100.5, trusted: false, now: 100.6, reapply: 2)
-        #expect(!untrusted, "a pass that is not trusted")
         #expect(hold.isHeld)
-        let taken = hold.passed(token, beganAt: 101.1, trusted: true, now: 101.2, reapply: 2)
+        let taken = hold.passed(token, beganAt: 101.1, now: 101.2, reapply: 2)
         #expect(taken)
         #expect(hold.current?.phase == .reapplying(deadline: 103.2))
         #expect(!hold.isHeld, "the machine may hide again")
@@ -227,12 +225,12 @@ struct IceBarHoldTests {
     @Test("a pass does nothing for a press hold, a stale token, or a re-read already let go")
     func passedOnlyForWaitingReread() {
         var (press, pressToken) = Self.pressHold()
-        let forPress = press.passed(pressToken, beganAt: 101, trusted: true, now: 101.1, reapply: 2)
+        let forPress = press.passed(pressToken, beganAt: 101, now: 101.1, reapply: 2)
         #expect(!forPress)
         var (hold, token) = Self.rereadHold()
-        let stale = hold.passed(token + 1, beganAt: 101, trusted: true, now: 101.1, reapply: 2)
-        let first = hold.passed(token, beganAt: 101, trusted: true, now: 101.1, reapply: 2)
-        let again = hold.passed(token, beganAt: 102, trusted: true, now: 102.1, reapply: 2)
+        let stale = hold.passed(token + 1, beganAt: 101, now: 101.1, reapply: 2)
+        let first = hold.passed(token, beganAt: 101, now: 101.1, reapply: 2)
+        let again = hold.passed(token, beganAt: 102, now: 102.1, reapply: 2)
         #expect(!stale && first && !again)
         #expect(hold.current?.phase == .reapplying(deadline: 103.1))
     }

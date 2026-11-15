@@ -77,12 +77,9 @@ final class IceBarHidingCoordinator {
     /// The press a hold has dispatched: the windows on screen before it, and
     /// the first window of the pressed app that was not among them.
     var heldPress: (token: Int, pid: pid_t, before: Set<UInt32>, opened: UInt32?)?
-    /// The IceBar asked for while a re-read was owed: opened when the
-    /// re-read's hold ends with the length applied (D4).
-    var deferredOpening: (token: Int, section: MenuBarSection.Name)?
-    /// The coordinator itself is calling `MenuBarSection.show()` for a
-    /// deferred opening: that call is not deferred again.
-    var isOpeningDeferred = false
+    /// The section whose IceBar the current re-read hold opens when it ends
+    /// with the length applied (D4); read only while such a hold is current.
+    var deferredSection: MenuBarSection.Name?
     /// When an app last started (the system uptime), `nil` before any.
     var lastLaunchAt: Double?
     /// The display that had the active menu bar at the last tick.
