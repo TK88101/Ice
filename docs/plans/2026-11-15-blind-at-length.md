@@ -317,3 +317,22 @@ Codex on the branch against `main`. Codex: no actionable correctness issue. No P
 
 R5 (a drag during a hold) was not run live. A1 and A2 on `c792686`: IceCore 879 tests,
 the new rule files at 100 % of their lines, Debug and Release build.
+
+## Appendix F: merged and installed (2026-11-16, the owner: "可以，合併 main、發 1.1.3 並裝成日用版")
+
+| Step | What was done |
+|---|---|
+| Codex, last | the branch against `main` after run 5's two repairs: no actionable issue (the third such review; all three clean) |
+| What goes out | the unpushed diff scanned for names, home paths, addresses and the owner's apps: none |
+| The candidate | Release, `CODE_SIGN_IDENTITY="Apple Development"`, team `Q6WP7U2GDM`, fresh derived data outside `~/Documents`; `codesign --verify --deep --strict`; identifier, team and designated requirement equal to the installed 1.1.2's, the XPC service's team too |
+| The old app | zipped to `~/Ice-release-archive/Ice-1.1.2-daily-before-blind-20261116.zip` (tested), its settings exported beside it |
+| Installed | no Ice was running (the owner had quit it); the old bundle moved away, the candidate copied to `/Applications/Ice.app`, verified (equal `CDHash`), started by its path |
+| The look after | rested (`notVerified(unchecked:3)`), no `blocked` line in 25 s; one re-read before the Ice Bar opened, 1.3 s; the 34 settings equal the export |
+| `main` | fast-forwarded to the branch head by `git update-ref` (no checkout), pushed; tag `v1.1.3`, `Ice-1.1.3.dmg` on `TK88101/Ice` |
+
+Rollback: quit Ice, move `/Applications/Ice.app` away, `ditto -x -k` the zip above into
+`/Applications`.
+
+Open after the install: the second display's capture repair is unseen live (the iPad must
+be connected while Ice runs); the one press that failed in the owner's look (its
+Accessibility code is logged from now on); the review's deferred items (appendix D).
