@@ -53,8 +53,17 @@ public enum LabReportCommand: Equatable, Sendable {
     case barClose
     /// What a click on that member's IceBar cell does.
     case press(namespace: String, identifier: String)
+    /// Hold the hidden divider at a length, whatever the machine decides
+    /// (plan 2026-11-15-secondary-display, T-1).
+    case length(LabLengthOverride)
+    /// Give the length back to the machine.
+    case lengthRelease
 
-    /// Exactly `bar open`, `bar close` or `press <namespace> <identifier>`;
+    /// The largest length a `length` command takes.
+    public static let maxLength = 4000.0
+
+    /// Exactly `bar open`, `bar close`, `press <namespace> <identifier>`,
+    /// `length <points>`, `length standard` or `length release`;
     /// anything else is no command.
     public static func parse(_ line: String) -> LabReportCommand? {
         let words = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
@@ -62,7 +71,41 @@ public enum LabReportCommand: Equatable, Sendable {
         case "bar" where words.count == 2 && words[1] == "open": return .barOpen
         case "bar" where words.count == 2 && words[1] == "close": return .barClose
         case "press" where words.count == 3: return .press(namespace: words[1], identifier: words[2])
+        case "length" where words.count == 2: return lengthCommand(words[1])
         default: return nil
+        }
+    }
+}
+
+extension LabReportCommand {
+    /// A finite length in (0, `maxLength`], `standard` or `release`.
+    private static func lengthCommand(_ word: String) -> LabReportCommand? {
+        switch word {
+        case "standard": return .length(.standard)
+        case "release": return .lengthRelease
+        default:
+            guard
+                word.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }),
+                let points = Double(word), points > 0, points <= maxLength
+            else {
+                return nil
+            }
+            return .length(.points(points))
+        }
+    }
+}
+
+/// A length the lab runner holds the hidden divider at.
+public enum LabLengthOverride: Equatable, Sendable {
+    /// The standard length (what `nil` means to the control item).
+    case standard
+    case points(Double)
+
+    /// What the control item is given.
+    public var applied: Double? {
+        switch self {
+        case .standard: nil
+        case .points(let points): points
         }
     }
 }
@@ -120,8 +163,11 @@ public enum LabReportRule {
     /// What the hidden control item is given for a length the machine
     /// decided. Outside report mode (`plan == nil`) and without the fault,
     /// the length itself. With the fault a length is withheld; retiring one
-    /// (`nil`) withholds nothing.
-    public static func appliedLength(_ decided: Double?, plan: LabReportPlan?) -> LabReportLength {
+    /// (`nil`) withholds nothing. A runner's override wins over both.
+    public static func appliedLength(_ decided: Double?, plan: LabReportPlan?, override: LabLengthOverride? = nil) -> LabReportLength {
+        if let override {
+            return LabReportLength(applied: override.applied, held: true)
+        }
         guard let plan, plan.holdLength, decided != nil else {
             return LabReportLength(applied: decided, held: false)
         }

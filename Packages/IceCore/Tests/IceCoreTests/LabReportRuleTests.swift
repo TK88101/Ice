@@ -69,9 +69,29 @@ struct LabReportRuleTests {
         #expect(LabReportCommand.parse("bar close") == .barClose)
         #expect(LabReportCommand.parse("press com.icespike4.target vz-lab-1") == .press(namespace: "com.icespike4.target", identifier: "vz-lab-1"))
         #expect(LabReportCommand.parse("  bar open  ") == .barOpen)
-        for line in ["", "bar", "bar toggle", "bar open now", "press", "press a", "press a b c", "quit", "BAR OPEN", "length 10"] {
+        for line in ["", "bar", "bar toggle", "bar open now", "press", "press a", "press a b c", "quit", "BAR OPEN"] {
             #expect(LabReportCommand.parse(line) == nil)
         }
+    }
+
+    @Test("a length command sets a held length, standard length, or releases it; anything else is no command")
+    func parsesLengthCommands() {
+        #expect(LabReportCommand.parse("length 736") == .length(.points(736)))
+        #expect(LabReportCommand.parse("length 12.5") == .length(.points(12.5)))
+        #expect(LabReportCommand.parse("length 4000") == .length(.points(4000)))
+        #expect(LabReportCommand.parse("length standard") == .length(.standard))
+        #expect(LabReportCommand.parse("length release") == .lengthRelease)
+        for line in ["length", "length 0", "length -5", "length 4000.5", "length nan", "length inf", "length 1e9", "length abc", "length 736 now", "LENGTH 736"] {
+            #expect(LabReportCommand.parse(line) == nil)
+        }
+    }
+
+    @Test("an override replaces what the machine decided until it is released")
+    func overrideWins() {
+        #expect(LabReportRule.appliedLength(736, plan: nil, override: .points(900)) == LabReportLength(applied: 900, held: true))
+        #expect(LabReportRule.appliedLength(nil, plan: nil, override: .points(900)) == LabReportLength(applied: 900, held: true))
+        #expect(LabReportRule.appliedLength(736, plan: nil, override: .standard) == LabReportLength(applied: nil, held: true))
+        #expect(LabReportRule.appliedLength(736, plan: nil, override: nil) == LabReportLength(applied: 736, held: false))
     }
 
     let cells = [

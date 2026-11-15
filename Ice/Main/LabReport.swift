@@ -44,6 +44,12 @@ enum LabReport {
 
     private static var session: Session?
 
+    /// The runner's held length (`length` commands); only a report launch
+    /// takes commands, so this is `nil` in every other launch.
+    private static var lengthOverride: LabLengthOverride?
+    /// The machine's last decided length, given back on `length release`.
+    private static var lastDecided: Double?
+
     /// A refused report launch quits before Ice's own setup.
     static func exitIfRefused() {
         guard case .refused(let refusal) = launch else {
@@ -76,7 +82,8 @@ enum LabReport {
     /// decided: the length itself, except in a report launch that holds
     /// lengths (scenario 11's fault). Records the length event.
     static func applied(_ decided: Double?) -> Double? {
-        let outcome = LabReportRule.appliedLength(decided, plan: plan)
+        lastDecided = decided
+        let outcome = LabReportRule.appliedLength(decided, plan: plan, override: lengthOverride)
         record(.length(outcome, decided: decided))
         return outcome.applied
     }
@@ -183,6 +190,13 @@ extension LabReport {
             case .barClose:
                 appState.menuBarManager.section(withName: .hidden)?.hide()
                 write(.bar(action: "close", answer: "sent"))
+            case .length(let override):
+                LabReport.lengthOverride = override
+                setHiddenLength(override.applied, appState: appState)
+            case .lengthRelease:
+                LabReport.lengthOverride = nil
+                let decided = LabReport.lastDecided
+                setHiddenLength(LabReportRule.appliedLength(decided, plan: LabReport.plan).applied, appState: appState)
             case .press(let namespace, let identifier):
                 let cells = Self.cells(of: manager)
                 let target = LabReportRule.pressTarget(
@@ -200,6 +214,13 @@ extension LabReport {
         }
 
         // MARK: Snapshot
+
+        /// Sets the hidden control item's length and records it, as the
+        /// coordinator's `.setLength` does.
+        private func setHiddenLength(_ length: Double?, appState: AppState) {
+            appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = length.map { CGFloat($0) }
+            write(.length(LabReportLength(applied: length, held: LabReport.lengthOverride != nil), decided: LabReport.lastDecided))
+        }
 
         private static func key(of item: MenuBarItem) -> ItemKey? {
             guard case .accessibility(let encoded) = item.id else {
