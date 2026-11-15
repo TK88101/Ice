@@ -179,7 +179,7 @@ struct CoverControllerTests {
         rig.start()
         #expect(rig.presenter.shown[7] == [496...580])
         #expect(rig.capturer.calls == 2)
-        #expect(rig.reports.last?.reports.first?.verified.count == 2)
+        #expect(rig.reports.last?.reports.first?.covered.count == 2)
     }
 
     @Test("the panel follows the members when they move, without another capture")
@@ -203,7 +203,7 @@ struct CoverControllerTests {
         rig.reader.slotsByDisplay[7] = (rig.reader.slotsByDisplay[7] ?? []).map { $0 + [stale] }
         rig.start()
         #expect(rig.presenter.shown[7] == [496...580])
-        #expect(rig.reports.last?.reports.first?.verified.contains(stale) == false)
+        #expect(rig.reports.last?.reports.first?.covered.contains(stale) == false)
     }
 
     @Test("going off removes every panel before it returns, and a read that ends later changes nothing")
@@ -355,7 +355,7 @@ struct CoverControllerTests {
         rig.controller.tick()
         #expect(rig.presenter.shown[7] == [436...472, 496...542])
         #expect(rig.reports.last?.reports.first?.silent == [rig.slot(3, 440, 28)])
-        #expect(rig.reports.last?.reports.first?.verified == [rig.slot(3, 440, 28), rig.slot(1, 500, 38)])
+        #expect(rig.reports.last?.reports.first?.covered == [rig.slot(3, 440, 28), rig.slot(1, 500, 38)])
         let calls = rig.reader.hitCalls
         rig.advance(1)
         rig.controller.tick()

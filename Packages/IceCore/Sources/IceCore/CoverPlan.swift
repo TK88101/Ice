@@ -30,6 +30,11 @@ public enum CoverHit: Equatable, Sendable {
     case owner(Int32)
     case silent
     case failed
+
+    /// The pid of the item hit, if one answered.
+    public var owner: Int32? {
+        if case .owner(let pid) = self { pid } else { nil }
+    }
 }
 
 public enum CoverPlan {
@@ -62,9 +67,8 @@ public enum CoverPlan {
     /// and no other item is hit at any; a point that is silent or failed
     /// neither confirms nor vetoes.
     public static func isVerified(owner: Int32, hits: [CoverHit]) -> Bool {
-        hits.contains(.owner(owner)) && !hits.contains { hit in
-            if case .owner(let other) = hit { other != owner } else { false }
-        }
+        let owners = hits.compactMap(\.owner)
+        return owners.contains(owner) && owners.allSatisfy { $0 == owner }
     }
 
     /// Nothing answered at any of a candidate's points: its app may be one
@@ -124,9 +128,9 @@ public struct CoverSilentTrack: Equatable, Sendable {
     /// passes again at once when a capture is owed).
     public static let passSpacing = 0.9
     /// A frame within this of the last pass's is the same slot.
-    public static let frameTolerance = 1.0
+    static let frameTolerance = 1.0
     /// The width the tree gives Ice's hidden divider at the applied length.
-    public static let ownDividerWidth = 16.0
+    static let ownDividerWidth = 16.0
 
     private struct Entry: Equatable, Sendable {
         let slot: CoverSlot
@@ -194,8 +198,11 @@ public struct CoverSilentTrack: Equatable, Sendable {
         one.owner == other.owner && abs(one.minX - other.minX) <= frameTolerance && abs(one.maxX - other.maxX) <= frameTolerance
     }
 
-    /// Whether a distinct slot of the read reaches into it. The same slot
-    /// listed again by another window with that bar's frame is no other slot.
+    /// Whether a distinct slot of the read reaches into it (more than a shared
+    /// edge). The same slot listed again by another window with that bar's
+    /// frame is no other slot, but only when it is exactly the same: a copy
+    /// half a point off is a distinct slot, and the candidate does not stand
+    /// (the tolerance of `isSame` is for the slot's own history, not for this).
     private static func isOverlapped(_ slot: CoverSlot, among slots: [CoverSlot], own: Int32) -> Bool {
         slots.contains { other in
             other != slot && other.minX < slot.maxX && slot.minX < other.maxX && !isOwnDivider(other, inside: slot, own: own)

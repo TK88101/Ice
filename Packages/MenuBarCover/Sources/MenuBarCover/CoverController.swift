@@ -120,7 +120,7 @@ public final class CoverController {
 
     public private(set) var generation = 0
     public private(set) var notice: CoverNotice?
-    /// Called on the main thread whenever a bar's blocks or verified slots
+    /// Called on the main thread whenever a bar's blocks or covered slots
     /// change, and when the cover goes off (no reports): the lab's `cover` event.
     public var onReport: (([CoverBarReport], Int) -> Void)?
 
@@ -298,31 +298,26 @@ public final class CoverController {
             let previous = input.states[bar.displayID] ?? BarState()
             let candidates = CoverPlan.candidates(slots: slots, coverable: input.coverable)
             var state = BarState(slots: slots, candidates: candidates, verifiedAt: previous.verifiedAt)
-            var ignored = 0.0
-            let hits: [CoverSlot: [CoverHit]]
-            if input.force || candidates != previous.candidates || input.now - previous.verifiedAt >= reverifyEvery {
-                // Every candidate again. A slot under a panel that takes mouse
-                // events answers nothing: the panels are opened for the test.
-                let toggles = !previous.blocks.isEmpty
-                let started = clock()
-                if toggles {
-                    setIgnores(true, bar.displayID)
-                    awaitOpen(previous.verified, on: bar, reader: reader, pause: pause)
-                }
-                hits = test(candidates, on: bar, reader: reader)
-                if toggles {
-                    setIgnores(false, bar.displayID)
-                    ignored = (clock() - started) * 1000
-                }
-                state.verified = candidates.filter { CoverPlan.isVerified(owner: $0.owner, hits: hits[$0] ?? []) }
-                state.verifiedAt = input.now
-            } else {
-                // No toggle: the slots under panels stay on the tree's word, the others are tested.
-                let kept = Set(previous.verified.filter(candidates.contains))
-                let standing = candidates.filter { previous.silent.stands($0, among: slots, own: input.own) }
-                hits = test(candidates.filter { !kept.contains($0) && !standing.contains($0) }, on: bar, reader: reader)
-                state.verified = candidates.filter { kept.contains($0) || CoverPlan.isVerified(owner: $0.owner, hits: hits[$0] ?? []) }
+            // Every candidate is tested again when forced, when the candidates changed and every `reverifyEvery`;
+            // between those the slots under panels stay on the tree's word and only the others are tested.
+            let reverifies = input.force || candidates != previous.candidates || input.now - previous.verifiedAt >= reverifyEvery
+            let kept = reverifies ? [] : Set(previous.verified.filter(candidates.contains))
+            let standing = reverifies ? [] : Set(candidates.filter { previous.silent.stands($0, among: slots, own: input.own) })
+            // A slot under a panel that takes mouse events answers nothing: the panels are opened for the test.
+            let toggles = reverifies && !previous.blocks.isEmpty
+            let started = clock()
+            if toggles {
+                setIgnores(true, bar.displayID)
+                awaitOpen(previous.verified, on: bar, reader: reader, pause: pause)
             }
+            let hits = test(candidates.filter { !kept.contains($0) && !standing.contains($0) }, on: bar, reader: reader)
+            var ignored = 0.0
+            if toggles {
+                setIgnores(false, bar.displayID)
+                ignored = (clock() - started) * 1000
+            }
+            state.verified = candidates.filter { kept.contains($0) || CoverPlan.isVerified(owner: $0.owner, hits: hits[$0] ?? []) }
+            if reverifies { state.verifiedAt = input.now }
             state.silent = previous.silent.advanced(
                 candidates: candidates, hitVerified: state.verified, slots: slots, hits: hits, own: input.own, now: input.now
             )
@@ -411,7 +406,7 @@ public final class CoverController {
                 if budget.nextAllowed(now: environment.now()) <= environment.now() { again = true }
             }
             reports.append(CoverBarReport(
-                displayID: id, slots: result.state.slots, verified: result.state.covered, silent: result.state.silent.standing,
+                displayID: id, slots: result.state.slots, covered: result.state.covered, silent: result.state.silent.standing,
                 blocks: result.state.blocks, ignoredMilliseconds: result.ignoredMilliseconds
             ))
         }

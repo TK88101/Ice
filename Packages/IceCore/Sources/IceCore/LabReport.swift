@@ -332,25 +332,25 @@ public struct LabReportSnapshot: Equatable, Sendable {
     }
 }
 
-/// One bar in a `cover` event: the slots read, those covered (`verified`),
-/// which of them stand without a hit test's answer (`silent`, plan
-/// 2026-11-15-cover, Amendment B), the blocks, and how long the panels
+/// One bar in a `cover` event: the slots read, those under a panel
+/// (`covered`), which of them stand without a hit test's answer (`silent`,
+/// plan 2026-11-15-cover, Amendment B), the blocks, and how long the panels
 /// ignored mouse events for it.
 public struct LabReportCoverBar: Equatable, Sendable {
     public let display: UInt32
     public let slots: [CoverSlot]
-    public let verified: [CoverSlot]
+    public let covered: [CoverSlot]
     public let silent: [CoverSlot]
     public let blocks: [ClosedRange<Double>]
     public let ignoredMilliseconds: Double
 
     public init(
-        display: UInt32, slots: [CoverSlot], verified: [CoverSlot], silent: [CoverSlot], blocks: [ClosedRange<Double>],
+        display: UInt32, slots: [CoverSlot], covered: [CoverSlot], silent: [CoverSlot], blocks: [ClosedRange<Double>],
         ignoredMilliseconds: Double
     ) {
         self.display = display
         self.slots = slots
-        self.verified = verified
+        self.covered = covered
         self.silent = silent
         self.blocks = blocks
         self.ignoredMilliseconds = ignoredMilliseconds
@@ -361,7 +361,7 @@ public struct LabReportCoverBar: Equatable, Sendable {
             .array(slots.map { .array([.number(Double($0.owner)), .number($0.minX), .number($0.maxX)]) })
         }
         return .object([
-            "display": .number(Double(display)), "slots": list(slots), "verified": list(verified), "silent": list(silent),
+            "display": .number(Double(display)), "slots": list(slots), "covered": list(covered), "silent": list(silent),
             "blocks": .array(blocks.map { .array([.number($0.lowerBound), .number($0.upperBound)]) }),
             "ignoredMs": .number(ignoredMilliseconds),
         ])

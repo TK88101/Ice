@@ -66,7 +66,7 @@ public struct CoverBarReport: Equatable {
     public let displayID: UInt32
     public let slots: [CoverSlot]
     /// Every slot under a panel, left to right.
-    public let verified: [CoverSlot]
+    public let covered: [CoverSlot]
     /// Those of them that stand without a hit test's answer (Amendment B).
     public let silent: [CoverSlot]
     public let blocks: [ClosedRange<Double>]

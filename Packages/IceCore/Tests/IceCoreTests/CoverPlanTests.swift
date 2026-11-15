@@ -167,11 +167,20 @@ struct CoverSilentTrackTests {
         CoverSlot(owner: owner, minX: minX, maxX: minX + width)
     }
 
+    /// One pass, a second after the last, over one candidate: tested with `hits` (not tested when `nil`),
+    /// in a read that lists `slots` (the candidate alone by default).
+    func pass(
+        _ track: CoverSilentTrack, _ candidate: CoverSlot, hits: [CoverHit]? = [.silent, .silent, .silent], slots: [CoverSlot]? = nil
+    ) -> CoverSilentTrack {
+        track.advanced(
+            candidates: [candidate], hitVerified: [], slots: slots ?? [candidate], hits: hits.map { [candidate: $0] } ?? [:], own: own,
+            now: clock.tick()
+        )
+    }
+
     /// `passes` passes over the same read, the candidate tested and silent in each.
     func after(_ passes: Int, _ candidate: CoverSlot, slots: [CoverSlot]? = nil) -> CoverSilentTrack {
-        (0..<passes).reduce(CoverSilentTrack()) { track, _ in
-            track.advanced(candidates: [candidate], hitVerified: [], slots: slots ?? [candidate], hits: [candidate: quiet], own: own, now: clock.tick())
-        }
+        (0..<passes).reduce(CoverSilentTrack()) { track, _ in pass(track, candidate, slots: slots) }
     }
 
     @Test("three silent passes with the slot unchanged stand; two do not")
@@ -180,7 +189,6 @@ struct CoverSilentTrackTests {
         #expect(after(2, member).standing.isEmpty)
         #expect(after(3, member).standing == [member])
         #expect(after(5, member).standing == [member])
-        #expect(CoverSilentTrack.passesToStand == 3)
     }
 
     @Test("passes closer together than the spacing count once: two reads of one moment are one observation")
@@ -200,19 +208,17 @@ struct CoverSilentTrackTests {
         let member = slot(3, 440, 28)
         let nudged = CoverSlot(owner: 3, minX: 440.5, maxX: 468.5)
         let moved = slot(3, 442, 28)
-        let on = after(2, member).advanced(candidates: [nudged], hitVerified: [], slots: [nudged], hits: [nudged: quiet], own: own, now: clock.tick())
-        #expect(on.standing == [nudged])
-        let again = after(3, member).advanced(candidates: [moved], hitVerified: [], slots: [moved], hits: [moved: quiet], own: own, now: clock.tick())
+        #expect(pass(after(2, member), nudged).standing == [nudged])
+        let again = pass(after(3, member), moved)
         #expect(again.standing.isEmpty)
-        #expect(again.advanced(candidates: [moved], hitVerified: [], slots: [moved], hits: [moved: quiet], own: own, now: clock.tick())
-            .advanced(candidates: [moved], hitVerified: [], slots: [moved], hits: [moved: quiet], own: own, now: clock.tick()).standing == [moved])
+        #expect(pass(pass(again, moved), moved).standing == [moved])
     }
 
     @Test("a slot that goes and comes back starts again")
     func goneAndBack() {
         let member = slot(3, 440, 28)
         let gone = after(3, member).advanced(candidates: [], hitVerified: [], slots: [], hits: [:], own: own, now: clock.tick())
-        let back = gone.advanced(candidates: [member], hitVerified: [], slots: [member], hits: [member: quiet], own: own, now: clock.tick())
+        let back = pass(gone, member)
         #expect(gone.standing.isEmpty && back.standing.isEmpty)
     }
 
@@ -220,19 +226,17 @@ struct CoverSilentTrackTests {
     func failed() {
         let member = slot(3, 440, 28)
         let broken: [CoverHit] = [.silent, .failed, .silent]
-        var track = CoverSilentTrack()
-        for _ in 0..<4 { track = track.advanced(candidates: [member], hitVerified: [], slots: [member], hits: [member: broken], own: own, now: clock.tick()) }
-        #expect(track.standing.isEmpty)
-        let reset = after(3, member).advanced(candidates: [member], hitVerified: [], slots: [member], hits: [member: broken], own: own, now: clock.tick())
+        #expect((0..<4).reduce(CoverSilentTrack()) { track, _ in pass(track, member, hits: broken) }.standing.isEmpty)
+        let reset = pass(after(3, member), member, hits: broken)
         #expect(reset.standing.isEmpty)
-        #expect(reset.advanced(candidates: [member], hitVerified: [], slots: [member], hits: [member: quiet], own: own, now: clock.tick()).standing.isEmpty)
+        #expect(pass(reset, member).standing.isEmpty)
     }
 
     @Test("another item hit at any point takes the standing away")
     func vetoed() {
         let member = slot(3, 440, 28)
         let other: [CoverHit] = [.silent, .owner(20), .silent]
-        #expect(after(3, member).advanced(candidates: [member], hitVerified: [], slots: [member], hits: [member: other], own: own, now: clock.tick()).standing.isEmpty)
+        #expect(pass(after(3, member), member, hits: other).standing.isEmpty)
     }
 
     @Test("a distinct slot that overlaps it, whoever owns it, removes it on that pass; an exact duplicate from another window does not")
@@ -241,9 +245,10 @@ struct CoverSilentTrackTests {
         let visible = slot(20, 460, 30)
         let sibling = slot(3, 450, 28)
         let touching = slot(20, 468, 30)
-        for other in [visible, sibling] {
-            let track = after(3, member).advanced(candidates: [member], hitVerified: [], slots: [member, other], hits: [:], own: own, now: clock.tick())
-            #expect(track.standing.isEmpty)
+        // The same slot listed half a point off by another window: a distinct slot, by B3 (exact duplicates only).
+        let nearCopy = CoverSlot(owner: 3, minX: 440.5, maxX: 468.5)
+        for other in [visible, sibling, nearCopy] {
+            #expect(pass(after(3, member), member, hits: nil, slots: [member, other]).standing.isEmpty)
             #expect(!after(3, member).stands(member, among: [member, other], own: own))
             #expect(after(4, member, slots: [member, other]).standing.isEmpty)
         }
@@ -267,9 +272,8 @@ struct CoverSilentTrackTests {
     @Test("a standing slot that was not tested in a pass stays while the tree lists it; one that does not stand yet needs the test")
     func untested() {
         let member = slot(3, 440, 28)
-        #expect(after(3, member).advanced(candidates: [member], hitVerified: [], slots: [member], hits: [:], own: own, now: clock.tick()).standing == [member])
-        #expect(after(2, member).advanced(candidates: [member], hitVerified: [], slots: [member], hits: [:], own: own, now: clock.tick())
-            .advanced(candidates: [member], hitVerified: [], slots: [member], hits: [member: quiet], own: own, now: clock.tick()).standing.isEmpty)
+        #expect(pass(after(3, member), member, hits: nil).standing == [member])
+        #expect(pass(pass(after(2, member), member, hits: nil), member).standing.isEmpty)
     }
 
     @Test("a candidate the hit test confirmed is not tracked, and each silent slot has its own count")

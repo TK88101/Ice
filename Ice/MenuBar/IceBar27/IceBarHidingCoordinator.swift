@@ -142,11 +142,11 @@ final class IceBarHidingCoordinator {
             .store(in: &cancellables)
         cover.onReport = { [logger] reports, generation in
             // Displays and counts, no item names.
-            let blocks = reports.map { "\($0.displayID):\($0.blocks.count)/\($0.verified.count)/\($0.silent.count)" }.joined(separator: " ")
+            let blocks = reports.map { "\($0.displayID):\($0.blocks.count)/\($0.covered.count)/\($0.silent.count)" }.joined(separator: " ")
             logger.info("IceBar cover: generation \(generation, privacy: .public) blocks/covered/silent \(blocks, privacy: .public)")
             LabReport.record(.cover(generation: generation, bars: reports.map { report in
                 LabReportCoverBar(
-                    display: report.displayID, slots: report.slots, verified: report.verified, silent: report.silent, blocks: report.blocks,
+                    display: report.displayID, slots: report.slots, covered: report.covered, silent: report.silent, blocks: report.blocks,
                     ignoredMilliseconds: report.ignoredMilliseconds
                 )
             }))

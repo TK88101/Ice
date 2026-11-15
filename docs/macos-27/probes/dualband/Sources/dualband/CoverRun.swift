@@ -107,7 +107,7 @@ final class CoverSitting {
         let display: UInt32
         let slots: [CoverSlot]
         /// Every slot under a panel; `silent` are those of them that stand without a hit test's answer (Amendment B).
-        let verified: [CoverSlot]
+        let covered: [CoverSlot]
         let silent: [CoverSlot]
         let blocks: [ClosedRange<Double>]
     }
@@ -122,14 +122,14 @@ final class CoverSitting {
         }
         var bars = [ReportedBar]()
         for bar in raw {
-            guard let display = (bar["display"] as? NSNumber)?.uint32Value, let all = slots(bar["slots"]), let verified = slots(bar["verified"]),
+            guard let display = (bar["display"] as? NSNumber)?.uint32Value, let all = slots(bar["slots"]), let covered = slots(bar["covered"]),
                   let silent = slots(bar["silent"]),
                   let rows = bar["blocks"] as? [[NSNumber]], rows.allSatisfy({ $0.count == 2 && $0[0].doubleValue <= $0[1].doubleValue })
             else {
                 return nil
             }
             bars.append(ReportedBar(
-                display: display, slots: all, verified: verified, silent: silent, blocks: rows.map { $0[0].doubleValue...$0[1].doubleValue }
+                display: display, slots: all, covered: covered, silent: silent, blocks: rows.map { $0[0].doubleValue...$0[1].doubleValue }
             ))
         }
         return bars
@@ -157,10 +157,10 @@ final class CoverSitting {
         }
         for bar in bars {
             // Ice's own divider gives its room back at the applied length and is listed inside the last member's slot.
-            let owners = Set(bar.verified.map(\.owner))
+            let owners = Set(bar.covered.map(\.owner))
             let others = bar.slots.filter { !owners.contains($0.owner) && $0.owner != own }
-            check(bar.verified.allSatisfy { inside($0, bar.blocks) },
-                  "\(label) display \(bar.display): every verified member slot (\(bar.verified.count)) lies inside a block (\(bar.blocks.count)) [I2]")
+            check(bar.covered.allSatisfy { inside($0, bar.blocks) },
+                  "\(label) display \(bar.display): every covered member slot (\(bar.covered.count)) lies inside a block (\(bar.blocks.count)) [I2]")
             check(!others.contains { slot in bar.blocks.contains { $0.lowerBound < slot.maxX && slot.minX < $0.upperBound } },
                   "\(label) display \(bar.display): no block meets a slot of another owner [I1]")
         }
@@ -239,7 +239,7 @@ final class CoverSitting {
             else {
                 return nil
             }
-            let owners = Set(bar.verified.map(\.owner))
+            let owners = Set(bar.covered.map(\.owner))
             return Set(slots).filter { owners.contains($0.owner) && !inside($0, bar.blocks) }.count
         }
 
@@ -304,12 +304,8 @@ final class CoverSitting {
                 let strips = capturer.strips(of: external)
                 let same = strips.flatMap { CoverPixels.sameColumns($0.onScreen, $0.below) }
                 for slot in bare {
-                    let hits = reader.owners(at: CoverPlan.verificationPoints(slot), of: external).map { hit -> String in
-                        switch hit {
-                        case .owner(let pid): pid == slot.owner ? "own" : "pid \(pid)"
-                        case .silent: "silent"
-                        case .failed: "failed"
-                        }
+                    let hits = reader.owners(at: CoverPlan.verificationPoints(slot), of: external).map { hit in
+                        hit.owner.map { $0 == slot.owner ? "own" : "pid \($0)" } ?? (hit == .silent ? "silent" : "failed")
                     }
                     let columns = Int(slot.minX * external.scale)..<min(same?.count ?? 0, Int(slot.maxX * external.scale))
                     let drawn = same.map { same in "\(columns.filter { !same[$0] }.count) of \(columns.count)" } ?? "unread"
