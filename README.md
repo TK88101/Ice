@@ -34,8 +34,9 @@ menu bar, where a click opens their menu.
    **Open Anyway**. This is needed only once.
 4. **Grant two permissions** when Ice asks, in System Settings > Privacy & Security:
    **Accessibility** (required: Ice cannot manage the bar without it) and **Screen Recording**
-   (for the menu bar appearance options). If Screen Recording is granted while Ice runs, quit
-   and reopen Ice.
+   (for the menu bar appearance options, and to hide items on a second display). If Screen
+   Recording is granted while Ice runs, quit and reopen Ice. After an update macOS may ask for
+   it again.
 5. Optional: turn on "Launch at login" in Ice's Settings > General.
 
 ## Using it on macOS 27
