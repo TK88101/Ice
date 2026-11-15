@@ -348,3 +348,20 @@ If the owner declines: no measurement; D ships.
   "blind by cover", allowed on the built-in bar only; that bar then hides when nothing
   new is drawn outside the masks and the spot (`newForeground` only). The Sidecar bar may
   not be blind (a mapping error must not pass silently).
+
+## T0 result (run `20261115-dualband-5`, Debug `6408ca4`+G1 under the daily identity, 2026-11-15 17:34-17:40 JST)
+
+| What | Reading | Grade |
+|---|---|---|
+| Roster | 4 members of the owner's (the IceBar's) | MEASURED (lab report) |
+| U0 | at 736 pt: built-in bar hides (blind by cover), Sidecar bar does not (new 207 px, spot 342 px), at 1 s and 3 s alike. "Both bars take the same length" could not be read: the divider's AX width stays 18 pt whatever the length; the strips show it only by eye | MEASURED / not readable |
+| Coarse, built-in active, no menus and 4 menus (`a0-m0`, `a0-m4`) | Sidecar: **no length of 64-2944 pt by 64 hides** (46 of 46 `drawn`, both reads agreeing); at 704 and 1472 pt the strips are identical: the members packed right after the frontmost app's menus, drawn. Built-in: every length "hides", because the members' spot lies under the notch and a third-party notch window (Alcove) at standard length too | MEASURED (pixels, and by eye on the saved strips) |
+| The rest (10 and 24 menus, Sidecar active, fine sweep, helper) | not run: the sitting stopped at `a0-m10` (built-in spot no longer covered once its bar is compressed) and was not resumed, because rule T1 was already decided | -- |
+| Teardown, every sitting (5) | daily Ice relaunched by path; preferences equal (semantic compare); MenuBarAgent store: 0 keys and 0 values changed. Sitting 1's teardown did not run (a bug, fixed); the daily Ice was down 2 min and restored by hand from the export | MEASURED |
+
+**Branch: D.** P = ∩ over conditions; in `a0-m0` the Sidecar bar has no hiding point,
+so P is empty whatever the other conditions show. T2d (already built) is the fix; T2a
+is not built. Limit stated: on the owner's two displays, one status item length cannot
+hide the members on the Sidecar bar at all (it gives the room back and the members are
+drawn after the menus), so while the Sidecar is connected Ice does not hide and offers
+no IceBar.
