@@ -69,7 +69,7 @@ final class BlindHelper: @unchecked Sendable {
 
 final class BlindSitting {
     static let idleToStart = 300.0
-    static let startWait = 4.0 * 3600
+    static let startWait = 8.0 * 3600
     static let inputQuiet = 5.0
     static let restLength = 736.0
     static let hiddenDivider = "Ice.ControlItem.Hidden"
@@ -261,9 +261,14 @@ final class BlindSitting {
 
     func run() -> Int32 {
         defer { teardown() }
+        // The sitting is of the built-in bar. With the active menu bar on another display every item reads on
+        // that bar (run 20261116-blind-3: the helpers at x -760 with the Sidecar's bar active), so it waits for that too.
+        func builtinIsActive() -> Bool {
+            Live.activeMenuBarDisplayID().map { CGDisplayIsBuiltin($0) != 0 } ?? false
+        }
         let deadline = Date().addingTimeInterval(Self.startWait)
-        while (Live.idleSeconds() ?? 0) < Self.idleToStart {
-            guard Date() < deadline else { say("the Mac never went idle"); return 3 }
+        while (Live.idleSeconds() ?? 0) < Self.idleToStart || !builtinIsActive() {
+            guard Date() < deadline else { say("the Mac never went idle with the built-in bar active"); return 3 }
             spin(10)
         }
         let running = Daily.running()
