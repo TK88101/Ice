@@ -73,6 +73,18 @@ final class Sitting {
         if Date().timeIntervalSince(started) > Sitting.partLimit { throw Abort(reason: "part limit") }
     }
 
+    /// The spot of `bar` from the last uncompressed standard with this reference.
+    func cachedSpot(reference: UInt32, bar: UInt32) -> Range<Int>? {
+        guard let index = bars.firstIndex(where: { $0.displayID == bar }) else { return nil }
+        let line = load().last { o in
+            guard o["event"] as? String == "standard", (o["reference"] as? NSNumber)?.uint32Value == reference,
+                  let cond = o["cond"] as? String else { return false }
+            return cond == "u0" || cond.hasSuffix("-m0")
+        }
+        guard let spots = line?["spots"] as? [[Int]], index < spots.count, spots[index].count == 2 else { return nil }
+        return spots[index][0]..<spots[index][1]
+    }
+
     // MARK: - Captures and readings
 
     struct Standard {
@@ -124,7 +136,13 @@ final class Sitting {
         // The helper started last, so it stands leftmost of the members.
         let width = helperOnly ? helperWidths[0] : total
         let frames = [[divider[0] - total - slack, divider[1], width + 2 * slack, divider[3]]]
-        let spots = try bars.map { bar in
+        // A bar AX does not report on keeps the spot mapped in an uncompressed
+        // condition (no menus of ours): long menus compress only the active bar.
+        let uncompressed = cond == "u0" || cond.hasSuffix("-m0") || helperOnly || cond.hasPrefix("helper")
+        let spots = try bars.map { bar -> Range<Int> in
+            if bar != reference, !uncompressed, let cached = cachedSpot(reference: reference.displayID, bar: bar.displayID) {
+                return cached
+            }
             guard let spot = Spot.columns(frames: frames, reference: reference, on: bar) else { throw Abort(reason: "spot off bar \(bar.displayID)") }
             return spot
         }
