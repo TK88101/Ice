@@ -33,6 +33,21 @@ enum Daily {
             && shell("/usr/bin/plutil", ["-convert", "xml1", url.path]) == 0
     }
 
+    /// Keys whose values differ; JSON data values are compared decoded, since
+    /// Ice re-encodes them on launch with another key order.
+    static func semanticDifferences(_ a: URL, _ b: URL) -> [String] {
+        func load(_ url: URL) -> [String: Any]? {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        }
+        guard let left = load(a), let right = load(b) else { return ["unreadable"] }
+        func normal(_ value: Any?) -> NSObject? {
+            if let data = value as? Data, let json = try? JSONSerialization.jsonObject(with: data) as? NSObject { return json }
+            return value as? NSObject
+        }
+        return Set(left.keys).union(right.keys).filter { normal(left[$0]) != normal(right[$0]) }.sorted()
+    }
+
     static func importPrefs(from url: URL) -> Bool {
         shell("/usr/bin/defaults", ["import", bundleID, url.path]) == 0
     }

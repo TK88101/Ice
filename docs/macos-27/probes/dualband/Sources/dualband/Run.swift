@@ -25,6 +25,8 @@ final class Sitting {
     var ice: DebugIce?
     var helper: Helper?
     var ownerMembers = 0
+    /// Set before the daily Ice is quit, so every way out restores it.
+    var preflight: (prefs: URL, store: [String: String])?
     let started = Date()
     private let results: FileHandle
     private var done: Set<String> = []
@@ -298,10 +300,9 @@ final class Sitting {
     // MARK: - Sitting
 
     func run() -> Int32 {
-        var preflight: (prefs: URL, store: [String: String])?
         defer { teardown(preflight) }
         do {
-            preflight = try setUp()
+            try setUp()
             try u0()
             try coarse()
             let transitions = transitionsFromCoarse()
@@ -330,7 +331,7 @@ final class Sitting {
         }
     }
 
-    func setUp() throws -> (prefs: URL, store: [String: String]) {
+    func setUp() throws {
         bars = Live.bars()
         fingerprint = Live.fingerprint(bars)
         guard bars.count == 2, bars.contains(where: \.isBuiltin) else { throw Abort(reason: "needs the built-in and one more display") }
@@ -350,16 +351,16 @@ final class Sitting {
         guard let store = Daily.settledStore() else { throw Abort(reason: "store unreadable") }
         record(["event": "start", "fingerprint": fingerprint, "bars": bars.map { "\($0.displayID) \($0.name) \($0.width)x\($0.height)" },
                 "storeKeys": store.count])
+        preflight = (prefs, store)
         guard Daily.quit() else { throw Abort(reason: "daily Ice did not quit") }
         ice = try DebugIce(app: debugApp, log: dir.appendingPathComponent("report-\(Int(Date().timeIntervalSince1970)).jsonl"))
         guard let ready = ice?.waitSnapshot(timeout: 90, { s in
-            s["hiddenBoundaryUsable"] as? Bool == true && !DebugIce.memberFrames(s).isEmpty
+            s["completeness"] as? String == "complete" && !DebugIce.memberFrames(s).isEmpty
         }) else {
             throw Abort(reason: "Debug Ice never listed members")
         }
         ownerMembers = DebugIce.memberFrames(ready).count
         record(["event": "ready", "members": ownerMembers])
-        return (prefs, store)
     }
 
     func teardown(_ preflight: (prefs: URL, store: [String: String])?) {
@@ -372,10 +373,11 @@ final class Sitting {
         Thread.sleep(forTimeInterval: 30)
         let after = dir.appendingPathComponent("prefs-after-\(Int(Date().timeIntervalSince1970)).plist")
         let exported = Daily.exportPrefs(to: after)
-        let same = exported && FileManager.default.contentsEqual(atPath: preflight.prefs.path, andPath: after.path)
+        let differing = exported ? Daily.semanticDifferences(preflight.prefs, after) : ["unreadable"]
+        let same = differing.isEmpty
         let store = Daily.settledStore() ?? [:]
         let diff = Daily.storeDiff(preflight.store, store)
-        record(["event": "teardown", "imported": imported, "dailyPID": pid.map { $0 as Any } ?? NSNull(), "prefsEqual": same,
+        record(["event": "teardown", "imported": imported, "dailyPID": pid.map { $0 as Any } ?? NSNull(), "prefsEqual": same, "prefsDiffering": differing,
                 "storeKeysChanged": diff.keysChanged.count, "storeValuesChanged": diff.valuesChanged.count])
     }
 }

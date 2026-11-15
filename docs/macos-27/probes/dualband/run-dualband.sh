@@ -10,13 +10,13 @@ app=${1:?usage}; dir=${2:?usage}; shift 2
 mkdir -p $dir
 caffeinate -dis -w $$ < /dev/null &
 $bin run $app $dir "$@"
-status=$?
+rc=$?
 sleep 3
 if ! pgrep -f /Applications/Ice.app/Contents/MacOS/Ice > /dev/null; then
     pkill -f "$app/Contents/MacOS/Ice" 2> /dev/null
     sleep 2
     [[ -f $dir/prefs-before.plist ]] && defaults import io.github.tk88101.Ice $dir/prefs-before.plist
     open /Applications/Ice.app
-    print -- "run-dualband: restored the daily Ice by the wrapper (status $status)"
+    print -- "run-dualband: restored the daily Ice by the wrapper (status $rc)"
 fi
-exit $status
+exit $rc
