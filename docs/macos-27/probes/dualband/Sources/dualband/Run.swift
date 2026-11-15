@@ -79,6 +79,8 @@ final class Sitting {
         let strips: [GrayStrip]
         let spots: [Range<Int>]
         let masks: [[Range<Int>]]
+        /// The spot is covered (notch, a third-party window): only what is drawn outside it counts.
+        let blind: [Bool]
     }
 
     func captureAll(tag: String?) throws -> [GrayStrip] {
@@ -127,14 +129,23 @@ final class Sitting {
             return spot
         }
         let strips = second
-        // The judge must see the members at standard length, or it is blind there.
+        // The judge must see the members at standard length. A spot mostly
+        // under a mask is blind by cover, allowed on the built-in bar only.
+        var blind: [Bool] = []
         for index in bars.indices {
             let reading = try Judge.read(sample: strips[index], standard: strips[index], spot: spots[index], excluded: masks[index])
-            guard !reading.hides else { throw Abort(reason: "judge blind at standard on \(bars[index].displayID)") }
+            let covered = spots[index].filter { x in masks[index].contains { $0.contains(x) } }.count
+            let coveredMostly = Double(covered) >= 0.8 * Double(spots[index].count)
+            if reading.hides {
+                guard coveredMostly, bars[index].isBuiltin else { throw Abort(reason: "judge blind at standard on \(bars[index].displayID)") }
+                blind.append(true)
+            } else {
+                blind.append(false)
+            }
         }
         record(["event": "standard", "cond": cond, "spots": spots.map { [$0.lowerBound, $0.upperBound] },
-                "masks": masks.map { $0.map { [$0.lowerBound, $0.upperBound] } }, "reference": reference.displayID])
-        return Standard(strips: strips, spots: spots, masks: masks)
+                "masks": masks.map { $0.map { [$0.lowerBound, $0.upperBound] } }, "reference": reference.displayID, "blind": blind])
+        return Standard(strips: strips, spots: spots, masks: masks, blind: blind)
     }
 
     /// One length: settled 1 s, read at 1 s and 2 s; per bar `hides`, or nil when the two disagree.
@@ -150,13 +161,20 @@ final class Sitting {
         for index in bars.indices {
             let ra = try Judge.read(sample: a[index], standard: base.strips[index], spot: base.spots[index], excluded: base.masks[index])
             let rb = try Judge.read(sample: b[index], standard: base.strips[index], spot: base.spots[index], excluded: base.masks[index])
-            let verdict: Bool? = ra.hides == rb.hides ? rb.hides : nil
+            let ha = Sitting.hides(ra, blind: base.blind[index])
+            let hb = Sitting.hides(rb, blind: base.blind[index])
+            let verdict: Bool? = ha == hb ? hb : nil
             verdicts.append(verdict)
             record(["event": "sample", "part": part, "cond": cond, "bar": bars[index].displayID, "length": length,
                     "new": [ra.newForeground, rb.newForeground], "spot": [ra.spotForeground, rb.spotForeground],
                     "hides": verdict.map { $0 as Any } ?? NSNull()])
         }
         return verdicts
+    }
+
+    /// A covered spot is judged by what is drawn outside it only.
+    static func hides(_ reading: BarReading, blind: Bool) -> Bool {
+        blind ? reading.newForeground <= Judge.maxNewForeground : reading.hides
     }
 
     // MARK: - Stages
@@ -183,7 +201,7 @@ final class Sitting {
             let strips = try captureAll(tag: "u0-736-\(Int(wait == 1 ? 1 : 3))s")
             let readings = try bars.indices.map { try Judge.read(sample: strips[$0], standard: base.strips[$0], spot: base.spots[$0], excluded: base.masks[$0]) }
             record(["event": "u0", "after": wait == 1 ? 1 : 3, "dividerWidth": ice?.snapshot.flatMap(DebugIce.dividerWidth).map { $0 as Any } ?? NSNull(),
-                    "hides": readings.map(\.hides), "new": readings.map(\.newForeground), "spot": readings.map(\.spotForeground)])
+                    "hides": bars.indices.map { Sitting.hides(readings[$0], blind: base.blind[$0]) }, "new": readings.map(\.newForeground), "spot": readings.map(\.spotForeground)])
         }
         record(["event": "done", "key": "u0"])
     }
@@ -258,8 +276,9 @@ final class Sitting {
                 let template = Template.crop(helperBase.strips[index], columns: helperBase.spots[index])
                 let score = Template.bestScore(of: template, in: strips[index], before: base.spots[index].upperBound)
                 let helperDrawn = score >= 0.8
-                if reading.hides && helperDrawn { disagreements += 1 }
-                record(["event": "helper", "bar": bars[index].displayID, "length": length, "hides": reading.hides, "score": score])
+                let hides = Sitting.hides(reading, blind: base.blind[index])
+                if hides && helperDrawn { disagreements += 1 }
+                record(["event": "helper", "bar": bars[index].displayID, "length": length, "hides": hides, "score": score])
             }
         }
         record(["event": "done", "key": "helper", "disagreements": disagreements])

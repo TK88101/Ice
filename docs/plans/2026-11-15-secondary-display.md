@@ -336,3 +336,15 @@ exception the owner must grant, with these guards (all adopted):
 | G6 | The gate is compile-time (`DEBUG`), the launch argument a second gate only |
 
 If the owner declines: no measurement; D ships.
+
+### Phase-2 notes on T0's judge (2026-11-15, implementation)
+
+- Members' AX frames stack on macOS 27 (all four at x 991-1031, status `stacked:4`), so
+  the spot is the divider's own frame minus the members' summed widths (they stand side
+  by side left of it at standard length), plus 4 pt slack.
+- On the built-in bar a third-party notch window covers 677-1048 pt, which holds the
+  members' standard-length spot: there the owner cannot see them at any length. A spot
+  at least 80 % under masks (the notch, other processes' small windows over the bar) is
+  "blind by cover", allowed on the built-in bar only; that bar then hides when nothing
+  new is drawn outside the masks and the spot (`newForeground` only). The Sidecar bar may
+  not be blind (a mapping error must not pass silently).
