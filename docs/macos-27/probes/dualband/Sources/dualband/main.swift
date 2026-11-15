@@ -30,7 +30,7 @@ case "selftest":
               "strip", strip.width, "x", strip.height, "masks", Masks.excluded(on: bar, ownPID: getpid()).map { "\($0.lowerBound)-\($0.upperBound)" })
     }
 case "check":
-    // dualband check <png> <displayID> <dividerMinX> <membersWidth>: the standard-strip judge, offline.
+    // dualband check <png> <displayID> <dividerMinX> <membersWidth>: does the judge see the members in a standard strip (offline).
     guard arguments.count >= 6, let bar = Live.bars().first(where: { "\($0.displayID)" == arguments[3] }),
           let divider = Double(arguments[4]), let total = Double(arguments[5]),
           let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: arguments[2]) as CFURL, nil),
@@ -49,7 +49,9 @@ case "check":
     let spot = Spot.columns(frames: frames, reference: reference, on: bar)!
     let masks = Masks.excluded(on: bar, ownPID: getpid()) + Judge.darkBlobs(in: strip)
     let reading = try Judge.read(sample: strip, standard: strip, spot: spot, excluded: masks)
-    print("spot", spot, "masks", masks, "reading", reading, "hides", reading.hides)
+    // A standard strip against itself: only whether the judge sees the members (spotForeground), not a hide verdict.
+    print("standard self-check: spot", spot, "masks", masks, "spotForeground", reading.spotForeground,
+          reading.spotForeground > Judge.maxSpotForeground ? "members seen" : "blind")
 case "run":
     guard arguments.count >= 4 else { fail("usage: dualband run <Debug Ice.app> <dir> [--resume]") }
     Run.main(debugApp: URL(fileURLWithPath: arguments[2]), dir: URL(fileURLWithPath: arguments[3], isDirectory: true),

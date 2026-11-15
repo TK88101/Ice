@@ -1,8 +1,8 @@
-/// Plan 2026-11-15-secondary-display, T2d. One status item length is shared
-/// by every display's bar, and the hiding band differs between displays
-/// (MEASURED on the owner's two, 2026-11-14): while more than one display is
-/// connected, unless the topology is a measured one, Ice does not hide and
-/// offers no IceBar, so no item is both drawn on a bar and listed in it.
+/// Plan 2026-11-15-secondary-display, T2d. One status item length is shared by
+/// every display's bar, and the hiding band differs between displays (MEASURED
+/// on the owner's two, 2026-11-14): while more than one display is connected,
+/// Ice does not hide and offers no IceBar, so no item is both drawn on a bar
+/// and listed in it.
 
 /// The connected, non-mirrored displays, as the coordinator reads them.
 public struct DisplayTopology: Equatable, Sendable {
@@ -19,7 +19,7 @@ public struct DisplayTopology: Equatable, Sendable {
 /// Tracks topology changes: a change blocks at once, bumps the generation
 /// (work begun before it is dropped), and is decided once it has held
 /// `settleSeconds`.
-public struct TopologyTracker: Equatable, Sendable {
+public struct DisplayTopologyTracker: Equatable, Sendable {
     public static let settleSeconds = 2.0
 
     public private(set) var generation = 0
@@ -44,11 +44,12 @@ public struct TopologyTracker: Equatable, Sendable {
         generation == self.generation
     }
 
-    /// - Parameter supported: the topology is a measured one (or a single display).
-    public func blockReason(now: Double, supported: Bool) -> PreferenceHidingBlockReason? {
+    /// No measured multi-display topology exists (plan T1, branch D): every
+    /// one with more than one display blocks.
+    public func blockReason(now: Double) -> PreferenceHidingBlockReason? {
         guard let topology else { return nil }
         if let changedAt, now - changedAt < Self.settleSeconds { return .displaysSettling }
-        if topology.count > 1, !supported { return .multipleDisplays(topology.count) }
+        if topology.count > 1 { return .multipleDisplays(topology.count) }
         return nil
     }
 }

@@ -61,7 +61,7 @@ final class IceBarHidingCoordinator {
     private var observer: (displayID: CGDirectDisplayID, observer: HiddenLengthObserver)?
 
     /// The displays connected (plan 2026-11-15-secondary-display, T2d).
-    private var topology = TopologyTracker()
+    private var topology = DisplayTopologyTracker()
 
     private let logger = Logger(category: "IceBarHiding")
 
@@ -182,7 +182,13 @@ final class IceBarHidingCoordinator {
     }
 
     private func displaysChanged() {
+        let before = topology.generation
         topology.observe(Self.currentTopology(), now: ProcessInfo.processInfo.systemUptime)
+        // The notification also comes for a resolution change or a wake with
+        // the same displays: then nothing is stale and nothing is cancelled.
+        guard topology.generation != before else {
+            return
+        }
         work?.cancel()
         reread?.cancel()
         isSampling = false
@@ -250,8 +256,7 @@ final class IceBarHidingCoordinator {
         appState: AppState, screen: NSScreen, menuMaxX: CGFloat?, isMouseOnBar: Bool, isArranging: Bool
     ) -> IceBarHidingSample {
         let roster = appState.itemManager.iceBarRoster.rules
-        // No measured multi-display topology yet: every one is unsupported (T1, D).
-        let displayBlock = topology.blockReason(now: ProcessInfo.processInfo.systemUptime, supported: false)
+        let displayBlock = topology.blockReason(now: ProcessInfo.processInfo.systemUptime)
         let signature = roster.signature(
             frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
             menuMaxX: menuMaxX.map(Double.init),
@@ -320,10 +325,12 @@ final class IceBarHidingCoordinator {
         work = Task {
             let coverage = await observer?.takeBaseline(sectionMap: sectionMap)
             let ok = await observer?.covers(ready) ?? false
-            // Reasons and counts, no item names.
-            if !Task.isCancelled {
-                logger.info("IceBar baseline: ok \(ok, privacy: .public) coverage \(coverage?.description ?? "noObserver", privacy: .public)")
+            // Cancelled (the displays changed, or nobody waits): the reply is stale.
+            guard !Task.isCancelled else {
+                return
             }
+            // Reasons and counts, no item names.
+            logger.info("IceBar baseline: ok \(ok, privacy: .public) coverage \(coverage?.description ?? "noObserver", privacy: .public)")
             send(.baseline(token: token, ok: ok))
         }
     }
@@ -333,26 +340,27 @@ final class IceBarHidingCoordinator {
         work?.cancel()
         work = Task {
             let reading = await observer?.observe(closesBurst: closesBurst) ?? .nothing
-            if !Task.isCancelled {
-                let summary = VerificationSummary.make(reading.checks)
-                let chevron = reading.chevronListed.map(String.init) ?? "unread"
-                logger.info(
-                    """
-                    IceBar trial: length \(length, privacy: .public) hidden \(summary.hidden, privacy: .public) \
-                    drawn \(summary.stillDrawn, privacy: .public) of \(reading.checks.count, privacy: .public) \
-                    chevron \(chevron, privacy: .public) waited \(reading.waited, privacy: .public) \
-                    stable \(reading.diagnostics.map { String($0.captureStable) } ?? "unread", privacy: .public)
-                    """
-                )
-                LabReport.record(.observation(
-                    length: length,
-                    diagnostics: reading.diagnostics,
-                    waited: reading.waited,
-                    burst: reading.burst,
-                    // The burst's times are the observer's clock, the system uptime.
-                    sinceCapture: reading.burst.map { ProcessInfo.processInfo.systemUptime - $0.capturedAt }
-                ))
+            guard !Task.isCancelled else {
+                return
             }
+            let summary = VerificationSummary.make(reading.checks)
+            let chevron = reading.chevronListed.map(String.init) ?? "unread"
+            logger.info(
+                """
+                IceBar trial: length \(length, privacy: .public) hidden \(summary.hidden, privacy: .public) \
+                drawn \(summary.stillDrawn, privacy: .public) of \(reading.checks.count, privacy: .public) \
+                chevron \(chevron, privacy: .public) waited \(reading.waited, privacy: .public) \
+                stable \(reading.diagnostics.map { String($0.captureStable) } ?? "unread", privacy: .public)
+                """
+            )
+            LabReport.record(.observation(
+                length: length,
+                diagnostics: reading.diagnostics,
+                waited: reading.waited,
+                burst: reading.burst,
+                // The burst's times are the observer's clock, the system uptime.
+                sinceCapture: reading.burst.map { ProcessInfo.processInfo.systemUptime - $0.capturedAt }
+            ))
             send(.observed(
                 token: token, checks: reading.checks, chevronListed: reading.chevronListed, burst: reading.burst,
                 displaced: reading.displaced

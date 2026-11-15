@@ -17,18 +17,8 @@ enum LabReport {
     static let launch = LabReportRule.launch(
         report: launchArgument(LabReportRule.reportArgument),
         holdLength: launchArgument(LabReportRule.holdLengthArgument),
-        bundleID: Bundle.main.bundleIdentifier,
-        ownerIdentity: ownerT0Identity
+        bundleID: Bundle.main.bundleIdentifier
     )
-
-    #if DEBUG
-    /// The owner-approved T0 sitting (plan 2026-11-15-secondary-display, G1,
-    /// G6): a Debug build launched with `-IceOwnerT0 YES` may report under the
-    /// daily identity. Compiled out of Release, argument name and all.
-    private static let ownerT0Identity: String? = launchArgument("IceOwnerT0") == "YES" ? "io.github.tk88101.Ice" : nil
-    #else
-    private static let ownerT0Identity: String? = nil
-    #endif
 
     /// A launch argument's value, from the arguments only, never a stored
     /// default (both lab modes read theirs this way).
@@ -202,11 +192,10 @@ extension LabReport {
                 write(.bar(action: "close", answer: "sent"))
             case .length(let override):
                 LabReport.lengthOverride = override
-                setHiddenLength(override.applied, appState: appState)
+                reapplyLength(appState: appState)
             case .lengthRelease:
                 LabReport.lengthOverride = nil
-                let decided = LabReport.lastDecided
-                setHiddenLength(LabReportRule.appliedLength(decided, plan: LabReport.plan).applied, appState: appState)
+                reapplyLength(appState: appState)
             case .press(let namespace, let identifier):
                 let cells = Self.cells(of: manager)
                 let target = LabReportRule.pressTarget(
@@ -225,11 +214,11 @@ extension LabReport {
 
         // MARK: Snapshot
 
-        /// Sets the hidden control item's length and records it, as the
-        /// coordinator's `.setLength` does.
-        private func setHiddenLength(_ length: Double?, appState: AppState) {
+        /// The machine's last decided length again, through the override, as
+        /// the coordinator's `.setLength` applies it (`applied` records it).
+        private func reapplyLength(appState: AppState) {
+            let length = LabReport.applied(LabReport.lastDecided)
             appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = length.map { CGFloat($0) }
-            write(.length(LabReportLength(applied: length, held: LabReport.lengthOverride != nil), decided: LabReport.lastDecided))
         }
 
         private static func key(of item: MenuBarItem) -> ItemKey? {

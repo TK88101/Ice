@@ -3,6 +3,7 @@
 # restore: if dualband ends and no daily Ice runs, the exported preferences are
 # imported and /Applications/Ice.app is opened by path (G3).
 #   run-dualband.sh <Debug Ice.app> <evidence dir> [--resume]
+# Needs a Debug build of 76eb992..03d2a26: the owner T0 gate (-IceOwnerT0) was removed after the sitting.
 set -u
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
 bin=${DUALBAND_BIN:-/private/tmp/claude-501/dualband-scratch/debug/dualband}

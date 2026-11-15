@@ -29,9 +29,9 @@ public enum PreferenceHidingBlockReason: Equatable, Sendable {
     /// (c) `.positional` items left of the divider: the pane names them and
     /// asks the owner to move them right of it.
     case positionalItemsLeftOfDivider([PreferenceHidingBlocker])
-    /// More than one display, not a measured topology (`TopologyTracker`).
+    /// More than one display is connected (`DisplayTopologyTracker`).
     case multipleDisplays(Int)
-    /// The displays changed less than `TopologyTracker.settleSeconds` ago.
+    /// The displays changed less than `DisplayTopologyTracker.settleSeconds` ago.
     case displaysSettling
 }
 
