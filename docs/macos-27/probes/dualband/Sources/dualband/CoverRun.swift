@@ -11,6 +11,7 @@ import MenuBarCover
 final class CoverSitting {
     static let idleToStart = 300.0
     static let startWait = 4.0 * 3600
+    static let inputQuiet = 5.0
 
     let labApp: URL
     let dir: URL
@@ -18,6 +19,8 @@ final class CoverSitting {
     private var ice: DebugIce?
     private var helpers = [Helper]()
     private var preflight: (prefs: URL, store: [String: String])?
+    private var storeBefore: NSDictionary?
+    private var interrupted = false
     private let results: FileHandle?
 
     init(labApp: URL, dir: URL) {
@@ -52,10 +55,51 @@ final class CoverSitting {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if let found = ice?.events.first(where: { seq($0) > after && accept($0) }) { return found }
-            guard Live.idleSeconds() ?? 0 >= 5 else { return nil }
+            guard quiet() else { return nil }
             spin(0.25)
         }
         return nil
+    }
+
+    /// False from the first hardware input on: the sitting stops there and the daily Ice comes back.
+    private func quiet() -> Bool {
+        if (Live.idleSeconds() ?? 0) < Self.inputQuiet { interrupted = true }
+        return !interrupted
+    }
+
+    /// A stop on input is no result of the step it fell in.
+    private func stopped(_ step: String) -> Int32 {
+        say("STOPPED  hardware input during \(step); what was not reached is not measured")
+        return 4
+    }
+
+    /// What `MenuBarAgent` and the whole system answer at a point of a bar, with the error when there is no element.
+    private func rawHit(x: Double, bar: CoverBar, helper: pid_t, lab: pid_t) -> String {
+        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: LiveCoverBarReader.agentBundleID).first else { return "no agent" }
+        func name(_ pid: pid_t) -> String {
+            pid == app.processIdentifier ? "the agent" : pid == helper ? "the helper" : pid == lab ? "the lab copy" : "pid \(pid)"
+        }
+        func hit(_ root: AXUIElement) -> String {
+            AXUIElementSetMessagingTimeout(root, 1)
+            var element: AXUIElement?
+            let error = AXUIElementCopyElementAtPosition(root, Float(bar.frame.minX) + Float(x), Float(bar.frame.midY), &element)
+            guard error == .success, let element else { return "AXError \(error.rawValue)" }
+            var pid: pid_t = 0
+            AXUIElementGetPid(element, &pid)
+            var role: AnyObject?
+            AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+            return "\(name(pid)) \(role as? String ?? "no role")"
+        }
+        return "agent -> \(hit(AXUIElementCreateApplication(app.processIdentifier))), system-wide -> \(hit(AXUIElementCreateSystemWide()))"
+    }
+
+    /// Where the lab copy's last snapshot lists the helpers' items.
+    private func helperSections() -> String {
+        guard let snapshot = ice?.snapshot else { return "no snapshot" }
+        func count(_ key: String) -> Int {
+            (snapshot[key] as? [[String: Any]] ?? []).filter { ($0["namespace"] as? String)?.hasPrefix("com.icespike4.") == true }.count
+        }
+        return "hidden \(count("cacheHidden")), visible \(count("cacheVisible"))"
     }
 
     private func isCover(_ event: [String: Any], withBlocks: Bool) -> Bool {
@@ -131,6 +175,7 @@ final class CoverSitting {
         let prefs = dir.appendingPathComponent("prefs-before.plist")
         guard Daily.exportPrefs(to: prefs), let store = Daily.settledStore() else { say("the daily Ice's settings could not be read"); return 2 }
         preflight = (prefs, store)
+        storeBefore = NSDictionary(contentsOfFile: Daily.storePath + ".plist")
         guard Daily.quit() else { say("the daily Ice did not quit"); return 3 }
 
         let reader = LiveCoverBarReader()
@@ -176,11 +221,69 @@ final class CoverSitting {
         invariants(settled, "resting", own: labPID)
         check(!blocks(of: external.displayID, in: settled).isEmpty, "the cover has blocks on display \(external.displayID)")
 
+        // --- a member more: the real retire. The cover goes before the length does, and comes back over the new member too.
+        var mark = ice?.events.last.map(seq) ?? 0
+        let stamp = Int(Date().timeIntervalSince1970)
+        guard let added = Helper(
+            vzhelper: vzhelper, log: dir.appendingPathComponent("helper.log"), items: 2, identifiers: "cover-a,cover-b",
+            glyphs: "target,reference", autosave: "cover-\(stamp)"
+        ) else {
+            check(false, "the helper started")
+            return 1
+        }
+        helpers.append(added)
+        let retired = wait(after: mark, timeout: 40) { self.isLength($0, applied: nil) }
+        guard !interrupted else { return stopped("the wait for the retire") }
+        if retired == nil { say("note  no retire in 40 s; the helper's items: \(helperSections())") }
+        let off = (ice?.events ?? []).last { seq($0) > mark && seq($0) < (retired.map(seq) ?? 0) && $0["event"] as? String == "cover" }
+        check(retired != nil && off != nil && (off?["bars"] as? [[String: Any]])?.isEmpty == true,
+              "a member more: the cover went (seq \(off.map(seq) ?? -1), no bars) before the length was retired (seq \(retired.map(seq) ?? -1))")
+        if let retired, let again = wait(after: seq(retired), timeout: 40, { self.isLength($0, applied: 736) }),
+           wait(after: seq(again), timeout: 10, { self.isCover($0, withBlocks: true) }) != nil {
+            spin(2)
+            let back = latestCover()
+            check(true, "the length came back (seq \(seq(again))) and the cover after it (seq \(seq(back)))")
+            invariants(back, "after the member", own: labPID)
+            let own = Set(reader.slots(of: external) ?? []).filter { $0.owner == added.pid }
+            let reported = blocks(of: external.displayID, in: back)
+            check(own.count == 2 && own.allSatisfy { slot in reported.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } },
+                  "display \(external.displayID): the helper's two slots (\(own.count)) lie inside the blocks \(reported)")
+            check(outsideBlocks() == 0, "after the member: every member slot lies inside a reported block")
+            // The helper's slots outside every block lie under no panel: what a hit test answers there
+            // and whether the helper is drawn there say why they were not verified.
+            let bare = own.sorted(by: { $0.minX < $1.minX })
+                .filter { slot in !reported.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } }
+            if !bare.isEmpty {
+                // One capture session: is the helper drawn where the tree lists it?
+                let strips = capturer.strips(of: external)
+                let same = strips.flatMap { CoverPixels.sameColumns($0.onScreen, $0.below) }
+                for slot in bare {
+                    let hits = reader.owners(at: CoverPlan.verificationPoints(slot), of: external)
+                        .map { $0 == slot.owner ? "own" : $0.map { "pid \($0)" } ?? "nil" }
+                    let columns = Int(slot.minX * external.scale)..<min(same?.count ?? 0, Int(slot.maxX * external.scale))
+                    let drawn = same.map { same in "\(columns.filter { !same[$0] }.count) of \(columns.count)" } ?? "unread"
+                    say("note  helper slot \(slot.minX)-\(slot.maxX) outside the blocks; hit test at its verification points: \(hits); "
+                        + "raw at its middle: \(rawHit(x: (slot.minX + slot.maxX) / 2, bar: external, helper: added.pid, lab: labPID)); "
+                        + "columns where on-screen differs from below-Menubar: \(drawn)")
+                }
+                if let strips, let first = bare.first, let last = bare.last {
+                    let crop = CGRect(
+                        x: (first.minX - 30) * external.scale, y: 0, width: (last.maxX - first.minX + 60) * external.scale, height: Double(strips.onScreen.height)
+                    )
+                    if let image = strips.onScreen.cropping(to: crop) { Live.writePNG(image, to: dir.appendingPathComponent("helper-slots-onscreen.png")) }
+                }
+            }
+        } else {
+            guard !interrupted else { return stopped("the wait for the length and the cover to come back") }
+            check(false, "the length and the cover came back after the member change")
+        }
+
         // --- 25 s at rest, two periodic verifications: the cover never goes, and every member slot stays inside it
-        var mark = seq(settled)
+        mark = seq(latestCover())
         var outside = 0, reads = 0
         for _ in 0..<50 {
             spin(0.5)
+            guard quiet() else { return stopped("the 25 s at rest") }
             if let count = outsideBlocks() {
                 reads += 1
                 outside += count
@@ -193,6 +296,7 @@ final class CoverSitting {
         // --- pixels, two sessions: below the lowest window above the panel, against below-Menubar
         for session in 1...2 {
             if session == 2 { spin(13) }
+            guard quiet() else { return stopped("the pixel sessions") }
             let reported = blocks(of: external.displayID, in: latestCover())
             guard let strips = capturer.strips(of: external), let under = belowForeign(external, labPID: labPID),
                   let same = CoverPixels.sameColumns(under, strips.below)
@@ -219,36 +323,6 @@ final class CoverSitting {
         ice?.send("bar close")
         spin(1)
 
-        // --- a member more: the real retire. The cover goes before the length does, and comes back over the new member too.
-        mark = ice?.events.last.map(seq) ?? 0
-        let stamp = Int(Date().timeIntervalSince1970)
-        guard let added = Helper(
-            vzhelper: vzhelper, log: dir.appendingPathComponent("helper.log"), items: 2, identifiers: "cover-a,cover-b",
-            glyphs: "target,reference", autosave: "cover-\(stamp)"
-        ) else {
-            check(false, "the helper started")
-            return 1
-        }
-        helpers.append(added)
-        let retired = wait(after: mark, timeout: 40) { self.isLength($0, applied: nil) }
-        let off = (ice?.events ?? []).last { seq($0) > mark && seq($0) < (retired.map(seq) ?? 0) && $0["event"] as? String == "cover" }
-        check(retired != nil && off != nil && (off?["bars"] as? [[String: Any]])?.isEmpty == true,
-              "a member more: the cover went (seq \(off.map(seq) ?? -1), no bars) before the length was retired (seq \(retired.map(seq) ?? -1))")
-        if let retired, let again = wait(after: seq(retired), timeout: 40, { self.isLength($0, applied: 736) }),
-           wait(after: seq(again), timeout: 10, { self.isCover($0, withBlocks: true) }) != nil {
-            spin(2)
-            let back = latestCover()
-            check(true, "the length came back (seq \(seq(again))) and the cover after it (seq \(seq(back)))")
-            invariants(back, "after the member", own: labPID)
-            let own = Set(reader.slots(of: external) ?? []).filter { $0.owner == added.pid }
-            let reported = blocks(of: external.displayID, in: back)
-            check(own.count == 2 && own.allSatisfy { slot in reported.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } },
-                  "display \(external.displayID): the helper's two slots (\(own.count)) lie inside the blocks \(reported)")
-            check(outsideBlocks() == 0, "after the member: every member slot lies inside a reported block")
-        } else {
-            check(false, "the length and the cover came back after the member change")
-        }
-
         // --- the built-in, as found
         if let builtin = bars.first(where: { CGDisplayIsBuiltin($0.displayID) != 0 }) {
             say("note  built-in: blocks \(blocks(of: builtin.displayID, in: latestCover()))")
@@ -268,6 +342,17 @@ final class CoverSitting {
         let after = dir.appendingPathComponent("prefs-after.plist")
         let differing = Daily.exportPrefs(to: after) ? Daily.semanticDifferences(preflight.prefs, after) : ["unreadable"]
         let diff = Daily.storeDiff(preflight.store, Daily.settledStore() ?? [:])
+        // Which of the store's values changed, and inside a dictionary which keys: the helpers' own (named), any other (counted).
+        let storeAfter = NSDictionary(contentsOfFile: Daily.storePath + ".plist")
+        for key in diff.valuesChanged {
+            guard let old = storeBefore?[key] as? [String: NSObject], let new = storeAfter?[key] as? [String: NSObject] else {
+                say("teardown: store value \(key) changed (not a dictionary)")
+                continue
+            }
+            let changed = Set(old.keys).union(new.keys).filter { old[$0] != new[$0] }
+            let helpers = changed.filter { $0.contains("vzhelper") }.sorted()
+            say("teardown: store value \(key): the helpers' keys changed \(helpers), keys of other apps changed \(changed.count - helpers.count)")
+        }
         say("teardown: imported \(imported), daily Ice pid \(pid.map(String.init) ?? "none"), prefs differing \(differing), "
             + "store keys changed \(diff.keysChanged.count), values changed \(diff.valuesChanged.count)")
     }
