@@ -42,13 +42,25 @@ struct BlindAtLengthTests {
         #expect(!Self.holds(holdsWrittenLength: false))
     }
 
-    @Test("D1 (2): the divider at standard length, disabled, or changed during the pass: not blind", arguments: [
+    @Test("D1: the divider at standard length for the whole pass, or disabled (changed or not): not blind", arguments: [
         standard,
         DividerState(isEnabled: false, isCollapsed: false, collapsedFor: 0, changedDuringPass: false),
-        DividerState(isEnabled: true, isCollapsed: false, collapsedFor: 0, changedDuringPass: true),
+        DividerState(isEnabled: false, isCollapsed: false, collapsedFor: 0, changedDuringPass: true),
     ])
     func dividerStateSaysOtherwise(state: DividerState) {
         #expect(!Self.holds(state: state))
+    }
+
+    @Test("D1: the divider's state changed while the pass ran: blind, at whatever length it began and whatever Ice holds now", arguments: [
+        DividerState(isEnabled: true, isCollapsed: false, collapsedFor: 0, changedDuringPass: true),
+        DividerState(isEnabled: true, isCollapsed: true, collapsedFor: 5, changedDuringPass: true),
+    ])
+    func straddlesAChange(state: DividerState) {
+        #expect(Self.holds(state: state, holdsWrittenLength: true))
+        #expect(Self.holds(state: state, holdsWrittenLength: false))
+        #expect(!Self.holds(Self.read(icon: nil), state: state), "the icon must still be listed")
+        #expect(!Self.holds(Self.read(ownRead: .failed), state: state), "a failed own read is a failed own read")
+        #expect(!Self.holds(state: state, hasMembers: false))
     }
 
     @Test("D1 (3): a pass that is not complete: not blind", arguments: [

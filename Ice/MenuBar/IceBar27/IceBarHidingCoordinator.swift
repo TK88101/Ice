@@ -82,6 +82,8 @@ final class IceBarHidingCoordinator {
     var deferredSection: MenuBarSection.Name?
     /// When an app last started (the system uptime), `nil` before any.
     var lastLaunchAt: Double?
+    /// The running apps as last seen: a pid that is not among them is a start.
+    private var knownPIDs: Set<pid_t>?
     /// The display that had the active menu bar at the last tick.
     private var activeDisplayID: CGDirectDisplayID?
     /// The machine's last status line for the owner; the cover's notice is said after it.
@@ -200,10 +202,20 @@ final class IceBarHidingCoordinator {
         .store(in: &cancellables)
         // An app started: where a pushed-off item is in no read, its item is
         // read only at standard length (plan 2026-11-15-blind-at-length, D4).
-        workspace.publisher(for: NSWorkspace.didLaunchApplicationNotification)
+        // By the list of running apps, not the launch notification: that one
+        // is not posted for an app without a Dock icon, which is what a menu
+        // bar app is (run 20261116-blind-5: three helpers started, none noticed).
+        NSWorkspace.shared.publisher(for: \.runningApplications)
+            .map { Set($0.map(\.processIdentifier)) }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.lastLaunchAt = ProcessInfo.processInfo.systemUptime
+            .sink { [weak self] pids in
+                guard let self else {
+                    return
+                }
+                if let knownPIDs, !pids.isSubset(of: knownPIDs) {
+                    lastLaunchAt = ProcessInfo.processInfo.systemUptime
+                }
+                knownPIDs = pids
             }
             .store(in: &cancellables)
         timer = .scheduledTimer(withTimeInterval: Self.tickInterval, repeats: true) { [weak self] _ in

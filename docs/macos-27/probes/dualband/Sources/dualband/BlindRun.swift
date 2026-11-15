@@ -458,6 +458,8 @@ final class BlindSitting {
         ice?.send("length release")
         spin(2)
         say("note  R5 (a drag during a hold): not run live; unit-tested (IceBarHoldTests)")
+        let everBlocked = (ice?.events ?? []).filter { ($0["status"] as? String)?.hasPrefix("blocked") == true }.count
+        check(everBlocked == 0, "the whole sitting: nothing ever blocked (\(everBlocked) blocked statuses)")
         say(failures.isEmpty ? "RESULT: PASS" : "RESULT: FAIL (\(failures.count))")
         return failures.isEmpty ? 0 : 1
     }

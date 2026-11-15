@@ -175,6 +175,20 @@ struct PreferenceHidingRosterBlindTests {
         #expect(next.preconditions == .blocked([.ownReadNotOk(.identifiersMissing)]))
     }
 
+    @Test("a pass over which the divider's state changed (the IceBar opening, a length applied or retired) carries the roster and blocks nothing")
+    func straddlingPassCarries() {
+        let a = placed("a", pid: 1, minX: 100)
+        let right = placed("r", pid: 3, minX: 1000)
+        let roster = trusted(PreferenceHidingRoster(), [a, right])
+        for isCollapsed in [false, true] {
+            let changed = DividerState(isEnabled: true, isCollapsed: isCollapsed, collapsedFor: isCollapsed ? 5 : 0, changedDuringPass: true)
+            let next = atLength(roster, [right], holdsWrittenLength: !isCollapsed, state: changed)
+            #expect(next.isBlindAtLength)
+            #expect(next.membership == roster.membership)
+            #expect(next.preconditions == .ok)
+        }
+    }
+
     @Test("a missing divider at standard length blocks as before")
     func standardLengthBlocks() {
         let a = placed("a", pid: 1, minX: 100)

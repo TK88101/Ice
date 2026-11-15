@@ -6,15 +6,19 @@
 /// says nothing of anything left of the divider.
 public enum BlindAtLength {
     /// D1: whether `set` is such a pass. All of:
-    /// - `holdsWrittenLength`: Ice's own state, not Accessibility, says the
-    ///   hidden control item exists, is visible and has the length the
-    ///   coordinator last wrote;
-    /// - the hidden divider's state is enabled, not collapsed, and did not
-    ///   change during the pass;
     /// - the pass is complete;
     /// - the own read lists Ice's icon and no hidden divider
     ///   (`.identifiersMissing` is exactly "no hidden divider", `ItemCatalog`);
-    /// - `hasMembers`: the roster has members, so a trusted pass came before.
+    /// - `hasMembers`: the roster has members, so a trusted pass came before;
+    /// - the hidden divider is enabled, and either it was at a hiding length
+    ///   when the pass began and `holdsWrittenLength` (Ice's own state, not
+    ///   Accessibility, says the hidden control item is in the bar at the
+    ///   length the coordinator last wrote), or its state changed while the
+    ///   pass ran. A pass that straddles a change (a length applied or
+    ///   retired, or the states assigned again as the IceBar opens) read the
+    ///   bar at two lengths: its missing divider says nothing, and blocking
+    ///   on it retired the length each time the IceBar opened over a pass
+    ///   (run 20261116-blind-5).
     ///
     /// Decided by what is read, never by a system version: where the divider
     /// stays listed at a length (27.0, 27.1) the own read is `.ok` and no
@@ -25,10 +29,11 @@ public enum BlindAtLength {
         holdsWrittenLength: Bool,
         hasMembers: Bool
     ) -> Bool {
-        guard holdsWrittenLength, hasMembers else { return false }
-        guard hiddenDividerState.isEnabled, !hiddenDividerState.isCollapsed, !hiddenDividerState.changedDuringPass else {
+        guard hasMembers, hiddenDividerState.isEnabled else { return false }
+        guard set.completeness == .complete, set.ownRead == .identifiersMissing, set.visibleControlItem != nil else {
             return false
         }
-        return set.completeness == .complete && set.ownRead == .identifiersMissing && set.visibleControlItem != nil
+        if hiddenDividerState.changedDuringPass { return true }
+        return !hiddenDividerState.isCollapsed && holdsWrittenLength
     }
 }
