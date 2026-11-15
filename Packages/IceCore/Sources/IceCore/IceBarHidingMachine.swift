@@ -85,6 +85,10 @@ public struct IceBarHidingSample: Equatable, Sendable {
     /// The hidden divider decided the sections in a cache pass since the
     /// length last became standard: the roster reflects the bar as it is.
     public let boundaryUsable: Bool
+    /// The coordinator holds the bar at standard length (`IceBarHold`): a
+    /// hidden item is being pressed on the bar, or the bar is read again
+    /// before the IceBar opens (plan 2026-11-15-blind-at-length, D3, D4).
+    public let isHeld: Bool
 
     public init(
         signature: LayoutSignature,
@@ -92,7 +96,8 @@ public struct IceBarHidingSample: Equatable, Sendable {
         membership: PreferenceHidingMembership,
         isInteracting: Bool,
         isDragging: Bool,
-        boundaryUsable: Bool
+        boundaryUsable: Bool,
+        isHeld: Bool = false
     ) {
         self.signature = signature
         self.preconditions = preconditions
@@ -100,6 +105,7 @@ public struct IceBarHidingSample: Equatable, Sendable {
         self.isInteracting = isInteracting
         self.isDragging = isDragging
         self.boundaryUsable = boundaryUsable
+        self.isHeld = isHeld
     }
 }
 
@@ -346,8 +352,9 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     private mutating func handle(_ sample: IceBarHidingSample, now: Double) -> [IceBarHidingCommand] {
         let previous = self.sample?.signature
         self.sample = sample
-        // The owner is arranging items: they need the real divider.
-        if sample.isDragging { return enterQuiet(now) }
+        // The owner is arranging items: they need the real divider. A hold
+        // needs the members on the bar: a press, or a read, at standard length.
+        if sample.isDragging || sample.isHeld { return enterQuiet(now) }
         if !sample.preconditions.isOk { return enterBlocked() }
         if let previous, let change = PreferenceHidingLayoutChange.between(previous, sample.signature) {
             // Hiding at once checks nothing against a display, and the cover

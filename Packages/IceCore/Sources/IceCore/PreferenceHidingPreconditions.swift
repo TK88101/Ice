@@ -89,11 +89,16 @@ public enum PreferenceHidingPreconditions {
     /// (`IcePlacementNotice.placement(held:read:dividerAtStandardLength:)`)
     /// instead of one pass's frames: at a hiding length a pass cannot read
     /// which side of the divider the icon is on (T3b design G3).
+    /// - Parameter isBlindAtLength: `BlindAtLength.holds` for this pass. A
+    ///   blind pass's missing divider is the system's normal answer, so it is
+    ///   no reason to block (plan 2026-11-15-blind-at-length, D2); every
+    ///   other reason stands, another own-read verdict included.
     public static func evaluate(
         iconPlacement: PreferenceHidingIconPlacement?,
         completeness: Completeness,
         ownRead: OwnReadStatus,
-        blockers: [PreferenceHidingBlocker]
+        blockers: [PreferenceHidingBlocker],
+        isBlindAtLength: Bool = false
     ) -> PreferenceHidingPreconditionResult {
         var reasons = [PreferenceHidingBlockReason]()
         if let iconPlacement {
@@ -102,7 +107,8 @@ public enum PreferenceHidingPreconditions {
         if completeness != .complete {
             reasons.append(.discoveryIncomplete(completeness))
         }
-        if ownRead != .ok {
+        let isExcused = isBlindAtLength && ownRead == .identifiersMissing
+        if ownRead != .ok, !isExcused {
             reasons.append(.ownReadNotOk(ownRead))
         }
         if !blockers.isEmpty {

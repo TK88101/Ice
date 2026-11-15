@@ -19,6 +19,11 @@ public struct PreferenceHidingRoster: Equatable, Sendable {
     /// The item tags of the last readable pass on the bar at or right of
     /// `visibleBoundary` (D3); empty without a boundary.
     public private(set) var visibleTags = Set<TagKey>()
+    /// The last pass was blind at length (`BlindAtLength`): on this system a
+    /// pushed-off item is in no read, so a press must show the section first
+    /// and an arrival is read only at standard length (plan
+    /// 2026-11-15-blind-at-length, D3, D4).
+    public private(set) var isBlindAtLength = false
 
     public init() {}
 
@@ -31,24 +36,49 @@ public struct PreferenceHidingRoster: Equatable, Sendable {
     ///     (`IcePlacementNotice.placement(held:read:dividerAtStandardLength:)`).
     ///   - hasExited: whether no process has this pid any more.
     ///   - display: the display the pass read (D2a).
+    ///   - holdsWrittenLength: Ice's own state, not Accessibility, says the
+    ///     hidden control item holds the length the coordinator last wrote
+    ///     (`BlindAtLength`, D1).
+    ///
+    /// A blind pass (plan 2026-11-15-blind-at-length, D2) read nothing left
+    /// of the divider: the members stay as they were, less the exited; the
+    /// item tags lose only what is positively gone, a tag seen right of the
+    /// divider and not read now, or an exited member's; its missing divider
+    /// blocks nothing. The boundary follows the rule of any untrusted pass.
     public func advanced(
         set: DiscoveredItemSet,
         hiddenDividerState: DividerState,
         childIdentifiersByPID: [Int32: [String?]],
         iconPlacement: PreferenceHidingIconPlacement?,
         hasExited: (Int32) -> Bool,
-        display: BarDisplay
+        display: BarDisplay,
+        holdsWrittenLength: Bool = false
     ) -> PreferenceHidingRoster {
         var next = self
+        next.isBlindAtLength = BlindAtLength.holds(
+            set: set, hiddenDividerState: hiddenDividerState, holdsWrittenLength: holdsWrittenLength,
+            hasMembers: !membership.members.isEmpty
+        )
         if set.completeness != .permissionDenied {
             let previous = PreferenceHidingMembership.carried(
                 previous: membership.members.map(\.tag), lastKeys: lastKeys, hasExited: hasExited
             )
-            next.membership = PreferenceHidingMembership.resolve(
-                set: set, hiddenDividerState: hiddenDividerState,
-                previousMembers: previous, childIdentifiersByPID: childIdentifiersByPID
-            )
-            next.itemTags = set.items.map(\.tagKey).sorted { ($0.namespace, $0.title) < ($1.namespace, $1.title) }
+            let read = set.items.map(\.tagKey)
+            if next.isBlindAtLength {
+                let alive = Set(previous)
+                let exited = membership.members.map(\.tag).filter { !alive.contains($0) }
+                next.membership = PreferenceHidingMembership(
+                    members: membership.members.filter { alive.contains($0.tag) }, blockers: membership.blockers
+                )
+                let gone = visibleTags.subtracting(read).union(exited)
+                next.itemTags = Self.ordered(Array(Set(itemTags).union(read).subtracting(gone)))
+            } else {
+                next.membership = PreferenceHidingMembership.resolve(
+                    set: set, hiddenDividerState: hiddenDividerState,
+                    previousMembers: previous, childIdentifiersByPID: childIdentifiersByPID
+                )
+                next.itemTags = Self.ordered(read)
+            }
             next.boundary = Self.boundary(
                 after: boundary, set: set, hiddenDividerState: hiddenDividerState, display: display,
                 removed: !Set(itemTags).isSubset(of: next.itemTags)
@@ -63,9 +93,14 @@ public struct PreferenceHidingRoster: Equatable, Sendable {
         }
         next.preconditions = PreferenceHidingPreconditions.evaluate(
             iconPlacement: iconPlacement, completeness: set.completeness, ownRead: set.ownRead,
-            blockers: next.membership.blockers
+            blockers: next.membership.blockers, isBlindAtLength: next.isBlindAtLength
         )
         return next
+    }
+
+    /// The item tags' one order, whatever order a pass read them in.
+    private static func ordered(_ tags: [TagKey]) -> [TagKey] {
+        tags.sorted { ($0.namespace, $0.title) < ($1.namespace, $1.title) }
     }
 
     /// The layout signature for this roster and what the bar is shown with.
