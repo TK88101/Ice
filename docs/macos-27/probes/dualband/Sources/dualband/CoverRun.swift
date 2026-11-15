@@ -70,19 +70,40 @@ final class CoverSitting {
     }
 
     /// I1 and I2 on a `cover` event's own data.
-    private func invariants(_ event: [String: Any], _ label: String) {
+    private func invariants(_ event: [String: Any], _ label: String, own: pid_t) {
         for bar in event["bars"] as? [[String: Any]] ?? [] {
             func slots(_ key: String) -> [CoverSlot] {
                 ((bar[key] as? [[NSNumber]]) ?? []).map { CoverSlot(owner: $0[0].int32Value, minX: $0[1].doubleValue, maxX: $0[2].doubleValue) }
             }
             let blocks = ((bar["blocks"] as? [[NSNumber]]) ?? []).map { $0[0].doubleValue...$0[1].doubleValue }
-            let verified = slots("verified"), others = slots("slots").filter { !verified.contains($0) }
+            // Ice's own divider gives its room back at the applied length and is listed inside the last member's slot.
+            let verified = slots("verified")
+            let owners = Set(verified.map(\.owner))
+            let others = slots("slots").filter { !owners.contains($0.owner) && $0.owner != own }
             let display = (bar["display"] as? NSNumber)?.intValue ?? 0
             check(verified.allSatisfy { slot in blocks.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } },
                   "\(label) display \(display): every verified member slot (\(verified.count)) lies inside a block (\(blocks.count)) [I2]")
             check(!others.contains { slot in blocks.contains { $0.lowerBound < slot.maxX && slot.minX < $0.upperBound } },
-                  "\(label) display \(display): no block meets another slot [I1]")
+                  "\(label) display \(display): no block meets a slot of another owner [I1]")
         }
+    }
+
+    /// The bar as it is below the lowest window that lies above the lab copy's panel (Alcove's notch):
+    /// the panel and everything under it.
+    private func belowForeign(_ bar: CoverBar, labPID: pid_t) -> CGImage? {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else { return nil }
+        var previous: CGWindowID?
+        for window in list {
+            guard let id = window[kCGWindowNumber as String] as? CGWindowID else { continue }
+            if window[kCGWindowOwnerPID as String] as? pid_t == labPID, window[kCGWindowName as String] as? String == "Ice Cover",
+               let dictionary = window[kCGWindowBounds as String] as? NSDictionary,
+               let bounds = CGRect(dictionaryRepresentation: dictionary), bounds.intersects(bar.frame) {
+                guard let previous else { return CGWindowListCreateImage(bar.frame, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) }
+                return CGWindowListCreateImage(bar.frame, .optionOnScreenBelowWindow, previous, [.bestResolution])
+            }
+            previous = id
+        }
+        return nil
     }
 
     private func blocks(of display: UInt32, in event: [String: Any]) -> [ClosedRange<Double>] {
@@ -115,7 +136,6 @@ final class CoverSitting {
         let reader = LiveCoverBarReader()
         let capturer = LiveCoverCapturer()
         let vzhelper = URL(fileURLWithPath: "/private/tmp/claude-501/visibility-live/apps/Target.app/Contents/MacOS/vzhelper")
-        let second = URL(fileURLWithPath: "/private/tmp/claude-501/visibility-live/apps/Protected.app/Contents/MacOS/vzhelper")
         do {
             ice = try DebugIce(
                 app: labApp, log: dir.appendingPathComponent("cover-report.jsonl"),
@@ -125,94 +145,113 @@ final class CoverSitting {
             say("the lab copy did not start: \(error)")
             return 3
         }
-        spin(3)
-        guard let first = Helper(vzhelper: vzhelper, log: dir.appendingPathComponent("helper-a.log"), items: 2, identifiers: "cover-a,cover-b") else {
-            say("the helper did not start")
-            return 3
+        let labPID = ice?.process.processIdentifier ?? 0
+        func latestCover() -> [String: Any] {
+            ice?.events.last(where: { $0["event"] as? String == "cover" }) ?? [:]
         }
-        helpers.append(first)
+        func verifiedOwners(_ event: [String: Any]) -> Set<Int32> {
+            let bar = (event["bars"] as? [[String: Any]])?.first { ($0["display"] as? NSNumber)?.uint32Value == external.displayID }
+            return Set(((bar?["verified"] as? [[NSNumber]]) ?? []).map { $0[0].int32Value })
+        }
+        /// Every slot of an owner the cover verified, as this process reads the tree, lies inside the reported blocks.
+        func outsideBlocks() -> Int? {
+            guard let slots = reader.slots(of: external) else { return nil }
+            let event = latestCover()
+            let owners = verifiedOwners(event), reported = blocks(of: external.displayID, in: event)
+            return Set(slots).filter { owners.contains($0.owner) }
+                .filter { slot in !reported.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } }.count
+        }
 
-        // --- resting, covered
+        // --- resting, covered (the members are whatever stands left of the lab copy's divider: the owner's own items)
         guard let rest = wait(after: 0, timeout: 120, { self.isLength($0, applied: 736) }),
-              let covered = wait(after: seq(rest), timeout: 10, { self.isCover($0, withBlocks: true) })
+              wait(after: seq(rest), timeout: 10, { self.isCover($0, withBlocks: true) }) != nil
         else {
             check(false, "the lab copy rested at 736 and reported a cover with blocks")
             return 1
         }
-        check(true, "the lab copy rested at 736 (seq \(seq(rest))) and reported a cover with blocks (seq \(seq(covered)))")
-        invariants(covered, "resting")
-        var latest = covered
-        check(!blocks(of: external.displayID, in: latest).isEmpty, "the cover has blocks on display \(external.displayID)")
+        spin(2)
+        let settled = latestCover()
+        check(true, "the lab copy rested at 736 (seq \(seq(rest))); settled cover seq \(seq(settled)), "
+              + "blocks on display \(external.displayID): \(blocks(of: external.displayID, in: settled))")
+        invariants(settled, "resting", own: labPID)
+        check(!blocks(of: external.displayID, in: settled).isEmpty, "the cover has blocks on display \(external.displayID)")
 
-        // --- its own tree reads, 2 Hz for 4 s: the helper's slots lie inside the reported blocks
+        // --- 25 s at rest, two periodic verifications: the cover never goes, and every member slot stays inside it
+        var mark = seq(settled)
         var outside = 0, reads = 0
-        for _ in 0..<8 {
+        for _ in 0..<50 {
             spin(0.5)
-            if let newer = ice?.events.last(where: { self.isCover($0, withBlocks: true) }) { latest = newer }
-            guard let slots = reader.slots(of: external) else { continue }
-            reads += 1
-            let own = Set(slots).filter { $0.owner == first.pid }
-            let reported = blocks(of: external.displayID, in: latest)
-            outside += own.filter { slot in !reported.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } }.count
+            if let count = outsideBlocks() {
+                reads += 1
+                outside += count
+            }
         }
-        check(reads >= 6 && outside == 0, "display \(external.displayID): in \(reads) tree reads every helper slot lay inside a reported block (\(outside) outside)")
+        let dropped = (ice?.events ?? []).filter { seq($0) > mark && $0["event"] as? String == "cover" && blocks(of: external.displayID, in: $0).isEmpty }
+        check(dropped.isEmpty, "25 s at rest: the cover on display \(external.displayID) never went (\(dropped.count) events without blocks)")
+        check(reads >= 40 && outside == 0, "25 s at rest: in \(reads) tree reads every member slot lay inside a reported block (\(outside) outside)")
 
-        // --- pixels, two sessions 13 s apart, the first 13 s after the lab copy's own capture
+        // --- pixels, two sessions: below the lowest window above the panel, against below-Menubar
         for session in 1...2 {
-            spin(13)
-            let reported = blocks(of: external.displayID, in: latest)
-            guard let strips = capturer.strips(of: external), let same = CoverPixels.sameColumns(strips.onScreen, strips.below) else {
+            if session == 2 { spin(13) }
+            let reported = blocks(of: external.displayID, in: latestCover())
+            guard let strips = capturer.strips(of: external), let under = belowForeign(external, labPID: labPID),
+                  let same = CoverPixels.sameColumns(under, strips.below)
+            else {
                 check(false, "session \(session): the strips could not be compared")
                 continue
             }
             let differing = reported.reduce(0) { count, block in
                 count + (Int(block.lowerBound * external.scale)..<min(same.count, Int(block.upperBound * external.scale))).filter { !same[$0] }.count
             }
-            check(differing == 0, "session \(session), display \(external.displayID): on-screen equals below-Menubar over the blocks (\(differing) columns differ)")
+            check(differing == 0, "session \(session), display \(external.displayID): with the panel, the bar equals below-Menubar over the blocks (\(differing) columns differ)")
             if differing != 0 {
-                Live.writePNG(strips.onScreen, to: dir.appendingPathComponent("cover-session\(session)-onscreen.png"))
+                Live.writePNG(under, to: dir.appendingPathComponent("cover-session\(session)-under.png"))
                 Live.writePNG(strips.below, to: dir.appendingPathComponent("cover-session\(session)-below.png"))
             }
         }
 
         // --- the IceBar opening changes nothing
-        var mark = ice?.events.last.map(seq) ?? 0
+        mark = ice?.events.last.map(seq) ?? 0
         ice?.send("bar open")
         spin(3)
-        check(!(ice?.events ?? []).contains { seq($0) > mark && isCover($0, withBlocks: false) }, "bar open: the cover did not go")
+        check(!(ice?.events ?? []).contains { seq($0) > mark && $0["event"] as? String == "cover" && blocks(of: external.displayID, in: $0).isEmpty },
+              "bar open: the cover did not go")
         ice?.send("bar close")
         spin(1)
 
-        // --- a member more: the real retire. The cover goes before the length does, and comes back over three slots.
+        // --- a member more: the real retire. The cover goes before the length does, and comes back over the new member too.
         mark = ice?.events.last.map(seq) ?? 0
-        guard let added = Helper(vzhelper: second, log: dir.appendingPathComponent("helper-b.log"), items: 1, identifiers: "cover-c", glyphs: "reference") else {
-            check(false, "the second helper started")
+        let stamp = Int(Date().timeIntervalSince1970)
+        guard let added = Helper(
+            vzhelper: vzhelper, log: dir.appendingPathComponent("helper.log"), items: 2, identifiers: "cover-a,cover-b",
+            glyphs: "target,reference", autosave: "cover-\(stamp)"
+        ) else {
+            check(false, "the helper started")
             return 1
         }
         helpers.append(added)
-        let off = wait(after: mark, timeout: 30) { self.isCover($0, withBlocks: false) }
-        let retired = wait(after: mark, timeout: 30) { self.isLength($0, applied: nil) }
-        check(off != nil && retired != nil && seq(off!) < seq(retired!),
-              "a member more: the cover went (seq \(off.map(seq) ?? -1)) before the length was retired (seq \(retired.map(seq) ?? -1))")
-        if let retired, let again = wait(after: seq(retired), timeout: 30, { self.isLength($0, applied: 736) }),
-           let back = wait(after: seq(again), timeout: 10, { self.isCover($0, withBlocks: true) }) {
-            check(true, "the length came back (seq \(seq(again))) and the cover after it (seq \(seq(back)))")
-            invariants(back, "after the member")
+        let retired = wait(after: mark, timeout: 40) { self.isLength($0, applied: nil) }
+        let off = (ice?.events ?? []).last { seq($0) > mark && seq($0) < (retired.map(seq) ?? 0) && $0["event"] as? String == "cover" }
+        check(retired != nil && off != nil && (off?["bars"] as? [[String: Any]])?.isEmpty == true,
+              "a member more: the cover went (seq \(off.map(seq) ?? -1), no bars) before the length was retired (seq \(retired.map(seq) ?? -1))")
+        if let retired, let again = wait(after: seq(retired), timeout: 40, { self.isLength($0, applied: 736) }),
+           wait(after: seq(again), timeout: 10, { self.isCover($0, withBlocks: true) }) != nil {
             spin(2)
-            let newest = ice?.events.last(where: { self.isCover($0, withBlocks: true) }) ?? back
-            let reported = blocks(of: external.displayID, in: newest)
-            let own = Set(reader.slots(of: external) ?? []).filter { $0.owner == first.pid || $0.owner == added.pid }
-            check(own.count == 3 && own.allSatisfy { slot in reported.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } },
-                  "display \(external.displayID): the three helper slots (\(own.count)) lie inside the blocks")
+            let back = latestCover()
+            check(true, "the length came back (seq \(seq(again))) and the cover after it (seq \(seq(back)))")
+            invariants(back, "after the member", own: labPID)
+            let own = Set(reader.slots(of: external) ?? []).filter { $0.owner == added.pid }
+            let reported = blocks(of: external.displayID, in: back)
+            check(own.count == 2 && own.allSatisfy { slot in reported.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } },
+                  "display \(external.displayID): the helper's two slots (\(own.count)) lie inside the blocks \(reported)")
+            check(outsideBlocks() == 0, "after the member: every member slot lies inside a reported block")
         } else {
             check(false, "the length and the cover came back after the member change")
         }
 
         // --- the built-in, as found
         if let builtin = bars.first(where: { CGDisplayIsBuiltin($0.displayID) != 0 }) {
-            let own = Set(reader.slots(of: builtin) ?? []).filter { $0.owner == first.pid || $0.owner == added.pid }
-            let newest = ice?.events.last(where: { $0["event"] as? String == "cover" }) ?? [:]
-            say("note  built-in: \(own.count) helper slots listed; blocks there: \(blocks(of: builtin.displayID, in: newest))")
+            say("note  built-in: blocks \(blocks(of: builtin.displayID, in: latestCover()))")
         }
         say(failures.isEmpty ? "RESULT: PASS" : "RESULT: FAIL (\(failures.count))")
         return failures.isEmpty ? 0 : 1

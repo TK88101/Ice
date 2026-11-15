@@ -25,9 +25,7 @@ final class CoverPanel: NSPanel {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         level = .statusBar
         title = "Ice Cover"
-        // Opaque: a window that is not takes no hit test where MenuBarAgent's
-        // items lie beneath it (MEASURED 2026-11-15, mbcover), so a click would
-        // reach them. The strip is always drawn over the whole of it.
+        // Opaque: the strip is always drawn over the whole of it.
         isOpaque = true
         backgroundColor = .black
         hasShadow = false
@@ -110,7 +108,8 @@ public extension CoverController.Environment {
             background: { body in queue.async(execute: body) },
             main: { body in DispatchQueue.main.async(execute: body) },
             mainSync: { body in DispatchQueue.main.sync(execute: body) },
-            after: { delay, body in DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: body) }
+            after: { delay, body in DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: body) },
+            pause: { seconds in Thread.sleep(forTimeInterval: seconds) }
         )
     }
 }

@@ -26,12 +26,14 @@ public final class CoverController {
         public var mainSync: (() -> Void) -> Void
         /// On the main thread, after that many seconds.
         public var after: (Double, @escaping () -> Void) -> Void
+        /// From a pass: waits that many seconds.
+        public var pause: (Double) -> Void
 
         public init(
             bars: @escaping () -> [CoverBar], backgroundKey: @escaping (CoverBar) -> String, canCapture: @escaping () -> Bool,
             now: @escaping () -> Double, background: @escaping (@escaping () -> Void) -> Void,
             main: @escaping (@escaping () -> Void) -> Void, mainSync: @escaping (() -> Void) -> Void,
-            after: @escaping (Double, @escaping () -> Void) -> Void
+            after: @escaping (Double, @escaping () -> Void) -> Void, pause: @escaping (Double) -> Void
         ) {
             self.bars = bars
             self.backgroundKey = backgroundKey
@@ -41,6 +43,7 @@ public final class CoverController {
             self.main = main
             self.mainSync = mainSync
             self.after = after
+            self.pause = pause
         }
     }
 
@@ -52,6 +55,14 @@ public final class CoverController {
     /// After a change of the active display the panels stay this long without
     /// a fresh verification, then go (D5).
     public static let forcedDeadline = 0.5
+    /// After the length is applied the bar is laid out anew; a read taken
+    /// meanwhile lists slots half moved (MEASURED 2026-11-15, T5).
+    public static let activationSettle = 0.3
+    /// A panel told to ignore mouse events still stops a hit test until the
+    /// window server has heard of it (MEASURED 2026-11-15, T5: every periodic
+    /// verification failed without this wait). Polled this often, this long.
+    public static let openPoll = 0.01
+    public static let openPolls = 20
 
     private struct BarState {
         var slots = [CoverSlot]()
@@ -141,12 +152,20 @@ public final class CoverController {
             onReport?([], generation)
             return
         }
+        let wasActive = isActive
         let changed = !isActive || coverable != self.coverable
         isActive = true
         self.coverable = coverable
-        if changed {
-            forceNext = true
+        guard changed else { return }
+        forceNext = true
+        if wasActive {
             requestPass()
+        } else {
+            let started = generation
+            environment.after(Self.activationSettle) { [weak self] in
+                guard let self, self.isActive, self.generation == started else { return }
+                self.requestPass()
+            }
         }
     }
 
@@ -225,7 +244,7 @@ public final class CoverController {
         passRunning = true
         let (reader, capturer, presenter, environment) = (reader, capturer, presenter, environment)
         environment.background {
-            let results = Self.run(input, reader: reader, capturer: capturer, clock: environment.now) { ignores, id in
+            let results = Self.run(input, reader: reader, capturer: capturer, clock: environment.now, pause: environment.pause) { ignores, id in
                 environment.mainSync { presenter.setIgnoresMouseEvents(ignores, displayID: id) }
             }
             environment.main { [weak self] in
@@ -256,7 +275,7 @@ public final class CoverController {
 
     /// Off the main thread: the tree, the hit tests, the captures granted.
     private static func run(
-        _ input: PassInput, reader: CoverBarReading, capturer: CoverCapturing, clock: () -> Double,
+        _ input: PassInput, reader: CoverBarReading, capturer: CoverCapturing, clock: () -> Double, pause: (Double) -> Void,
         setIgnores: (Bool, UInt32) -> Void
     ) -> [UInt32: BarResult] {
         var results = [UInt32: BarResult]()
@@ -271,7 +290,10 @@ public final class CoverController {
                 // which a hit test would hit instead.
                 let toggles = !previous.blocks.isEmpty
                 let started = clock()
-                if toggles { setIgnores(true, bar.displayID) }
+                if toggles {
+                    setIgnores(true, bar.displayID)
+                    awaitOpen(previous.verified, on: bar, reader: reader, pause: pause)
+                }
                 state.verified = verify(candidates, on: bar, reader: reader)
                 if toggles {
                     setIgnores(false, bar.displayID)
@@ -295,6 +317,18 @@ public final class CoverController {
             )
         }
         return results
+    }
+
+    /// Waits until a slot that lay under a panel answers the hit test again:
+    /// the panels' new `ignoresMouseEvents` has reached the window server.
+    /// Gives up after `openPolls`: the slot may have moved.
+    private static func awaitOpen(_ covered: [CoverSlot], on bar: CoverBar, reader: CoverBarReading, pause: (Double) -> Void) {
+        guard let probe = covered.first else { return }
+        let point = [(probe.minX + probe.maxX) / 2]
+        for _ in 0..<openPolls {
+            if reader.owners(at: point, of: bar).first == probe.owner { return }
+            pause(openPoll)
+        }
     }
 
     private static func verify(_ candidates: [CoverSlot], on bar: CoverBar, reader: CoverBarReading) -> [CoverSlot] {

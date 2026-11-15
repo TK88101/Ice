@@ -502,13 +502,17 @@ Evidence: `~/IceReverse-evidence/20261113-flash/`. Rollback: `~/Ice-release-arch
 
 Evidence: `~/IceReverse-evidence/20261113-zh/`. Codex: the plan three rounds (REVISE, REVISE, AGREE), the code four (two P2 fixed, then clean twice).
 
-## More than one display: no hiding while a second display is connected (2026-11-15, plan 2026-11-15-secondary-display)
+## More than one display: hidden items covered where the bar still draws them (2026-11-15, plans 2026-11-15-secondary-display and 2026-11-15-cover)
 
 | what | status | tag |
 |---|---|---|
 | The owner's report | with the Sidecar connected, the hidden items were drawn on the Sidecar's bar and listed in the IceBar at once (two screenshots at one instant, 2026-11-14) | MEASURED |
-| A length that hides on the Sidecar bar | none of 64-2944 pt by 64 (46 lengths, built-in bar active, no menus and 4 menus of the front app): the members were drawn after the menus at every one; the built-in bar hid them at every length, its members' spot being under the notch and a third-party notch window | MEASURED, run `20261115-dualband-5`, Debug build under the daily identity (owner-approved, once), macOS 27, 2026-11-15 |
-| Other conditions (10 and 24 menus, Sidecar active) | not run: one condition without a hiding point already empties the shared set (rule fixed before the run) | -- |
-| What Ice now does | while more than one non-mirrored display is connected: standard length, no IceBar, the layout pane says why; a change of displays blocks at once and is decided after 2 s held | MEASURED (lab copy, build `a8b2158`: `blocked(multipleDisplays:2)`, length not set, IceBar not offered, 2 s after launch) |
-| Hiding again after the second display goes | unit-tested (`TopologyTrackerTests`); not run live: the Sidecar cannot be disconnected by automation | INFERRED (code and tests) |
-| Other displays and arrangements | untested | -- |
+| A length that hides on the Sidecar bar | none of 64-2944 pt by 64: the members were drawn at every one (no notch there to lay them under); the built-in bar hides them as before | MEASURED, run `20261115-dualband-5`, Debug build under the daily identity (owner-approved, once), 2026-11-15 |
+| Another way not to draw them there | none found (Codex concurred): the item is its app's, one length serves every bar | INFERRED |
+| What Ice now does | while it rests with the hidden length applied, it reads `MenuBarAgent`'s Accessibility tree once a second (4-35 ms a bar), confirms by a hit test each slot owned by an app all of whose items are hidden, and keeps an opaque panel over those slots, drawing the pixels that lie below the system's `Menubar` window there. The panels go before the length is retired (arranging, a drag, a member change) and come back after it is applied again | MEASURED for the mechanism (`mbcover check`, the daily Ice's seven members, 3 runs: every slot hit as listed, two panels at 484-640 and 671-743 pt of the Sidecar bar, none on the built-in; on-screen equal to below-`Menubar` over both except under Alcove's notch; no member hit through a panel; nothing left after) |
+| In Ice itself | T5_PLACEHOLDER | T5_TAG |
+| Captures | one session of two image calls per background (first use, another Space, light/dark, wake, unlock, the screen saver's end, the wallpaper store's date, a window appearing under the bar, every 30 minutes); at most four calls a second, then none for 12 s. No violet capture block followed (3 runs); the system's dot by the clock shows for 10-20 s after each | MEASURED |
+| The other display active | the member slots' frames with the active menu bar on the Sidecar: not measured (a command-line check cannot be made the active app). The length is kept across such a change, and every panel is confirmed again within 0.5 s or removed (unit-tested); the daily Ice logs each cover change to read after the first real switches | TBD |
+| Not covered | the bar of a full-screen Space; a menu bar that is not transparent (said in the pane); no Screen Recording (said in the pane); a hidden item of an app that also has a visible item; an Apple item Ice does not list; a `«` the system may show on a display where the spacer squeezes the members (no such display here) | INFERRED, by design |
+| Known seams | during a Space-switch animation the wallpaper moves and the cover does not; content moving in an app's window under the bar is not followed; with Ice's own tint, shape or border the cover is not tinted | INFERRED |
+| Other displays | untested: one Sidecar display here | -- |

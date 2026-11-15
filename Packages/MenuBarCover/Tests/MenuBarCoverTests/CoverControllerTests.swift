@@ -45,6 +45,19 @@ final class FakeCapturer: CoverCapturing {
 final class FakePresenter: CoverPresenting {
     var shown = [UInt32: [ClosedRange<Double>]]()
     var log = [String]()
+    var ignoring = Set<UInt32>()
+    /// Hit tests left to fail after the panels were told to ignore mouse events.
+    var closedPolls = 0
+    var pollsToOpen = 2
+
+    /// Whether a hit at that point of a bar is stopped by a panel, as the window server stops it.
+    func blocks(_ x: Double, _ display: UInt32) -> Bool {
+        guard shown[display]?.contains(where: { $0.contains(x) }) == true else { return false }
+        guard ignoring.contains(display) else { return true }
+        guard closedPolls > 0 else { return false }
+        closedPolls -= 1
+        return true
+    }
 
     func show(blocks: [ClosedRange<Double>], strip: CGImage, bar: CoverBar) {
         shown[bar.displayID] = blocks
@@ -58,6 +71,12 @@ final class FakePresenter: CoverPresenting {
 
     func setIgnoresMouseEvents(_ ignores: Bool, displayID: UInt32) {
         log.append("ignores \(ignores) \(displayID)")
+        if ignores {
+            ignoring.insert(displayID)
+            closedPolls = pollsToOpen
+        } else {
+            ignoring.remove(displayID)
+        }
     }
 }
 
@@ -74,6 +93,7 @@ final class Rig {
     var holdsPasses = false
     var held = [() -> Void]()
     var reports = [(reports: [CoverBarReport], generation: Int)]()
+    var paused = 0.0
     lazy var controller: CoverController = {
         let controller = CoverController(
             reader: reader, capturer: capturer, presenter: presenter,
@@ -82,7 +102,8 @@ final class Rig {
                 canCapture: { [unowned self] in self.canCapture }, now: { [unowned self] in self.now },
                 background: { [unowned self] body in if self.holdsPasses { self.held.append(body) } else { body() } },
                 main: { $0() }, mainSync: { $0() },
-                after: { [unowned self] delay, body in self.timers.append((self.now + delay, body)) }
+                after: { [unowned self] delay, body in self.timers.append((self.now + delay, body)) },
+                pause: { [unowned self] seconds in self.paused += seconds }
             )
         )
         controller.onReport = { [unowned self] reports, generation in self.reports.append((reports, generation)) }
@@ -106,11 +127,22 @@ final class Rig {
         CoverSlot(owner: owner, minX: minX, maxX: minX + width)
     }
 
-    /// Two members and a visible item; every slot is hit as its owner.
+    /// Two members and a visible item; every slot is hit as its owner, unless a panel stops the hit.
     func standardBar() {
-        let slots = [slot(1, 500, 38), slot(2, 538, 38), slot(20, 600, 40)]
+        bar([slot(1, 500, 38), slot(2, 538, 38), slot(20, 600, 40)])
+    }
+
+    func bar(_ slots: [CoverSlot]) {
         reader.slotsByDisplay[7] = slots
-        reader.hit = { x, _ in slots.first { $0.minX <= x && x < $0.maxX }?.owner }
+        reader.hit = { [unowned self] x, display in
+            self.presenter.blocks(x, display) ? nil : slots.first { $0.minX <= x && x < $0.maxX }?.owner
+        }
+    }
+
+    /// On, and past the settle before the first read.
+    func start(_ coverable: Set<Int32> = [1, 2]) {
+        controller.sync(active: true, coverable: coverable)
+        advance(CoverController.activationSettle)
     }
 }
 
@@ -120,7 +152,7 @@ struct CoverControllerTests {
     func covers() {
         let rig = Rig()
         rig.standardBar()
-        rig.controller.sync(active: true, coverable: [1, 2])
+        rig.start()
         #expect(rig.presenter.shown[7] == [496...580])
         #expect(rig.capturer.calls == 2)
         #expect(rig.reports.last?.reports.first?.verified.count == 2)
@@ -130,10 +162,8 @@ struct CoverControllerTests {
     func follows() {
         let rig = Rig()
         rig.standardBar()
-        rig.controller.sync(active: true, coverable: [1, 2])
-        let moved = [rig.slot(1, 452, 38), rig.slot(2, 490, 38), rig.slot(20, 552, 40)]
-        rig.reader.slotsByDisplay[7] = moved
-        rig.reader.hit = { x, _ in moved.first { $0.minX <= x && x < $0.maxX }?.owner }
+        rig.start()
+        rig.bar([rig.slot(1, 452, 38), rig.slot(2, 490, 38), rig.slot(20, 552, 40)])
         rig.advance(1)
         rig.controller.tick()
         #expect(rig.presenter.shown[7] == [448...532])
@@ -147,7 +177,7 @@ struct CoverControllerTests {
         rig.standardBar()
         let stale = rig.slot(2, 610, 38)
         rig.reader.slotsByDisplay[7] = (rig.reader.slotsByDisplay[7] ?? []).map { $0 + [stale] }
-        rig.controller.sync(active: true, coverable: [1, 2])
+        rig.start()
         #expect(rig.presenter.shown[7] == [496...580])
         #expect(rig.reports.last?.reports.first?.verified.contains(stale) == false)
     }
@@ -156,7 +186,7 @@ struct CoverControllerTests {
     func offFirst() {
         let rig = Rig()
         rig.standardBar()
-        rig.controller.sync(active: true, coverable: [1, 2])
+        rig.start()
         rig.holdsPasses = true
         rig.advance(1)
         rig.controller.tick()
@@ -169,11 +199,36 @@ struct CoverControllerTests {
         #expect(rig.presenter.shown.isEmpty)
     }
 
+    @Test("nothing is read or shown before the layout has settled after the length is applied")
+    func settles() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.controller.sync(active: true, coverable: [1, 2])
+        #expect(rig.presenter.shown.isEmpty && rig.reader.hitCalls == 0)
+        rig.advance(CoverController.activationSettle)
+        #expect(rig.presenter.shown[7] == [496...580])
+    }
+
+    @Test("the periodic verification waits until the panels let the hit test through, and the panels stay")
+    func reverifiesUnderPanels() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.start()
+        let events = rig.reports.count
+        rig.advance(CoverController.reverifyEvery + 1)
+        rig.controller.tick()
+        #expect(rig.presenter.shown[7] == [496...580])
+        #expect(rig.reports.count == events)
+        #expect(rig.presenter.log.suffix(3).contains("ignores true 7") && rig.presenter.log.last == "show 7")
+        #expect(rig.paused > 0)
+        #expect(rig.presenter.ignoring.isEmpty)
+    }
+
     @Test("no member drawn, no panel and no capture")
     func nothingDrawn() {
         let rig = Rig()
         rig.reader.slotsByDisplay[7] = [rig.slot(20, 600, 40)]
-        rig.controller.sync(active: true, coverable: [1, 2])
+        rig.start()
         rig.advance(1)
         rig.controller.tick()
         #expect(rig.presenter.shown.isEmpty)
@@ -185,7 +240,7 @@ struct CoverControllerTests {
         let rig = Rig()
         rig.standardBar()
         rig.capturer.opaque = true
-        rig.controller.sync(active: true, coverable: [1, 2])
+        rig.start()
         #expect(rig.presenter.shown.isEmpty)
         #expect(rig.controller.notice == .barNotTransparent(displayID: 7))
     }
@@ -195,7 +250,7 @@ struct CoverControllerTests {
         let rig = Rig()
         rig.standardBar()
         rig.canCapture = false
-        rig.controller.sync(active: true, coverable: [1, 2])
+        rig.start()
         #expect(rig.presenter.shown.isEmpty)
         #expect(rig.capturer.calls == 0)
         #expect(rig.controller.notice == .noScreenRecording)
@@ -205,7 +260,7 @@ struct CoverControllerTests {
     func unreadableKeeps() {
         let rig = Rig()
         rig.standardBar()
-        rig.controller.sync(active: true, coverable: [1, 2])
+        rig.start()
         rig.reader.slotsByDisplay[7] = .some(nil)
         rig.advance(1)
         rig.controller.tick()
@@ -216,7 +271,7 @@ struct CoverControllerTests {
     func recaptures() {
         let rig = Rig()
         rig.standardBar()
-        rig.controller.sync(active: true, coverable: [1, 2])
+        rig.start()
         rig.advance(13)
         rig.key = "space2"
         rig.controller.tick()
@@ -236,7 +291,7 @@ struct CoverControllerTests {
     func refreshes() {
         let rig = Rig()
         rig.standardBar()
-        rig.controller.sync(active: true, coverable: [1, 2])
+        rig.start()
         rig.advance(CoverController.refreshEvery + 1)
         rig.controller.tick()
         #expect(rig.capturer.calls == 4)
@@ -246,7 +301,7 @@ struct CoverControllerTests {
     func activeDisplayChange() {
         let rig = Rig()
         rig.standardBar()
-        rig.controller.sync(active: true, coverable: [1, 2])
+        rig.start()
         rig.controller.activeDisplayChanged()
         #expect(rig.presenter.shown[7] == [496...580])
         rig.advance(1)
@@ -265,7 +320,7 @@ struct CoverControllerTests {
     func displayGone() {
         let rig = Rig()
         rig.standardBar()
-        rig.controller.sync(active: true, coverable: [1, 2])
+        rig.start()
         rig.bars = []
         rig.advance(1)
         rig.controller.tick()

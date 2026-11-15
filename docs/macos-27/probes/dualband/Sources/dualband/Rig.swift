@@ -148,10 +148,13 @@ final class Helper {
 
     var pid: pid_t { process.processIdentifier }
 
-    init?(vzhelper: URL, log: URL, items: Int = 1, identifiers: String = "dualband-helper", glyphs: String = "target") {
+    init?(
+        vzhelper: URL, log: URL, items: Int = 1, identifiers: String = "dualband-helper", glyphs: String = "target", autosave: String? = nil
+    ) {
         FileManager.default.createFile(atPath: log.path, contents: nil)
         process.executableURL = vzhelper
         process.arguments = ["--controller", "\(getpid())", "--items", "\(items)", "--identifiers", identifiers, "--glyphs", glyphs, "--lifetime", "1800"]
+            + (autosave.map { ["--autosave", $0] } ?? [])
         process.standardInput = input
         process.standardOutput = try? FileHandle(forWritingTo: log)
         process.standardError = FileHandle.nullDevice
