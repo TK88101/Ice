@@ -12,7 +12,7 @@ public enum CoverPixels {
     public static let transparentShare = 0.2
 
     /// RGBA8 pixels of an image, row-major.
-    public static func rgba(_ image: CGImage) -> (width: Int, height: Int, pixels: [UInt8])? {
+    private static func rgba(_ image: CGImage) -> (width: Int, height: Int, pixels: [UInt8])? {
         let width = image.width, height = image.height
         guard width > 0, height > 0 else { return nil }
         var pixels = [UInt8](repeating: 0, count: width * height * 4)

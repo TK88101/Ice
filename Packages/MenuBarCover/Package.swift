@@ -22,11 +22,16 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "IceCore", path: "../IceCore"),
+        // The agent's pid by path and signature, and the checked child list.
+        .package(name: "MenuBarDiscovery", path: "../MenuBarDiscovery"),
     ],
     targets: [
         .target(
             name: "MenuBarCover",
-            dependencies: [.product(name: "IceCore", package: "IceCore")],
+            dependencies: [
+                .product(name: "IceCore", package: "IceCore"),
+                .product(name: "MenuBarDiscovery", package: "MenuBarDiscovery"),
+            ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(

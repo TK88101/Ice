@@ -53,10 +53,15 @@ final class CoverPanel: NSPanel {
         // AppKit's space has its origin at the bottom left of the first screen.
         let primaryHeight = NSScreen.screens.first?.frame.height ?? bar.frame.maxY
         let target = NSRect(x: x, y: primaryHeight - bar.frame.maxY, width: width, height: bar.frame.height)
-        cover.strip = strip
-        cover.crop = CGRect(x: lower, y: 0, width: upper - lower, height: CGFloat(strip.height))
-        if frame != target { setFrame(target, display: false) }
-        cover.needsDisplay = true
+        let crop = CGRect(x: lower, y: 0, width: upper - lower, height: CGFloat(strip.height))
+        let moved = frame != target
+        if moved { setFrame(target, display: false) }
+        // A pass comes every second: drawn again only when what it draws changed.
+        if moved || cover.strip !== strip || cover.crop != crop {
+            cover.strip = strip
+            cover.crop = crop
+            cover.needsDisplay = true
+        }
         if !isVisible { orderFrontRegardless() }
     }
 }

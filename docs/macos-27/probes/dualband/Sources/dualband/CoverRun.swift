@@ -75,9 +75,9 @@ final class CoverSitting {
 
     /// What `MenuBarAgent` and the whole system answer at a point of a bar, with the error when there is no element.
     private func rawHit(x: Double, bar: CoverBar, helper: pid_t, lab: pid_t) -> String {
-        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: LiveCoverBarReader.agentBundleID).first else { return "no agent" }
+        guard let agent = LiveCoverBarReader.agentPID() else { return "no agent" }
         func name(_ pid: pid_t) -> String {
-            pid == app.processIdentifier ? "the agent" : pid == helper ? "the helper" : pid == lab ? "the lab copy" : "pid \(pid)"
+            pid == agent ? "the agent" : pid == helper ? "the helper" : pid == lab ? "the lab copy" : "pid \(pid)"
         }
         func hit(_ root: AXUIElement) -> String {
             AXUIElementSetMessagingTimeout(root, 1)
@@ -90,7 +90,7 @@ final class CoverSitting {
             AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
             return "\(name(pid)) \(role as? String ?? "no role")"
         }
-        return "agent -> \(hit(AXUIElementCreateApplication(app.processIdentifier))), system-wide -> \(hit(AXUIElementCreateSystemWide()))"
+        return "agent -> \(hit(AXUIElementCreateApplication(agent))), system-wide -> \(hit(AXUIElementCreateSystemWide()))"
     }
 
     /// Where the lab copy's last snapshot lists the helpers' items.
@@ -102,10 +102,41 @@ final class CoverSitting {
         return "hidden \(count("cacheHidden")), visible \(count("cacheVisible"))"
     }
 
+    /// One bar of a `cover` event.
+    private struct ReportedBar {
+        let display: UInt32
+        let slots: [CoverSlot]
+        let verified: [CoverSlot]
+        let blocks: [ClosedRange<Double>]
+    }
+
+    /// The bars of a `cover` event; `nil` for another event and for one not shaped as
+    /// `LabReportCoverBar.json` writes it, so no check passes on a list that only failed to decode.
+    private func coverBars(_ event: [String: Any]) -> [ReportedBar]? {
+        guard event["event"] as? String == "cover", let raw = event["bars"] as? [[String: Any]] else { return nil }
+        func slots(_ value: Any?) -> [CoverSlot]? {
+            guard let rows = value as? [[NSNumber]], rows.allSatisfy({ $0.count == 3 }) else { return nil }
+            return rows.map { CoverSlot(owner: $0[0].int32Value, minX: $0[1].doubleValue, maxX: $0[2].doubleValue) }
+        }
+        var bars = [ReportedBar]()
+        for bar in raw {
+            guard let display = (bar["display"] as? NSNumber)?.uint32Value, let all = slots(bar["slots"]), let verified = slots(bar["verified"]),
+                  let rows = bar["blocks"] as? [[NSNumber]], rows.allSatisfy({ $0.count == 2 && $0[0].doubleValue <= $0[1].doubleValue })
+            else {
+                return nil
+            }
+            bars.append(ReportedBar(display: display, slots: all, verified: verified, blocks: rows.map { $0[0].doubleValue...$0[1].doubleValue }))
+        }
+        return bars
+    }
+
+    private func inside(_ slot: CoverSlot, _ blocks: [ClosedRange<Double>]) -> Bool {
+        blocks.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound }
+    }
+
     private func isCover(_ event: [String: Any], withBlocks: Bool) -> Bool {
-        guard event["event"] as? String == "cover", let bars = event["bars"] as? [[String: Any]] else { return false }
-        let has = bars.contains { !(($0["blocks"] as? [[NSNumber]]) ?? []).isEmpty }
-        return has == withBlocks
+        guard let bars = coverBars(event) else { return false }
+        return bars.contains { !$0.blocks.isEmpty } == withBlocks
     }
 
     private func isLength(_ event: [String: Any], applied: Double?) -> Bool {
@@ -115,20 +146,18 @@ final class CoverSitting {
 
     /// I1 and I2 on a `cover` event's own data.
     private func invariants(_ event: [String: Any], _ label: String, own: pid_t) {
-        for bar in event["bars"] as? [[String: Any]] ?? [] {
-            func slots(_ key: String) -> [CoverSlot] {
-                ((bar[key] as? [[NSNumber]]) ?? []).map { CoverSlot(owner: $0[0].int32Value, minX: $0[1].doubleValue, maxX: $0[2].doubleValue) }
-            }
-            let blocks = ((bar["blocks"] as? [[NSNumber]]) ?? []).map { $0[0].doubleValue...$0[1].doubleValue }
+        guard let bars = coverBars(event) else {
+            check(false, "\(label): the cover event could be read")
+            return
+        }
+        for bar in bars {
             // Ice's own divider gives its room back at the applied length and is listed inside the last member's slot.
-            let verified = slots("verified")
-            let owners = Set(verified.map(\.owner))
-            let others = slots("slots").filter { !owners.contains($0.owner) && $0.owner != own }
-            let display = (bar["display"] as? NSNumber)?.intValue ?? 0
-            check(verified.allSatisfy { slot in blocks.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } },
-                  "\(label) display \(display): every verified member slot (\(verified.count)) lies inside a block (\(blocks.count)) [I2]")
-            check(!others.contains { slot in blocks.contains { $0.lowerBound < slot.maxX && slot.minX < $0.upperBound } },
-                  "\(label) display \(display): no block meets a slot of another owner [I1]")
+            let owners = Set(bar.verified.map(\.owner))
+            let others = bar.slots.filter { !owners.contains($0.owner) && $0.owner != own }
+            check(bar.verified.allSatisfy { inside($0, bar.blocks) },
+                  "\(label) display \(bar.display): every verified member slot (\(bar.verified.count)) lies inside a block (\(bar.blocks.count)) [I2]")
+            check(!others.contains { slot in bar.blocks.contains { $0.lowerBound < slot.maxX && slot.minX < $0.upperBound } },
+                  "\(label) display \(bar.display): no block meets a slot of another owner [I1]")
         }
     }
 
@@ -150,9 +179,14 @@ final class CoverSitting {
         return nil
     }
 
+    /// A display's blocks in a `cover` event; none also when the event cannot be read.
     private func blocks(of display: UInt32, in event: [String: Any]) -> [ClosedRange<Double>] {
-        let bar = (event["bars"] as? [[String: Any]])?.first { ($0["display"] as? NSNumber)?.uint32Value == display }
-        return ((bar?["blocks"] as? [[NSNumber]]) ?? []).map { $0[0].doubleValue...$0[1].doubleValue }
+        coverBars(event)?.first { $0.display == display }?.blocks ?? []
+    }
+
+    /// The `cover` events after `mark` that left a display without blocks.
+    private func coverDrops(after mark: Int, display: UInt32) -> Int {
+        (ice?.events ?? []).filter { seq($0) > mark && $0["event"] as? String == "cover" && blocks(of: display, in: $0).isEmpty }.count
     }
 
     func run() -> Int32 {
@@ -194,17 +228,14 @@ final class CoverSitting {
         func latestCover() -> [String: Any] {
             ice?.events.last(where: { $0["event"] as? String == "cover" }) ?? [:]
         }
-        func verifiedOwners(_ event: [String: Any]) -> Set<Int32> {
-            let bar = (event["bars"] as? [[String: Any]])?.first { ($0["display"] as? NSNumber)?.uint32Value == external.displayID }
-            return Set(((bar?["verified"] as? [[NSNumber]]) ?? []).map { $0[0].int32Value })
-        }
-        /// Every slot of an owner the cover verified, as this process reads the tree, lies inside the reported blocks.
+        /// How many slots of the owners the cover verified, as this process reads the tree, lie outside the reported blocks.
         func outsideBlocks() -> Int? {
-            guard let slots = reader.slots(of: external) else { return nil }
-            let event = latestCover()
-            let owners = verifiedOwners(event), reported = blocks(of: external.displayID, in: event)
-            return Set(slots).filter { owners.contains($0.owner) }
-                .filter { slot in !reported.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } }.count
+            guard let slots = reader.slots(of: external), let bar = coverBars(latestCover())?.first(where: { $0.display == external.displayID })
+            else {
+                return nil
+            }
+            let owners = Set(bar.verified.map(\.owner))
+            return Set(slots).filter { owners.contains($0.owner) && !inside($0, bar.blocks) }.count
         }
 
         // --- resting, covered (the members are whatever stands left of the lab copy's divider: the owner's own items)
@@ -236,7 +267,7 @@ final class CoverSitting {
         guard !interrupted else { return stopped("the wait for the retire") }
         if retired == nil { say("note  no retire in 40 s; the helper's items: \(helperSections())") }
         let off = (ice?.events ?? []).last { seq($0) > mark && seq($0) < (retired.map(seq) ?? 0) && $0["event"] as? String == "cover" }
-        check(retired != nil && off != nil && (off?["bars"] as? [[String: Any]])?.isEmpty == true,
+        check(retired != nil && off.flatMap(coverBars)?.isEmpty == true,
               "a member more: the cover went (seq \(off.map(seq) ?? -1), no bars) before the length was retired (seq \(retired.map(seq) ?? -1))")
         if let retired, let again = wait(after: seq(retired), timeout: 40, { self.isLength($0, applied: 736) }),
            wait(after: seq(again), timeout: 10, { self.isCover($0, withBlocks: true) }) != nil {
@@ -246,13 +277,11 @@ final class CoverSitting {
             invariants(back, "after the member", own: labPID)
             let own = Set(reader.slots(of: external) ?? []).filter { $0.owner == added.pid }
             let reported = blocks(of: external.displayID, in: back)
-            check(own.count == 2 && own.allSatisfy { slot in reported.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } },
-                  "display \(external.displayID): the helper's two slots (\(own.count)) lie inside the blocks \(reported)")
-            check(outsideBlocks() == 0, "after the member: every member slot lies inside a reported block")
             // The helper's slots outside every block lie under no panel: what a hit test answers there
             // and whether the helper is drawn there say why they were not verified.
-            let bare = own.sorted(by: { $0.minX < $1.minX })
-                .filter { slot in !reported.contains { $0.lowerBound <= slot.minX && slot.maxX <= $0.upperBound } }
+            let bare = own.filter { !inside($0, reported) }.sorted { $0.minX < $1.minX }
+            check(own.count == 2 && bare.isEmpty, "display \(external.displayID): the helper's two slots (\(own.count)) lie inside the blocks \(reported)")
+            check(outsideBlocks() == 0, "after the member: every member slot lies inside a reported block")
             if !bare.isEmpty {
                 // One capture session: is the helper drawn where the tree lists it?
                 let strips = capturer.strips(of: external)
@@ -289,8 +318,8 @@ final class CoverSitting {
                 outside += count
             }
         }
-        let dropped = (ice?.events ?? []).filter { seq($0) > mark && $0["event"] as? String == "cover" && blocks(of: external.displayID, in: $0).isEmpty }
-        check(dropped.isEmpty, "25 s at rest: the cover on display \(external.displayID) never went (\(dropped.count) events without blocks)")
+        let drops = coverDrops(after: mark, display: external.displayID)
+        check(drops == 0, "25 s at rest: the cover on display \(external.displayID) never went (\(drops) events without blocks)")
         check(reads >= 40 && outside == 0, "25 s at rest: in \(reads) tree reads every member slot lay inside a reported block (\(outside) outside)")
 
         // --- pixels, two sessions: below the lowest window above the panel, against below-Menubar
@@ -318,8 +347,7 @@ final class CoverSitting {
         mark = ice?.events.last.map(seq) ?? 0
         ice?.send("bar open")
         spin(3)
-        check(!(ice?.events ?? []).contains { seq($0) > mark && $0["event"] as? String == "cover" && blocks(of: external.displayID, in: $0).isEmpty },
-              "bar open: the cover did not go")
+        check(coverDrops(after: mark, display: external.displayID) == 0, "bar open: the cover did not go")
         ice?.send("bar close")
         spin(1)
 

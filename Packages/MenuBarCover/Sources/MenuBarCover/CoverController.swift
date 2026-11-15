@@ -60,7 +60,7 @@ public final class CoverController {
     public static let activationSettle = 0.3
     /// A panel told to ignore mouse events still stops a hit test until the
     /// window server has heard of it (MEASURED 2026-11-15, T5: every periodic
-    /// verification failed without this wait). Polled this often, this long.
+    /// verification failed without this wait). Polled this often, this many times.
     public static let openPoll = 0.01
     public static let openPolls = 20
 

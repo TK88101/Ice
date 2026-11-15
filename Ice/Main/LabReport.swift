@@ -78,12 +78,22 @@ enum LabReport {
         session?.write(event())
     }
 
+    /// What becomes of a decided length: the plan's fault and a runner's override.
+    private static func outcome(of decided: Double?) -> LabReportLength {
+        LabReportRule.appliedLength(decided, plan: plan, override: lengthOverride)
+    }
+
+    /// The length `applied` would let through, recording nothing.
+    static func wouldApply(_ decided: Double?) -> Double? {
+        outcome(of: decided).applied
+    }
+
     /// What the hidden control item is given for a length the machine
     /// decided: the length itself, except in a report launch that holds
     /// lengths (scenario 11's fault). Records the length event.
     static func applied(_ decided: Double?) -> Double? {
         lastDecided = decided
-        let outcome = LabReportRule.appliedLength(decided, plan: plan, override: lengthOverride)
+        let outcome = outcome(of: decided)
         record(.length(outcome, decided: decided))
         return outcome.applied
     }
@@ -214,11 +224,12 @@ extension LabReport {
 
         // MARK: Snapshot
 
-        /// The machine's last decided length again, through the override, as
-        /// the coordinator's `.setLength` applies it (`applied` records it).
+        /// The machine's last decided length again, through the override, by
+        /// the coordinator's one writer (`applied` records it; the cover goes
+        /// off first when the override takes the length away).
+        @available(macOS 27, *)
         private func reapplyLength(appState: AppState) {
-            let length = LabReport.applied(LabReport.lastDecided)
-            appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = length.map { CGFloat($0) }
+            (appState.itemManager.iceBarHidingStorage as? IceBarHidingCoordinator)?.applyLength(decided: LabReport.lastDecided)
         }
 
         private static func key(of item: MenuBarItem) -> ItemKey? {

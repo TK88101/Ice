@@ -92,7 +92,7 @@ let capturer = RecordingCapturer()
 let presenter = CoverPanelPresenter()
 let bars = CoverBars.current()
 print("bars:", bars.map { "\($0.displayID) \($0.frame) notch \($0.notch.map { "\($0)" } ?? "-")" }.joined(separator: " | "))
-let agentPID = NSRunningApplication.runningApplications(withBundleIdentifier: LiveCoverBarReader.agentBundleID).first?.processIdentifier ?? -1
+let agentPID = LiveCoverBarReader.agentPID() ?? -1
 
 struct Reading {
     var slots = [CoverSlot]()

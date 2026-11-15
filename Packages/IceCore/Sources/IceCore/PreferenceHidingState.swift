@@ -21,8 +21,9 @@ public enum PreferenceHidingLayoutChange: Equatable, Sendable {
 
     /// Whether the roster itself may be wrong after it: another display, or
     /// another set of items. The roster advances only at standard length, so
-    /// such a change retires an applied length; after any other the length
-    /// stays and only the checks are owed again. A Space that shows other
+    /// such a change retires an applied length (the machine keeps it for a
+    /// display change alone when it hides at once, `isDisplayOnly`); after
+    /// any other the length stays and only the checks are owed again. A Space that shows other
     /// items differs in the item lists; its id alone says nothing of them.
     public var isStructural: Bool {
         switch self {

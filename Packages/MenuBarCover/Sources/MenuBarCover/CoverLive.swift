@@ -7,25 +7,40 @@
 import AppKit
 import ApplicationServices
 import IceCore
+import MenuBarDiscovery
 
 /// Reads `MenuBarAgent` (plan D1; MEASURED 2026-11-15: one `AXWindow` per bar
 /// with that bar's frame, one child per item slot, whose own child belongs to
 /// the owning app). Read-only; call it off the main thread.
 public final class LiveCoverBarReader: CoverBarReading {
-    public static let agentBundleID = "com.apple.MenuBarAgent"
     /// An answer later than this is no answer.
     public static let messagingTimeout: Float = 0.25
     /// A read that fails this often in a row, or runs this long, is abandoned.
     public static let maxFailures = 3
     public static let maxSeconds = 2.0
 
+    /// The agent as last found, kept while that process lives.
+    private var known: (pid: pid_t, element: AXUIElement)?
+    private let lock = NSLock()
+
     public init() {}
 
+    /// `MenuBarAgent`'s pid: Apple's own, by its path and signature, not by
+    /// its bundle id alone (`LiveRunningApps.agentPID`, hardening H3).
+    public static func agentPID() -> pid_t? {
+        LiveRunningApps().agentPID()
+    }
+
     private func agent() -> (pid: pid_t, element: AXUIElement)? {
-        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: Self.agentBundleID).first else { return nil }
-        let element = AXUIElementCreateApplication(app.processIdentifier)
-        AXUIElementSetMessagingTimeout(element, Self.messagingTimeout)
-        return (app.processIdentifier, element)
+        lock.lock()
+        defer { lock.unlock() }
+        if let known, kill(known.pid, 0) == 0 { return known }
+        known = Self.agentPID().map { pid in
+            let element = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(element, Self.messagingTimeout)
+            return (pid, element)
+        }
+        return known
     }
 
     private func value(_ element: AXUIElement, _ name: String) -> AnyObject? {
@@ -46,32 +61,35 @@ public final class LiveCoverBarReader: CoverBarReading {
     }
 
     public func slots(of bar: CoverBar) -> [CoverSlot]? {
-        guard let agent = agent(), let windows = value(agent.element, kAXChildrenAttribute) as? [AXUIElement] else { return nil }
+        guard let agent = agent(), let windows = value(agent.element, kAXChildrenAttribute) else { return nil }
         let started = CFAbsoluteTimeGetCurrent()
         var failures = 0
+        /// Counts a failed read; whether the whole read is to be abandoned.
+        func failed() -> Bool {
+            failures += 1
+            return failures >= Self.maxFailures
+        }
         var slots = [CoverSlot]()
-        for window in windows where value(window, kAXRoleAttribute) as? String == kAXWindowRole {
+        // Children are taken through `childElements`: `as? [AXUIElement]` does not check its elements.
+        for window in LiveExtrasReader.childElements(windows) where value(window, kAXRoleAttribute) as? String == kAXWindowRole {
             guard let windowFrame = frame(window) else {
-                failures += 1
-                if failures >= Self.maxFailures { return nil }
+                if failed() { return nil }
                 continue
             }
             guard abs(windowFrame.minX - bar.frame.minX) <= 1, abs(windowFrame.width - bar.frame.width) <= 1 else { continue }
-            guard let children = value(window, kAXChildrenAttribute) as? [AXUIElement] else {
-                failures += 1
-                if failures >= Self.maxFailures { return nil }
+            guard let children = value(window, kAXChildrenAttribute) else {
+                if failed() { return nil }
                 continue
             }
-            for child in children {
+            for child in LiveExtrasReader.childElements(children) {
                 guard CFAbsoluteTimeGetCurrent() - started <= Self.maxSeconds else { return nil }
                 guard let slotFrame = frame(child) else {
-                    failures += 1
-                    if failures >= Self.maxFailures { return nil }
+                    if failed() { return nil }
                     continue
                 }
                 failures = 0
                 var owner = agent.pid
-                if let hosted = (value(child, kAXChildrenAttribute) as? [AXUIElement])?.first {
+                if let hosted = LiveExtrasReader.childElements(value(child, kAXChildrenAttribute)).first {
                     AXUIElementGetPid(hosted, &owner)
                 }
                 slots.append(CoverSlot(
@@ -108,22 +126,14 @@ public final class LiveCoverCapturer: CoverCapturing {
         var menubar: CGWindowID?
         var below = [(id: CGWindowID, bounds: CGRect)]()
         for window in list {
-            guard let dictionary = window[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: dictionary),
-                  let id = window[kCGWindowNumber as String] as? CGWindowID
-            else {
-                continue
-            }
+            guard let id = window[kCGWindowNumber as String] as? CGWindowID else { continue }
             if menubar == nil {
-                if window[kCGWindowOwnerName as String] as? String == "Window Server",
-                   window[kCGWindowName as String] as? String == "Menubar",
-                   window[kCGWindowLayer as String] as? Int == Int(CGWindowLevelForKey(.mainMenuWindow)),
-                   abs(bounds.minX - bar.frame.minX) <= 1, abs(bounds.width - bar.frame.width) <= 1 {
+                if let bounds = CoverBars.menubarBounds(window), abs(bounds.minX - bar.frame.minX) <= 1, abs(bounds.width - bar.frame.width) <= 1 {
                     menubar = id
                 }
                 continue
             }
-            if bounds.intersects(bar.frame) { below.append((id, bounds)) }
+            if let bounds = CoverBars.bounds(window), bounds.intersects(bar.frame) { below.append((id, bounds)) }
         }
         return menubar.map { ($0, below) }
     }
@@ -168,17 +178,27 @@ public enum CoverBars {
         }
     }
 
+    static func bounds(_ window: [String: Any]) -> CGRect? {
+        (window[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }
+    }
+
+    /// The bounds of a window-list entry that is the system's `Menubar` window.
+    static func menubarBounds(_ window: [String: Any]) -> CGRect? {
+        guard window[kCGWindowOwnerName as String] as? String == "Window Server",
+              window[kCGWindowName as String] as? String == "Menubar",
+              window[kCGWindowLayer as String] as? Int == Int(CGWindowLevelForKey(.mainMenuWindow))
+        else {
+            return nil
+        }
+        return bounds(window)
+    }
+
     /// The height of each display's `Menubar` window, from the window list.
     private static func menubarHeights() -> [UInt32: CGFloat] {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else { return [:] }
         var heights = [UInt32: CGFloat]()
-        for window in list where window[kCGWindowLayer as String] as? Int == Int(CGWindowLevelForKey(.mainMenuWindow)) {
-            guard window[kCGWindowOwnerName as String] as? String == "Window Server",
-                  let dictionary = window[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: dictionary), bounds.height > 0, bounds.height < 100
-            else {
-                continue
-            }
+        for window in list {
+            guard let bounds = menubarBounds(window), bounds.height > 0, bounds.height < 100 else { continue }
             var id: CGDirectDisplayID = 0
             var count: UInt32 = 0
             if CGGetDisplaysWithPoint(CGPoint(x: bounds.midX, y: bounds.minY + 1), 1, &id, &count) == .success, count > 0, heights[id] == nil {

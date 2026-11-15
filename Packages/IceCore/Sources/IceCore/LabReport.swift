@@ -332,7 +332,6 @@ public struct LabReportSnapshot: Equatable, Sendable {
     }
 }
 
-/// One line of the report.
 /// One bar in a `cover` event: the slots read, those a hit test confirmed, the
 /// blocks covered, and how long the panels ignored mouse events for it.
 public struct LabReportCoverBar: Equatable, Sendable {
@@ -362,6 +361,7 @@ public struct LabReportCoverBar: Equatable, Sendable {
     }
 }
 
+/// One line of the report.
 public enum LabReportEvent: Equatable, Sendable {
     case start(pid: Int32, bundleID: String?, holdLength: Bool)
     /// Each status the machine reports, at the moment it does.

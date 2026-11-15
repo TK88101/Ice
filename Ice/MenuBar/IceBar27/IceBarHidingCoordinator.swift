@@ -64,9 +64,12 @@ final class IceBarHidingCoordinator {
     /// Covers the members a bar still draws at the applied length: a bar
     /// without a notch draws them at every length (plan 2026-11-15-cover).
     private let cover = CoverController(
-        reader: LiveCoverBarReader(), capturer: LiveCoverCapturer(), presenter: CoverPanelPresenter(),
+        reader: LiveCoverBarReader(), capturer: ClockedCoverCapturer(), presenter: CoverPanelPresenter(),
         environment: .live(backgroundKey: IceBarHidingCoordinator.coverBackgroundKey, canCapture: { ScreenCapture.cachedCheckPermissions() })
     )
+    /// The length last written to the hidden divider (`applyLength`): `nil`
+    /// at standard length, whatever the machine decided.
+    private var writtenLength: Double?
     /// The display that had the active menu bar at the last tick.
     private var activeDisplayID: CGDirectDisplayID?
     /// The machine's last status line for the owner; the cover's notice is said after it.
@@ -194,6 +197,23 @@ final class IceBarHidingCoordinator {
         syncCover()
     }
 
+    /// The one place the hidden divider's length is written: what the machine
+    /// decided, as the lab report lets it through. The cover goes off before
+    /// a length goes, so no panel outlives its layout (plan 2026-11-15-cover,
+    /// D4); a lab override that takes the length away is such a going.
+    func applyLength(decided: Double?) {
+        guard let appState else {
+            return
+        }
+        // The cover first, its report included: the lab report's order is the order things happen in.
+        if LabReport.wouldApply(decided) == nil {
+            cover.sync(active: false, coverable: [])
+        }
+        let length = LabReport.applied(decided)
+        writtenLength = length
+        appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = length.map { CGFloat($0) }
+    }
+
     /// The cover is on exactly while Ice rests with a length applied, over
     /// the roster's members (plan 2026-11-15-cover, D4); its notice follows
     /// the machine's status line.
@@ -201,7 +221,7 @@ final class IceBarHidingCoordinator {
         guard let appState else {
             return
         }
-        let isActive = isLengthApplied && appState.settings.general.useIceBar
+        let isActive = isLengthApplied && writtenLength != nil && appState.settings.general.useIceBar
         cover.sync(active: isActive, coverable: isActive ? appState.itemManager.coverableOwners : [])
         let notice: OwnerMessage? = switch isActive ? cover.notice : nil {
         case .noScreenRecording: OwnerMessage(Self.coverNoScreenRecording)
@@ -342,9 +362,7 @@ final class IceBarHidingCoordinator {
         }
         switch command {
         case .setLength(let length):
-            // Off before the length goes: no panel outlives its layout (D4).
-            if length == nil { cover.sync(active: false, coverable: []) }
-            appState.menuBarManager.controlItem(withName: .hidden)?.calibratedHiddenLength = LabReport.applied(length).map { CGFloat($0) }
+            applyLength(decided: length)
             if length == nil {
                 rereadSoon()
             }
@@ -420,5 +438,23 @@ final class IceBarHidingCoordinator {
         }
         observer = (screen.displayID, fresh)
         return fresh
+    }
+}
+
+/// The cover's image calls, told to the process's one capture clock, so the
+/// hiding check's sessions know of them (plan 2026-11-15-cover, D2).
+private struct ClockedCoverCapturer: CoverCapturing {
+    private let inner = LiveCoverCapturer()
+
+    func strips(of bar: CoverBar) -> CoverStrips? {
+        // Two image calls; the system reacts to the attempt.
+        let now = ProcessInfo.processInfo.systemUptime
+        CaptureBurstClock.shared.noteCapture(at: now)
+        CaptureBurstClock.shared.noteCapture(at: now)
+        return inner.strips(of: bar)
+    }
+
+    func underStripSignature(of bar: CoverBar) -> String {
+        inner.underStripSignature(of: bar)
     }
 }
