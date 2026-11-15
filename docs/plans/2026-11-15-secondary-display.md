@@ -314,3 +314,25 @@ Accepted by Codex: 4.1, 4.2.
 | # | Codex point | Ruling | Why |
 |---|---|---|---|
 | 5.1 | Step 4's fine sweep borrows the helper roster's transitions | adopted, restructured | coarse and fine sweeps now run on the owner's roster only; the helper only cross-checks the strip judge at P's bounding points (disagreement -> inconclusive -> D) |
+
+### Phase-2 defect: T0's instrument (Codex quick re-review, 2026-11-15)
+
+Found in implementation: a lab-identity copy in the owner's account gets an empty
+roster (plan 2026-11-12-s5-owner-acceptance F4, C1: its divider is a new item, the
+owner's members land right of it; MenuBarAgent's position store is not ours to
+write). "Lab copy with the owner's roster" cannot be built under the lab-identity
+rule. Options: (1) one owner-approved T0 sitting with a local Debug build under the
+daily identity; (2) helpers as stand-ins (rejected in round 1, not transferable);
+(3) no measurement, D. Codex and I agree on (1) as the only transferable one, as an
+exception the owner must grant, with these guards (all adopted):
+
+| # | Guard |
+|---|---|
+| G1 | The T0 control surface (length command, report) compiled only into Debug (`#if DEBUG`), and accepted only when the bundle id is exactly the daily one; Release contains no parser path for it; tests for accept/refuse and a `checks/` grep that the Release binary has no `IceOwnerT0` string |
+| G2 | The owner accepts that MenuBarAgent may change values of its store by itself; we never write it; the store is exported before, after, and after a settle, diffed and reported; an owner key added/removed, an order change, or the daily divider/icon moving stops the run |
+| G3 | Daily Ice and its service quit first; the Debug build exec'd by absolute path, PID and image path verified; the domain exported with its hash; restored only after the Debug build exited; then the daily Ice relaunched by path, settled, the domain exported again and compared; any difference is a failure, evidence kept, no retry |
+| G4 | The helper only in step 4 (P's bounds), listed as an extra risk the owner accepts; without it step 4 is dropped and T0 ends inconclusive -> D |
+| G5 | Preflight: no other process with the daily id; a second instance during the run aborts; teardown relaunches only the verified `/Applications/Ice.app` |
+| G6 | The gate is compile-time (`DEBUG`), the launch argument a second gate only |
+
+If the owner declines: no measurement; D ships.
