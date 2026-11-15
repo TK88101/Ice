@@ -953,3 +953,31 @@ evidence `~/IceReverse-evidence/20261115-cover-feasibility/` and `20261115-cover
   through a device-RGB bitmap widens that 1 to as much as 3 (24 against 25 in green read
   15 against 18): compare strips in their own colour space (run `-t5g`'s saved strips:
   486 of 486 columns within 1).
+
+## macOS 27.2: an item pushed off the bar leaves Accessibility (2026-11-15, plan 2026-11-15-blind-at-length)
+
+MEASURED on 27.2.1 (26B131), the owner's Mac, right after the update from a system on
+which the same Ice 1.1.2 binary rested hidden. Evidence
+`~/IceReverse-evidence/20261115-272-flicker/`; the probe is `probes/ownextras.swift`.
+
+- At a hiding length (736 pt) Ice's own `AXExtrasMenuBar` lists its icon only; the hidden
+  divider is back in the first 150 ms sample after it collapses. The five items of five
+  other apps left of it are absent from their owners' extras bars in the same phases
+  (`watch-live.txt`, 4 cycles of 4).
+- Sacrificial helpers, a spacer at 736 pt and a target left of it (`hold.txt`): both
+  processes' `AXExtrasMenuBar` answer noValue (-25212); an `AXUIElement` of the target held
+  from before answers illegalArgument (-25201) to `AXRole`, `AXPosition` and `AXPress`, and
+  no menu opens. Back at rest the same held element answers again and a fresh press
+  returns 0 with the helper's menu open.
+- `MenuBarAgent`'s tree drops the slots of the pushed-off target and of the spacer
+  (`agent.txt`); slots of items that were not pushed stay.
+- The window list (`CGWindowListCopyWindowInfo`, on screen or all) has no window at layer
+  25 for any process: nothing else lists a pushed-off item.
+- The helper's own AppKit state does not change: `isVisible` true, the same window frame.
+- A popover item's press returns in 0.11 s with the popover up; while it is up the item's
+  app lists it as a second child of its extras bar, without an identifier.
+- Contrast, 27.0.1 (26A434, 2026-10-04): a pushed-off item was listed, and `AXPress`
+  opened its menu 5 of 5 (run `20261004-105226-spike`).
+- Helpers launched with no stored position land where `MenuBarAgent` remembered their
+  process name (mid-bar here); a unique `--autosave` name whose `NSStatusItem Preferred
+  Position` is written first in the helper's own domain (30000 and up) puts them leftmost.

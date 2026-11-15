@@ -83,7 +83,7 @@ Not verifiable on this machine: macOS 14 to 26 (the machine runs 27 only).
 | what | status | tag |
 |---|---|---|
 | A spacer hides 1 to 8 helper items without `«` | one band, 632-840 pt, for k = 1, 2, 4, 8 under short and mid frontmost menus; isolated account, helpers only | MEASURED, 26A434, run `20261004-105226-spike` |
-| AXPress opens a pushed-off item's menu | 5 of 5 within 15 ms at 736 pt; no need to show the item first | MEASURED, 26A434, run `20261004-105226-spike` |
+| AXPress opens a pushed-off item's menu | 5 of 5 within 15 ms at 736 pt; no need to show the item first. True of 27.0.1 only: on 27.2.1 a pushed-off item is in no read and cannot be pressed (last section) | MEASURED, 26A434, run `20261004-105226-spike` |
 
 ## IceBar built, not yet run (T4-T6, 2026-10-04)
 
@@ -520,3 +520,16 @@ Evidence: `~/IceReverse-evidence/20261113-zh/`. Codex: the plan three rounds (RE
 | Not covered | the bar of a full-screen Space; a menu bar that is not transparent (said in the pane); no Screen Recording (said in the pane); a hidden item of an app that also has a visible item; an Apple item Ice does not list; the system's own `«` and what it folds behind it on a bar that runs out of room (seen once, run `-t5h`: the two leftmost items folded on the Sidecar, the `«` drawn, the folded items not drawn) | INFERRED, by design |
 | Known seams | an item of an app that answers no hit test shows for about three seconds after each re-hide on that display (MEASURED 2.9 s), and is covered on the tree's word: where the tree is wrong about it for longer, the cover can hide what is really drawn there (INFERRED); during a Space-switch animation the wallpaper moves and the cover does not; content moving in an app's window under the bar is not followed; with Ice's own tint, shape or border the cover is not tinted | INFERRED |
 | Other displays | untested: one Sidecar display here | -- |
+
+## macOS 27.2: an item pushed off the bar is in no read (2026-11-15/16, plan 2026-11-15-blind-at-length, version 1.1.3)
+
+| what | status | tag |
+|---|---|---|
+| The owner's report | after the update to 27.2 the daily Ice (1.1.2) hid and showed the chosen items in turn, every 5 s, for ever; another user on 27.2 the same (the owner's recording; the logs of two Macs) | MEASURED, 26B131, 2026-11-15 |
+| What 27.2 changed | a status item pushed off the bar, the lengthened divider included, is not in Accessibility: its app's `AXExtrasMenuBar` answers noValue, an element held from before answers -25201 to attributes and to `AXPress`, `MenuBarAgent`'s tree has no slot for it. Back at standard length all of it is listed in the first 150 ms sample | MEASURED, 26B131, 2026-11-15: Ice's divider and five items of five apps (4 cycles of 4), two sacrificial helpers at 736 pt; evidence `~/IceReverse-evidence/20261115-272-flicker/` |
+| Why 1.1.2 looped | a pass at the hiding length read no hidden divider, which Ice took for an own read that failed: `blocked(ownReadNotOk)`, the length retired, the next pass well, the length applied, and again | MEASURED (the log beside the probe) |
+| What 1.1.3 does at rest | such a pass is "blind at length" when Ice's own in-process state holds the written length, the pass is complete, the own read lists the icon and no divider, and the roster has members (`BlindAtLength`): nothing blocks, the roster is carried, the item tags lose only what was seen right of the divider and is gone, or an exited member's | unit-tested (IceCore, 877 tests) |
+| A hidden item opened from the Ice Bar | no press reaches a pushed-off item there, so Ice shows the section, presses the item on the bar and hides again when what the press opened no longer shows (a menu; a popover or window, by upstream's rule for an item shown for a click). One hold with one token; a late answer changes nothing (`IceBarHold`) | unit-tested; live below |
+| An item that arrives while hidden | read by nothing until the bar is at standard length. After an app was started, the next asking for the Ice Bar reads the bar first (about 1.5 s with the hidden items shown), then opens | unit-tested (`ArrivalRule`); live below |
+| 27.0 and 27.1 | unchanged: the divider is listed at a length there, so no pass is blind; the direct press is tried first | INFERRED (the unit tests; this Mac is on 27.2.1 and there is no other) |
+| Limits | while what a hidden item opened shows, the hidden items are on the bar; an item that arrives while hidden is not in the Ice Bar before its next opening, and one that arrives within 3 s of that opening only at the one after; an app that is started by something other than a launch `NSWorkspace` reports is not noticed; verified mode (`-IceLabVerify`) was not adapted to 27.2 | -- |

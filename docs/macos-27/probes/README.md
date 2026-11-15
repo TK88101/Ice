@@ -18,6 +18,7 @@ reject the result. For the same reason `swift test` in `Packages/IceCore` needs
 | `axprobe2.swift` | Does Ice's private-API discovery path return anything? | none |
 | `axspike1.swift` | Full AX attribute surface, settability, identity stability, per-item window number | none |
 | `axorder.swift` | Does the menu bar reorder itself when left alone? | none |
+| `ownextras.swift` | macOS 27.2 (plan `2026-11-15-blind-at-length`): what Accessibility lists of a pushed-off item. `watch <pid> <s>`: one app's extras, its windows and every other app's extras, on change; `guard <target pid> <spacer pid>`: are two helpers leftmost; `hold`: a held element and a press, at rest and pushed off; `agent`: `MenuBarAgent`'s slots; `quit <pid> <bundle path>` | `watch`, `guard`: none. `hold`, `agent`: **press the target pid's item** (give it a sacrificial helper's pid only). `quit`: asks that app to quit |
 | `axspike2.swift` | Does `NSStatusItem.length` still push items out of the bar? | creates **its own** status items and resizes them; screenshots the strip |
 | `helper.swift` | Source of the two sacrificial helper apps | one status item per process |
 | `verify3.swift` | Are the helpers up, identifiable and stable? | none |
@@ -195,3 +196,16 @@ the unit tests and one launch against stubs. Three things it learned:
 - A full-screen window of the system's sits above every app (levels 20 and 21) and, on the
   owner's bar, a notch app's overlay covers the stretch left of the items: "what is at this
   point" is asked of Accessibility, not of the window list or of pixels there.
+
+## dualband/
+
+A SwiftPM package: the lab rig for a lab-identity copy of Ice on the owner's bar (its
+report on stdout, commands on stdin, sacrificial helpers, the daily Ice's guards).
+`run-cover.sh` is T5 of plan `2026-11-15-cover`. `run-blind.sh <Debug Ice.app> <new
+evidence dir>` is T10 of plan `2026-11-15-blind-at-length` (macOS 27.2): it waits for
+five minutes without input, then runs about five minutes and stops at the first input.
+Side effects: helper items under `com.icespike4.target` and `com.icespike4.protected`
+(one opens a popover), placed leftmost by preferred-position keys it deletes; the copy
+hides and shows whatever stands left of its divider, the owner's items included, and
+presses helpers only; the copy's defaults domain, deleted; the daily Ice quit and
+relaunched only if it was running.
