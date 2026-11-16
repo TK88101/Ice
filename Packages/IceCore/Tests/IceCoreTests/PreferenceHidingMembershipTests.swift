@@ -349,6 +349,28 @@ struct PreferenceHidingMembershipTests {
         #expect(result.members.map(\.tag) == [movedRight.tagKey])
     }
 
+    @Test("D-a, set: on an untrusted boundary the members keep their previous order when only some are read (LG at length, 2026-11-16)", arguments: [
+        DividerState(isEnabled: true, isCollapsed: false, collapsedFor: 0, changedDuringPass: false),
+        DividerState(isEnabled: true, isCollapsed: true, collapsedFor: 0.2, changedDuringPass: false),
+        DividerState(isEnabled: true, isCollapsed: true, collapsedFor: 5, changedDuringPass: true),
+    ])
+    func setUntrustedBoundaryKeepsPreviousOrder(state: DividerState) {
+        let previous = ["a", "b", "c", "d", "e"].enumerated().map { placed($1, pid: Int32($0 + 1), minX: nil).tagKey }
+        // Only the rightmost member is still listed, squeezed left by the length.
+        let listed = placed("e", pid: 5, minX: 100)
+        let result = resolve(set: [listed], divider: usableDivider, state: state, previous: previous)
+        #expect(result.members.map(\.tag) == previous)
+        #expect(result.members.last?.key == listed.key)
+    }
+
+    @Test("D-a, set: on a trusted boundary the members take the order of the read, not the previous order")
+    func setTrustedBoundaryTakesReadOrder() {
+        let first = placed("first", pid: 1, minX: 100)
+        let second = placed("second", pid: 2, minX: 200)
+        let result = resolve(set: [second, first], divider: usableDivider, previous: [first.tagKey, second.tagKey])
+        #expect(result.members.map(\.tag) == [second.tagKey, first.tagKey])
+    }
+
     @Test("D-a, set: items left of the divider's minX are members and items right of it are not")
     func setSplitsAtDividerMinX() {
         let left = placed("left", pid: 1, minX: 100)

@@ -158,10 +158,29 @@ public struct PreferenceHidingMembership: Equatable, Sendable {
                 released.insert(baseTag(of: item))
             }
         }
-        return resolve(
+        let resolved = resolve(
             leftOfDivider: left, previousMembers: previousMembers, releasedTags: released,
             childIdentifiersByPID: childIdentifiersByPID
         )
+        return trusted ? resolved : resolved.inPreviousOrder(previousMembers)
+    }
+
+    /// The same members and blockers, the members in `previous`'s order (any
+    /// other after them, in their order). A frozen roster's order is frozen
+    /// too: at a length, a member squeezed onto the bar reads first and the
+    /// pushed-off ones follow, which read as a reorder and retired the length
+    /// every pass (LG bar, 2026-11-16).
+    private func inPreviousOrder(_ previous: [TagKey]) -> PreferenceHidingMembership {
+        let rank = Dictionary(
+            Self.orderedUnique(previous).enumerated().map { ($1, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let ordered = members.enumerated().sorted { lhs, rhs in
+            let left = rank[lhs.element.tag] ?? (rank.count + lhs.offset)
+            let right = rank[rhs.element.tag] ?? (rank.count + rhs.offset)
+            return left < right
+        }
+        return PreferenceHidingMembership(members: ordered.map(\.element), blockers: blockers)
     }
 
     /// The previous members a pass still has to account for: all of them,

@@ -220,4 +220,26 @@ struct PreferenceHidingRosterBlindTests {
         #expect(blind.visibleBoundary == nil)
         #expect(blind.itemTags == roster.itemTags)
     }
+
+    /// MEASURED 2026-11-16, LG 1920 pt bar on 27.2.1: at the length the
+    /// divider stays listed (own read ok), the rightmost member is squeezed
+    /// onto the bar and listed, the others are pushed off and unlisted.
+    @Test("a wide bar at length: divider listed, only the last member read: the members keep their order, no structural change")
+    func wideBarPartialReadIsNotStructural() {
+        let members = (1...5).map { placed("m\($0)", pid: Int32($0), minX: 700 + Double($0) * 30) }
+        let right = placed("r", pid: 9, minX: 1000)
+        let roster = trusted(PreferenceHidingRoster(), members + [right])
+        let squeezed = placed("m5", pid: 5, minX: 60)
+        let longDivider = DividerReading(frame: BarRect(minX: 100, minY: 4.5, width: 738, height: 24), isUsable: true)
+        let read = [squeezed, right]
+        let atLength = roster.advanced(
+            set: fixtureSet(items: read, visibleControlItem: Self.icon, hiddenDivider: longDivider),
+            hiddenDividerState: Self.hiding, childIdentifiersByPID: children(read), iconPlacement: nil,
+            hasExited: { _ in false }, display: Self.display, holdsWrittenLength: true
+        )
+        #expect(!atLength.isBlindAtLength)
+        #expect(atLength.membership.members.map(\.tag) == roster.membership.members.map(\.tag))
+        let change = PreferenceHidingLayoutChange.between(signature(roster), signature(atLength))
+        #expect(change?.isStructural != true)
+    }
 }
