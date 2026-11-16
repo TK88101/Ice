@@ -117,11 +117,13 @@ struct WebKitServiceFilterTests {
         #expect(matching.isEmpty)
     }
 
-    @Test("the real signature check accepts a running WebKit service and refuses it under another id")
+    /// Skipped on a machine where no WebKit service runs (a clean or headless host).
+    @Test(
+        "the real signature check accepts a running WebKit service and refuses it under another id",
+        .enabled(if: !NSWorkspaceProbe.serviceProcesses().isEmpty, "no WebKit service is running on this machine")
+    )
     func realSignatureCheck() throws {
-        let services = NSWorkspaceProbe.serviceProcesses()
-        try #require(!services.isEmpty, "no WebKit service is running on this machine")
-        let (pid, id) = services[0]
+        let (pid, id) = try #require(NSWorkspaceProbe.serviceProcesses().first)
 
         #expect(LiveRunningApps.isAppleSigned(pid: pid, identifier: id))
         #expect(!LiveRunningApps.isAppleSigned(pid: pid, identifier: "com.apple.MenuBarAgent"))
