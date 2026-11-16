@@ -57,7 +57,7 @@ Codex's remaining concern from the debate. Test
 `wideBarMembersComingBackIsNoChange` (unlisted then listed again: no change);
 fails without the fix. IceCore 890 tests green.
 
-Live (MEASURED 2026-11-16): three round trips Safari (LG) / Ghostty (built-in),
+Live (MEASURED 2026-11-16): three round trips Safari (LG) / a terminal (built-in),
 no `IceBar retire` line, 120 screenshots of each bar with no hidden item.
 
 ## Open
