@@ -16,6 +16,8 @@ public protocol RunningAppsProviding: Sendable {
 /// here filters it out; `ItemCatalog.build` is what routes an own-process
 /// record to `visibleControlItem`/the dividers instead of `items`).
 public struct LiveRunningApps: RunningAppsProviding {
+    private let webKitServices = WebKitServiceFilter()
+
     public init() {}
 
     /// Background-only processes (activation policy `.prohibited`) are left
@@ -24,10 +26,16 @@ public struct LiveRunningApps: RunningAppsProviding {
     ///
     /// That filter is **not** what handles suspended WebKit content processes,
     /// though an earlier note here said so: MEASURED 2026-09-25, they report
-    /// `.accessory`, like real menu bar apps. `MenuBarDiscoverer`'s
-    /// `ResponsivenessQuarantine` handles them, by behaviour, and needs each
-    /// record's `startTime` to do it (responsiveness-quarantine plan, E0).
+    /// `.accessory`, like real menu bar apps. WebKit's services are left out
+    /// by `WebKitServiceFilter`, by their kernel path and signature (plan
+    /// 2026-11-16-webkit-services); any other process that stalls is
+    /// `MenuBarDiscoverer`'s `ResponsivenessQuarantine`'s, by behaviour, which
+    /// needs each record's `startTime` (responsiveness-quarantine plan, E0).
     public func processes() -> [ProcessInfoRecord] {
+        webKitServices.keeping(allProcesses(), executablePath: Self.executablePath(of:), isAppleSigned: Self.isAppleSigned(pid:identifier:))
+    }
+
+    private func allProcesses() -> [ProcessInfoRecord] {
         let selfPID = ProcessInfo.processInfo.processIdentifier
         return NSWorkspace.shared.runningApplications.filter { $0.activationPolicy != .prohibited }.map { app in
             ProcessInfoRecord(
@@ -70,6 +78,17 @@ public struct LiveRunningApps: RunningAppsProviding {
         }
         guard result == 0, info.ri_proc_start_abstime > 0 else { return nil }
         return machSeconds(info.ri_proc_start_abstime)
+    }
+
+    /// The kernel's path of `pid`'s executable (`proc_pidpath`), `nil` when the
+    /// process is gone or the call fails. MEASURED 2026-11-16: for WebKit's
+    /// services `NSRunningApplication.executableURL` came in three shapes, one
+    /// of them relative; this one was the Cryptex path every time.
+    static func executablePath(of pid: pid_t) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN) * 4)
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return nil }
+        return String(decoding: buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
     /// Now, on the clock `startUptime` is read on.
@@ -118,8 +137,16 @@ public struct LiveRunningApps: RunningAppsProviding {
     /// "com.apple.MenuBarAgent"`; `false` for a process that is gone or cannot
     /// be checked.
     static func isAppleSignedAgent(pid: Int32) -> Bool {
+        isAppleSigned(pid: pid, identifier: LiveExtrasReader.menuBarAgentBundleID)
+    }
+
+    /// Whether the running process `pid` satisfies `anchor apple and
+    /// identifier "<identifier>"`: signed by Apple as that very code, which a
+    /// bundle id or a path cannot borrow. `false` for a process that is gone or
+    /// cannot be checked.
+    static func isAppleSigned(pid: Int32, identifier: String) -> Bool {
         var requirement: SecRequirement?
-        let text = "anchor apple and identifier \"\(LiveExtrasReader.menuBarAgentBundleID)\"" as CFString
+        let text = "anchor apple and identifier \"\(identifier)\"" as CFString
         guard SecRequirementCreateWithString(text, [], &requirement) == errSecSuccess, let requirement else { return false }
         var code: SecCode?
         let attributes = [kSecGuestAttributePid: NSNumber(value: pid)] as CFDictionary
