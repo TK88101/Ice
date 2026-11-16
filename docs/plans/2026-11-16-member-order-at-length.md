@@ -43,7 +43,23 @@ calling a partial read blind would carry ghost members.
   24 screenshots of both bars over 12 s showed no hidden item.
 - 1.1.5, built-in bar active, 25 s: divider stays off the bar (blind), stable.
 
+## Second cause: switching the active display
+The owner still saw the items once per switch between the built-in and the LG
+bar. A diagnostic log (`IceBar retire:` in `IceBarHidingCoordinator.send`,
+kept) MEASURED the retire: `change itemsChanged display 5->5 items 7->11 +4 -0
+members 5->5`. As the LG bar stops being the active one, a pass still at the
+length lists the four pushed-off members again; they read as items added, and
+an added member is never a visible change.
+
+Fix: on an untrusted boundary `PreferenceHidingRoster.advanced` keeps the
+members' tags in `itemTags` (the read, plus the frozen members). This was
+Codex's remaining concern from the debate. Test
+`wideBarMembersComingBackIsNoChange` (unlisted then listed again: no change);
+fails without the fix. IceCore 890 tests green.
+
+Live (MEASURED 2026-11-16): three round trips Safari (LG) / Ghostty (built-in),
+no `IceBar retire` line, 120 screenshots of each bar with no hidden item.
+
 ## Open
-Codex's remaining concern: on an untrusted pass the members' keys and
-conditions, `itemTags` and `visibleTags` still update; none is known to make a
-structural change, not proven for every shape.
+On an untrusted pass the members' keys and conditions and `visibleTags` still
+update; none is known to make a structural change.

@@ -86,6 +86,8 @@ final class IceBarHidingCoordinator {
     private var knownPIDs: Set<pid_t>?
     /// The display that had the active menu bar at the last tick.
     private var activeDisplayID: CGDirectDisplayID?
+    /// The last sample sent, for the retire diagnosis.
+    private var lastSample: IceBarHidingSample?
     /// The machine's last status line for the owner; the cover's notice is said after it.
     private var statusMessage: OwnerMessage?
 
@@ -231,6 +233,12 @@ final class IceBarHidingCoordinator {
 
     private func send(_ event: IceBarHidingEvent) {
         let (next, commands) = machine.step(event, now: ProcessInfo.processInfo.systemUptime)
+        if case .sample(let sample) = event, commands.contains(.setLength(nil)) {
+            logRetire(previous: lastSample, sample: sample)
+        }
+        if case .sample(let sample) = event {
+            lastSample = sample
+        }
         machine = next
         for command in commands {
             execute(command)
@@ -246,6 +254,26 @@ final class IceBarHidingCoordinator {
             appState.menuBarManager.iceBarPanel.close()
         }
         syncCover()
+    }
+
+    /// What a sample that retired the length differed in from the one before
+    /// (diagnosis 2026-11-16, active display switch). Names stay private.
+    private func logRetire(previous: IceBarHidingSample?, sample: IceBarHidingSample) {
+        let old = previous?.signature
+        let new = sample.signature
+        let change = old.flatMap { PreferenceHidingLayoutChange.between($0, new) }.map { "\($0)" } ?? "none"
+        let added = new.items.filter { !(old?.items.contains($0) ?? false) }.count
+        let removed = (old?.items ?? []).filter { !new.items.contains($0) }.count
+        let reordered = old.map { $0.members != new.members && Set($0.members) == Set(new.members) } ?? false
+        logger.info(
+            """
+            IceBar retire: change \(change, privacy: .public) display \(old?.displayID ?? 0, privacy: .public)->\(new.displayID ?? 0, privacy: .public) \
+            items \(old?.items.count ?? -1, privacy: .public)->\(new.items.count, privacy: .public) +\(added, privacy: .public) -\(removed, privacy: .public) \
+            members \(old?.members.count ?? -1, privacy: .public)->\(new.members.count, privacy: .public) reordered \(reordered, privacy: .public) \
+            dragging \(sample.isDragging, privacy: .public) held \(sample.isHeld, privacy: .public) \
+            interacting \(sample.isInteracting, privacy: .public) preconditionsOk \(sample.preconditions.isOk, privacy: .public)
+            """
+        )
     }
 
     /// The one place the hidden divider's length is written: what the machine

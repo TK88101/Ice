@@ -77,7 +77,14 @@ public struct PreferenceHidingRoster: Equatable, Sendable {
                     set: set, hiddenDividerState: hiddenDividerState,
                     previousMembers: previous, childIdentifiersByPID: childIdentifiersByPID
                 )
-                next.itemTags = Self.ordered(read)
+                // On an untrusted boundary the roster is frozen, so are its
+                // members' tags: a member pushed off a wide bar and listed
+                // again is not an item added (LG bar, 2026-11-16).
+                let trusted = DiscoveredCachePlan.evaluate(
+                    reading: set.hiddenDivider, state: hiddenDividerState, ownRead: set.ownRead
+                ).minX != nil
+                let carried = trusted ? [] : next.membership.members.map(\.tag)
+                next.itemTags = Self.ordered(Array(Set(read).union(carried)))
             }
             next.boundary = Self.boundary(
                 after: boundary, set: set, hiddenDividerState: hiddenDividerState, display: display,

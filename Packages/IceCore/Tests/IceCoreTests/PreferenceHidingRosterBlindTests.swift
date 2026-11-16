@@ -242,4 +242,26 @@ struct PreferenceHidingRosterBlindTests {
         let change = PreferenceHidingLayoutChange.between(signature(roster), signature(atLength))
         #expect(change?.isStructural != true)
     }
+    /// MEASURED 2026-11-16 (diagnostic build): as the wide bar stops being the
+    /// active one, a pass still at the length lists the pushed-off members
+    /// again (items 7 -> 11, +4, members unchanged), which read as items added.
+    @Test("a wide bar at length: members unlisted then listed again: the item tags carry the members, no change")
+    func wideBarMembersComingBackIsNoChange() {
+        let members = (1...5).map { placed("m\($0)", pid: Int32($0), minX: 700 + Double($0) * 30) }
+        let right = placed("r", pid: 9, minX: 1000)
+        let roster = trusted(PreferenceHidingRoster(), members + [right])
+        let longDivider = DividerReading(frame: BarRect(minX: 100, minY: 4.5, width: 738, height: 24), isUsable: true)
+        func pass(_ from: PreferenceHidingRoster, _ read: [DiscoveredItem]) -> PreferenceHidingRoster {
+            from.advanced(
+                set: fixtureSet(items: read, visibleControlItem: Self.icon, hiddenDivider: longDivider),
+                hiddenDividerState: Self.hiding, childIdentifiersByPID: children(read), iconPlacement: nil,
+                hasExited: { _ in false }, display: Self.display, holdsWrittenLength: true
+            )
+        }
+        let partial = pass(roster, [placed("m5", pid: 5, minX: 60), right])
+        let squeezed = (1...5).map { placed("m\($0)", pid: Int32($0), minX: Double($0) * 30) }
+        let full = pass(partial, squeezed + [right])
+        #expect(PreferenceHidingLayoutChange.between(signature(roster), signature(partial)) == nil)
+        #expect(PreferenceHidingLayoutChange.between(signature(partial), signature(full)) == nil)
+    }
 }
