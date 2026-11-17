@@ -240,6 +240,11 @@ final class IceBarHidingCoordinator {
             logRetire(previous: machine.reference, sample: sample)
         }
         logGrace(event: event, next: next, retired: retired, now: now)
+        // A grace that ended early leaves no clock running.
+        if machine.isGracing, !next.isGracing {
+            graceTimer?.cancel()
+            graceTimer = nil
+        }
         machine = next
         for command in commands {
             execute(command)
@@ -270,8 +275,6 @@ final class IceBarHidingCoordinator {
             }
         case (let began?, false):
             graceBegan = nil
-            graceTimer?.cancel()
-            graceTimer = nil
             let after = String(format: "%.1f", now - began)
             let how = switch event {
             case .graceExpired: "expired"
