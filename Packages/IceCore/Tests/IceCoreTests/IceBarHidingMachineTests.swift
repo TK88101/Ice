@@ -147,7 +147,7 @@ struct IceBarHidingMachineTests {
                     }
                 case .armGrace(let token, let after):
                     graces.append((token, now + after))
-                case .report, .reread, .graceReread:
+                case .report, .graceReread:
                     break
                 }
             }

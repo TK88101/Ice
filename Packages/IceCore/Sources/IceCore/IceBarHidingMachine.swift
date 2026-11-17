@@ -146,8 +146,6 @@ public enum IceBarHidingCommand: Equatable, Sendable {
     /// confirmation, a re-check; plan 2026-10-19-verify-in-a-clean-burst, D4).
     case observe(token: Int, length: Double, closesBurst: Bool)
     case report(IceBarHidingStatus)
-    /// Read the bar again now, at the length it is at.
-    case reread
     /// Keep reading the bar while the grace `token` runs (`graceToken`): a
     /// Mission Control opening empties every app's extras for its length and
     /// about a second after (plan 2026-11-17-grace-mission-control, H1, H2).
@@ -302,7 +300,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     /// A pass that could not read Ice's own items is set aside, its grace
     /// running (plan 2026-11-17-transient-pass-grace).
     public var isGracing: Bool {
-        rest?.suspect != nil
+        graceToken != nil
     }
 
     /// The running grace's token, `nil` without one: the coordinator's

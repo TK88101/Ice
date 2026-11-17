@@ -90,14 +90,19 @@ final class IceBarHidingCoordinator {
     private var knownPIDs: Set<pid_t>?
     /// The display that had the active menu bar at the last tick.
     private var activeDisplayID: CGDirectDisplayID?
-    /// The uptime the running grace began at, for its log line.
-    private var graceBegan: TimeInterval?
+    /// The running grace, for its log lines: its token, the uptime it began
+    /// at, and what its re-read loop ran (plan 2026-11-17-grace-mission-control, H5).
+    private struct GraceRun {
+        let token: Int
+        let began: TimeInterval
+        var passes = 0
+        var longestPass: TimeInterval = 0
+    }
+
+    private var grace: GraceRun?
     private var graceTimer: Task<Void, Never>?
-    /// The running grace's re-read loop, and what it ran: passes and the
-    /// longest, for the grace's last log line (H5).
+    /// The running grace's re-read loop (H2).
     private var graceLoop: Task<Void, Never>?
-    private var graceLoopPasses = 0
-    private var graceLongestPass: TimeInterval = 0
     /// The machine's last status line for the owner; the cover's notice is said after it.
     private var statusMessage: OwnerMessage?
 
@@ -277,28 +282,26 @@ final class IceBarHidingCoordinator {
     /// have blocked for: the counterfactual the owner's bar measures (plan
     /// 2026-11-17-transient-pass-grace, G5).
     private func logGrace(event: IceBarHidingEvent, next: IceBarHidingMachine, retired: Bool, now: TimeInterval) {
-        switch (graceBegan, next.isGracing) {
-        case (nil, true):
-            graceBegan = now
+        switch (grace, next.graceToken) {
+        case (nil, let token?):
+            grace = GraceRun(token: token, began: now)
             if case .sample(let sample) = event {
                 let reasons = sample.preconditions.reasons.map { "\($0)" }.joined(separator: ",")
-                let token = next.graceToken.map(String.init) ?? "-"
                 logger.info(
                     "IceBar grace: began, token \(token, privacy: .public), would block: \(reasons, privacy: .public) items \(sample.signature.items.count, privacy: .public)"
                 )
             }
-        case (let began?, false):
-            graceBegan = nil
-            let after = String(format: "%.1f", now - began)
+        case (let run?, nil):
+            grace = nil
+            let after = String(format: "%.1f", now - run.began)
             let how = switch event {
             case .graceExpired: "expired"
             case .mode: "dropped with IceBar mode"
             default: retired ? "ended by a retire" : "recovered"
             }
-            let token = machine.graceToken.map(String.init) ?? "-"
-            let longest = String(format: "%.2f", graceLongestPass)
+            let longest = String(format: "%.2f", run.longestPass)
             logger.info(
-                "IceBar grace: \(how, privacy: .public) after \(after, privacy: .public) s, token \(token, privacy: .public), loop passes \(self.graceLoopPasses, privacy: .public), longest pass \(longest, privacy: .public) s"
+                "IceBar grace: \(how, privacy: .public) after \(after, privacy: .public) s, token \(run.token, privacy: .public), loop passes \(run.passes, privacy: .public), longest pass \(longest, privacy: .public) s"
             )
         default:
             break
@@ -415,15 +418,20 @@ final class IceBarHidingCoordinator {
         reread?.cancel()
         reread = Task { [weak self] in
             try? await Task.sleep(for: Self.rereadDelay)
-            guard !Task.isCancelled, let self, let appState = self.appState, !appState.isDraggingMenuBarItem else {
-                return
-            }
-            await appState.itemManager.cacheItemsRegardless()
-            guard !Task.isCancelled else {
+            guard !Task.isCancelled, let self, await self.readBar(), !Task.isCancelled else {
                 return
             }
             self.tick()
         }
+    }
+
+    /// One pass now, unless the owner is dragging an item: whether it ran.
+    private func readBar() async -> Bool {
+        guard let appState, !appState.isDraggingMenuBarItem else {
+            return false
+        }
+        await appState.itemManager.cacheItemsRegardless()
+        return true
     }
 
     /// Reads the bar every `graceRereadInterval` while the grace `token`
@@ -433,21 +441,25 @@ final class IceBarHidingCoordinator {
     /// returns after the grace ended neither ticks nor counts.
     private func runGraceLoop(token: Int) {
         graceLoop?.cancel()
-        graceLoopPasses = 0
-        graceLongestPass = 0
         graceLoop = Task { [weak self] in
             while true {
                 try? await Task.sleep(for: Self.graceRereadInterval)
-                guard !Task.isCancelled, let self, let appState = self.appState, self.machine.graceToken == token else {
+                guard !Task.isCancelled, let self, self.machine.graceToken == token else {
                     return
                 }
                 let began = ProcessInfo.processInfo.systemUptime
-                await appState.itemManager.cacheItemsRegardless()
+                let ran = await self.readBar()
                 guard !Task.isCancelled, self.machine.graceToken == token else {
                     return
                 }
-                self.graceLoopPasses += 1
-                self.graceLongestPass = max(self.graceLongestPass, ProcessInfo.processInfo.systemUptime - began)
+                guard ran else {
+                    continue
+                }
+                let took = ProcessInfo.processInfo.systemUptime - began
+                self.grace?.passes += 1
+                if let longest = self.grace?.longestPass, took > longest {
+                    self.grace?.longestPass = took
+                }
                 self.tick()
             }
         }
@@ -558,8 +570,6 @@ final class IceBarHidingCoordinator {
             takeBaseline(token: token, members: members, ready: ready)
         case .observe(let token, let length, let closesBurst):
             observe(token: token, length: length, closesBurst: closesBurst)
-        case .reread:
-            rereadSoon()
         case .graceReread(let token):
             runGraceLoop(token: token)
         case .armGrace(let token, let after):

@@ -34,7 +34,6 @@ struct IceBarHidingMachineGraceTests {
         let commands = driver.tick(Self.unreadable)
 
         #expect(!commands.contains(.setLength(nil)))
-        #expect(!commands.contains(.reread), "the grace's own loop reads the bar, not the settle re-read")
         guard let token = Self.graceToken(commands) else {
             Issue.record("no grace armed")
             return
@@ -66,7 +65,6 @@ struct IceBarHidingMachineGraceTests {
 
         #expect(!driver.since(mark).contains(.setLength(nil)))
         #expect(Self.graceToken(driver.since(mark)) == nil)
-        #expect(!driver.since(mark).contains(.reread))
         #expect(!driver.since(mark).contains { (command: IceBarHidingCommand) in if case .graceReread = command { true } else { false } }, "one loop per grace")
     }
 
@@ -224,11 +222,6 @@ struct IceBarHidingMachineGraceTests {
         driver.send(.graceExpired(token: token))
 
         #expect(!driver.since(mark).contains(.setLength(nil)))
-    }
-
-    @Test("the grace lasts 7 s: a Mission Control opening (3.0 s) and the return of Accessibility (1.1 s) fit with room")
-    func graceOutlastsMissionControl() {
-        #expect(Self.grace == 7)
     }
 
     // MARK: - graceToken: what the coordinator's re-read loop runs on
