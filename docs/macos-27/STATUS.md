@@ -567,3 +567,13 @@ Evidence: `~/IceReverse-evidence/20261113-zh/`. Codex: the plan three rounds (RE
 | What 1.1.6 does | at a length, hiding at once, such a pass is set aside (not the reference, not compared): the length stays, the bar is read again at once, and the next readable pass decides as before; with none in 5 s (Ice's own clock) the pass stands and the length is retired | unit-tested (IceCore 905, `IceBarHidingMachineGraceTests`) |
 | On the owner's bar | the signed Release 1.1.6 installed as the daily Ice; a sacrificial helper launched and quit four times: no retire, no grace, the hidden items stayed hidden | MEASURED, 26B131, `sim-*.png`, 2026-11-17 |
 | Not covered | the cause of the unreadable pass is unknown and was not reproduced, so whether a re-read at the length recovers it is measured only by the `IceBar grace:` log lines in daily use; `discoveryIncomplete` still retires at once (an app launching or quitting), by design | -- |
+
+## Mission Control and the grace (2026-11-17, plan 2026-11-17-grace-mission-control, branch `wip/grace-mission-control`)
+
+| What | How it stands | Tag |
+|---|---|---|
+| The unreadable pass | while Mission Control shows, Ice's `AXExtrasMenuBar` answers -25212 and no app's extras are listed (only `MenuBarAgent`'s four slots); about 1 s after it closes all are listed again. All 10 unreadable passes of 2026-11-17 fell within about 1 s of Dock's `.none to missionControl` | MEASURED, 26B131, `ownextras-watch.log`, `log show`, 2026-11-17 |
+| Why 1.1.6's grace expired | at a hiding length `IcePlacementNotice.placement` kept a held `.iconUnreadable` until a standard-length pass, so no re-read at the length could end the grace; and the grace read the bar once, at +1.15 s | MEASURED (code; the first T4 run: 5 of 5 graces expired after 11-12 passes while the probe listed the icon 0.8 s after Mission Control closed) |
+| What the branch does | at the length Ice wrote, an icon read back on the bar ends the held unreadable (H7); the grace reads the bar every 0.5 s and lasts 7 s | unit-tested (IceCore 915) |
+| Live, a signed Release build of `602a2cb` under the daily identity | Mission Control opened 9 times, held 1, 3 and 4 s: 8 graces, all `recovered` after 1.2-3.5 s (2-6 loop passes, each 0.06-0.08 s); one opening met no unreadable pass; no `blocked` | MEASURED, 26B131, `icebar-stream.log` 20:06:49-20:08:51, 2026-11-17 |
+| Not covered | 9 s after the last opening one retire, `itemsChanged` (items 9 -> 10, preconditions ok): an item added to the reference, not the grace's path; which item TBD (a `MenuBarAgent` slot at x 1171 appeared after Mission Control in the probe, INFERRED). A stay in Mission Control longer than about 6 s still retires | MEASURED (the retire line); cause INFERRED |
