@@ -45,7 +45,7 @@ struct IceBarHidingMachineHoldTests {
         var driver = Self.resting()
         let failed = Self.sample(preconditions: .blocked([.ownReadNotOk(.identifiersMissing)]), boundaryUsable: false)
         #expect(!driver.tick(failed, seconds: 5).contains(.setLength(nil)))
-        #expect(driver.tick(failed, seconds: 5).first == .setLength(nil))
+        #expect(driver.tick(failed, seconds: IceBarHidingParameters.unverified.transientGrace).first == .setLength(nil))
     }
 
     @Test("a hold retires the length and the machine stays at standard length while it lasts")

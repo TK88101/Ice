@@ -74,7 +74,7 @@ public struct IceBarHidingParameters: Equatable, Sendable {
         restDwell: 1,
         calibration: .standard,
         verifies: false,
-        transientGrace: 5
+        transientGrace: 7
     )
 }
 
@@ -148,6 +148,10 @@ public enum IceBarHidingCommand: Equatable, Sendable {
     case report(IceBarHidingStatus)
     /// Read the bar again now, at the length it is at.
     case reread
+    /// Keep reading the bar while the grace `token` runs (`graceToken`): a
+    /// Mission Control opening empties every app's extras for its length and
+    /// about a second after (plan 2026-11-17-grace-mission-control, H1, H2).
+    case graceReread(token: Int)
     /// Answer `graceExpired(token:)` after `after` seconds, by a clock of
     /// its own: a stalled read must not stretch the grace.
     case armGrace(token: Int, after: Double)
@@ -301,6 +305,13 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         rest?.suspect != nil
     }
 
+    /// The running grace's token, `nil` without one: the coordinator's
+    /// re-read loop for a token runs while this is that token (plan
+    /// 2026-11-17-grace-mission-control, H6).
+    public var graceToken: Int? {
+        rest?.suspect?.token
+    }
+
     /// The last sample taken as the bar: what the next one is compared with.
     /// A pass set aside is not it.
     public var reference: IceBarHidingSample? {
@@ -443,7 +454,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         }
         let token = takeToken()
         setSuspect(Suspect(token: token, sample: sample))
-        return [.reread, .armGrace(token: token, after: parameters.transientGrace)]
+        return [.graceReread(token: token), .armGrace(token: token, after: parameters.transientGrace)]
     }
 
     private mutating func setSuspect(_ suspect: Suspect?) {

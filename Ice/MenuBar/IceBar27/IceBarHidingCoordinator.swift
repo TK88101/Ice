@@ -26,6 +26,10 @@ final class IceBarHidingCoordinator {
     /// (`DiscoveredCachePlan.settleSeconds`), and a little more.
     private static let rereadDelay: Duration = .milliseconds(Int(DiscoveredCachePlan.settleSeconds * 1000) + 150)
 
+    /// How often a grace reads the bar again: the length does not move, so
+    /// no divider settles (plan 2026-11-17-grace-mission-control, H2).
+    private static let graceRereadInterval: Duration = .milliseconds(500)
+
     private(set) weak var appState: AppState?
     /// Hide at once, unverified, unless the lab asks for the checks (plan
     /// 2026-11-12-hide-at-once).
@@ -89,6 +93,11 @@ final class IceBarHidingCoordinator {
     /// The uptime the running grace began at, for its log line.
     private var graceBegan: TimeInterval?
     private var graceTimer: Task<Void, Never>?
+    /// The running grace's re-read loop, and what it ran: passes and the
+    /// longest, for the grace's last log line (H5).
+    private var graceLoop: Task<Void, Never>?
+    private var graceLoopPasses = 0
+    private var graceLongestPass: TimeInterval = 0
     /// The machine's last status line for the owner; the cover's notice is said after it.
     private var statusMessage: OwnerMessage?
 
@@ -240,10 +249,12 @@ final class IceBarHidingCoordinator {
             logRetire(previous: machine.reference, sample: sample)
         }
         logGrace(event: event, next: next, retired: retired, now: now)
-        // A grace that ended early leaves no clock running.
+        // A grace that ended leaves no clock and no loop running.
         if machine.isGracing, !next.isGracing {
             graceTimer?.cancel()
             graceTimer = nil
+            graceLoop?.cancel()
+            graceLoop = nil
         }
         machine = next
         for command in commands {
@@ -271,7 +282,10 @@ final class IceBarHidingCoordinator {
             graceBegan = now
             if case .sample(let sample) = event {
                 let reasons = sample.preconditions.reasons.map { "\($0)" }.joined(separator: ",")
-                logger.info("IceBar grace: began, would block: \(reasons, privacy: .public) items \(sample.signature.items.count, privacy: .public)")
+                let token = next.graceToken.map(String.init) ?? "-"
+                logger.info(
+                    "IceBar grace: began, token \(token, privacy: .public), would block: \(reasons, privacy: .public) items \(sample.signature.items.count, privacy: .public)"
+                )
             }
         case (let began?, false):
             graceBegan = nil
@@ -281,7 +295,11 @@ final class IceBarHidingCoordinator {
             case .mode: "dropped with IceBar mode"
             default: retired ? "ended by a retire" : "recovered"
             }
-            logger.info("IceBar grace: \(how, privacy: .public) after \(after, privacy: .public) s")
+            let token = machine.graceToken.map(String.init) ?? "-"
+            let longest = String(format: "%.2f", graceLongestPass)
+            logger.info(
+                "IceBar grace: \(how, privacy: .public) after \(after, privacy: .public) s, token \(token, privacy: .public), loop passes \(self.graceLoopPasses, privacy: .public), longest pass \(longest, privacy: .public) s"
+            )
         default:
             break
         }
@@ -408,6 +426,33 @@ final class IceBarHidingCoordinator {
         }
     }
 
+    /// Reads the bar every `graceRereadInterval` while the grace `token`
+    /// runs, one pass at a time (plan 2026-11-17-grace-mission-control, H2,
+    /// H3, H6). Nothing else can postpone it; the grace's end cancels it, and
+    /// it checks the token after each wait and each pass, so a pass that
+    /// returns after the grace ended neither ticks nor counts.
+    private func runGraceLoop(token: Int) {
+        graceLoop?.cancel()
+        graceLoopPasses = 0
+        graceLongestPass = 0
+        graceLoop = Task { [weak self] in
+            while true {
+                try? await Task.sleep(for: Self.graceRereadInterval)
+                guard !Task.isCancelled, let self, let appState = self.appState, self.machine.graceToken == token else {
+                    return
+                }
+                let began = ProcessInfo.processInfo.systemUptime
+                await appState.itemManager.cacheItemsRegardless()
+                guard !Task.isCancelled, self.machine.graceToken == token else {
+                    return
+                }
+                self.graceLoopPasses += 1
+                self.graceLongestPass = max(self.graceLongestPass, ProcessInfo.processInfo.systemUptime - began)
+                self.tick()
+            }
+        }
+    }
+
     func tick() {
         cover.tick()
         guard machine.phase != .off, !isSampling, let screen = NSScreen.screenWithActiveMenuBar ?? NSScreen.main else {
@@ -515,6 +560,8 @@ final class IceBarHidingCoordinator {
             observe(token: token, length: length, closesBurst: closesBurst)
         case .reread:
             rereadSoon()
+        case .graceReread(let token):
+            runGraceLoop(token: token)
         case .armGrace(let token, let after):
             armGrace(token: token, after: after)
         case .report(let status):

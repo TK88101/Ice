@@ -34,8 +34,12 @@ struct IceBarHidingMachineGraceTests {
         let commands = driver.tick(Self.unreadable)
 
         #expect(!commands.contains(.setLength(nil)))
-        #expect(commands.contains(.reread))
-        #expect(Self.graceToken(commands) != nil)
+        #expect(!commands.contains(.reread), "the grace's own loop reads the bar, not the settle re-read")
+        guard let token = Self.graceToken(commands) else {
+            Issue.record("no grace armed")
+            return
+        }
+        #expect(commands.contains(.graceReread(token: token)))
         #expect(commands.contains { if case .armGrace(_, let after) = $0 { after == Self.grace } else { false } })
         #expect(driver.length == 736)
         #expect(driver.machine.lengthApplied)
@@ -63,6 +67,7 @@ struct IceBarHidingMachineGraceTests {
         #expect(!driver.since(mark).contains(.setLength(nil)))
         #expect(Self.graceToken(driver.since(mark)) == nil)
         #expect(!driver.since(mark).contains(.reread))
+        #expect(!driver.since(mark).contains { (command: IceBarHidingCommand) in if case .graceReread = command { true } else { false } }, "one loop per grace")
     }
 
     @Test("a readable pass with the bar as before ends the grace: nothing retired, the unreadable pass left no trace")
@@ -219,5 +224,68 @@ struct IceBarHidingMachineGraceTests {
         driver.send(.graceExpired(token: token))
 
         #expect(!driver.since(mark).contains(.setLength(nil)))
+    }
+
+    @Test("the grace lasts 7 s: a Mission Control opening (3.0 s) and the return of Accessibility (1.1 s) fit with room")
+    func graceOutlastsMissionControl() {
+        #expect(Self.grace == 7)
+    }
+
+    // MARK: - graceToken: what the coordinator's re-read loop runs on
+
+    @Test("graceToken is the armed grace's token, and more unreadable passes keep it")
+    func graceTokenWhileGracing() {
+        var driver = Self.resting()
+        #expect(driver.machine.graceToken == nil)
+        let token = Self.graceToken(driver.tick(Self.unreadable))
+        #expect(token != nil)
+        #expect(driver.machine.graceToken == token)
+        driver.run(Self.unreadable, ticks: 2)
+        #expect(driver.machine.graceToken == token)
+    }
+
+    @Test("graceToken clears when a readable pass recovers")
+    func graceTokenClearsOnRecovery() {
+        var driver = Self.resting()
+        driver.tick(Self.unreadable)
+        driver.tick()
+        #expect(driver.machine.graceToken == nil)
+    }
+
+    @Test("graceToken clears when the grace expires")
+    func graceTokenClearsOnExpiry() {
+        var driver = Self.resting()
+        guard let token = Self.graceToken(driver.tick(Self.unreadable)) else {
+            Issue.record("no grace armed")
+            return
+        }
+        driver.send(.graceExpired(token: token))
+        #expect(driver.machine.graceToken == nil)
+    }
+
+    @Test("graceToken clears when IceBar mode goes off")
+    func graceTokenClearsOnModeOff() {
+        var driver = Self.resting()
+        driver.tick(Self.unreadable)
+        driver.send(.mode(isIceBar: false))
+        #expect(driver.machine.graceToken == nil)
+    }
+
+    @Test("graceToken clears when another block retires the length during the grace")
+    func graceTokenClearsOnRetire() {
+        var driver = Self.resting()
+        driver.tick(Self.unreadable)
+        driver.tick(Base.sample(Base.signature(items: ["v1"], members: ["m1", "m2"]), preconditions: .blocked([.discoveryIncomplete(.incomplete(failedPIDs: [5]))])))
+        #expect(driver.machine.graceToken == nil)
+    }
+
+    @Test("a new grace has a new graceToken")
+    func newGraceNewToken() {
+        var driver = Self.resting()
+        let old = Self.graceToken(driver.tick(Self.unreadable))
+        driver.tick()
+        let new = Self.graceToken(driver.tick(Self.unreadable))
+        #expect(new != nil && new != old)
+        #expect(driver.machine.graceToken == new)
     }
 }
