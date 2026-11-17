@@ -207,9 +207,16 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         /// The reading the checks are from found the bar displaced under its
         /// baseline: a new cycle is owed, a bounded number of times.
         public var displaced = false
-        /// The grace token while a pass that could not read Ice's own items
-        /// is set aside; the sample before it is still the reference.
-        public var suspect: Int?
+        /// While a pass that could not read Ice's own items is set aside: its
+        /// grace; the sample before it is still the reference.
+        public var suspect: Suspect?
+    }
+
+    /// A grace under way: its token, and the latest pass set aside, which
+    /// stands if no readable pass comes in time.
+    public struct Suspect: Equatable, Sendable {
+        public let token: Int
+        public var sample: IceBarHidingSample
     }
 
     public enum Phase: Equatable, Sendable {
@@ -294,6 +301,12 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         rest?.suspect != nil
     }
 
+    /// The last sample taken as the bar: what the next one is compared with.
+    /// A pass set aside is not it.
+    public var reference: IceBarHidingSample? {
+        sample
+    }
+
     /// The `«` reading of the rest's last observation; recorded, never acted on.
     public var chevronListed: Bool? {
         rest?.chevronListed
@@ -322,7 +335,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
             length: length,
             checks: rest?.checks ?? [:],
             pendingLayoutChange: rest?.pending?.change,
-            transientRead: rest?.suspect != nil
+            transientRead: isGracing
         ))
     }
 
@@ -355,7 +368,8 @@ public struct IceBarHidingMachine: Equatable, Sendable {
             return observed(token: token, reading, now: now)
         case .graceExpired(let token):
             // No readable pass in time: what the set-aside pass said stands.
-            guard let rest, rest.suspect == token else { return [] }
+            guard let suspect = rest?.suspect, suspect.token == token else { return [] }
+            sample = suspect.sample
             return enterBlocked()
         }
     }
@@ -382,10 +396,7 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         if let graced = setAside(sample) { return graced }
         let previous = self.sample?.signature
         self.sample = sample
-        if case .resting(var rest) = phase, rest.suspect != nil {
-            rest.suspect = nil
-            phase = .resting(rest)
-        }
+        if isGracing { setSuspect(nil) }
         // The owner is arranging items: they need the real divider. A hold
         // needs the members on the bar: a press, or a read, at standard length.
         if sample.isDragging || sample.isHeld { return enterQuiet(now) }
@@ -421,28 +432,24 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     /// 2026-11-17-transient-pass-grace, G1, G2). `nil`: handle as usual.
     private mutating func setAside(_ sample: IceBarHidingSample) -> [IceBarHidingCommand]? {
         guard
-            parameters.transientGrace > 0, case .resting(var rest) = phase,
-            !sample.isDragging, !sample.isHeld, Self.isUnreadable(sample.preconditions)
+            parameters.transientGrace > 0, sample.preconditions.isOwnReadFailureOnly,
+            !sample.isDragging, !sample.isHeld, let rest
         else {
             return nil
         }
-        if rest.suspect != nil { return [] }
+        if let suspect = rest.suspect {
+            setSuspect(Suspect(token: suspect.token, sample: sample))
+            return []
+        }
         let token = takeToken()
-        rest.suspect = token
-        phase = .resting(rest)
+        setSuspect(Suspect(token: token, sample: sample))
         return [.reread, .armGrace(token: token, after: parameters.transientGrace)]
     }
 
-    /// Blocked only because Ice's own items were not read: the pass was
-    /// complete, and no reason speaks of another item or of the owner.
-    static func isUnreadable(_ preconditions: PreferenceHidingPreconditionResult) -> Bool {
-        let reasons = preconditions.reasons
-        return !reasons.isEmpty && reasons.allSatisfy { reason in
-            switch reason {
-            case .iceIconNotRightOfDivider(.iconUnreadable), .iceIconNotRightOfDivider(.dividerUnusable), .ownReadNotOk: true
-            case .iceIconNotRightOfDivider(.iconLeftOfDivider), .discoveryIncomplete, .positionalItemsLeftOfDivider: false
-            }
-        }
+    private mutating func setSuspect(_ suspect: Suspect?) {
+        guard case .resting(var rest) = phase else { return }
+        rest.suspect = suspect
+        phase = .resting(rest)
     }
 
     private mutating func advance(_ sample: IceBarHidingSample, now: Double) -> [IceBarHidingCommand] {

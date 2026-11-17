@@ -1109,7 +1109,7 @@ struct IceBarHidingMachineTests {
         driver.tick()
 
         let first = driver.tick(Self.sample(preconditions: block))
-        #expect((first.first == .setLength(nil)) == !IceBarHidingMachine.isUnreadable(block))
+        #expect((first.first == .setLength(nil)) == !block.isOwnReadFailureOnly)
         driver.run(Self.sample(preconditions: block), ticks: 5)
         #expect(driver.length == nil)
         #expect(!driver.machine.lengthApplied)

@@ -86,8 +86,6 @@ final class IceBarHidingCoordinator {
     private var knownPIDs: Set<pid_t>?
     /// The display that had the active menu bar at the last tick.
     private var activeDisplayID: CGDirectDisplayID?
-    /// The last sample sent, for the retire diagnosis.
-    private var lastSample: IceBarHidingSample?
     /// The uptime the running grace began at, for its log line.
     private var graceBegan: TimeInterval?
     private var graceTimer: Task<Void, Never>?
@@ -237,14 +235,11 @@ final class IceBarHidingCoordinator {
     private func send(_ event: IceBarHidingEvent) {
         let now = ProcessInfo.processInfo.systemUptime
         let (next, commands) = machine.step(event, now: now)
-        if case .sample(let sample) = event, commands.contains(.setLength(nil)) {
-            logRetire(previous: lastSample, sample: sample)
+        let retired = commands.contains(.setLength(nil))
+        if case .sample(let sample) = event, retired {
+            logRetire(previous: machine.reference, sample: sample)
         }
-        logGrace(event: event, next: next, retired: commands.contains(.setLength(nil)), now: now)
-        // A pass set aside is not what the next retire differs from.
-        if case .sample(let sample) = event, !next.isGracing {
-            lastSample = sample
-        }
+        logGrace(event: event, next: next, retired: retired, now: now)
         machine = next
         for command in commands {
             execute(command)
@@ -275,6 +270,8 @@ final class IceBarHidingCoordinator {
             }
         case (let began?, false):
             graceBegan = nil
+            graceTimer?.cancel()
+            graceTimer = nil
             let after = String(format: "%.1f", now - began)
             let how = switch event {
             case .graceExpired: "expired"

@@ -95,6 +95,7 @@ struct IceBarHidingMachineGraceTests {
         #expect(first.first == .setLength(nil))
         #expect(!second.contains(.setLength(nil)))
         #expect(driver.length == nil)
+        #expect(driver.state == .blocked(reasons: Self.unreadable.preconditions.reasons), "the pass set aside is what stands")
     }
 
     @Test("a grace that ended by a readable pass ignores its late expiry")

@@ -46,6 +46,19 @@ public enum PreferenceHidingPreconditionResult: Equatable, Sendable {
         case .blocked(let reasons): return reasons
         }
     }
+
+    /// Blocked only because Ice's own icon or divider was not read: the pass
+    /// was complete, and no reason speaks of another item or of the owner
+    /// (plan 2026-11-17-transient-pass-grace, G1).
+    public var isOwnReadFailureOnly: Bool {
+        guard case .blocked(let reasons) = self else { return false }
+        return reasons.allSatisfy { reason in
+            switch reason {
+            case .iceIconNotRightOfDivider(.iconUnreadable), .iceIconNotRightOfDivider(.dividerUnusable), .ownReadNotOk: true
+            case .iceIconNotRightOfDivider(.iconLeftOfDivider), .discoveryIncomplete, .positionalItemsLeftOfDivider: false
+            }
+        }
+    }
 }
 
 public enum PreferenceHidingPreconditions {
