@@ -69,3 +69,9 @@ replaced). Pinned by `referenceIsNotTheUnreadablePass`.
 - Debug build of `Ice`.
 - Live: the daily Ice, the `IceBar grace:` lines against the `IceBar retire:` lines
   of 2026-11-17's stream.
+
+## Released
+
+Merged into `main` and released as v1.1.6 on 2026-11-17; the signed Release build is
+the daily Ice (the 1.1.5 it replaced and the settings export are in
+`~/Ice-release-archive/`, the 34 settings unchanged).
