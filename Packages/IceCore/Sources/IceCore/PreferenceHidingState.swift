@@ -118,6 +118,10 @@ public enum PreferenceHidingNotVerifiedReason: Equatable, Sendable {
     case membersUnchecked([TagKey])
     /// A layout change happened since the last check (D-e).
     case layoutChangePending(PreferenceHidingLayoutChange)
+    /// The last pass could not read Ice's own icon or divider; the length
+    /// stays for a bounded grace while the bar is read again (plan
+    /// 2026-11-17-transient-pass-grace).
+    case transientRead
 }
 
 public enum PreferenceHidingState: Equatable, Sendable {

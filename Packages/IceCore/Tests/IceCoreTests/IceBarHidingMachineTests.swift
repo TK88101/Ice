@@ -103,6 +103,8 @@ struct IceBarHidingMachineTests {
         /// `rebaselineCures` set.
         var displaced = false
         var rebaselineCures = false
+        /// Graces armed and when the coordinator's clock answers them.
+        var graces = [(token: Int, at: Double)]()
 
         /// A system item changes its width: the bar moves under the baseline.
         mutating func shift() {
@@ -143,7 +145,9 @@ struct IceBarHidingMachineTests {
                             token: token, checks: checks(at: asked), chevronListed: chevron, burst: burst(closes: closes), displaced: displaced
                         ))
                     }
-                case .report:
+                case .armGrace(let token, let after):
+                    graces.append((token, now + after))
+                case .report, .reread:
                     break
                 }
             }
@@ -157,7 +161,11 @@ struct IceBarHidingMachineTests {
         @discardableResult
         mutating func tick(_ sample: IceBarHidingSample? = nil, seconds: Double = 1) -> [IceBarHidingCommand] {
             now += seconds
-            return send(.sample(sample ?? IceBarHidingMachineTests.sample(membership: members)))
+            let due = graces.filter { $0.at <= now }
+            graces.removeAll { $0.at <= now }
+            var commands = [IceBarHidingCommand]()
+            for grace in due { commands += send(.graceExpired(token: grace.token)) }
+            return commands + send(.sample(sample ?? IceBarHidingMachineTests.sample(membership: members)))
         }
 
         mutating func run(_ sample: IceBarHidingSample? = nil, ticks: Int) {
@@ -1095,12 +1103,13 @@ struct IceBarHidingMachineTests {
         #expect(empty.length == nil)
     }
 
-    @Test("a failed precondition still blocks: the length is retired and none is applied", arguments: blocks)
+    @Test("a failed precondition still blocks: the length is retired (an unreadable pass once its grace ran out) and none is applied", arguments: blocks)
     func preconditionsStillBlock(block: PreferenceHidingPreconditionResult) {
         var driver = Self.atOnce()
         driver.tick()
 
-        #expect(driver.tick(Self.sample(preconditions: block)).first == .setLength(nil))
+        let first = driver.tick(Self.sample(preconditions: block))
+        #expect((first.first == .setLength(nil)) == !IceBarHidingMachine.isUnreadable(block))
         driver.run(Self.sample(preconditions: block), ticks: 5)
         #expect(driver.length == nil)
         #expect(!driver.machine.lengthApplied)

@@ -88,6 +88,9 @@ final class IceBarHidingCoordinator {
     private var activeDisplayID: CGDirectDisplayID?
     /// The last sample sent, for the retire diagnosis.
     private var lastSample: IceBarHidingSample?
+    /// The uptime the running grace began at, for its log line.
+    private var graceBegan: TimeInterval?
+    private var graceTimer: Task<Void, Never>?
     /// The machine's last status line for the owner; the cover's notice is said after it.
     private var statusMessage: OwnerMessage?
 
@@ -232,11 +235,14 @@ final class IceBarHidingCoordinator {
     // MARK: - Events
 
     private func send(_ event: IceBarHidingEvent) {
-        let (next, commands) = machine.step(event, now: ProcessInfo.processInfo.systemUptime)
+        let now = ProcessInfo.processInfo.systemUptime
+        let (next, commands) = machine.step(event, now: now)
         if case .sample(let sample) = event, commands.contains(.setLength(nil)) {
             logRetire(previous: lastSample, sample: sample)
         }
-        if case .sample(let sample) = event {
+        logGrace(event: event, next: next, retired: commands.contains(.setLength(nil)), now: now)
+        // A pass set aside is not what the next retire differs from.
+        if case .sample(let sample) = event, !next.isGracing {
             lastSample = sample
         }
         machine = next
@@ -254,6 +260,44 @@ final class IceBarHidingCoordinator {
             appState.menuBarManager.iceBarPanel.close()
         }
         syncCover()
+    }
+
+    /// When a grace began, how it ended, and what the pass set aside would
+    /// have blocked for: the counterfactual the owner's bar measures (plan
+    /// 2026-11-17-transient-pass-grace, G5).
+    private func logGrace(event: IceBarHidingEvent, next: IceBarHidingMachine, retired: Bool, now: TimeInterval) {
+        switch (graceBegan, next.isGracing) {
+        case (nil, true):
+            graceBegan = now
+            if case .sample(let sample) = event {
+                let reasons = sample.preconditions.reasons.map { "\($0)" }.joined(separator: ",")
+                logger.info("IceBar grace: began, would block: \(reasons, privacy: .public) items \(sample.signature.items.count, privacy: .public)")
+            }
+        case (let began?, false):
+            graceBegan = nil
+            let after = String(format: "%.1f", now - began)
+            let how = switch event {
+            case .graceExpired: "expired"
+            case .mode: "dropped with IceBar mode"
+            default: retired ? "ended by a retire" : "recovered"
+            }
+            logger.info("IceBar grace: \(how, privacy: .public) after \(after, privacy: .public) s")
+        default:
+            break
+        }
+    }
+
+    /// The machine's grace runs out on a clock of its own: a stalled read
+    /// must not stretch it (plan 2026-11-17-transient-pass-grace, G4).
+    private func armGrace(token: Int, after: Double) {
+        graceTimer?.cancel()
+        graceTimer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(after))
+            guard !Task.isCancelled, let self else {
+                return
+            }
+            self.send(.graceExpired(token: token))
+        }
     }
 
     /// What a sample that retired the length differed in from the one before
@@ -469,6 +513,10 @@ final class IceBarHidingCoordinator {
             takeBaseline(token: token, members: members, ready: ready)
         case .observe(let token, let length, let closesBurst):
             observe(token: token, length: length, closesBurst: closesBurst)
+        case .reread:
+            rereadSoon()
+        case .armGrace(let token, let after):
+            armGrace(token: token, after: after)
         case .report(let status):
             logger.info("IceBar hiding: \(status.logSummary, privacy: .public)")
             LabReport.record(.status(status.logSummary))

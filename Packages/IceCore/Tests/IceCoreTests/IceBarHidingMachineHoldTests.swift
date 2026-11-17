@@ -40,11 +40,12 @@ struct IceBarHidingMachineHoldTests {
         #expect(driver.machine.lengthApplied)
     }
 
-    @Test("what 1.1.2 did there: the same pass read as a failed own read retires the length")
+    @Test("what 1.1.2 did there: the same pass read as a failed own read retires the length, once its grace ran out")
     func blockedRetires() {
         var driver = Self.resting()
-        let commands = driver.tick(Self.sample(preconditions: .blocked([.ownReadNotOk(.identifiersMissing)]), boundaryUsable: false), seconds: 5)
-        #expect(commands.first == .setLength(nil))
+        let failed = Self.sample(preconditions: .blocked([.ownReadNotOk(.identifiersMissing)]), boundaryUsable: false)
+        #expect(!driver.tick(failed, seconds: 5).contains(.setLength(nil)))
+        #expect(driver.tick(failed, seconds: 5).first == .setLength(nil))
     }
 
     @Test("a hold retires the length and the machine stays at standard length while it lasts")

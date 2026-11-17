@@ -31,6 +31,10 @@ public struct IceBarHidingParameters: Equatable, Sendable {
     /// says "not verified" (O1); nothing is captured and nothing waits for
     /// the pointer to leave the bar (plan 2026-11-12-hide-at-once).
     public let verifies: Bool
+    /// How long a rest keeps its length after a complete pass that could not
+    /// read Ice's own icon or divider, waiting for a readable one; 0: no
+    /// grace, such a pass blocks at once (plan 2026-11-17-transient-pass-grace).
+    public let transientGrace: Double
 
     public init(
         quietPeriod: Double,
@@ -39,9 +43,11 @@ public struct IceBarHidingParameters: Equatable, Sendable {
         restDwell: Double,
         calibration: HiddenLengthParameters,
         cleanBurstAge: Double = CaptureBurstParameters.standard.observationNeed,
-        verifies: Bool = true
+        verifies: Bool = true,
+        transientGrace: Double = 0
     ) {
         self.verifies = verifies
+        self.transientGrace = transientGrace
         self.quietPeriod = quietPeriod
         self.minInterval = minInterval
         self.maxFailures = maxFailures
@@ -67,7 +73,8 @@ public struct IceBarHidingParameters: Equatable, Sendable {
         maxFailures: 0,
         restDwell: 1,
         calibration: .standard,
-        verifies: false
+        verifies: false,
+        transientGrace: 5
     )
 }
 
@@ -123,6 +130,9 @@ public enum IceBarHidingEvent: Equatable, Sendable {
     case observed(
         token: Int, checks: [ItemKey: SectionItemCheck], chevronListed: Bool?, burst: ObservationBurst?, displaced: Bool = false
     )
+    /// The grace `armGrace(token:after:)` asked for has run out, whether or
+    /// not a sample came meanwhile.
+    case graceExpired(token: Int)
 }
 
 public enum IceBarHidingCommand: Equatable, Sendable {
@@ -136,6 +146,11 @@ public enum IceBarHidingCommand: Equatable, Sendable {
     /// confirmation, a re-check; plan 2026-10-19-verify-in-a-clean-burst, D4).
     case observe(token: Int, length: Double, closesBurst: Bool)
     case report(IceBarHidingStatus)
+    /// Read the bar again now, at the length it is at.
+    case reread
+    /// Answer `graceExpired(token:)` after `after` seconds, by a clock of
+    /// its own: a stalled read must not stretch the grace.
+    case armGrace(token: Int, after: Double)
 }
 
 public struct IceBarHidingMachine: Equatable, Sendable {
@@ -192,6 +207,9 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         /// The reading the checks are from found the bar displaced under its
         /// baseline: a new cycle is owed, a bounded number of times.
         public var displaced = false
+        /// The grace token while a pass that could not read Ice's own items
+        /// is set aside; the sample before it is still the reference.
+        public var suspect: Int?
     }
 
     public enum Phase: Equatable, Sendable {
@@ -270,6 +288,12 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         }
     }
 
+    /// A pass that could not read Ice's own items is set aside, its grace
+    /// running (plan 2026-11-17-transient-pass-grace).
+    public var isGracing: Bool {
+        rest?.suspect != nil
+    }
+
     /// The `«` reading of the rest's last observation; recorded, never acted on.
     public var chevronListed: Bool? {
         rest?.chevronListed
@@ -297,7 +321,8 @@ public struct IceBarHidingMachine: Equatable, Sendable {
             membership: sample.membership,
             length: length,
             checks: rest?.checks ?? [:],
-            pendingLayoutChange: rest?.pending?.change
+            pendingLayoutChange: rest?.pending?.change,
+            transientRead: rest?.suspect != nil
         ))
     }
 
@@ -328,6 +353,10 @@ public struct IceBarHidingMachine: Equatable, Sendable {
         case .observed(let token, let checks, let chevronListed, let burst, let displaced):
             let reading = Reading(checks: checks, chevronListed: chevronListed, burst: burst, displaced: displaced)
             return observed(token: token, reading, now: now)
+        case .graceExpired(let token):
+            // No readable pass in time: what the set-aside pass said stands.
+            guard let rest, rest.suspect == token else { return [] }
+            return enterBlocked()
         }
     }
 
@@ -350,8 +379,13 @@ public struct IceBarHidingMachine: Equatable, Sendable {
     }
 
     private mutating func handle(_ sample: IceBarHidingSample, now: Double) -> [IceBarHidingCommand] {
+        if let graced = setAside(sample) { return graced }
         let previous = self.sample?.signature
         self.sample = sample
+        if case .resting(var rest) = phase, rest.suspect != nil {
+            rest.suspect = nil
+            phase = .resting(rest)
+        }
         // The owner is arranging items: they need the real divider. A hold
         // needs the members on the bar: a press, or a read, at standard length.
         if sample.isDragging || sample.isHeld { return enterQuiet(now) }
@@ -378,6 +412,37 @@ public struct IceBarHidingMachine: Equatable, Sendable {
             phase = .resting(rest)
         }
         return advance(sample, now: now)
+    }
+
+    /// A complete pass that could not read Ice's own icon or divider, at a
+    /// rest with a grace: it says nothing of the bar, so it is neither the
+    /// new reference nor compared with the old one. The length stays until a
+    /// readable pass judges the bar, or the grace runs out (plan
+    /// 2026-11-17-transient-pass-grace, G1, G2). `nil`: handle as usual.
+    private mutating func setAside(_ sample: IceBarHidingSample) -> [IceBarHidingCommand]? {
+        guard
+            parameters.transientGrace > 0, case .resting(var rest) = phase,
+            !sample.isDragging, !sample.isHeld, Self.isUnreadable(sample.preconditions)
+        else {
+            return nil
+        }
+        if rest.suspect != nil { return [] }
+        let token = takeToken()
+        rest.suspect = token
+        phase = .resting(rest)
+        return [.reread, .armGrace(token: token, after: parameters.transientGrace)]
+    }
+
+    /// Blocked only because Ice's own items were not read: the pass was
+    /// complete, and no reason speaks of another item or of the owner.
+    static func isUnreadable(_ preconditions: PreferenceHidingPreconditionResult) -> Bool {
+        let reasons = preconditions.reasons
+        return !reasons.isEmpty && reasons.allSatisfy { reason in
+            switch reason {
+            case .iceIconNotRightOfDivider(.iconUnreadable), .iceIconNotRightOfDivider(.dividerUnusable), .ownReadNotOk: true
+            case .iceIconNotRightOfDivider(.iconLeftOfDivider), .discoveryIncomplete, .positionalItemsLeftOfDivider: false
+            }
+        }
     }
 
     private mutating func advance(_ sample: IceBarHidingSample, now: Double) -> [IceBarHidingCommand] {

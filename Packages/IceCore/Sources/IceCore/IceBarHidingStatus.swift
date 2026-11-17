@@ -109,7 +109,7 @@ public enum IceBarHidingStatus: Equatable, Sendable {
         case .membersUnchecked: whys[6]
         case .staleMembers: whys[7]
         case .stackedMembers: whys[8]
-        case .layoutChangePending: whys[9]
+        case .layoutChangePending, .transientRead: whys[9]
         }
     }
 
@@ -136,6 +136,7 @@ public enum IceBarHidingStatus: Equatable, Sendable {
         case .staleMembers(let tags): "stale:\(tags.count)"
         case .stackedMembers(let tags): "stacked:\(tags.count)"
         case .layoutChangePending(let change): "layoutChanged:\(change)"
+        case .transientRead: "transientRead"
         }
     }
 }

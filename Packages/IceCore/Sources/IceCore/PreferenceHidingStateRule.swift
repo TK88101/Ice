@@ -42,7 +42,8 @@ public enum PreferenceHidingStateRule {
         membership: PreferenceHidingMembership,
         length: PreferenceHidingLength,
         checks: [ItemKey: SectionItemCheck],
-        pendingLayoutChange: PreferenceHidingLayoutChange?
+        pendingLayoutChange: PreferenceHidingLayoutChange?,
+        transientRead: Bool = false
     ) -> PreferenceHidingState {
         if case .blocked(let reasons) = preconditions {
             return .blocked(reasons: reasons)
@@ -52,10 +53,11 @@ public enum PreferenceHidingStateRule {
         if !drawn.isEmpty {
             return .visibleFailed(drawn: drawn)
         }
-        let reasons = notVerifiedReasons(
+        var reasons = notVerifiedReasons(
             membership: membership, length: length,
             memberChecks: memberChecks, pendingLayoutChange: pendingLayoutChange
         )
+        if transientRead { reasons.append(.transientRead) }
         return reasons.isEmpty ? .verifiedHidden : .requestedNotVerified(reasons: reasons)
     }
 
