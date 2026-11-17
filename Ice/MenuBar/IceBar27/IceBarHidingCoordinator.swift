@@ -97,6 +97,11 @@ final class IceBarHidingCoordinator {
         let began: TimeInterval
         var passes = 0
         var longestPass: TimeInterval = 0
+
+        mutating func record(_ took: TimeInterval) {
+            passes += 1
+            longestPass = max(longestPass, took)
+        }
     }
 
     private var grace: GraceRun?
@@ -452,15 +457,10 @@ final class IceBarHidingCoordinator {
                 guard !Task.isCancelled, self.machine.graceToken == token else {
                     return
                 }
-                guard ran else {
-                    continue
+                if ran {
+                    self.grace?.record(ProcessInfo.processInfo.systemUptime - began)
+                    self.tick()
                 }
-                let took = ProcessInfo.processInfo.systemUptime - began
-                self.grace?.passes += 1
-                if let longest = self.grace?.longestPass, took > longest {
-                    self.grace?.longestPass = took
-                }
-                self.tick()
             }
         }
     }
