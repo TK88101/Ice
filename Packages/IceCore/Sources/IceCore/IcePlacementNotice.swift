@@ -40,12 +40,21 @@ public enum IcePlacementNotice: Equatable, Sendable {
     ///   - dividerAtStandardLength: `DividerState.isAtStandardLength` for the
     ///     hidden divider: Ice's own state, not whether the reading was
     ///     usable, so an unusable divider at standard length is read as such.
+    ///   - restsAtHidingLength: `DividerState.restsAtHidingLength(holdsWrittenLength:)`.
+    ///     There an icon read on the bar after one that was not is right of
+    ///     the divider, the converse of the rule above: one left of it is
+    ///     carried off with the section. A Mission Control opening on 27.2
+    ///     makes the icon unreadable for its length and about a second more;
+    ///     without this the held `.iconUnreadable` stood until the length was
+    ///     retired (plan 2026-11-17-grace-mission-control, M9, H7).
     public static func placement(
         held: PreferenceHidingIconPlacement?,
         read: PreferenceHidingIconPlacement?,
-        dividerAtStandardLength: Bool
+        dividerAtStandardLength: Bool,
+        restsAtHidingLength: Bool = false
     ) -> PreferenceHidingIconPlacement? {
         if dividerAtStandardLength || read == .iconUnreadable { return read }
+        if held == .iconUnreadable, restsAtHidingLength, read != .iconLeftOfDivider { return nil }
         return held
     }
 

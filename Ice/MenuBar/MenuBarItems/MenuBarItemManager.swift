@@ -684,7 +684,10 @@ extension MenuBarItemManager {
                     icon: discovery.set.visibleControlItem,
                     divider: discovery.set.hiddenDivider
                 ),
-                dividerAtStandardLength: states.hidden.isAtStandardLength
+                dividerAtStandardLength: states.hidden.isAtStandardLength,
+                restsAtHidingLength: states.hidden.restsAtHidingLength(
+                    holdsWrittenLength: (iceBarHidingStorage as? IceBarHidingCoordinator)?.holdsWrittenLength ?? false
+                )
             )
             if iconPlacement != placement {
                 iconPlacement = placement

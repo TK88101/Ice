@@ -62,6 +62,39 @@ struct IcePlacementNoticeTests {
         #expect(IcePlacementNotice.placement(held: .iconLeftOfDivider, read: .iconUnreadable, dividerAtStandardLength: false) == .iconUnreadable)
     }
 
+    @Test("at the length Ice wrote, an icon read on the bar after an unreadable one is right of the divider: a left one is carried off (plan 2026-11-17-grace-mission-control, H7)", arguments: [
+        PreferenceHidingIconPlacement?.none, .dividerUnusable,
+    ])
+    func iconBackOnTheBarAtTheWrittenLength(read: PreferenceHidingIconPlacement?) {
+        #expect(IcePlacementNotice.placement(held: .iconUnreadable, read: read, dividerAtStandardLength: false, restsAtHidingLength: true) == nil)
+    }
+
+    @Test("an unreadable icon Ice held stands without that proof: a pass that settles, straddles a change or reads it left (H7, Codex)")
+    func unreadableStandsWithoutTheWrittenLength() {
+        #expect(IcePlacementNotice.placement(held: .iconUnreadable, read: nil, dividerAtStandardLength: false) == .iconUnreadable)
+        #expect(IcePlacementNotice.placement(held: .iconUnreadable, read: nil, dividerAtStandardLength: false, restsAtHidingLength: false) == .iconUnreadable)
+        #expect(IcePlacementNotice.placement(held: .iconUnreadable, read: .iconLeftOfDivider, dividerAtStandardLength: false, restsAtHidingLength: true) == .iconUnreadable)
+        #expect(IcePlacementNotice.placement(held: .iconUnreadable, read: .iconUnreadable, dividerAtStandardLength: false, restsAtHidingLength: true) == .iconUnreadable)
+    }
+
+    @Test("H7 changes nothing else Ice held at the written length: an inversion stays, nothing is set")
+    func writtenLengthKeepsOtherHolds() {
+        #expect(IcePlacementNotice.placement(held: .iconLeftOfDivider, read: nil, dividerAtStandardLength: false, restsAtHidingLength: true) == .iconLeftOfDivider)
+        #expect(IcePlacementNotice.placement(held: nil, read: .dividerUnusable, dividerAtStandardLength: false, restsAtHidingLength: true) == nil)
+    }
+
+    @Test("the divider rests at a hiding length when it is enabled, expanded, unchanged during the pass and holds the length Ice wrote")
+    func restsAtHidingLength() {
+        func state(enabled: Bool = true, collapsed: Bool = false, changed: Bool = false) -> DividerState {
+            DividerState(isEnabled: enabled, isCollapsed: collapsed, collapsedFor: 0, changedDuringPass: changed)
+        }
+        #expect(state().restsAtHidingLength(holdsWrittenLength: true))
+        #expect(!state().restsAtHidingLength(holdsWrittenLength: false))
+        #expect(!state(enabled: false).restsAtHidingLength(holdsWrittenLength: true))
+        #expect(!state(collapsed: true).restsAtHidingLength(holdsWrittenLength: true))
+        #expect(!state(changed: true).restsAtHidingLength(holdsWrittenLength: true))
+    }
+
     @Test("a divider is at standard length when Ice holds it enabled, collapsed, settled and unchanged during the pass")
     func dividerAtStandardLength() {
         func state(enabled: Bool = true, collapsed: Bool = true, collapsedFor: Double = 5, changed: Bool = false) -> DividerState {

@@ -76,6 +76,32 @@ loop's task. An extra `tick()` is the same call the 1 s timer makes at any momen
 (it samples whatever roster is published), so a late one can judge nothing the
 timer would not. The loop's timing is checked live (T4).
 
+## Amendment after T4's first run (2026-11-17 19:55-19:58)
+
+| # | Fact | Grade |
+|---|---|---|
+| M7 | T4 with H1-H5 on a signed Release build (`23b3200`): 5 of 9 openings began a grace, all 5 expired at 7.0-7.2 s after 11-12 loop passes (longest pass 0.07-0.12 s); the other 4 met no unreadable pass | MEASURED, 26B131, `icebar-stream.log` 19:55:13-19:57:21 |
+| M8 | In the same run, the external probe listed Ice's icon again 0.8 s after Mission Control closed (19:57:51.66 -> 52.42) while Ice's own loop kept judging the pass unreadable until the expiry at 56.53 | MEASURED, `ownextras-t4.log` |
+| M9 | Cause: `IcePlacementNotice.placement(held:read:dividerAtStandardLength:)` returns `held` at a hiding length unless `read == .iconUnreadable`. The unreadable pass makes `held = .iconUnreadable`; every readable pass after it at the length reads `nil` or `.dividerUnusable`, so `held` stands until a standard-length pass. No re-read at the length can end the grace | MEASURED (code, `IcePlacementNotice.swift`; matches M7, M8 and 1.1.6's "recovery only after the retire") |
+
+H7 (narrowed after Codex) When the divider rests at a hiding length (enabled,
+expanded, unchanged during the pass, and `holdsWrittenLength`: Ice's own state says
+it holds the length it wrote; `DividerState.restsAtHidingLength`), an icon read on
+the bar (`nil` or `.dividerUnusable`) after Ice held it unreadable ends that:
+`placement` returns `nil`. Reason, from the rule's own premise (G3): an icon left of
+the divider is carried off with the section at a length and reads unreadable. A read
+`.iconLeftOfDivider`, or any pass without that proof (settling, a change during the
+pass, a disabled divider), leaves `.iconUnreadable` as it was. Unchanged: a held
+`.iconLeftOfDivider` stays at a length; a pass at a length never sets it.
+
+H1-H5 stay: with H7 the loop's passes can end the grace within ~0.5 s of the icon's
+return instead of the regular pass's 5 s.
+
+T6 `IcePlacementNoticeTests`: with the proof, held `.iconUnreadable` and read `nil`
+or `.dividerUnusable` -> `nil`; without it, or read `.iconLeftOfDivider` or
+`.iconUnreadable` -> unreadable; other holds unchanged; `restsAtHidingLength` per
+state. RED, then GREEN. T4 is run again.
+
 ## Tasks (TDD, IceCore first)
 
 | # | Task | DoD |
@@ -157,3 +183,10 @@ Round 4 (1 item):
 | R4-1 | a readable roster published but not yet sampled can still lose to the expiry; asks a coordinator test or naming it a G4 limit | adopted Codex's second option: written as a limit (Goal section); no coordinator harness. Converged |
 
 Plan final 2026-11-17 after 4 rounds.
+
+Amendment review (H7):
+
+| # | Item | Verdict |
+|---|---|---|
+| A-1 | M9 is the cause | confirmed by Codex |
+| A-2 | H7 too wide: "not at standard length" also covers disabled, settling, changed during the pass; a read `.iconLeftOfDivider` must not clear | adopted: the proof `restsAtHidingLength(holdsWrittenLength:)`, a left read leaves it unreadable (H7, T6) |

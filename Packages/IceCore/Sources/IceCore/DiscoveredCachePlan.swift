@@ -210,4 +210,11 @@ extension DividerState {
     public var isAtStandardLength: Bool {
         boundaryIssue == nil
     }
+
+    /// Ice holds the divider enabled at a hiding length, the one it last
+    /// wrote (`holdsWrittenLength`, Ice's own state), unchanged during the
+    /// pass (plan 2026-11-17-grace-mission-control, H7).
+    public func restsAtHidingLength(holdsWrittenLength: Bool) -> Bool {
+        isEnabled && !isCollapsed && !changedDuringPass && holdsWrittenLength
+    }
 }
