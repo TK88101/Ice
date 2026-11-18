@@ -56,6 +56,31 @@ struct PreferenceHidingRosterBlindTests {
         roster.signature(frontmostPID: 4, menuMaxX: 300, displayID: 1, spaceID: 2)
     }
 
+    @Test("after a pass that lists no member (Mission Control) the members' keys are still the ones last read, through the blind passes after it")
+    func memberKeysSurviveATransientPass() {
+        let a = placed("a", pid: 1, minX: 100)
+        let b = placed("b", pid: 2, minX: 130)
+        let right = placed("r", pid: 3, minX: 1000)
+        let roster = trusted(PreferenceHidingRoster(), [a, b, right])
+        #expect(Set(roster.memberKeys) == [a.key, b.key])
+        // Mission Control: no item of another app is listed, Ice's icon neither (2026-11-18, 18:57:45).
+        let transient = roster.advanced(
+            set: fixtureSet(items: [], ownRead: .identifiersMissing),
+            hiddenDividerState: Self.hiding, childIdentifiersByPID: [:], iconPlacement: nil,
+            hasExited: { _ in false }, display: Self.display, holdsWrittenLength: true
+        )
+        #expect(!transient.isBlindAtLength)
+        #expect(transient.membership.members.count == 2)
+        #expect(transient.membership.members.allSatisfy { $0.key == nil })
+        #expect(Set(transient.memberKeys) == [a.key, b.key])
+        let blind = atLength(transient, [right])
+        #expect(blind.isBlindAtLength)
+        #expect(blind.membership.members.allSatisfy { $0.key == nil })
+        #expect(Set(blind.memberKeys) == [a.key, b.key])
+        // A member whose process is gone has no key to give.
+        #expect(atLength(transient, [right], exited: [2]).memberKeys == [a.key])
+    }
+
     @Test("a blind pass carries the members, their conditions and keys, and blocks nothing")
     func carriesMembers() {
         let a = placed("a", pid: 1, minX: 100)

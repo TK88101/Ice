@@ -66,14 +66,41 @@ final class MenuBarItemManager: ObservableObject {
         )
     }
 
+    /// The members' keys and the last pass's other items: what the cover's
+    /// owners and their diagnosis are both made of. The keys last read, not
+    /// only this pass's: a pass that listed no member left the members drawn
+    /// and uncovered (plan 2026-11-18-cover-stale-and-lost, amendment A).
+    @available(macOS 27, *)
+    private var coverInputs: (members: [ItemKey], others: [DiscoveredItem], items: Int) {
+        let members = iceBarRoster.rules.memberKeys
+        let memberKeys = Set(members)
+        let items = lastDiscoveredSet?.items ?? []
+        return (members, items.filter { !memberKeys.contains($0.key) }, items.count)
+    }
+
     /// macOS 27: the pids all of whose discovered items are hidden-section
     /// members, which the cover may cover (plan 2026-11-15-cover, D1).
     @available(macOS 27, *)
     var coverableOwners: Set<Int32> {
-        let members = iceBarRoster.rules.membership.members.compactMap(\.key)
-        let memberKeys = Set(members)
-        let others = (lastDiscoveredSet?.items ?? []).filter { !memberKeys.contains($0.key) }
-        return CoverPlan.coverable(memberOwners: members.map(\.pid), visibleOwners: others.map(\.key.pid))
+        let inputs = coverInputs
+        return CoverPlan.coverable(memberOwners: inputs.members.map(\.pid), visibleOwners: inputs.others.map(\.key.pid))
+    }
+
+    /// Where `coverableOwners` came from, for the cover's diagnosis (plan
+    /// 2026-11-18-cover-stale-and-lost, D3): counts, pids and positions, never
+    /// a name. Each item that vetoes a member's pid reads
+    /// `pid:basis:position:carried passes:x`.
+    @available(macOS 27, *)
+    var coverableProvenance: String {
+        let roster = iceBarRoster.rules.membership.members
+        let inputs = coverInputs
+        let memberOwners = Set(inputs.members.map(\.pid))
+        let vetoing = inputs.others.filter { memberOwners.contains($0.key.pid) }.map { item in
+            "\(item.key.pid):\(item.basis):\(item.position):\(item.carriedPasses):\(item.frame.map { String(Int($0.minX)) } ?? "-")"
+        }
+        return "members \(roster.count) keyed \(roster.count { $0.key != nil }) listed \(inputs.items - inputs.others.count) "
+            + "memberOwners \(memberOwners.count) vetoed by [\(vetoing.joined(separator: " "))] "
+            + "set \(LabReportNames.completeness(lastDiscoveredSet?.completeness) ?? "none") items \(inputs.items) pass \(completedPasses)"
     }
 
     /// One divider's state changes as Ice's own model reports them (D10,

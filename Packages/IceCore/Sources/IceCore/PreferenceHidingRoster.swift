@@ -27,6 +27,17 @@ public struct PreferenceHidingRoster: Equatable, Sendable {
 
     public init() {}
 
+    /// Each member's key: the one the last pass read, or the one it was last
+    /// read with. A pass that lists no member (Mission Control empties
+    /// Accessibility) leaves every member without a key, and the blind
+    /// passes after it keep them so; what covers the members must still know
+    /// their processes (plan 2026-11-18-cover-stale-and-lost, amendment A).
+    /// No more than a blind pass alone carries: the same key, alive by its
+    /// pid only.
+    public var memberKeys: [ItemKey] {
+        membership.members.compactMap { $0.key ?? lastKeys[$0.tag] }
+    }
+
     /// The roster after one completed pass. A pass without permission read
     /// nothing: the roster stays and the preconditions block (review round 2).
     /// Otherwise members of exited processes go first (G1), then

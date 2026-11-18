@@ -22,21 +22,35 @@ final class FakeCapturer: CoverCapturing {
     var calls = 0
     var signature = "desktop"
     var opaque = false
+    /// The gray of the strip below the bar.
+    var gray: UInt8 = 40
+    /// The image calls return nothing.
+    var fails = false
+    /// Every capture differs from the one before it (a wallpaper that moves).
+    var moves = false
+    private var moved: UInt8 = 0
 
-    static func image(width: Int, gray: UInt8) -> CGImage {
+    static func image(width: Int, gray: UInt8, patch: Range<Int>? = nil, patchGray: UInt8 = 0) -> CGImage {
         let context = CGContext(
             data: nil, width: width, height: 2, bitsPerComponent: 8, bytesPerRow: width * 4,
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         )!
         context.setFillColor(CGColor(gray: CGFloat(gray) / 255, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: width, height: 2))
+        if let patch {
+            context.setFillColor(CGColor(gray: CGFloat(patchGray) / 255, alpha: 1))
+            context.fill(CGRect(x: patch.lowerBound, y: 0, width: patch.count, height: 2))
+        }
         return context.makeImage()!
     }
 
     func strips(of bar: CoverBar) -> CoverStrips? {
         calls += 2
+        guard !fails else { return nil }
         let width = Int(bar.frame.width * bar.scale)
-        return CoverStrips(below: Self.image(width: width, gray: 40), onScreen: Self.image(width: width, gray: opaque ? 200 : 40))
+        if moves { moved = moved == 200 ? 0 : moved + 40 }
+        let below = moves ? moved : gray
+        return CoverStrips(below: Self.image(width: width, gray: below), onScreen: Self.image(width: width, gray: opaque ? 200 : below))
     }
 
     func underStripSignature(of bar: CoverBar) -> String { signature }
@@ -93,6 +107,8 @@ final class Rig {
     var holdsPasses = false
     var held = [() -> Void]()
     var reports = [(reports: [CoverBarReport], generation: Int)]()
+    var diagnoses = [CoverBarDiagnosis]()
+    var captures = [CoverCaptureFact]()
     var paused = 0.0
     /// Owners whose apps answer no hit test, and owners whose hit test fails.
     var silentOwners = Set<Int32>()
@@ -110,6 +126,8 @@ final class Rig {
             )
         )
         controller.onReport = { [unowned self] reports, generation in self.reports.append((reports, generation)) }
+        controller.onDiagnosis = { [unowned self] in self.diagnoses.append($0) }
+        controller.onCapture = { [unowned self] in self.captures.append($0) }
         return controller
     }()
 
@@ -167,6 +185,21 @@ final class Rig {
     func start(_ coverable: Set<Int32> = [1, 2]) {
         controller.sync(active: true, coverable: coverable)
         advance(CoverController.activationSettle)
+    }
+
+    /// On, with the first read at a whole second (101), so the ladder's steps fall on the ticks exactly.
+    func startWhole(_ coverable: Set<Int32> = [1, 2]) {
+        controller.sync(active: true, coverable: coverable)
+        now = 101
+        advance(0)
+    }
+
+    /// Ticks a second apart for `seconds`.
+    func run(seconds: Int) {
+        for _ in 0..<seconds {
+            advance(1)
+            controller.tick()
+        }
     }
 }
 
@@ -316,7 +349,7 @@ struct CoverControllerTests {
         let rig = Rig()
         rig.standardBar()
         rig.start()
-        rig.advance(CoverController.refreshEvery + 1)
+        rig.advance(CoverBackgroundTrust.refreshEvery + 1)
         rig.controller.tick()
         #expect(rig.capturer.calls == 4)
     }
@@ -446,6 +479,351 @@ struct CoverControllerTests {
         rig.controller.tick()
         #expect(rig.presenter.shown.isEmpty)
     }
+
+    // MARK: - Plan 2026-11-18-cover-stale-and-lost, D1 and D6
+
+    @Test("a strip taken at a dim moment is replaced 12 s later with no signal, and the one after is compared at 12 s and 60 s")
+    func dimStripIsReplaced() {
+        let rig = Rig()
+        rig.standardBar()
+        // The desktop is dim when the first capture is taken, and normal a moment later; nothing says so.
+        rig.capturer.gray = 20
+        rig.startWhole()
+        rig.capturer.gray = 40
+        #expect(rig.captures.map(\.reason) == [.size])
+        rig.run(seconds: 11)
+        #expect(rig.captures.count == 1)
+        rig.run(seconds: 1)
+        #expect(rig.captures.map(\.reason) == [.size, .confirm])
+        #expect(rig.captures.last?.equal == false)
+        #expect(rig.captures.last?.unequalRun == 1)
+        #expect(rig.captures.last?.luma == CoverPixels.luma(FakeCapturer.image(width: 10, gray: 40)))
+        rig.run(seconds: 12)
+        #expect(rig.captures.last?.equal == true)
+        #expect(rig.captures.last?.step == 1)
+        rig.run(seconds: 47)
+        #expect(rig.captures.count == 3)
+        rig.run(seconds: 1)
+        #expect(rig.captures.count == 4)
+        #expect(rig.captures.last?.step == 2)
+        // Confirmed: nothing more before the refresh.
+        rig.run(seconds: 600)
+        #expect(rig.captures.count == 4)
+        #expect(rig.capturer.calls == 8)
+    }
+
+    @Test("a background that keeps moving is compared four times 12 s apart, then 300 s later; stale signals bring no 12 s step back and do not put that one off")
+    func movingBackground() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.capturer.moves = true
+        rig.startWhole()
+        rig.run(seconds: 48)
+        #expect(rig.captures.map(\.reason) == [.size, .confirm, .confirm, .confirm, .confirm])
+        #expect(rig.captures.last?.unequalRun == 4)
+        // A window moves under the bar every 12 s for four minutes.
+        var confirmedAt = [Double]()
+        for second in 1...300 {
+            if second % 12 == 0, second <= 240 { rig.capturer.signature = "window \(second)" }
+            let before = rig.captures.filter { $0.reason == .confirm }.count
+            rig.advance(1)
+            rig.controller.tick()
+            if rig.captures.filter({ $0.reason == .confirm }).count > before { confirmedAt.append(rig.now) }
+        }
+        #expect(rig.captures.filter { $0.reason == .stale }.count == 20)
+        #expect(confirmedAt == [449], "300 s after the fourth unequal comparison at 149")
+        #expect(rig.captures.last?.unequalRun == 5)
+        #expect(rig.capturer.calls == rig.captures.count * 2)
+    }
+
+    @Test("a bar with a candidate and no block is granted no capture; a step that fell due meanwhile is taken when a block is up again")
+    func noBlockNoCapture() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.startWhole()
+        #expect(rig.captures.count == 1)
+        // The members are listed, and another item answers where they lie: candidates, no block.
+        rig.reader.hit = { _, _ in .owner(20) }
+        rig.controller.activeDisplayChanged()
+        #expect(rig.presenter.shown[7] == nil)
+        rig.run(seconds: 30)
+        #expect(rig.captures.count == 1)
+        rig.standardBar()
+        rig.run(seconds: 2)
+        #expect(rig.captures.map(\.reason) == [.size, .confirm])
+        #expect(rig.presenter.shown[7] == [496...580])
+    }
+
+    @Test("a capture that returns nothing is tried again at 12, 12, 60 and 300 s, and the image held stays")
+    func failedCaptureBacksOff() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.startWhole()
+        rig.capturer.fails = true
+        var failedAfter = [Double]()
+        for _ in 0..<420 {
+            rig.advance(1)
+            rig.controller.tick()
+            if rig.captures.count - 1 > failedAfter.count { failedAfter.append(rig.now - 101) }
+        }
+        #expect(failedAfter == [12, 24, 36, 96, 396])
+        #expect(rig.captures.dropFirst().allSatisfy { $0.failed && $0.reason == .confirm })
+        #expect(rig.presenter.shown[7] == [496...580], "the image held is still shown")
+    }
+
+    @Test("with no image at all a failing capture does not spin: one attempt per retry step, and the panels come when it works")
+    func failedFirstCaptureDoesNotSpin() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.capturer.fails = true
+        rig.startWhole()
+        #expect(rig.capturer.calls == 2)
+        rig.run(seconds: 11)
+        #expect(rig.capturer.calls == 2)
+        rig.run(seconds: 1)
+        #expect(rig.capturer.calls == 4)
+        rig.run(seconds: 12)
+        #expect(rig.capturer.calls == 6)
+        // The budget would allow a session from 137 on; the rule says 60 s.
+        rig.run(seconds: 59)
+        #expect(rig.capturer.calls == 6)
+        rig.run(seconds: 1)
+        #expect(rig.capturer.calls == 8)
+        #expect(rig.presenter.shown[7] == nil)
+        rig.capturer.fails = false
+        rig.run(seconds: 300)
+        #expect(rig.presenter.shown[7] == [496...580])
+        #expect(rig.captures.last?.failed == false)
+    }
+
+    @Test("the pass that first reads a tree with no hosted slot (Mission Control) takes no capture though one was granted; the held image stays")
+    func noCaptureInAnEmptyRead() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.startWhole()
+        rig.run(seconds: 11)
+        #expect(rig.captures.count == 1)
+        // Mission Control opens in the second the confirmation is due: the desktop dims, the tree lists the agent's slots only.
+        rig.capturer.signature = "mission control"
+        rig.capturer.gray = 20
+        rig.reader.slotsByDisplay[7] = [rig.slot(99, 500, 20)]
+        rig.run(seconds: 1)
+        #expect(rig.captures.count == 1)
+        #expect(rig.capturer.calls == 2, "no image call in that pass")
+        #expect(rig.presenter.shown[7] == nil)
+        // It closes: the members are back under the image held, and the confirmation owed is taken at the budget's next slot.
+        rig.capturer.signature = "desktop"
+        rig.capturer.gray = 40
+        rig.standardBar()
+        rig.run(seconds: 1)
+        #expect(rig.presenter.shown[7] == [496...580])
+        #expect(rig.captures.count == 1)
+        rig.run(seconds: 12)
+        #expect(rig.captures.count == 2)
+        // The windows under the strip changed meanwhile, so the capture owed is a signal's; it finds the strip as it was.
+        #expect(rig.captures.last?.reason == .stale)
+        #expect(rig.captures.last?.equal == true)
+        #expect(rig.captures.last?.luma == CoverPixels.luma(FakeCapturer.image(width: 10, gray: 40)))
+        rig.run(seconds: 12)
+        #expect(rig.captures.last?.reason == .confirm)
+        #expect(rig.captures.last?.step == 1)
+    }
+
+    @Test("one capture that does not show the bar transparent, with a transparent image held, takes no panel down; a second in a row is believed")
+    func opaqueMomentIsDoubtedOnce() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.startWhole()
+        // Mission Control closes over the bar while a capture is taken (2026-11-18, 19:14:28: the panels went for 11 s).
+        rig.capturer.opaque = true
+        rig.capturer.signature = "mission control closing"
+        rig.run(seconds: 12)
+        #expect(rig.captures.count == 2)
+        #expect(rig.captures.last?.transparent == false)
+        #expect(rig.captures.last?.ignored == true)
+        #expect(rig.presenter.shown[7] == [496...580])
+        #expect(rig.controller.notice == nil)
+        rig.capturer.opaque = false
+        rig.run(seconds: 12)
+        #expect(rig.captures.count == 3)
+        #expect(rig.captures.last?.transparent == true)
+        #expect(rig.captures.last?.ignored == false)
+        #expect(rig.presenter.shown[7] == [496...580])
+
+        // A bar that has become opaque for good: believed at the second capture.
+        rig.capturer.opaque = true
+        rig.capturer.signature = "a setting changed"
+        rig.run(seconds: 12)
+        #expect(rig.captures.last?.ignored == true)
+        #expect(rig.presenter.shown[7] == [496...580])
+        rig.run(seconds: 12)
+        #expect(rig.captures.last?.ignored == false)
+        #expect(rig.presenter.shown[7] == nil)
+        #expect(rig.controller.notice == .barNotTransparent(displayID: 7))
+    }
+
+    @Test("two displays owing a confirmation never exceed four image calls a second or a session per 12 s")
+    func twoDisplaysShareTheBudget() {
+        let rig = Rig()
+        rig.bars.append(CoverBar(displayID: 9, frame: CGRect(x: 1728, y: 0, width: 1920, height: 30), scale: 1, notch: nil))
+        rig.standardBar()
+        rig.reader.slotsByDisplay[9] = [rig.slot(1, 500, 38), rig.slot(2, 538, 38), rig.slot(20, 600, 40)]
+        rig.startWhole()
+        var calls = [(at: rig.now, total: rig.capturer.calls)]
+        for _ in 0..<120 {
+            rig.advance(1)
+            rig.controller.tick()
+            if calls.last?.total != rig.capturer.calls { calls.append((rig.now, rig.capturer.calls)) }
+        }
+        #expect(calls.first?.total == 4)
+        // Every burst is at most four calls, and bursts are 12 s or more apart.
+        #expect(zip(calls, calls.dropFirst()).allSatisfy { $1.total - $0.total <= 4 && $1.at - $0.at >= 12 })
+        #expect(Set(rig.captures.map(\.displayID)) == [7, 9])
+        #expect(rig.captures.filter { $0.displayID == 9 }.contains { $0.reason == .confirm })
+        #expect(rig.captures.filter { $0.displayID == 9 }.last?.step == 2)
+    }
+
+    // MARK: - Plan 2026-11-18-cover-stale-and-lost, D2 and D3
+
+    @Test("a bar that lists the members' slots while none of their pids is coverable says so, once")
+    func diagnosisNoCandidate() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.start([9])
+        rig.advance(1)
+        rig.controller.tick()
+        #expect(rig.diagnoses == [
+            CoverBarDiagnosis(displayID: 7, readable: true, coverable: 1, slots: 3, owners: 3, candidates: 0, covered: 0, silent: 0, failed: 0, other: 0, hasNotch: false),
+        ])
+    }
+
+    @Test("a candidate left uncovered is counted by what its hit test answered")
+    func diagnosisAnswers() {
+        let rig = Rig()
+        rig.silentOwners = [3]
+        rig.failingOwners = [2]
+        // 1 answers, 2 fails, 3 answers nothing, 4 lies under another item's window (20 answers there).
+        rig.bar([rig.slot(1, 400, 30), rig.slot(2, 440, 30), rig.slot(3, 480, 30), rig.slot(20, 600, 40)])
+        rig.reader.slotsByDisplay[7] = [rig.slot(1, 400, 30), rig.slot(2, 440, 30), rig.slot(3, 480, 30), rig.slot(4, 600, 40), rig.slot(20, 600, 40)]
+        rig.start([1, 2, 3, 4])
+        #expect(rig.diagnoses.last == CoverBarDiagnosis(
+            displayID: 7, readable: true, coverable: 4, slots: 5, owners: 5, candidates: 4, covered: 1, silent: 1, failed: 1, other: 1, hasNotch: false
+        ))
+    }
+
+    @Test("a tree whose every slot has one owner is told apart from one that cannot be read")
+    func diagnosisEmptyAndUnreadable() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.start()
+        // Mission Control's emptiness: the agent's own slots only.
+        rig.reader.slotsByDisplay[7] = [rig.slot(99, 500, 20), rig.slot(99, 540, 20)]
+        rig.advance(1)
+        rig.controller.tick()
+        #expect(rig.diagnoses.last == CoverBarDiagnosis(
+            displayID: 7, readable: true, coverable: 2, slots: 2, owners: 1, candidates: 0, covered: 0, silent: 0, failed: 0, other: 0, hasNotch: false
+        ))
+        rig.reader.slotsByDisplay[7] = .some(nil)
+        rig.advance(1)
+        rig.controller.tick()
+        #expect(rig.diagnoses.last?.readable == false)
+        #expect(rig.diagnoses.last?.coverable == 2)
+    }
+
+    @Test("hit answers that flicker while the same slots stay uncovered are one diagnosis, not one a second")
+    func diagnosisIgnoresFlicker() {
+        let rig = Rig()
+        rig.failingOwners = [2]
+        rig.standardBar()
+        rig.start()
+        #expect(rig.diagnoses.count == 1)
+        #expect(rig.diagnoses.last?.failed == 1)
+        for second in 0..<6 {
+            // Member 2 fails one second and answers nothing the next; it never stands, and stays uncovered.
+            rig.failingOwners = second % 2 == 0 ? [] : [2]
+            rig.silentOwners = second % 2 == 0 ? [2] : []
+            rig.run(seconds: 1)
+        }
+        #expect(rig.diagnoses.count == 1)
+        rig.failingOwners = []
+        rig.silentOwners = []
+        rig.run(seconds: 1)
+        #expect(rig.diagnoses.count == 2, "covered: the coverage changed")
+        #expect(rig.diagnoses.last?.covered == 2)
+    }
+
+    @Test("a display that went and came back is diagnosed afresh, the same diagnosis included")
+    func diagnosisAfterDisplayReturns() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.start([9])
+        #expect(rig.diagnoses.count == 1)
+        let bars = rig.bars
+        rig.bars = []
+        rig.run(seconds: 1)
+        rig.bars = bars
+        rig.run(seconds: 1)
+        #expect(rig.diagnoses.count == 2)
+        #expect(rig.diagnoses.first == rig.diagnoses.last)
+    }
+
+    @Test("a diagnosis that did not change is not said again; going off forgets it")
+    func diagnosisOnChange() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.start()
+        let first = rig.diagnoses.count
+        #expect(first == 1)
+        for _ in 0..<3 {
+            rig.advance(1)
+            rig.controller.tick()
+        }
+        #expect(rig.diagnoses.count == first)
+        rig.controller.sync(active: false, coverable: [])
+        rig.start()
+        #expect(rig.diagnoses.count == first + 1)
+    }
+
+    @Test("a capture says how bright the strip is, whether it equals the one held, and whether the bar is transparent")
+    func captureFacts() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.start()
+        #expect(rig.captures.count == 1)
+        #expect(rig.captures.first?.displayID == 7)
+        #expect(rig.captures.first?.equal == nil)
+        #expect(rig.captures.first?.transparent == true)
+        // The fake's gray is converted on drawing: the strip's own brightness is the measure.
+        #expect(rig.captures.first?.luma == CoverPixels.luma(FakeCapturer.image(width: 10, gray: 40)))
+
+        // A dim strip, as the owner's Sidecar bar on 2026-11-18.
+        rig.capturer.gray = 20
+        rig.key = "space2"
+        rig.advance(13)
+        rig.controller.tick()
+        #expect(rig.captures.count == 2)
+        #expect(rig.captures.last?.equal == false)
+        #expect(rig.captures.last?.luma == CoverPixels.luma(FakeCapturer.image(width: 10, gray: 20)))
+        #expect((rig.captures.last?.luma ?? 1) < (rig.captures.first?.luma ?? 0))
+
+        rig.key = "space3"
+        rig.advance(13)
+        rig.controller.tick()
+        #expect(rig.captures.last?.equal == true)
+        #expect(rig.captures.last?.failed == false)
+    }
+
+    @Test("a capture that returns nothing is said to have failed")
+    func captureFailure() {
+        let rig = Rig()
+        rig.standardBar()
+        rig.capturer.fails = true
+        rig.start()
+        #expect(rig.captures.first == CoverCaptureFact(
+            displayID: 7, luma: nil, equal: nil, transparent: false, failed: true, reason: .size, step: 0, unequalRun: 0
+        ))
+        #expect(rig.presenter.shown[7] == nil)
+    }
 }
 
 @Suite("CoverPixels")
@@ -477,5 +855,24 @@ struct CoverPixelsTests {
         #expect(!CoverPixels.isTransparent(below: below, onScreen: FakeCapturer.image(width: 100, gray: 90), slots: [10...20], scale: 2))
         #expect(!CoverPixels.isTransparent(below: below, onScreen: FakeCapturer.image(width: 90, gray: 40), slots: [], scale: 2))
         #expect(!CoverPixels.isTransparent(below: below, onScreen: below, slots: [0...50], scale: 2))
+    }
+
+    @Test("two strips are one background when nearly every column is the same, the columns of the blocks too")
+    func sameBackground() {
+        let a = FakeCapturer.image(width: 400, gray: 40)
+        #expect(CoverPixels.isSameBackground(a, FakeCapturer.image(width: 400, gray: 41), blocks: [10...40], scale: 2) == true)
+        #expect(CoverPixels.isSameBackground(a, FakeCapturer.image(width: 400, gray: 20), blocks: [10...40], scale: 2) == false)
+        // 1 % of the strip changed, all of it behind the block.
+        let behind = FakeCapturer.image(width: 400, gray: 40, patch: 40..<44, patchGray: 200)
+        #expect(CoverPixels.isSameBackground(a, behind, blocks: [18...24], scale: 2) == false)
+        #expect(CoverPixels.isSameBackground(a, behind, blocks: [100...140], scale: 2) == true)
+        #expect(CoverPixels.isSameBackground(a, behind, blocks: [], scale: 2) == true)
+        #expect(CoverPixels.isSameBackground(a, FakeCapturer.image(width: 300, gray: 40), blocks: [], scale: 2) == nil)
+    }
+
+    @Test("a strip's brightness runs from 0 for black to 1 for white")
+    func luma() {
+        #expect(abs((CoverPixels.luma(FakeCapturer.image(width: 10, gray: 255)) ?? 0) - 1) < 0.01)
+        #expect(abs((CoverPixels.luma(FakeCapturer.image(width: 10, gray: 0)) ?? 1) - 0) < 0.01)
     }
 }

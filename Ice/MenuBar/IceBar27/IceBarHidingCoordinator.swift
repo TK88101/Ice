@@ -108,6 +108,8 @@ final class IceBarHidingCoordinator {
     private var graceTimer: Task<Void, Never>?
     /// The running grace's re-read loop (H2).
     private var graceLoop: Task<Void, Never>?
+    /// The displays last said to be uncovered (`logCoverDiagnosis`).
+    private var uncoveredDisplays = Set<UInt32>()
     /// The machine's last status line for the owner; the cover's notice is said after it.
     private var statusMessage: OwnerMessage?
 
@@ -195,16 +197,34 @@ final class IceBarHidingCoordinator {
                 }
             }
             .store(in: &cancellables)
-        cover.onReport = { [logger] reports, generation in
+        cover.onReport = { [weak self, logger] reports, generation in
+            // The cover went off: its next diagnosis is said afresh.
+            if reports.isEmpty { self?.uncoveredDisplays = [] }
             // Displays and counts, no item names.
             let blocks = reports.map { "\($0.displayID):\($0.blocks.count)/\($0.covered.count)/\($0.silent.count)" }.joined(separator: " ")
-            logger.info("IceBar cover: generation \(generation, privacy: .public) blocks/covered/silent \(blocks, privacy: .public)")
+            // `notice`: kept in the log for days (plan 2026-11-18-cover-stale-and-lost, D2); `info` was gone in minutes.
+            logger.notice("IceBar cover: generation \(generation, privacy: .public) blocks/covered/silent \(blocks, privacy: .public)")
             LabReport.record(.cover(generation: generation, bars: reports.map { report in
                 LabReportCoverBar(
                     display: report.displayID, slots: report.slots, covered: report.covered, silent: report.silent, blocks: report.blocks,
                     ignoredMilliseconds: report.ignoredMilliseconds
                 )
             }))
+        }
+        cover.onDiagnosis = { [weak self] diagnosis in
+            self?.logCoverDiagnosis(diagnosis)
+        }
+        cover.onCapture = { [logger] capture in
+            let luma = capture.luma.map { String(format: "%.3f", $0) } ?? "-"
+            let equal = capture.equal.map { String($0) } ?? "first"
+            logger.notice(
+                """
+                IceBar cover: capture display \(capture.displayID, privacy: .public) reason \(capture.reason.rawValue, privacy: .public) \
+                luma \(luma, privacy: .public) equal \(equal, privacy: .public) \
+                transparent \(capture.failed ? "failed" : capture.ignored ? "false, not believed yet" : String(capture.transparent), privacy: .public) \
+                step \(capture.step, privacy: .public) unequal \(capture.unequalRun, privacy: .public)
+                """
+            )
         }
         // What can change a bar's background with no key saying so (plan D2).
         let workspace = NSWorkspace.shared.notificationCenter
@@ -377,6 +397,35 @@ final class IceBarHidingCoordinator {
                 self?.cover.invalidateBackgrounds()
             }
         }
+    }
+
+    /// Why a bar has members and no panel over them, said when it changes,
+    /// and once more when it is covered again (plan
+    /// 2026-11-18-cover-stale-and-lost, D3). Pids and counts only.
+    private func logCoverDiagnosis(_ diagnosis: CoverBarDiagnosis) {
+        let display = diagnosis.displayID
+        // A roster without members has nothing to cover: no candidate there is no fault.
+        let hasMembers = appState?.itemManager.iceBarRoster.rules.membership.members.isEmpty == false
+        guard diagnosis.isUncovered, hasMembers || diagnosis.candidates > 0 || !diagnosis.readable else {
+            if uncoveredDisplays.remove(display) != nil {
+                logger.notice("IceBar cover: display \(display, privacy: .public) covered again, \(diagnosis.covered, privacy: .public) slots")
+            }
+            return
+        }
+        guard let appState else {
+            return
+        }
+        uncoveredDisplays.insert(display)
+        logger.notice(
+            """
+            IceBar cover: display \(display, privacy: .public) uncovered, \(appState.itemManager.coverableProvenance, privacy: .public) \
+            coverable \(diagnosis.coverable, privacy: .public) grace \(self.machine.isGracing, privacy: .public), \
+            slots \(diagnosis.slots, privacy: .public) owners \(diagnosis.owners, privacy: .public) \
+            candidates \(diagnosis.candidates, privacy: .public) covered \(diagnosis.covered, privacy: .public) \
+            silent \(diagnosis.silent, privacy: .public) failed \(diagnosis.failed, privacy: .public) \
+            other \(diagnosis.other, privacy: .public), read \(diagnosis.readable ? "ok" : "unreadable", privacy: .public)
+            """
+        )
     }
 
     /// The cover is on exactly while Ice rests with a length applied, over

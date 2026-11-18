@@ -54,8 +54,6 @@ public final class CoverController {
     /// The slots under panels are hit-tested again this often (their panels
     /// ignore mouse events meanwhile); the others are tried every pass.
     public static let reverifyEvery = 10.0
-    /// A background is taken again after this long whatever the signals say.
-    public static let refreshEvery = 1800.0
     /// After a change of the active display the panels stay this long without
     /// a fresh verification, then go (D5).
     public static let forcedDeadline = 0.5
@@ -88,7 +86,6 @@ public final class CoverController {
         var strip: CGImage
         var key: String
         var underStrip: String
-        var capturedAt: Double
         var transparent: Bool
         var stale = false
     }
@@ -98,7 +95,8 @@ public final class CoverController {
         let bars: [CoverBar]
         let coverable: Set<Int32>
         let states: [UInt32: BarState]
-        let grants: Set<UInt32>
+        /// The bars granted a capture in this pass, and why (`CoverBackgroundTrust`).
+        let grants: [UInt32: CoverBackgroundTrust.Reason]
         let keys: [UInt32: String]
         let force: Bool
         let forcedID: Int?
@@ -111,6 +109,10 @@ public final class CoverController {
         var ignoredMilliseconds: Double
         var strips: CoverStrips?
         var underStrip: String
+        /// Of the candidates left uncovered: how their hit tests answered (D3 of plan 2026-11-18).
+        var silent = 0
+        var failed = 0
+        var other = 0
     }
 
     private let reader: CoverBarReading
@@ -123,11 +125,17 @@ public final class CoverController {
     /// Called on the main thread whenever a bar's blocks or covered slots
     /// change, and when the cover goes off (no reports): the lab's `cover` event.
     public var onReport: (([CoverBarReport], Int) -> Void)?
+    /// Called on the main thread when what is covered on a bar differs from the diagnosis last said (D3 of plan 2026-11-18).
+    public var onDiagnosis: ((CoverBarDiagnosis) -> Void)?
+    /// Called on the main thread for every capture attempted (D2 of plan 2026-11-18).
+    public var onCapture: ((CoverCaptureFact) -> Void)?
 
     private var isActive = false
     private var coverable = Set<Int32>()
     private var states = [UInt32: BarState]()
     private var backgrounds = [UInt32: Background]()
+    /// When and why each bar's background is captured again (plan 2026-11-18-cover-stale-and-lost, D1).
+    private var trusts = [UInt32: CoverBackgroundTrust]()
     private var budget = CoverCaptureBudget()
     private var passRunning = false
     private var passWanted = false
@@ -135,6 +143,7 @@ public final class CoverController {
     private var forcedCount = 0
     private var pendingForced: Int?
     private var captureRetryScheduled = false
+    private var diagnoses = [UInt32: CoverBarDiagnosis]()
 
     public init(reader: CoverBarReading, capturer: CoverCapturing, presenter: CoverPresenting, environment: Environment) {
         self.reader = reader
@@ -160,6 +169,7 @@ public final class CoverController {
             generation += 1
             presenter.remove(displayID: nil)
             states = [:]
+            diagnoses = [:]
             self.coverable = []
             pendingForced = nil
             onReport?([], generation)
@@ -237,15 +247,16 @@ public final class CoverController {
         }
         let bars = environment.bars()
         let now = environment.now()
-        var grants = Set<UInt32>()
+        var grants = [UInt32: CoverBackgroundTrust.Reason]()
         var keys = [UInt32: String]()
         for bar in bars {
             let key = environment.backgroundKey(bar)
             keys[bar.displayID] = key
-            guard let state = states[bar.displayID], !state.candidates.isEmpty else { continue }
-            guard needsCapture(bar, key: key, now: now) else { continue }
+            // Only a bar with a block has a use for a background: a capture shows the system's dot (D1).
+            guard let state = states[bar.displayID], !state.blocks.isEmpty else { continue }
+            guard let reason = captureReason(for: bar, key: key, now: now) else { continue }
             if budget.take(2, now: now) {
-                grants.insert(bar.displayID)
+                grants[bar.displayID] = reason
             } else {
                 scheduleCaptureRetry(after: budget.nextAllowed(now: now) - now)
             }
@@ -267,9 +278,12 @@ public final class CoverController {
         }
     }
 
-    private func needsCapture(_ bar: CoverBar, key: String, now: Double) -> Bool {
-        guard let background = usableBackground(for: bar) else { return true }
-        return background.key != key || background.stale || now - background.capturedAt >= Self.refreshEvery
+    /// Why the bar's background is to be captured now, if it is: the rule's word alone.
+    private func captureReason(for bar: CoverBar, key: String, now: Double) -> CoverBackgroundTrust.Reason? {
+        let background = usableBackground(for: bar)
+        return (trusts[bar.displayID] ?? CoverBackgroundTrust()).reason(
+            now: now, hasUsableImage: background != nil, keyEqual: background?.key == key, stale: background?.stale ?? false
+        )
     }
 
     /// The display's last image, if it still has the strip's pixel size.
@@ -294,6 +308,7 @@ public final class CoverController {
     ) -> [UInt32: BarResult] {
         var results = [UInt32: BarResult]()
         for bar in input.bars {
+            // A bar whose tree cannot be read has no result.
             guard let slots = reader.slots(of: bar) else { continue }
             let previous = input.states[bar.displayID] ?? BarState()
             let candidates = CoverPlan.candidates(slots: slots, coverable: input.coverable)
@@ -322,13 +337,31 @@ public final class CoverController {
                 candidates: candidates, hitVerified: state.verified, slots: slots, hits: hits, own: input.own, now: input.now
             )
             state.blocks = CoverPlan.blocks(verified: state.covered, others: slots, barWidth: Double(bar.frame.width), notch: bar.notch)
-            results[bar.displayID] = BarResult(
-                state: state, ignoredMilliseconds: ignored,
-                strips: input.grants.contains(bar.displayID) ? capturer.strips(of: bar) : nil,
+            // A read that leaves the bar no block takes no capture, though one was granted: the pass that first
+            // reads Mission Control's emptiness would take the dimmed strip (plan 2026-11-18, D6).
+            var result = BarResult(
+                state: state, ignoredMilliseconds: ignored, strips: Self.captures(input, state, of: bar) ? capturer.strips(of: bar) : nil,
                 underStrip: capturer.underStripSignature(of: bar)
             )
+            let covered = Set(state.covered)
+            for candidate in candidates where !covered.contains(candidate) {
+                let answers = hits[candidate] ?? []
+                if answers.contains(.failed) {
+                    result.failed += 1
+                } else if answers.contains(where: { $0.owner != nil }) {
+                    result.other += 1
+                } else {
+                    result.silent += 1
+                }
+            }
+            results[bar.displayID] = result
         }
         return results
+    }
+
+    /// Whether a pass asks the capturer for the bar's strips: granted, and its own read left the bar a block.
+    private static func captures(_ input: PassInput, _ state: BarState, of bar: CoverBar) -> Bool {
+        input.grants[bar.displayID] != nil && !state.blocks.isEmpty
     }
 
     /// Waits until the panels' new `ignoresMouseEvents` has reached the window
@@ -362,6 +395,45 @@ public final class CoverController {
         return hits
     }
 
+    /// Says a bar's diagnosis when what is covered there is not as last said.
+    private func diagnose(_ diagnosis: CoverBarDiagnosis) {
+        guard diagnoses[diagnosis.displayID]?.coverage != diagnosis.coverage else { return }
+        diagnoses[diagnosis.displayID] = diagnosis
+        onDiagnosis?(diagnosis)
+    }
+
+    /// Takes a capture attempted in this pass into the bar's background and its trust, and says what it was.
+    private func take(_ strips: CoverStrips?, reason: CoverBackgroundTrust.Reason, of bar: CoverBar, result: BarResult, input: PassInput) {
+        let id = bar.displayID
+        let trust = trusts[id] ?? CoverBackgroundTrust()
+        /// Stores the trust the capture leaves and says the capture.
+        func settle(_ next: CoverBackgroundTrust, equal: Bool? = nil, transparent: Bool = false, failed: Bool = false, ignored: Bool = false) {
+            trusts[id] = next
+            onCapture?(CoverCaptureFact(
+                displayID: id, luma: strips.flatMap { CoverPixels.luma($0.below) }, equal: equal, transparent: transparent, failed: failed,
+                reason: reason, step: next.step, unequalRun: next.unequalRun, ignored: ignored
+            ))
+        }
+        guard let strips else {
+            settle(trust.captureFailed(at: input.now), failed: true)
+            return
+        }
+        let held = usableBackground(for: bar)
+        // Against the strip held before it; one of another size is no comparison.
+        let equal = held.map { CoverPixels.isSameBackground($0.strip, strips.below, blocks: result.state.blocks, scale: bar.scale) ?? false }
+        let transparent = CoverPixels.isTransparent(
+            below: strips.below, onScreen: strips.onScreen, slots: result.state.slots.map { $0.minX...$0.maxX }, scale: bar.scale
+        )
+        guard trust.believes(transparent: transparent, heldTransparent: held?.transparent == true) else {
+            // Nothing is taken from it: the image, its key and the stale flag stay, and the same reason asks again.
+            settle(trust.doubted(at: input.now), equal: equal, ignored: true)
+            return
+        }
+        // The newer strip always replaces the held one.
+        backgrounds[id] = Background(strip: strips.below, key: input.keys[id] ?? "", underStrip: result.underStrip, transparent: transparent)
+        settle(trust.captured(reason: reason, equal: equal ?? false, at: input.now), equal: equal, transparent: transparent)
+    }
+
     private func apply(_ results: [UInt32: BarResult], of input: PassInput) {
         passRunning = false
         var again = passWanted
@@ -375,19 +447,27 @@ public final class CoverController {
         for bar in input.bars {
             let id = bar.displayID
             // An unreadable bar keeps what it had.
-            guard let result = results[id] else { continue }
+            guard let result = results[id] else {
+                diagnose(CoverBarDiagnosis(
+                    displayID: id, readable: false, coverable: input.coverable.count, slots: 0, owners: 0, candidates: 0, covered: 0,
+                    silent: 0, failed: 0, other: 0, hasNotch: bar.notch != nil
+                ))
+                continue
+            }
             let old = states[id] ?? BarState()
             if old.blocks != result.state.blocks || old.covered != result.state.covered { changed = true }
             states[id] = result.state
+            diagnose(CoverBarDiagnosis(
+                displayID: id, readable: true, coverable: input.coverable.count, slots: result.state.slots.count,
+                owners: Set(result.state.slots.map(\.owner)).count, candidates: result.state.candidates.count,
+                covered: Set(result.state.covered).count, silent: result.silent, failed: result.failed, other: result.other,
+                hasNotch: bar.notch != nil
+            ))
 
-            if let strips = result.strips {
-                backgrounds[id] = Background(
-                    strip: strips.below, key: input.keys[id] ?? "", underStrip: result.underStrip, capturedAt: input.now,
-                    transparent: CoverPixels.isTransparent(
-                        below: strips.below, onScreen: strips.onScreen, slots: result.state.slots.map { $0.minX...$0.maxX }, scale: bar.scale
-                    )
-                )
-            } else if let background = backgrounds[id], background.underStrip != result.underStrip {
+            if let reason = input.grants[id], Self.captures(input, result.state, of: bar) {
+                take(result.strips, reason: reason, of: bar, result: result, input: input)
+            }
+            if result.strips == nil, let background = backgrounds[id], background.underStrip != result.underStrip {
                 backgrounds[id]?.stale = true
             }
 
@@ -402,8 +482,10 @@ public final class CoverController {
                 }
             } else {
                 presenter.remove(displayID: id)
-                // A capture can be had at once: do not wait for the next tick.
-                if budget.nextAllowed(now: environment.now()) <= environment.now() { again = true }
+                // A capture can be had at once: do not wait for the next tick. Only if the rule wants one now:
+                // after a capture that returned nothing it waits, and asking again at once would never end.
+                let now = environment.now()
+                if budget.nextAllowed(now: now) <= now, captureReason(for: bar, key: input.keys[id] ?? "", now: now) != nil { again = true }
             }
             reports.append(CoverBarReport(
                 displayID: id, slots: result.state.slots, covered: result.state.covered, silent: result.state.silent.standing,
@@ -414,6 +496,8 @@ public final class CoverController {
             presenter.remove(displayID: id)
             states[id] = nil
             backgrounds[id] = nil
+            trusts[id] = nil
+            diagnoses[id] = nil
             changed = true
         }
         notice = opaque.map { .barNotTransparent(displayID: $0) }
